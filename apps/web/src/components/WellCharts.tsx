@@ -17,7 +17,7 @@
  * 3D viewer's click-to-inspect panel so the user gets one consistent
  * inspector across all three views.
  */
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceDot, Label,
@@ -30,6 +30,13 @@ interface Props {
   /** Length unit for the project, e.g. "ft" / "m" / "km". Shown in axis
    *  labels, headers, and tooltips. Default "ft". */
   lengthUnit?: string;
+  /** Fired whenever the cursor's nearest station changes (null on leave).
+   *  Used by the Charts tab to drive ONE shared details panel for both
+   *  charts instead of one each. */
+  onHover?: (point: StationDetails | null) => void;
+  /** When false, suppress the chart's own right-hand details panel —
+   *  expected when the parent renders a shared one. Default true. */
+  showDetailsPanel?: boolean;
 }
 
 /** Append a unit suffix in parens if non-empty. "TVD" + "ft" → "TVD (ft)". */
@@ -82,7 +89,9 @@ function toDetails(s: StationRow): StationDetails {
   };
 }
 
-export function VerticalSectionChart({ stations, lengthUnit = "ft" }: Props) {
+export function VerticalSectionChart({
+  stations, lengthUnit = "ft", onHover, showDetailsPanel = true,
+}: Props) {
   const data = useMemo(
     () =>
       stations.map((s, i) => ({
@@ -97,62 +106,72 @@ export function VerticalSectionChart({ stations, lengthUnit = "ft" }: Props) {
   // Recharts emits state.activePayload[0].payload on every mouse move over
   // the plot area. We resolve the data index back to the source station
   // (our `data` rows carry an `i` field for this) and feed it to the
-  // side panel.
+  // side panel (or hoist to the parent via onHover).
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const hovered: StationDetails | null = hoverIdx !== null && stations[hoverIdx]
     ? toDetails(stations[hoverIdx])
     : null;
+  // Notify the parent on every hover transition (after render).
+  React.useEffect(() => { onHover?.(hovered); }, [hovered, onHover]);
 
   if (data.length < 2) return <Empty label="Vertical Section" />;
   const tip = data[data.length - 1];
+  const chartCard = (
+    <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0">
+      <h3 className="text-sm font-medium text-gray-700 mb-2">
+        Vertical Section — {withUnit("VSEC", lengthUnit)} × {withUnit("TVD", lengthUnit)}
+      </h3>
+      <ResponsiveContainer width="100%" height="90%">
+        <LineChart
+          data={data}
+          margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
+          onMouseMove={(state) => {
+            const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
+            setHoverIdx(typeof idx === "number" ? idx : null);
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis dataKey="vsec" type="number" stroke="#475569" fontSize={12}>
+            <Label value={withUnit("Vertical Section", lengthUnit)} position="bottom" offset={10} fill="#475569" />
+          </XAxis>
+          <YAxis dataKey="tvd" type="number" reversed stroke="#475569" fontSize={12}>
+            <Label
+              value={withUnit("TVD", lengthUnit)}
+              position="insideLeft"
+              angle={-90}
+              offset={-15}
+              fill="#475569"
+            />
+          </YAxis>
+          <Tooltip
+            content={CustomTooltip({
+              xLabel: "VSEC", yLabel: "TVD",
+              xKey: "vsec", yKey: "tvd",
+              unit: lengthUnit,
+            })}
+          />
+          <Line
+            type="monotone"
+            dataKey="tvd"
+            stroke="#1e40af"
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+          <ReferenceDot x={tip.vsec} y={tip.tvd} r={5} fill="#dc2626" stroke="#fff" />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  // When the parent renders its own shared details panel, return just the
+  // chart card — the parent handles the panel layout.
+  if (!showDetailsPanel) return chartCard;
+
   return (
     <div className="flex gap-3">
-      <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px]">
-        <h3 className="text-sm font-medium text-gray-700 mb-2">
-          Vertical Section — {withUnit("VSEC", lengthUnit)} × {withUnit("TVD", lengthUnit)}
-        </h3>
-        <ResponsiveContainer width="100%" height="90%">
-          <LineChart
-            data={data}
-            margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
-            onMouseMove={(state) => {
-              const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
-              setHoverIdx(typeof idx === "number" ? idx : null);
-            }}
-            onMouseLeave={() => setHoverIdx(null)}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="vsec" type="number" stroke="#475569" fontSize={12}>
-              <Label value={withUnit("Vertical Section", lengthUnit)} position="bottom" offset={10} fill="#475569" />
-            </XAxis>
-            <YAxis dataKey="tvd" type="number" reversed stroke="#475569" fontSize={12}>
-              <Label
-                value={withUnit("TVD", lengthUnit)}
-                position="insideLeft"
-                angle={-90}
-                offset={-15}
-                fill="#475569"
-              />
-            </YAxis>
-            <Tooltip
-              content={CustomTooltip({
-                xLabel: "VSEC", yLabel: "TVD",
-                xKey: "vsec", yKey: "tvd",
-                unit: lengthUnit,
-              })}
-            />
-            <Line
-              type="monotone"
-              dataKey="tvd"
-              stroke="#1e40af"
-              strokeWidth={2}
-              dot={false}
-              isAnimationActive={false}
-            />
-            <ReferenceDot x={tip.vsec} y={tip.tvd} r={5} fill="#dc2626" stroke="#fff" />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      {chartCard}
       <StationDetailsPanel
         point={hovered}
         lengthUnit={lengthUnit}
@@ -162,7 +181,9 @@ export function VerticalSectionChart({ stations, lengthUnit = "ft" }: Props) {
   );
 }
 
-export function PlanViewChart({ stations, lengthUnit = "ft" }: Props) {
+export function PlanViewChart({
+  stations, lengthUnit = "ft", onHover, showDetailsPanel = true,
+}: Props) {
   const data = useMemo(
     () =>
       stations.map((s, i) => ({
@@ -178,61 +199,68 @@ export function PlanViewChart({ stations, lengthUnit = "ft" }: Props) {
   const hovered: StationDetails | null = hoverIdx !== null && stations[hoverIdx]
     ? toDetails(stations[hoverIdx])
     : null;
+  React.useEffect(() => { onHover?.(hovered); }, [hovered, onHover]);
 
   if (data.length < 2) return <Empty label="Plan View" />;
   const tip = data[data.length - 1];
+  const chartCard = (
+    <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0">
+      <h3 className="text-sm font-medium text-gray-700 mb-2">
+        Plan View — {withUnit("EW", lengthUnit)} × {withUnit("NS", lengthUnit)}
+      </h3>
+      <ResponsiveContainer width="100%" height="90%">
+        {/* LineChart (not ScatterChart) — same as Vertical Section. Recharts
+            ScatterChart needs visible shapes to detect hover; with the
+            shapes hidden the activePayload never fires. LineChart triggers
+            hover anywhere along the X range, matching VSEC's behavior. */}
+        <LineChart
+          data={data}
+          margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
+          onMouseMove={(state) => {
+            const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
+            setHoverIdx(typeof idx === "number" ? idx : null);
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis dataKey="ew" type="number" stroke="#475569" fontSize={12}>
+            <Label value={withUnit("East-West", lengthUnit)} position="bottom" offset={10} fill="#475569" />
+          </XAxis>
+          <YAxis dataKey="ns" type="number" stroke="#475569" fontSize={12}>
+            <Label
+              value={withUnit("North-South", lengthUnit)}
+              position="insideLeft"
+              angle={-90}
+              offset={-15}
+              fill="#475569"
+            />
+          </YAxis>
+          <Tooltip
+            content={CustomTooltip({
+              xLabel: "EW", yLabel: "NS",
+              xKey: "ew", yKey: "ns",
+              unit: lengthUnit,
+            })}
+          />
+          <Line
+            type="linear"
+            dataKey="ns"
+            stroke="#1e40af"
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+          <ReferenceDot x={tip.ew} y={tip.ns} r={5} fill="#dc2626" stroke="#fff" />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  if (!showDetailsPanel) return chartCard;
+
   return (
     <div className="flex gap-3">
-      <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px]">
-        <h3 className="text-sm font-medium text-gray-700 mb-2">
-          Plan View — {withUnit("EW", lengthUnit)} × {withUnit("NS", lengthUnit)}
-        </h3>
-        <ResponsiveContainer width="100%" height="90%">
-          {/* LineChart (not ScatterChart) — same as Vertical Section. Recharts
-              ScatterChart needs visible shapes to detect hover; with the
-              shapes hidden the activePayload never fires. LineChart triggers
-              hover anywhere along the X range, matching VSEC's behavior. */}
-          <LineChart
-            data={data}
-            margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
-            onMouseMove={(state) => {
-              const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
-              setHoverIdx(typeof idx === "number" ? idx : null);
-            }}
-            onMouseLeave={() => setHoverIdx(null)}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="ew" type="number" stroke="#475569" fontSize={12}>
-              <Label value={withUnit("East-West", lengthUnit)} position="bottom" offset={10} fill="#475569" />
-            </XAxis>
-            <YAxis dataKey="ns" type="number" stroke="#475569" fontSize={12}>
-              <Label
-                value={withUnit("North-South", lengthUnit)}
-                position="insideLeft"
-                angle={-90}
-                offset={-15}
-                fill="#475569"
-              />
-            </YAxis>
-            <Tooltip
-              content={CustomTooltip({
-                xLabel: "EW", yLabel: "NS",
-                xKey: "ew", yKey: "ns",
-                unit: lengthUnit,
-              })}
-            />
-            <Line
-              type="linear"
-              dataKey="ns"
-              stroke="#1e40af"
-              strokeWidth={2}
-              dot={false}
-              isAnimationActive={false}
-            />
-            <ReferenceDot x={tip.ew} y={tip.ns} r={5} fill="#dc2626" stroke="#fff" />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      {chartCard}
       <StationDetailsPanel
         point={hovered}
         lengthUnit={lengthUnit}

@@ -7,6 +7,7 @@ import { ProfilePickerModal } from "../components/ProfilePicker.js";
 import { NumberCell, TextCell } from "../components/EditableCell.js";
 import { type EditableKey } from "../components/editPolicy.js";
 import { profileRoles, isEditableForRole } from "../components/profileRoles.js";
+import { StationDetailsPanel, type StationDetails } from "../components/StationDetailsPanel.js";
 import { useHistoryState, useUndoRedoHotkeys } from "../hooks/useHistoryState.js";
 import { useRecentCalculations } from "../hooks/useRecent.js";
 
@@ -395,15 +396,7 @@ export function CalculationPage() {
           />
         )}
         {tab === "charts" && (
-          // Side-by-side on wide screens (xl: ≥1280 px) so the user can see
-          // VSEC × TVD and EW × NS at the same time without scrolling. Falls
-          // back to a single column on narrower viewports because each chart
-          // already carries a ~290 px side panel — two of them side-by-side
-          // need ≥1100 px of horizontal room to stay readable.
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <VerticalSectionChart stations={stations} lengthUnit={lengthUnit} />
-            <PlanViewChart stations={stations} lengthUnit={lengthUnit} />
-          </div>
+          <ChartsView stations={stations} lengthUnit={lengthUnit} />
         )}
       </Suspense>
       {tab === "export" && (
@@ -440,6 +433,43 @@ export function CalculationPage() {
           onCancel={() => setPicker(null)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Charts tab wrapper. Renders both VSEC and Plan View charts side-by-side
+ * sharing ONE hover-driven details panel — the panel updates whichever
+ * chart the cursor is currently over.
+ *
+ * Each chart still owns its small floating tooltip near the cursor; the
+ * shared panel is the deep-dive inspector with the full Pascal column set.
+ */
+function ChartsView({
+  stations, lengthUnit,
+}: {
+  stations: NonNullable<CalculationDetail["stations"]>;
+  lengthUnit: string;
+}) {
+  const [hovered, setHovered] = useState<StationDetails | null>(null);
+
+  return (
+    <div className="flex flex-col xl:flex-row gap-3">
+      <div className="flex-1 grid grid-cols-1 xl:grid-cols-2 gap-4 min-w-0">
+        <VerticalSectionChart
+          stations={stations}
+          lengthUnit={lengthUnit}
+          onHover={setHovered}
+          showDetailsPanel={false}
+        />
+        <PlanViewChart
+          stations={stations}
+          lengthUnit={lengthUnit}
+          onHover={setHovered}
+          showDetailsPanel={false}
+        />
+      </div>
+      <StationDetailsPanel point={hovered} lengthUnit={lengthUnit} widthClass="w-72 xl:w-64" />
     </div>
   );
 }
