@@ -359,6 +359,7 @@ export function CalculationPage() {
           <SegmentGrid
             segments={segments}
             keypoints={data?.keypoints ?? []}
+            stations={stations}
             onCell={updateCell}
             onRemove={removeRow}
             onPickProfile={(order) => setPicker({ kind: "edit", order })}
@@ -523,6 +524,10 @@ interface SegmentGridProps {
   /** Exact algebraic milestones from the dispatcher (KOP/EOC/Target/…).
    *  Each row of a profile group reads the keypoint at its position. */
   keypoints: KeypointRow[];
+  /** Densified stations — used to source the START row's post-pass
+   *  computed values (TF, VSEC, BR, TR) that the segment record itself
+   *  doesn't carry. stations[0] IS the START's computed state. */
+  stations: NonNullable<CalculationDetail["stations"]>;
   onCell: <K extends keyof SegmentRow>(index: number, key: K, value: SegmentRow[K]) => void;
   onRemove: (index: number) => void;
   onPickProfile: (order: number) => void;
@@ -530,7 +535,7 @@ interface SegmentGridProps {
   lengthUnit: string;
 }
 
-function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile, lengthUnit }: SegmentGridProps) {
+function SegmentGrid({ segments, keypoints, stations, onCell, onRemove, onPickProfile, lengthUnit }: SegmentGridProps) {
   /**
    * For each segment row, the exact algebraic milestone that should populate
    * its read-only cells. The dispatcher returns one keypoint per role within
@@ -542,10 +547,26 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile, len
    * Pre-calculate, keypoints[] is empty → cells stay at zero.
    */
   const milestoneByRowIndex = useMemo(() => {
-    const map = new Map<number, KeypointRow>();
+    // Map row → record-with-computed-columns. The grid renders read-only
+    // cells from this when present; falls back to the segment's own data
+    // otherwise.
+    //
+    // Two sources:
+    //   - START row (index 0) → stations[0] (the dispatcher copied the
+    //     start verbatim and then ran VSEC/TF/BR/TR post-passes on it).
+    //     Without this, the grid would show tf=0 / vsec=0 since those
+    //     fields aren't persisted on the Segment record.
+    //   - Profile rows → the keypoint at the matching (segmentOrder,
+    //     roleIndex). Exact algebraic milestones from each builder.
+    const map = new Map<number, KeypointRow | NonNullable<CalculationDetail["stations"]>[number]>();
     if (segments.length === 0) return map;
 
-    // Index keypoints by (segmentOrder, roleIndex).
+    // 1) START gets stations[0] — same fields, post-pass already filled.
+    if (segments[0].profileType === 0 && stations.length > 0) {
+      map.set(0, stations[0]);
+    }
+
+    // 2) Profile rows get keypoints by (segmentOrder, roleIndex).
     const kpBy = new Map<number, KeypointRow[]>();
     for (const kp of keypoints) {
       const arr = kpBy.get(kp.segmentOrder);
@@ -554,8 +575,7 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile, len
     }
     for (const arr of kpBy.values()) arr.sort((a, b) => a.roleIndex - b.roleIndex);
 
-    // Walk segment groups: consecutive rows with the same profileType.
-    let i = segments[0].profileType === 0 ? 1 : 0; // skip START
+    let i = segments[0].profileType === 0 ? 1 : 0;
     while (i < segments.length) {
       const typ = segments[i].profileType;
       let j = i;
@@ -569,7 +589,7 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile, len
       i = j;
     }
     return map;
-  }, [segments, keypoints]);
+  }, [segments, keypoints, stations]);
 
   // Full Pascal column set (Unit02.pas:54-100 column convention):
   //   MD, Inc, Azm, TVD, VSEC, NS, EW, DLS, TF, BR, TR, DMD
