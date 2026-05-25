@@ -403,14 +403,17 @@ function Legend({ min, max, ramp, unit }: { min: number; max: number; ramp: Ramp
   const labels = Array.from({ length: ticks }, (_, i) => max - (i * (max - min)) / (ticks - 1));
 
   return (
-    <div className="flex items-stretch gap-2">
-      <div className="w-6 rounded border border-gray-200" style={{ background: grad }} />
-      <div className="flex flex-col justify-between text-xs text-gray-700 py-0.5">
-        {labels.map((v, i) => (
-          <div key={i}>
-            {v.toFixed(0)} <span className="text-gray-400">{unit}</span>
-          </div>
-        ))}
+    <div className="flex flex-col items-start text-xs">
+      <div className="font-medium text-gray-700 mb-1">Depth ({unit})</div>
+      <div className="flex items-stretch gap-2">
+        <div className="w-6 rounded border border-gray-200" style={{ background: grad }} />
+        <div className="flex flex-col justify-between text-gray-700 py-0.5">
+          {labels.map((v, i) => (
+            <div key={i}>
+              {v.toFixed(0)} <span className="text-gray-400">{unit}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

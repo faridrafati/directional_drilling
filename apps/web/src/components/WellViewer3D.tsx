@@ -33,6 +33,8 @@ interface Props {
   stations: StationRow[];
   /** Algebraic milestone points (KOP/EOC/Target/...). Rendered as clickable spheres. */
   keypoints?: KeypointRow[];
+  /** Project length unit shown alongside dimensional values in the legend. */
+  lengthUnit?: string;
 }
 
 /**
@@ -48,7 +50,7 @@ interface PickedPoint {
   br: number; tr: number; dmd: number;
 }
 
-export function WellViewer3D({ stations, keypoints = [] }: Props) {
+export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft" }: Props) {
   const [selected, setSelected] = useState<PickedPoint | null>(null);
 
   if (stations.length < 2) {
@@ -79,7 +81,7 @@ export function WellViewer3D({ stations, keypoints = [] }: Props) {
       </div>
 
       {/* Side legend */}
-      <PointLegend point={selected} keypointCount={keypoints.length} />
+      <PointLegend point={selected} keypointCount={keypoints.length} lengthUnit={lengthUnit} />
     </div>
   );
 }
@@ -352,8 +354,8 @@ function BillboardLabel({
  * Shown alongside the 3D canvas; the parent flex layout sizes it to ~280 px.
  */
 function PointLegend({
-  point, keypointCount,
-}: { point: PickedPoint | null; keypointCount: number }) {
+  point, keypointCount, lengthUnit,
+}: { point: PickedPoint | null; keypointCount: number; lengthUnit: string }) {
   if (!point) {
     return (
       <div className="w-72 shrink-0 border border-gray-200 rounded bg-white p-4 text-xs text-gray-600 space-y-3 overflow-y-auto">
@@ -370,11 +372,16 @@ function PointLegend({
         </div>
         <p className="pt-2 text-[11px] text-gray-400 italic">
           {keypointCount} milestone point{keypointCount === 1 ? "" : "s"} on this trajectory.
+          Distances in {lengthUnit}.
         </p>
       </div>
     );
   }
 
+  // Unit-suffixed labels — angle / rate values carry their unit in the value
+  // itself (°, °/L), so the dt label stays bare; length-typed rows append the
+  // project unit so users don't have to guess whether 1234 means ft or m.
+  const len = ` (${lengthUnit})`;
   return (
     <div className="w-72 shrink-0 border border-gray-200 rounded bg-white p-4 text-xs space-y-2 overflow-y-auto">
       <div className="flex items-baseline justify-between">
@@ -385,18 +392,18 @@ function PointLegend({
         <p className="text-gray-500 italic">{point.comment}</p>
       )}
       <dl className="grid grid-cols-2 gap-x-2 gap-y-1 pt-2">
-        <Cell label="MD"   value={point.md.toFixed(3)} />
-        <Cell label="DMD"  value={point.dmd.toFixed(3)} />
-        <Cell label="Inc"  value={`${rad2deg(point.inc).toFixed(2)}°`} />
-        <Cell label="Azm"  value={`${rad2deg(point.azm).toFixed(2)}°`} />
-        <Cell label="TVD"  value={point.tvd.toFixed(3)} />
-        <Cell label="VSEC" value={point.vsec.toFixed(3)} />
-        <Cell label="NS"   value={point.ns.toFixed(3)} />
-        <Cell label="EW"   value={point.ew.toFixed(3)} />
-        <Cell label="DLS"  value={`${(Math.abs(rad2deg(point.dls)) * 100).toFixed(3)}°/L`} />
-        <Cell label="TF"   value={`${rad2deg(point.tf).toFixed(2)}°`} />
-        <Cell label="BR"   value={`${(rad2deg(point.br) * 100).toFixed(3)}°/L`} />
-        <Cell label="TR"   value={`${(rad2deg(point.tr) * 100).toFixed(3)}°/L`} />
+        <Cell label={`MD${len}`}   value={point.md.toFixed(3)} />
+        <Cell label={`DMD${len}`}  value={point.dmd.toFixed(3)} />
+        <Cell label="Inc (°)"      value={rad2deg(point.inc).toFixed(2)} />
+        <Cell label="Azm (°)"      value={rad2deg(point.azm).toFixed(2)} />
+        <Cell label={`TVD${len}`}  value={point.tvd.toFixed(3)} />
+        <Cell label={`VSEC${len}`} value={point.vsec.toFixed(3)} />
+        <Cell label={`NS${len}`}   value={point.ns.toFixed(3)} />
+        <Cell label={`EW${len}`}   value={point.ew.toFixed(3)} />
+        <Cell label="DLS (°/L)"    value={(Math.abs(rad2deg(point.dls)) * 100).toFixed(3)} />
+        <Cell label="TF (°)"       value={rad2deg(point.tf).toFixed(2)} />
+        <Cell label="BR (°/L)"     value={(rad2deg(point.br) * 100).toFixed(3)} />
+        <Cell label="TR (°/L)"     value={(rad2deg(point.tr) * 100).toFixed(3)} />
       </dl>
     </div>
   );

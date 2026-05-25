@@ -367,7 +367,11 @@ export function CalculationPage() {
 
       <Suspense fallback={<div className="p-4 text-sm text-gray-500">Loading viewer…</div>}>
         {tab === "3d" && (
-          <WellViewer3D stations={stations} keypoints={data?.keypoints ?? []} />
+          <WellViewer3D
+            stations={stations}
+            keypoints={data?.keypoints ?? []}
+            lengthUnit={lengthUnit}
+          />
         )}
         {tab === "vsec" && <VerticalSectionChart stations={stations} lengthUnit={lengthUnit} />}
         {tab === "plan" && <PlanViewChart stations={stations} lengthUnit={lengthUnit} />}
