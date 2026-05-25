@@ -20,9 +20,17 @@ import type { StationRow } from "../api/client.js";
 
 interface Props {
   stations: StationRow[];
+  /** Length unit for the project, e.g. "ft" / "m" / "km". Shown in axis
+   *  labels, headers, and tooltips. Default "ft". */
+  lengthUnit?: string;
 }
 
-export function VerticalSectionChart({ stations }: Props) {
+/** Append a unit suffix in parens if non-empty. "TVD" + "ft" → "TVD (ft)". */
+function withUnit(label: string, unit?: string): string {
+  return unit && unit.trim() ? `${label} (${unit})` : label;
+}
+
+export function VerticalSectionChart({ stations, lengthUnit = "ft" }: Props) {
   const data = useMemo(
     () =>
       stations.map((s, i) => ({
@@ -37,16 +45,18 @@ export function VerticalSectionChart({ stations }: Props) {
   const tip = data[data.length - 1];
   return (
     <div className="bg-white border border-gray-200 rounded p-4 h-[500px]">
-      <h3 className="text-sm font-medium text-gray-700 mb-2">Vertical Section (VSEC × TVD)</h3>
+      <h3 className="text-sm font-medium text-gray-700 mb-2">
+        Vertical Section — {withUnit("VSEC", lengthUnit)} × {withUnit("TVD", lengthUnit)}
+      </h3>
       <ResponsiveContainer width="100%" height="90%">
         <LineChart data={data} margin={{ top: 10, right: 30, left: 30, bottom: 30 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis dataKey="vsec" type="number" stroke="#475569" fontSize={12}>
-            <Label value="Vertical Section" position="bottom" offset={10} fill="#475569" />
+            <Label value={withUnit("Vertical Section", lengthUnit)} position="bottom" offset={10} fill="#475569" />
           </XAxis>
           <YAxis dataKey="tvd" type="number" reversed stroke="#475569" fontSize={12}>
             <Label
-              value="TVD"
+              value={withUnit("TVD", lengthUnit)}
               position="insideLeft"
               angle={-90}
               offset={-15}
@@ -54,7 +64,7 @@ export function VerticalSectionChart({ stations }: Props) {
             />
           </YAxis>
           <Tooltip
-            formatter={(v: number) => v.toFixed(2)}
+            formatter={(v: number, name) => [`${v.toFixed(2)} ${lengthUnit}`, name]}
             labelFormatter={(_, payload) => payload?.[0]?.payload?.comment ?? ""}
           />
           <Line
@@ -72,7 +82,7 @@ export function VerticalSectionChart({ stations }: Props) {
   );
 }
 
-export function PlanViewChart({ stations }: Props) {
+export function PlanViewChart({ stations, lengthUnit = "ft" }: Props) {
   const data = useMemo(
     () =>
       stations.map((s, i) => ({
@@ -87,16 +97,18 @@ export function PlanViewChart({ stations }: Props) {
   const tip = data[data.length - 1];
   return (
     <div className="bg-white border border-gray-200 rounded p-4 h-[500px]">
-      <h3 className="text-sm font-medium text-gray-700 mb-2">Plan View (EW × NS)</h3>
+      <h3 className="text-sm font-medium text-gray-700 mb-2">
+        Plan View — {withUnit("EW", lengthUnit)} × {withUnit("NS", lengthUnit)}
+      </h3>
       <ResponsiveContainer width="100%" height="90%">
         <ScatterChart margin={{ top: 10, right: 30, left: 30, bottom: 30 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis dataKey="ew" type="number" stroke="#475569" fontSize={12}>
-            <Label value="East-West" position="bottom" offset={10} fill="#475569" />
+            <Label value={withUnit("East-West", lengthUnit)} position="bottom" offset={10} fill="#475569" />
           </XAxis>
           <YAxis dataKey="ns" type="number" stroke="#475569" fontSize={12}>
             <Label
-              value="North-South"
+              value={withUnit("North-South", lengthUnit)}
               position="insideLeft"
               angle={-90}
               offset={-15}
@@ -104,7 +116,7 @@ export function PlanViewChart({ stations }: Props) {
             />
           </YAxis>
           <Tooltip
-            formatter={(v: number) => v.toFixed(2)}
+            formatter={(v: number, name) => [`${v.toFixed(2)} ${lengthUnit}`, name]}
             labelFormatter={(_, payload) => payload?.[0]?.payload?.comment ?? ""}
           />
           <Scatter

@@ -54,7 +54,7 @@ export async function registerCalculationRoutes(app: FastifyInstance, prisma: Pr
             field: {
               include: {
                 country: {
-                  include: { project: { select: { id: true, name: true } } },
+                  include: { project: { select: { id: true, name: true, units: true } } },
                 },
               },
             },

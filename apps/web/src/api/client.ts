@@ -100,7 +100,7 @@ export interface CalculationDetail {
       country?: {
         id: string;
         name: string;
-        project?: { id: string; name: string };
+        project?: { id: string; name: string; units?: string };
       };
     };
   };

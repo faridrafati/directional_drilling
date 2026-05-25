@@ -129,6 +129,21 @@ export function CalculationPage() {
   const stations = data?.stations ?? [];
   const lastResult = calculateMut.data;
 
+  // Parse the project's units JSON (stored as { length, angle, dls }) so we
+  // can label chart axes / tooltips / 3D scale indicator with the right unit
+  // suffix. The Project.units field is JSON-encoded (Pascal/SQLite has no
+  // native JSON type) so it's parsed per render.
+  const lengthUnit = (() => {
+    const raw = data?.well?.field?.country?.project?.units;
+    if (!raw) return "ft";
+    try {
+      const parsed = JSON.parse(raw) as { length?: string };
+      return parsed.length || "ft";
+    } catch {
+      return "ft";
+    }
+  })();
+
   if (isLoading) return <div className="p-6 text-gray-500">Loading…</div>;
   if (error || !data) return <div className="p-6 text-red-600">Calculation not found.</div>;
 
@@ -328,6 +343,7 @@ export function CalculationPage() {
             onCell={updateCell}
             onRemove={removeRow}
             onPickProfile={(order) => setPicker({ kind: "edit", order })}
+            lengthUnit={lengthUnit}
           />
           {stations.length > 0 && (
             <div className="mt-6">
@@ -342,6 +358,7 @@ export function CalculationPage() {
               <StationsTable
                 stations={stations}
                 keypoints={data?.keypoints ?? []}
+                lengthUnit={lengthUnit}
               />
             </div>
           )}
@@ -352,8 +369,8 @@ export function CalculationPage() {
         {tab === "3d" && (
           <WellViewer3D stations={stations} keypoints={data?.keypoints ?? []} />
         )}
-        {tab === "vsec" && <VerticalSectionChart stations={stations} />}
-        {tab === "plan" && <PlanViewChart stations={stations} />}
+        {tab === "vsec" && <VerticalSectionChart stations={stations} lengthUnit={lengthUnit} />}
+        {tab === "plan" && <PlanViewChart stations={stations} lengthUnit={lengthUnit} />}
       </Suspense>
       {tab === "export" && (
         <div className="bg-white border border-gray-200 rounded p-6 space-y-4">
@@ -485,9 +502,11 @@ interface SegmentGridProps {
   onCell: <K extends keyof SegmentRow>(index: number, key: K, value: SegmentRow[K]) => void;
   onRemove: (index: number) => void;
   onPickProfile: (order: number) => void;
+  /** Project-scoped length unit shown next to length-typed column headers. */
+  lengthUnit: string;
 }
 
-function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile }: SegmentGridProps) {
+function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile, lengthUnit }: SegmentGridProps) {
   /**
    * For each segment row, the exact algebraic milestone that should populate
    * its read-only cells. The dispatcher returns one keypoint per role within
@@ -535,20 +554,20 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile }: S
   // — see editPolicy.ts — but we always SHOW them so the user can see what
   // was computed and so the grid never has columns appear/disappear under
   // them mid-edit.
-  const columns: Array<{ key: EditableKey; label: string; unit?: "deg" | "deg/L" }> = useMemo(() => [
+  const columns: Array<{ key: EditableKey; label: string; unit?: "deg" | "deg/L" | "len" }> = useMemo(() => [
     { key: "comment", label: "Comment" },
-    { key: "md", label: "MD" },
+    { key: "md", label: "MD", unit: "len" },
     { key: "inc", label: "Inc", unit: "deg" },
     { key: "azm", label: "Azm", unit: "deg" },
-    { key: "tvd", label: "TVD" },
-    { key: "vsec", label: "VSEC" },
-    { key: "ns", label: "NS" },
-    { key: "ew", label: "EW" },
+    { key: "tvd", label: "TVD", unit: "len" },
+    { key: "vsec", label: "VSEC", unit: "len" },
+    { key: "ns", label: "NS", unit: "len" },
+    { key: "ew", label: "EW", unit: "len" },
     { key: "dls", label: "DLS", unit: "deg/L" },
     { key: "tf", label: "TF", unit: "deg" },
     { key: "br", label: "BR", unit: "deg/L" },
     { key: "tr", label: "TR", unit: "deg/L" },
-    { key: "dmd", label: "DMD" },
+    { key: "dmd", label: "DMD", unit: "len" },
   ], []);
 
   /**
@@ -589,6 +608,11 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile }: S
             <th className="sticky left-10 z-10 bg-gray-50 px-2 py-2 text-left w-28 border-r border-gray-200">Profile</th>
             {columns.map((c) => {
               const narrow = isNarrowCol(c.key);
+              const suffix =
+                c.unit === "deg"   ? " (°)" :
+                c.unit === "deg/L" ? " (°/L)" :
+                c.unit === "len"   ? ` (${lengthUnit})` :
+                "";
               return (
                 <th
                   key={String(c.key)}
@@ -596,7 +620,7 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile }: S
                     narrow ? " text-[11px]" : ""
                   }`}
                 >
-                  {c.label}{c.unit === "deg" ? " (°)" : c.unit === "deg/L" ? " (°/L)" : ""}
+                  {c.label}{suffix}
                 </th>
               );
             })}
@@ -775,9 +799,11 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile }: S
 function StationsTable({
   stations,
   keypoints,
+  lengthUnit,
 }: {
   stations: NonNullable<CalculationDetail["stations"]>;
   keypoints: KeypointRow[];
+  lengthUnit: string;
 }) {
   type Row = {
     key: string;
@@ -844,18 +870,18 @@ function StationsTable({
             {[
               { label: "#" },
               { label: "Comment" },
-              { label: "MD" },
+              { label: `MD (${lengthUnit})` },
               { label: "Inc (°)" },
               { label: "Azm (°)" },
-              { label: "TVD" },
-              { label: "VSEC" },
-              { label: "NS" },
-              { label: "EW" },
+              { label: `TVD (${lengthUnit})` },
+              { label: `VSEC (${lengthUnit})` },
+              { label: `NS (${lengthUnit})` },
+              { label: `EW (${lengthUnit})` },
               { label: "DLS (°/L)", narrow: true },
               { label: "TF (°)",    narrow: true },
               { label: "BR (°/L)",  narrow: true },
               { label: "TR (°/L)",  narrow: true },
-              { label: "DMD" },
+              { label: `DMD (${lengthUnit})` },
             ].map((h) => (
               <th
                 key={h.label}
