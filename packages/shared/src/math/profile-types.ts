@@ -95,21 +95,25 @@ const PROFILE_NAMES: Record<number, string> = {
   [ProfileType.HOLD_EW]:        "Hold (E-W)",
   [ProfileType.HOLD_VSEC]:      "Hold (VSEC)",
 
-  // Form06 RG1: single-curve EOC variants
-  [ProfileType.CURVE_E1]: "Curve EOC — MD + Inc + DLS",
-  [ProfileType.CURVE_E2]: "Curve EOC — MD + Azm + DLS",
-  [ProfileType.CURVE_E3]: "Curve EOC — Inc + Azm + DLS",
-  [ProfileType.CURVE_E4]: "Curve EOC — Inc + TVD + DLS",
-  [ProfileType.CURVE_E5]: "Curve EOC — Inc + Azm + TVD",
+  // Form06 RG1: single-curve EOC variants. Label format is
+  //   "Curve: <user inputs in column order>"
+  // so the grid's Profile column reads as a quick reminder of WHAT the user
+  // needs to enter for that row.
+  [ProfileType.CURVE_E1]: "Curve: MD, Inc, DLS",
+  [ProfileType.CURVE_E2]: "Curve: MD, Azm, DLS",
+  [ProfileType.CURVE_E3]: "Curve: Inc, Azm, DLS",
+  [ProfileType.CURVE_E4]: "Curve: Inc, TVD, DLS",
+  [ProfileType.CURVE_E5]: "Curve: Inc, Azm, TVD",
 
   [ProfileType.SURVEY_STATION]: "Survey Station",
 
-  // Form06 RG3: fly-to variants
-  [ProfileType.FLYTO_1]: "Fly-To — at MD",
-  [ProfileType.FLYTO_2]: "Fly-To — at TVD",
-  [ProfileType.FLYTO_3]: "Fly-To — at DMD",
-  [ProfileType.FLYTO_4]: "Fly-To — at Inc",
-  [ProfileType.FLYTO_5]: "Fly-To — at Azm",
+  // Form06 RG3: fly-to variants. The user input is just the constraint
+  // column + DLS (the fly direction is taken from the previous station's TF).
+  [ProfileType.FLYTO_1]: "Fly-To: MD, DLS",
+  [ProfileType.FLYTO_2]: "Fly-To: TVD, DLS",
+  [ProfileType.FLYTO_3]: "Fly-To: DMD, DLS",
+  [ProfileType.FLYTO_4]: "Fly-To: Inc, DLS",
+  [ProfileType.FLYTO_5]: "Fly-To: Azm, DLS",
 
   // Form06 RG2 × CheckBox: multi-curve combos. Group constraint × sub-rate.
   //   60s: MD given     | 1=BR only, 2=TR only, 3=both
@@ -117,21 +121,21 @@ const PROFILE_NAMES: Record<number, string> = {
   //   80s: DMD given
   //   90s: INC given
   //  100s: AZM given
-  [ProfileType.MC_60_INC]:  "MC — MD + BR",
-  [ProfileType.MC_60_AZM]:  "MC — MD + TR",
-  [ProfileType.MC_60_BOTH]: "MC — MD + BR + TR",
-  [ProfileType.MC_70_INC]:  "MC — TVD + BR",
-  [ProfileType.MC_70_AZM]:  "MC — TVD + TR",
-  [ProfileType.MC_70_BOTH]: "MC — TVD + BR + TR",
-  [ProfileType.MC_80_INC]:  "MC — DMD + BR",
-  [ProfileType.MC_80_AZM]:  "MC — DMD + TR",
-  [ProfileType.MC_80_BOTH]: "MC — DMD + BR + TR",
-  [ProfileType.MC_90_INC]:  "MC — Inc + BR",
-  [ProfileType.MC_90_AZM]:  "MC — Inc + TR",
-  [ProfileType.MC_90_BOTH]: "MC — Inc + BR + TR",
-  [ProfileType.MC_100_INC]:  "MC — Azm + BR",
-  [ProfileType.MC_100_AZM]:  "MC — Azm + TR",
-  [ProfileType.MC_100_BOTH]: "MC — Azm + BR + TR",
+  [ProfileType.MC_60_INC]:  "MC: MD, BR",
+  [ProfileType.MC_60_AZM]:  "MC: MD, TR",
+  [ProfileType.MC_60_BOTH]: "MC: MD, BR, TR",
+  [ProfileType.MC_70_INC]:  "MC: TVD, BR",
+  [ProfileType.MC_70_AZM]:  "MC: TVD, TR",
+  [ProfileType.MC_70_BOTH]: "MC: TVD, BR, TR",
+  [ProfileType.MC_80_INC]:  "MC: DMD, BR",
+  [ProfileType.MC_80_AZM]:  "MC: DMD, TR",
+  [ProfileType.MC_80_BOTH]: "MC: DMD, BR, TR",
+  [ProfileType.MC_90_INC]:  "MC: Inc, BR",
+  [ProfileType.MC_90_AZM]:  "MC: Inc, TR",
+  [ProfileType.MC_90_BOTH]: "MC: Inc, BR, TR",
+  [ProfileType.MC_100_INC]:  "MC: Azm, BR",
+  [ProfileType.MC_100_AZM]:  "MC: Azm, TR",
+  [ProfileType.MC_100_BOTH]: "MC: Azm, BR, TR",
 };
 
 /**
