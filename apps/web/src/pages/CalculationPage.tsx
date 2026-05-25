@@ -22,7 +22,10 @@ const VerticalSectionChart = lazy(() =>
 // Math helpers + UI control for the VSEC reference azimuth — kept in
 // WellCharts so the chart toolbar and the grid/stations tables agree on
 // the formula AND the input affordance.
-import { naturalVsecAzm, resolveVsecAzm, projectVsec, VsecAzmControl } from "../components/WellCharts.js";
+import {
+  naturalVsecAzm, resolveVsecAzm, projectVsec,
+  VsecAzmHeaderButton,
+} from "../components/WellCharts.js";
 const PlanViewChart = lazy(() =>
   import("../components/WellCharts.js").then((m) => ({ default: m.PlanViewChart }))
 );
@@ -378,21 +381,6 @@ export function CalculationPage() {
 
       {tab === "grid" && (
         <>
-          {/* Small toolbar: lets the user change the VSEC view azimuth from
-              the Grid tab too, mirroring the chart's title-bar control. The
-              same state drives the editable grid's VSEC column, the
-              Calculated Stations table's VSEC column, and the chart curve
-              on the Charts tab — change it here once and everything follows. */}
-          {stations.length > 0 && (
-            <div className="mb-3 flex justify-end">
-              <VsecAzmControl
-                inputStr={vsecAzmInputStr}
-                naturalAzm={naturalAzmRad}
-                onChange={setVsecAzmInputStr}
-                label="VSEC view azm:"
-              />
-            </div>
-          )}
           <SegmentGrid
             segments={segments}
             keypoints={data?.keypoints ?? []}
@@ -402,6 +390,9 @@ export function CalculationPage() {
             onPickProfile={(order) => setPicker({ kind: "edit", order })}
             lengthUnit={lengthUnit}
             projectVsec={projectVsecAt}
+            vsecAzmInputStr={vsecAzmInputStr}
+            onVsecAzmInputChange={setVsecAzmInputStr}
+            naturalAzm={naturalAzmRad}
           />
           {stations.length > 0 && (
             <div className="mt-6">
@@ -419,6 +410,9 @@ export function CalculationPage() {
                 lengthUnit={lengthUnit}
                 groupLabelByOrder={groupLabelByOrder}
                 projectVsec={projectVsecAt}
+                vsecAzmInputStr={vsecAzmInputStr}
+                onVsecAzmInputChange={setVsecAzmInputStr}
+                naturalAzm={naturalAzmRad}
               />
             </div>
           )}
@@ -624,10 +618,17 @@ interface SegmentGridProps {
    *  Overrides the segment row's stored vsec so it stays in sync with
    *  the VSEC chart's toolbar. */
   projectVsec: (ns: number, ew: number) => number;
+  /** Current VSEC azimuth string ("90", "102.5", …) or null = natural. */
+  vsecAzmInputStr: string | null;
+  /** Setter the popup calls when the user clicks Apply. */
+  onVsecAzmInputChange: (next: string | null) => void;
+  /** Natural azimuth (radians) — shown to the user inside the popup. */
+  naturalAzm: number;
 }
 
 function SegmentGrid({
   segments, keypoints, stations, onCell, onRemove, onPickProfile, lengthUnit, projectVsec,
+  vsecAzmInputStr, onVsecAzmInputChange, naturalAzm,
 }: SegmentGridProps) {
   /**
    * For each segment row, the exact algebraic milestone that should populate
@@ -785,6 +786,16 @@ function SegmentGrid({
                   }`}
                 >
                   {c.label}{suffix}
+                  {/* VSEC column shows an ⓘ button that opens a popup for
+                      changing the projection azimuth — reprojects every
+                      VSEC cell across the page on Apply. */}
+                  {c.key === "vsec" && (
+                    <VsecAzmHeaderButton
+                      inputStr={vsecAzmInputStr}
+                      naturalAzm={naturalAzm}
+                      onChange={onVsecAzmInputChange}
+                    />
+                  )}
                 </th>
               );
             })}
@@ -974,6 +985,9 @@ function StationsTable({
   lengthUnit,
   groupLabelByOrder,
   projectVsec,
+  vsecAzmInputStr,
+  onVsecAzmInputChange,
+  naturalAzm,
 }: {
   stations: NonNullable<CalculationDetail["stations"]>;
   keypoints: KeypointRow[];
@@ -984,6 +998,10 @@ function StationsTable({
   /** Reproject (ns, ew) onto the user's chosen VSEC reference azimuth.
    *  Lets this table follow the VSEC chart's toolbar live. */
   projectVsec: (ns: number, ew: number) => number;
+  /** Drives the VSEC header's ⓘ-button popup. */
+  vsecAzmInputStr: string | null;
+  onVsecAzmInputChange: (next: string | null) => void;
+  naturalAzm: number;
 }) {
   type Row = {
     key: string;
@@ -1071,14 +1089,14 @@ function StationsTable({
       <table className="min-w-full text-xs">
         <thead className="sticky top-0 bg-gray-50">
           <tr className="border-b border-gray-200">
-            {[
+            {([
               { label: "#" },
               { label: "Comment" },
               { label: `MD (${lengthUnit})` },
               { label: "Inc (°)" },
               { label: "Azm (°)" },
               { label: `TVD (${lengthUnit})` },
-              { label: `VSEC (${lengthUnit})` },
+              { label: `VSEC (${lengthUnit})`, vsecIcon: true },
               { label: `NS (${lengthUnit})` },
               { label: `EW (${lengthUnit})` },
               { label: "DLS (°/L)", narrow: true },
@@ -1086,7 +1104,7 @@ function StationsTable({
               { label: "BR (°/L)",  narrow: true },
               { label: "TR (°/L)",  narrow: true },
               { label: `DMD (${lengthUnit})` },
-            ].map((h) => (
+            ] as Array<{ label: string; narrow?: boolean; vsecIcon?: boolean }>).map((h) => (
               <th
                 key={h.label}
                 className={`px-${h.narrow ? "1" : "2"} py-1 text-left whitespace-nowrap${
@@ -1094,6 +1112,13 @@ function StationsTable({
                 }`}
               >
                 {h.label}
+                {h.vsecIcon && (
+                  <VsecAzmHeaderButton
+                    inputStr={vsecAzmInputStr}
+                    naturalAzm={naturalAzm}
+                    onChange={onVsecAzmInputChange}
+                  />
+                )}
               </th>
             ))}
           </tr>

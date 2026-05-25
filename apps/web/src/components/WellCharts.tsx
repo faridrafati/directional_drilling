@@ -93,6 +93,149 @@ export function projectVsec(
 }
 
 /**
+ * Header button + popup for setting the VSEC view azimuth from any table's
+ * "VSEC" column header. Shows a small "ⓘ" icon; clicking it opens a modal
+ * with a draft input, Apply/Cancel, and Reset. Confirming with Apply
+ * commits the new azimuth, which triggers a re-projection of every VSEC
+ * value across the grid + Stations table + chart.
+ */
+export function VsecAzmHeaderButton({
+  inputStr, naturalAzm, onChange,
+}: {
+  inputStr: string | null;
+  naturalAzm: number;
+  onChange: (next: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        className="ml-1 inline-flex w-4 h-4 items-center justify-center rounded-full bg-blue-100 hover:bg-blue-200 text-blue-700 text-[10px] font-bold align-middle"
+        title="Change VSEC reference azimuth"
+        aria-label="Change VSEC reference azimuth"
+      >
+        i
+      </button>
+      {open && (
+        <VsecAzmModal
+          inputStr={inputStr}
+          naturalAzm={naturalAzm}
+          onApply={(next) => { onChange(next); setOpen(false); }}
+          onCancel={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * The actual modal. Owns a DRAFT input so the user can type freely and
+ * only commit on Apply (clicking outside / Escape / Cancel discards).
+ */
+function VsecAzmModal({
+  inputStr, naturalAzm, onApply, onCancel,
+}: {
+  inputStr: string | null;
+  naturalAzm: number;
+  onApply: (next: string | null) => void;
+  onCancel: () => void;
+}) {
+  const naturalAzmDeg = (naturalAzm * 180 / Math.PI + 360) % 360;
+  const startValue = inputStr ?? naturalAzmDeg.toFixed(2);
+  const [draft, setDraft] = useState(startValue);
+  const [usingNatural, setUsingNatural] = useState(inputStr === null);
+
+  // Esc → cancel, Enter → apply.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+      else if (e.key === "Enter") onApply(usingNatural ? null : draft);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [draft, usingNatural, onApply, onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl w-full max-w-sm"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900">VSEC reference azimuth</h3>
+          <button
+            onClick={onCancel}
+            className="text-gray-400 hover:text-gray-600 -m-1 p-1 rounded"
+            aria-label="Close"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-4 py-4 space-y-3 text-sm">
+          <p className="text-xs text-gray-500">
+            VSEC is the projection of each station's (NS, EW) onto a reference
+            bearing. <span className="font-mono">0° = N</span>, <span className="font-mono">90° = E</span>.
+            Default = wellhead → last-station bearing.
+          </p>
+
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={usingNatural}
+              onChange={(e) => setUsingNatural(e.target.checked)}
+            />
+            <span>Use natural azimuth ({naturalAzmDeg.toFixed(2)}°)</span>
+          </label>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="vsec-azm-modal-input" className="text-xs text-gray-700">
+              Custom azm:
+            </label>
+            <input
+              id="vsec-azm-modal-input"
+              type="number"
+              step="0.01"
+              value={draft}
+              disabled={usingNatural}
+              onChange={(e) => setDraft(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              autoFocus
+              className="flex-1 px-2 py-1 border border-gray-300 rounded text-right font-mono text-sm disabled:bg-gray-100 disabled:text-gray-400"
+            />
+            <span className="text-gray-400">°</span>
+          </div>
+        </div>
+
+        <div className="px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onApply(usingNatural ? null : draft)}
+            className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Compact controlled input for the VSEC view azimuth. Shared by the
  * VerticalSectionChart's title bar and the Grid tab's header so users can
  * change the projection from either place. Layout is a single line with
