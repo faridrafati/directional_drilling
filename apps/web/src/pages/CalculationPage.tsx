@@ -22,7 +22,7 @@ const PlanViewChart = lazy(() =>
   import("../components/WellCharts.js").then((m) => ({ default: m.PlanViewChart }))
 );
 
-type Tab = "grid" | "3d" | "vsec" | "plan" | "export";
+type Tab = "grid" | "3d" | "charts" | "export";
 
 /**
  * Survey / Well-Design editor.
@@ -394,8 +394,12 @@ export function CalculationPage() {
             lengthUnit={lengthUnit}
           />
         )}
-        {tab === "vsec" && <VerticalSectionChart stations={stations} lengthUnit={lengthUnit} />}
-        {tab === "plan" && <PlanViewChart stations={stations} lengthUnit={lengthUnit} />}
+        {tab === "charts" && (
+          <div className="space-y-4">
+            <VerticalSectionChart stations={stations} lengthUnit={lengthUnit} />
+            <PlanViewChart stations={stations} lengthUnit={lengthUnit} />
+          </div>
+        )}
       </Suspense>
       {tab === "export" && (
         <div className="bg-white border border-gray-200 rounded p-6 space-y-4">
@@ -439,8 +443,9 @@ function Tabs({ current, onChange }: { current: Tab; onChange: (t: Tab) => void 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "grid", label: "Grid" },
     { id: "3d", label: "3D View" },
-    { id: "vsec", label: "Vertical Section" },
-    { id: "plan", label: "Plan View" },
+    // Vertical Section + Plan View live on a single "Charts" tab so users
+    // can see both 2D projections of the trajectory side-by-side.
+    { id: "charts", label: "Charts" },
     { id: "export", label: "Export" },
   ];
   return (
