@@ -23,8 +23,8 @@
  *   - Clicking empty space deselects (returns the legend to a key/usage hint).
  */
 import { Suspense, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Grid, Text } from "@react-three/drei";
+import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
+import { OrbitControls, Grid, Text, Html } from "@react-three/drei";
 import * as THREE from "three";
 import type { StationRow, KeypointRow } from "../api/client.js";
 import { rad2deg } from "@dd/shared";
@@ -51,7 +51,12 @@ interface PickedPoint {
 }
 
 export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft" }: Props) {
+  // `selected` is "locked" by a click; `hovered` is transient while the
+  // cursor is over the tube. Panel shows selected when locked, otherwise
+  // whatever's being hovered.
   const [selected, setSelected] = useState<PickedPoint | null>(null);
+  const [hovered, setHovered]   = useState<PickedPoint | null>(null);
+  const display = selected ?? hovered;
 
   if (stations.length < 2) {
     return (
@@ -74,14 +79,16 @@ export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft" }: Pr
               stations={stations}
               keypoints={keypoints}
               onPick={setSelected}
+              onHover={setHovered}
               selectedKey={selected ? selectedKey(selected) : null}
+              lengthUnit={lengthUnit}
             />
           </Suspense>
         </Canvas>
       </div>
 
       {/* Side legend */}
-      <PointLegend point={selected} keypointCount={keypoints.length} lengthUnit={lengthUnit} />
+      <PointLegend point={display} keypointCount={keypoints.length} lengthUnit={lengthUnit} />
     </div>
   );
 }
@@ -92,13 +99,22 @@ function selectedKey(p: PickedPoint): string {
 }
 
 function Scene({
-  stations, keypoints, onPick, selectedKey,
+  stations, keypoints, onPick, onHover, selectedKey, lengthUnit,
 }: {
   stations: StationRow[];
   keypoints: KeypointRow[];
   onPick: (p: PickedPoint) => void;
+  onHover: (p: PickedPoint | null) => void;
   selectedKey: string | null;
+  lengthUnit: string;
 }) {
+  // The 3D world-coords of the cursor's nearest-station hit on the tube.
+  // Updated on every pointer move over the wellbore mesh; consumed by the
+  // Html tooltip below so it follows the cursor along the path.
+  const [hoverPos, setHoverPos] = useState<THREE.Vector3 | null>(null);
+  const [hoverMd, setHoverMd]   = useState<number | null>(null);
+  const [hoverTvd, setHoverTvd] = useState<number | null>(null);
+  const [hoverComment, setHoverComment] = useState<string>("");
   // Build points + bounding box for the densified path (always at least 2 points
   // when this component renders, so safe to index .max/.min on the box).
   const { points, kpPoints, bbox, scale } = useMemo(() => {
@@ -153,6 +169,49 @@ function Scene({
     br: k.br, tr: k.tr, dmd: k.dmd,
   });
 
+  /**
+   * Translate a pointer event on the tube into the nearest densified
+   * station. R3F gives us `e.point` in world coordinates (already the
+   * scaled space); we find the closest entry in `points[]` (same scaling)
+   * by linear scan — N is small (≤ a few hundred), no need for a kd-tree.
+   * Returns the index into `stations[]` so the legend + cursor tooltip
+   * can pull every column from the original row.
+   */
+  const findNearestStation = (worldP: THREE.Vector3): number => {
+    let best = 0;
+    let bestD2 = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const d2 = points[i].distanceToSquared(worldP);
+      if (d2 < bestD2) { bestD2 = d2; best = i; }
+    }
+    return best;
+  };
+  const onTubeMove = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    const idx = findNearestStation(e.point);
+    const s = stations[idx];
+    if (!s) return;
+    const p = points[idx];
+    setHoverPos(p);
+    setHoverMd(s.md);
+    setHoverTvd(s.tvd);
+    setHoverComment(s.comment ?? "");
+    // Mirror to the side panel so it updates in tandem.
+    onHover({
+      kind: "keypoint",      // reuse the keypoint shape for rendering
+      label: s.comment || `MD ${s.md.toFixed(1)} ${lengthUnit}`,
+      comment: s.comment ?? "",
+      md: s.md, inc: s.inc, azm: s.azm, tvd: s.tvd, vsec: s.vsec,
+      ns: s.ns, ew: s.ew, dls: s.dls, tf: s.tf,
+      br: s.br, tr: s.tr, dmd: s.dmd,
+    });
+  };
+  const onTubeOut = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    setHoverPos(null);
+    onHover(null);
+  };
+
   return (
     <>
       <ambientLight intensity={0.6} />
@@ -174,10 +233,39 @@ function Scene({
         infiniteGrid
       />
 
-      {/* Wellbore tube */}
-      <mesh geometry={curveGeometry} castShadow>
+      {/* Wellbore tube — hover detection enabled. Moving the cursor along
+          the tube finds the nearest densified station, updates the side
+          panel, and pops a small Html tooltip near the cursor showing the
+          two most-useful axes (MD + TVD) plus the row's comment. */}
+      <mesh
+        geometry={curveGeometry}
+        castShadow
+        onPointerMove={onTubeMove}
+        onPointerOut={onTubeOut}
+      >
         <meshStandardMaterial color="#1e40af" metalness={0.3} roughness={0.4} />
       </mesh>
+
+      {hoverPos && hoverMd !== null && hoverTvd !== null && (
+        <Html
+          position={hoverPos}
+          center
+          zIndexRange={[100, 0]}
+          style={{ pointerEvents: "none", transform: "translate(12px, -12px)" }}
+        >
+          <div className="bg-white/95 border border-gray-300 rounded shadow px-2 py-1.5 text-xs whitespace-nowrap">
+            {hoverComment && (
+              <div className="font-medium text-gray-800 mb-0.5">{hoverComment}</div>
+            )}
+            <div className="text-gray-700">
+              <span className="text-gray-500">MD:</span> {hoverMd.toFixed(2)} {lengthUnit}
+            </div>
+            <div className="text-gray-700">
+              <span className="text-gray-500">TVD:</span> {hoverTvd.toFixed(2)} {lengthUnit}
+            </div>
+          </div>
+        </Html>
+      )}
 
       {/* Wellhead (clickable) */}
       <ClickableMarker
