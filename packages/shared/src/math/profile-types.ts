@@ -57,8 +57,100 @@ export const ProfileType = {
  *  for the general "any integer" form. */
 export type NamedProfileType = typeof ProfileType[keyof typeof ProfileType];
 
-/** Human-readable label, useful for the UI grid and dispatch logging. */
+/**
+ * Descriptive name for each profile-type code, e.g. "Hold-Curve 3D" instead
+ * of the bare enum key "HC3D". These are the labels the original Pascal
+ * Form04 / Form05 / Form06 dialogs showed next to each radio button (see
+ * old_delphi_code/Unit04.dfm:RadioGroup1.Items, Unit05.dfm:Button1Click etc.)
+ * — ported as-is for UI consistency with the legacy app.
+ *
+ * "★ Azm" suffix marks the starred (azimuth-input) variants — Form04's
+ * "Use Azimuth" checkbox toggles between the inc-input and azm-input forms.
+ */
+const PROFILE_NAMES: Record<number, string> = {
+  [ProfileType.START]: "Start",
+
+  // Standard profiles (Unit04.pas)
+  [ProfileType.HC3D]:           "Hold-Curve 3D",
+  [ProfileType.HC3D_STAR]:      "Hold-Curve 3D ★ Azm",
+  [ProfileType.CH3D]:           "Curve-Hold 3D",
+  [ProfileType.CH3D_STAR]:      "Curve-Hold 3D ★ Azm",
+  [ProfileType.HCH]:            "Hold-Curve-Hold",
+  [ProfileType.HCH_STAR]:       "Hold-Curve-Hold ★ Azm",
+  [ProfileType.CH]:             "Curve-Hold (DLS-given)",
+  [ProfileType.D3DS]:           "3D-S",
+  [ProfileType.D3DS_STAR]:      "3D-S ★ Azm",
+  [ProfileType.D3DS_HOLD]:      "3D-S + Hold",
+  [ProfileType.D3DS_HOLD_STAR]: "3D-S + Hold ★ Azm",
+  [ProfileType.D3DS_HOLD2]:     "3D-S + Hold (Mode II)",
+  [ProfileType.D3DS_HOLD2_STAR]:"3D-S + Hold (Mode II) ★ Azm",
+  [ProfileType.D3DS_ALT]:       "3D-S Alternate",
+  [ProfileType.D3DS_ALT_STAR]:  "3D-S Alternate ★ Azm",
+  [ProfileType.TARGET]:         "Planning Target",
+  [ProfileType.CC3D]:           "Curve-Curve 3D",
+  [ProfileType.CC3D_STAR]:      "Curve-Curve 3D ★ Azm",
+
+  // Form05 hold variants
+  [ProfileType.HOLD_NS]:        "Hold (N-S)",
+  [ProfileType.HOLD_EW]:        "Hold (E-W)",
+  [ProfileType.HOLD_VSEC]:      "Hold (VSEC)",
+
+  // Form06 RG1: single-curve EOC variants
+  [ProfileType.CURVE_E1]: "Curve EOC — MD + Inc + DLS",
+  [ProfileType.CURVE_E2]: "Curve EOC — MD + Azm + DLS",
+  [ProfileType.CURVE_E3]: "Curve EOC — Inc + Azm + DLS",
+  [ProfileType.CURVE_E4]: "Curve EOC — Inc + TVD + DLS",
+  [ProfileType.CURVE_E5]: "Curve EOC — Inc + Azm + TVD",
+
+  [ProfileType.SURVEY_STATION]: "Survey Station",
+
+  // Form06 RG3: fly-to variants
+  [ProfileType.FLYTO_1]: "Fly-To — at MD",
+  [ProfileType.FLYTO_2]: "Fly-To — at TVD",
+  [ProfileType.FLYTO_3]: "Fly-To — at DMD",
+  [ProfileType.FLYTO_4]: "Fly-To — at Inc",
+  [ProfileType.FLYTO_5]: "Fly-To — at Azm",
+
+  // Form06 RG2 × CheckBox: multi-curve combos. Group constraint × sub-rate.
+  //   60s: MD given     | 1=BR only, 2=TR only, 3=both
+  //   70s: TVD given
+  //   80s: DMD given
+  //   90s: INC given
+  //  100s: AZM given
+  [ProfileType.MC_60_INC]:  "MC — MD + BR",
+  [ProfileType.MC_60_AZM]:  "MC — MD + TR",
+  [ProfileType.MC_60_BOTH]: "MC — MD + BR + TR",
+  [ProfileType.MC_70_INC]:  "MC — TVD + BR",
+  [ProfileType.MC_70_AZM]:  "MC — TVD + TR",
+  [ProfileType.MC_70_BOTH]: "MC — TVD + BR + TR",
+  [ProfileType.MC_80_INC]:  "MC — DMD + BR",
+  [ProfileType.MC_80_AZM]:  "MC — DMD + TR",
+  [ProfileType.MC_80_BOTH]: "MC — DMD + BR + TR",
+  [ProfileType.MC_90_INC]:  "MC — Inc + BR",
+  [ProfileType.MC_90_AZM]:  "MC — Inc + TR",
+  [ProfileType.MC_90_BOTH]: "MC — Inc + BR + TR",
+  [ProfileType.MC_100_INC]:  "MC — Azm + BR",
+  [ProfileType.MC_100_AZM]:  "MC — Azm + TR",
+  [ProfileType.MC_100_BOTH]: "MC — Azm + BR + TR",
+};
+
+/**
+ * Human-readable label for a profile code, e.g. `1 → "Hold-Curve 3D"`.
+ * Falls back to the bare enum key (or "UNKNOWN(code)") so the UI is never
+ * blank for codes we haven't mapped yet.
+ */
 export function profileTypeLabel(code: number): string {
+  const named = PROFILE_NAMES[code];
+  if (named) return named;
+  const reverse = Object.entries(ProfileType).find(([, v]) => v === code);
+  return reverse ? reverse[0] : `UNKNOWN(${code})`;
+}
+
+/**
+ * Short code label (e.g. "HC3D"), useful where vertical space is tight (PDF
+ * report header, etc.). Same as the original Pascal Form04 "Title" column.
+ */
+export function profileTypeCode(code: number): string {
   const reverse = Object.entries(ProfileType).find(([, v]) => v === code);
   return reverse ? reverse[0] : `UNKNOWN(${code})`;
 }
