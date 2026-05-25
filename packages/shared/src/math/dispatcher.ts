@@ -275,11 +275,11 @@ function computeTfPostPass(
   stations: Station[],
   keypoints: DispatchResult["keypoints"],
 ): void {
-  // Flatten the START + every keypoint into one ordered list so curve
-  // transitions ACROSS group boundaries are seen (e.g. CH ends → next
-  // group's CH3D starts). Pascal Unit02.pas:5341 sets the START station's
-  // TF using the FIRST curve's geometry, so we have to include it in the
-  // walk too (not just keypoints).
+  // Pass 1 — compute TF on the START and every KEYPOINT, using the
+  // NEXT keypoint's curve geometry. Pascal Unit02.pas:5341 sets the
+  // START station's TF from the first curve's (dls × dmd); :5368-5378
+  // sets each keypoint's TF from the next group's curve (or 0 when it's
+  // the trajectory's last keypoint).
   const all: Station[] = [];
   if (stations.length > 0) all.push(stations[0]);   // START as first prev
   for (const g of keypoints) all.push(...g.points);
@@ -289,10 +289,41 @@ function computeTfPostPass(
     const n = all[k + 1];
     p.tf = toolFaceAngle(p.inc, p.azm, n.inc, n.azm, n.dls, n.dmd);
   }
-  // Last keypoint has no following curve → TF=0 by Pascal convention
-  // (Unit02.pas:5376 — wlpt2[0].tf := 0 when kk = ll).
   if (all.length > 0) {
     all[all.length - 1].tf = 0;
+  }
+
+  // Pass 2 — propagate the arc-start TF down to every densified row that
+  // falls INSIDE that arc. Toolface is geometrically constant along a
+  // constant-DLS arc, so every interp station between two keypoints shares
+  // the TF of the keypoint that STARTS its arc.
+  //
+  // Pascal Unit02.pas:5439-5450 recomputes TF per densified step. That
+  // works there because Pascal's c3 puts stations EXACTLY on the arc; our
+  // densifier uses linear-in-inc/azm interpolation (cheaper, slightly off
+  // the arc), so a per-step recompute would yield jittery TF values that
+  // disagree with the constant arc toolface. Inheriting from the arc's
+  // start keypoint is mathematically equivalent for a constant-DLS arc.
+  if (stations.length === 0) return;
+  const kpByMd = new Map<number, Station>();
+  for (const g of keypoints) {
+    for (const p of g.points) kpByMd.set(p.md, p);
+  }
+  let arcStartTf = stations[0].tf;
+  for (let i = 0; i < stations.length; i++) {
+    const s = stations[i];
+    // Use a small epsilon — station and keypoint MDs are floats from
+    // independent code paths.
+    let matchedKp: Station | undefined;
+    for (const [md, kp] of kpByMd) {
+      if (Math.abs(md - s.md) < 1e-3) { matchedKp = kp; break; }
+    }
+    if (matchedKp) {
+      s.tf = matchedKp.tf;
+      arcStartTf = matchedKp.tf;
+    } else {
+      s.tf = arcStartTf;
+    }
   }
 }
 
