@@ -20,7 +20,7 @@
 import { useMemo, useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceDot, Label, Scatter, ScatterChart,
+  ResponsiveContainer, ReferenceDot, Label,
 } from "recharts";
 import type { StationRow } from "../api/client.js";
 import { StationDetailsPanel, type StationDetails } from "./StationDetailsPanel.js";
@@ -152,7 +152,12 @@ export function PlanViewChart({ stations, lengthUnit = "ft" }: Props) {
           Plan View — {withUnit("EW", lengthUnit)} × {withUnit("NS", lengthUnit)}
         </h3>
         <ResponsiveContainer width="100%" height="90%">
-          <ScatterChart
+          {/* LineChart (not ScatterChart) — same as Vertical Section. Recharts
+              ScatterChart needs visible shapes to detect hover; with the
+              shapes hidden the activePayload never fires. LineChart triggers
+              hover anywhere along the X range, matching VSEC's behavior. */}
+          <LineChart
+            data={data}
             margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
             onMouseMove={(state) => {
               const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
@@ -177,15 +182,16 @@ export function PlanViewChart({ stations, lengthUnit = "ft" }: Props) {
               formatter={(v: number, name) => [`${v.toFixed(2)} ${lengthUnit}`, name]}
               labelFormatter={(_, payload) => payload?.[0]?.payload?.comment ?? ""}
             />
-            <Scatter
-              data={data}
-              line={{ stroke: "#1e40af", strokeWidth: 2 }}
-              lineType="joint"
-              shape={() => <></>}
+            <Line
+              type="linear"
+              dataKey="ns"
+              stroke="#1e40af"
+              strokeWidth={2}
+              dot={false}
               isAnimationActive={false}
             />
             <ReferenceDot x={tip.ew} y={tip.ns} r={5} fill="#dc2626" stroke="#fff" />
-          </ScatterChart>
+          </LineChart>
         </ResponsiveContainer>
       </div>
       <StationDetailsPanel
