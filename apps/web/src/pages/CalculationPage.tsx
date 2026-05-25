@@ -940,10 +940,20 @@ function StationsTable({
     }));
     // Merge + sort by MD. (For equal MDs we'd still want keypoints last, but
     // de-dup already removed colliding stations.)
-    return [...stationRows, ...keypointRows].sort((a, b) => {
+    const merged = [...stationRows, ...keypointRows].sort((a, b) => {
       if (a.md !== b.md) return a.md - b.md;
       return (a.isKeypoint ? 1 : 0) - (b.isKeypoint ? 1 : 0);
     });
+    // Pascal Unit02.pas:5427 (the wlpt3 densified path):
+    //   wlpt3[jj].dmd := wlpt3[jj].md − wlpt3[jj-1].md
+    // i.e. DMD on a densified row is the STEP from the previous row, not the
+    // keypoint's stored full-curve length. We compute it here so keypoints
+    // (which carry full dmd for the editable grid + BR/TR post-pass) still
+    // show as the small step when listed in the densified table.
+    for (let i = 0; i < merged.length; i++) {
+      merged[i].dmd = i === 0 ? 0 : merged[i].md - merged[i - 1].md;
+    }
+    return merged;
   }, [stations, keypoints]);
 
   return (
