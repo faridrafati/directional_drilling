@@ -92,24 +92,58 @@ function toDetails(s: StationRow): StationDetails {
 export function VerticalSectionChart({
   stations, lengthUnit = "ft", onHover, showDetailsPanel = true,
 }: Props) {
-  const data = useMemo(
-    () =>
-      stations.map((s, i) => ({
-        i,
-        vsec: s.vsec !== 0 ? s.vsec : Math.sqrt(s.ew * s.ew + s.ns * s.ns),
-        tvd: s.tvd,
-        comment: s.comment,
-      })),
-    [stations]
-  );
+  // The vertical section is the projection of each station's horizontal
+  // offset (NS, EW) onto a reference direction. Pascal Form23 lets the
+  // user pick that direction as a "VSEC azimuth"; by default it's the
+  // wellhead → last-station bearing (so VSEC matches the planned wellbore
+  // axis). Override it from this chart's toolbar to view the trajectory
+  // along any other azimuth (e.g. lease line, anti-collision corridor).
+  const naturalAzm = useMemo(() => {
+    if (stations.length < 2) return 0;
+    const first = stations[0];
+    const last = stations[stations.length - 1];
+    const dn = last.ns - first.ns;
+    const de = last.ew - first.ew;
+    if (dn === 0 && de === 0) return 0;
+    return Math.atan2(de, dn);  // azm = clockwise from north
+  }, [stations]);
+
+  // User-chosen azimuth in DEGREES (or null = use natural). Stored as
+  // a string so the input field can be edited freely; parsed when used.
+  const [azmInputStr, setAzmInputStr] = useState<string | null>(null);
+  const customAzmRad = (() => {
+    if (azmInputStr === null) return null;
+    const cleaned = azmInputStr.trim();
+    if (!cleaned) return null;
+    const deg = Number(cleaned);
+    if (!Number.isFinite(deg)) return null;
+    return (deg * Math.PI) / 180;
+  })();
+  const refAzm = customAzmRad ?? naturalAzm;
+  const naturalAzmDeg = (naturalAzm * 180 / Math.PI + 360) % 360;
+
+  const data = useMemo(() => {
+    if (stations.length === 0) return [];
+    const origin = stations[0];
+    const cos = Math.cos(refAzm), sin = Math.sin(refAzm);
+    return stations.map((s, i) => ({
+      i,
+      vsec: (s.ns - origin.ns) * cos + (s.ew - origin.ew) * sin,
+      tvd: s.tvd,
+      comment: s.comment,
+    }));
+  }, [stations, refAzm]);
 
   // Recharts emits state.activePayload[0].payload on every mouse move over
   // the plot area. We resolve the data index back to the source station
   // (our `data` rows carry an `i` field for this) and feed it to the
   // side panel (or hoist to the parent via onHover).
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // When the user picks a custom view angle, override the station's stored
+  // VSEC in the details panel too — otherwise the side panel and the chart
+  // would disagree.
   const hovered: StationDetails | null = hoverIdx !== null && stations[hoverIdx]
-    ? toDetails(stations[hoverIdx])
+    ? { ...toDetails(stations[hoverIdx]), vsec: data[hoverIdx]?.vsec ?? stations[hoverIdx].vsec }
     : null;
   // Notify the parent on every hover transition (after render).
   React.useEffect(() => { onHover?.(hovered); }, [hovered, onHover]);
@@ -118,10 +152,42 @@ export function VerticalSectionChart({
   const tip = data[data.length - 1];
   const chartCard = (
     <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0">
-      <h3 className="text-sm font-medium text-gray-700 mb-2">
-        Vertical Section — {withUnit("VSEC", lengthUnit)} × {withUnit("TVD", lengthUnit)}
-      </h3>
-      <ResponsiveContainer width="100%" height="90%">
+      <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
+        <h3 className="text-sm font-medium text-gray-700">
+          Vertical Section — {withUnit("VSEC", lengthUnit)} × {withUnit("TVD", lengthUnit)}
+        </h3>
+        <div className="flex items-center gap-1.5 text-xs">
+          <label htmlFor="vsec-azm" className="text-gray-500 whitespace-nowrap">
+            View azm:
+          </label>
+          <input
+            id="vsec-azm"
+            type="number"
+            step="1"
+            value={azmInputStr ?? naturalAzmDeg.toFixed(2)}
+            onChange={(e) => setAzmInputStr(e.target.value)}
+            onFocus={(e) => {
+              // First focus: prime the input with the current natural azm so
+              // the user has a starting value to nudge.
+              if (azmInputStr === null) setAzmInputStr(naturalAzmDeg.toFixed(2));
+              e.currentTarget.select();
+            }}
+            className="w-20 px-1.5 py-0.5 border border-gray-300 rounded text-right font-mono"
+            title="Reference azimuth in degrees (0=N, 90=E). Default = wellhead→target bearing."
+          />
+          <span className="text-gray-400">°</span>
+          {azmInputStr !== null && (
+            <button
+              onClick={() => setAzmInputStr(null)}
+              className="ml-1 px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px]"
+              title={`Reset to natural azimuth (${naturalAzmDeg.toFixed(2)}°)`}
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height="86%">
         <LineChart
           data={data}
           margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
