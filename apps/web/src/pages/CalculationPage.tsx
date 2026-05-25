@@ -19,9 +19,10 @@ const WellViewer3D = lazy(() =>
 const VerticalSectionChart = lazy(() =>
   import("../components/WellCharts.js").then((m) => ({ default: m.VerticalSectionChart }))
 );
-// Math helpers for the VSEC reference azimuth — kept in WellCharts so the
-// chart toolbar and the grid/stations tables agree on the formula.
-import { naturalVsecAzm, resolveVsecAzm, projectVsec } from "../components/WellCharts.js";
+// Math helpers + UI control for the VSEC reference azimuth — kept in
+// WellCharts so the chart toolbar and the grid/stations tables agree on
+// the formula AND the input affordance.
+import { naturalVsecAzm, resolveVsecAzm, projectVsec, VsecAzmControl } from "../components/WellCharts.js";
 const PlanViewChart = lazy(() =>
   import("../components/WellCharts.js").then((m) => ({ default: m.PlanViewChart }))
 );
@@ -377,6 +378,21 @@ export function CalculationPage() {
 
       {tab === "grid" && (
         <>
+          {/* Small toolbar: lets the user change the VSEC view azimuth from
+              the Grid tab too, mirroring the chart's title-bar control. The
+              same state drives the editable grid's VSEC column, the
+              Calculated Stations table's VSEC column, and the chart curve
+              on the Charts tab — change it here once and everything follows. */}
+          {stations.length > 0 && (
+            <div className="mb-3 flex justify-end">
+              <VsecAzmControl
+                inputStr={vsecAzmInputStr}
+                naturalAzm={naturalAzmRad}
+                onChange={setVsecAzmInputStr}
+                label="VSEC view azm:"
+              />
+            </div>
+          )}
           <SegmentGrid
             segments={segments}
             keypoints={data?.keypoints ?? []}

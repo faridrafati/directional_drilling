@@ -93,6 +93,54 @@ export function projectVsec(
 }
 
 /**
+ * Compact controlled input for the VSEC view azimuth. Shared by the
+ * VerticalSectionChart's title bar and the Grid tab's header so users can
+ * change the projection from either place. Layout is a single line with
+ * `View azm:` label, numeric input, `°` glyph, and an optional Reset
+ * button that appears only when the user has overridden the default.
+ */
+export function VsecAzmControl({
+  inputStr, naturalAzm, onChange, label = "VSEC view azm:",
+}: {
+  inputStr: string | null;
+  naturalAzm: number;
+  onChange: (next: string | null) => void;
+  label?: string;
+}) {
+  const naturalAzmDeg = (naturalAzm * 180 / Math.PI + 360) % 360;
+  return (
+    <div className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap shrink-0">
+      <label htmlFor="vsec-azm-input" className="text-gray-500">{label}</label>
+      <input
+        id="vsec-azm-input"
+        type="number"
+        step="1"
+        value={inputStr ?? naturalAzmDeg.toFixed(2)}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={(e) => {
+          // Prime the input with the natural azm on first focus so the
+          // user has a starting value to nudge.
+          if (inputStr === null) onChange(naturalAzmDeg.toFixed(2));
+          e.currentTarget.select();
+        }}
+        className="w-20 px-1.5 py-0.5 border border-gray-300 rounded text-right font-mono"
+        title="Reference azimuth in degrees (0 = N, 90 = E). Default = wellhead→target bearing."
+      />
+      <span className="text-gray-400">°</span>
+      {inputStr !== null && (
+        <button
+          onClick={() => onChange(null)}
+          className="ml-1 px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px]"
+          title={`Reset to natural azimuth (${naturalAzmDeg.toFixed(2)}°)`}
+        >
+          Reset
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * Compact "X = …, Y = …, [comment]" tooltip used by both charts. Recharts'
  * default Tooltip only renders the `dataKey` series, so the X-axis value is
  * dropped — useful for the side panel but unhelpful as a hover preview.
@@ -160,7 +208,6 @@ export function VerticalSectionChart({
   };
 
   const refAzm = resolveVsecAzm(azmInputStr, naturalAzm);
-  const naturalAzmDeg = (naturalAzm * 180 / Math.PI + 360) % 360;
 
   const data = useMemo(() => {
     if (stations.length === 0) return [];
@@ -199,36 +246,12 @@ export function VerticalSectionChart({
         <h3 className="text-sm font-medium text-gray-700 truncate min-w-0">
           Vertical Section — {withUnit("VSEC", lengthUnit)} × {withUnit("TVD", lengthUnit)}
         </h3>
-        <div className="flex items-center gap-1.5 text-xs whitespace-nowrap shrink-0">
-          <label htmlFor="vsec-azm" className="text-gray-500">
-            View azm:
-          </label>
-          <input
-            id="vsec-azm"
-            type="number"
-            step="1"
-            value={azmInputStr ?? naturalAzmDeg.toFixed(2)}
-            onChange={(e) => setAzmInputStr(e.target.value)}
-            onFocus={(e) => {
-              // First focus: prime the input with the current natural azm so
-              // the user has a starting value to nudge.
-              if (azmInputStr === null) setAzmInputStr(naturalAzmDeg.toFixed(2));
-              e.currentTarget.select();
-            }}
-            className="w-20 px-1.5 py-0.5 border border-gray-300 rounded text-right font-mono"
-            title="Reference azimuth in degrees (0=N, 90=E). Default = wellhead→target bearing."
-          />
-          <span className="text-gray-400">°</span>
-          {azmInputStr !== null && (
-            <button
-              onClick={() => setAzmInputStr(null)}
-              className="ml-1 px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px]"
-              title={`Reset to natural azimuth (${naturalAzmDeg.toFixed(2)}°)`}
-            >
-              Reset
-            </button>
-          )}
-        </div>
+        <VsecAzmControl
+          inputStr={azmInputStr}
+          naturalAzm={naturalAzm}
+          onChange={setAzmInputStr}
+          label="View azm:"
+        />
       </div>
       <ResponsiveContainer width="100%" height="86%">
         <LineChart
