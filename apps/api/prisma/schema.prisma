@@ -1,0 +1,178 @@
+// Prisma schema — directional drilling project store.
+// SQLite for single-file projects equivalent to the old Access .mdb.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id        String    @id @default(cuid())
+  name      String
+  // UnitSystem stored as JSON-encoded string (SQLite has no JSON type).
+  units     String    // JSON: { length, angle, dls }
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  countries Country[]
+}
+
+model Country {
+  id        String  @id @default(cuid())
+  projectId String
+  name      String
+  area      String?
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fields    Field[]
+
+  @@index([projectId])
+}
+
+model Field {
+  id        String     @id @default(cuid())
+  countryId String
+  name      String
+  ns        Float?
+  ew        Float?
+  msl       Float?
+  country   Country    @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  wells     Well[]
+  grids     GridFile[]
+
+  @@index([countryId])
+}
+
+model Well {
+  id           String        @id @default(cuid())
+  fieldId      String
+  name         String
+  ns           Float?
+  ew           Float?
+  msl          Float?
+  wellType     String?
+  tvd          Float?
+  md           Float?
+  comment      String?
+  field        Field         @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  calculations Calculation[]
+
+  @@index([fieldId])
+}
+
+model Calculation {
+  id        String     @id @default(cuid())
+  wellId    String
+  name      String
+  type      String     // "WellDesign" | "SurveyEditor" (SQLite has no enum)
+  well      Well       @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  segments  Segment[]
+  stations  Station[]
+  keypoints Keypoint[]
+
+  @@index([wellId])
+}
+
+// Exact milestone values produced by the dispatcher (KOP / EOC / Target / ...).
+// One Keypoint per role row of each profile group. These come from the
+// builder's analytic equations, NOT by sampling the densified path.
+model Keypoint {
+  id             String      @id @default(cuid())
+  calculationId  String
+  // segmentOrder of the LAST row in the group (the dispatcher's target).
+  segmentOrder   Int
+  // 0..N-1 position within the group; row k of the group reads keypoint k.
+  roleIndex      Int
+  comment        String?
+  md             Float
+  inc            Float
+  azm            Float
+  tvd            Float
+  vsec           Float
+  ns             Float
+  ew             Float
+  dls            Float
+  tf             Float
+  br             Float
+  tr             Float
+  dmd            Float
+  calculation    Calculation @relation(fields: [calculationId], references: [id], onDelete: Cascade)
+
+  @@index([calculationId, segmentOrder, roleIndex])
+}
+
+model Segment {
+  id             String      @id @default(cuid())
+  calculationId  String
+  order          Int
+  profileType    Int
+  // Pascal-style milestone role: KOP / EOC / Target / etc. Null for START.
+  // Each profile spawns N rows (one per role); see profileRoles in the web app.
+  milestoneRole  String?
+  comment        String?
+  md             Float
+  inc            Float
+  azm            Float
+  tvd            Float
+  vsec           Float
+  ns             Float
+  ew             Float
+  dls            Float
+  tf             Float
+  br             Float
+  tr             Float
+  dmd            Float
+  surveyTools    String?
+  calculation    Calculation @relation(fields: [calculationId], references: [id], onDelete: Cascade)
+
+  @@index([calculationId, order])
+}
+
+model Station {
+  id             String      @id @default(cuid())
+  calculationId  String
+  // Position in the densified trajectory (0..N-1, sortable).
+  order          Int
+  // The Segment.order this station belongs to (the dispatcher target row).
+  segmentOrder   Int         @default(0)
+  comment        String?
+  md             Float
+  inc            Float
+  azm            Float
+  tvd            Float
+  vsec           Float
+  ns             Float
+  ew             Float
+  dls            Float
+  tf             Float
+  br             Float
+  tr             Float
+  dmd            Float
+  calculation    Calculation @relation(fields: [calculationId], references: [id], onDelete: Cascade)
+
+  @@index([calculationId, order])
+  @@index([calculationId, segmentOrder])
+}
+
+model GridFile {
+  id        String @id @default(cuid())
+  fieldId   String
+  name      String
+  filename  String
+  xmin      Float
+  xmax      Float
+  ymin      Float
+  ymax      Float
+  xinc      Float
+  yinc      Float
+  ncol      Int
+  nrow      Int
+  units     String
+  errorVal  Float
+  data      Bytes
+  field     Field  @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@index([fieldId])
+}

@@ -1,0 +1,42 @@
+node_modules
+dist
+build
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+.vite
+coverage
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# Claude Code local harness state (personal, not project)
+.claude/settings.local.json
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Prisma generated (dev SQLite — never commit)
+**/dev.db
+**/dev.db-journal
+**/*.db
+**/*.db-journal
+
+# Old Delphi compiled artifacts (kept as reference but not committed)
+old_delphi_code/**/*.dcu
+old_delphi_code/**/*.exe
+old_delphi_code/**/*.identcache
+old_delphi_code/**/*.local
+
+# Scratch files at repo root
+1.txt
+screenshot.png
+*.bmp

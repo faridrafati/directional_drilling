@@ -1,0 +1,30 @@
+{
+  "name": "directional-drilling",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "e2e"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "build": "npm-run-all build:shared build:grd build:api build:web",
+    "build:shared": "npm --workspace packages/shared run build",
+    "build:grd": "npm --workspace packages/grd run build",
+    "build:api": "npm --workspace apps/api run build",
+    "build:web": "npm --workspace apps/web run build",
+    "test": "npm --workspace packages/shared run test && npm --workspace packages/grd run test",
+    "db:migrate": "npm --workspace apps/api run db:migrate",
+    "db:generate": "npm --workspace apps/api run db:generate"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
