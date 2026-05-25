@@ -37,11 +37,59 @@ interface Props {
   /** When false, suppress the chart's own right-hand details panel —
    *  expected when the parent renders a shared one. Default true. */
   showDetailsPanel?: boolean;
+  /** Controlled VSEC view azimuth (string-in-degrees, or null = natural).
+   *  When given, the chart renders the toolbar input + Reset button bound
+   *  to these. Without it, the chart manages its own internal state. */
+  vsecAzmInputStr?: string | null;
+  onVsecAzmInputChange?: (next: string | null) => void;
 }
 
 /** Append a unit suffix in parens if non-empty. "TVD" + "ft" → "TVD (ft)". */
 function withUnit(label: string, unit?: string): string {
   return unit && unit.trim() ? `${label} (${unit})` : label;
+}
+
+/**
+ * Natural VSEC azimuth = bearing from the FIRST station to the LAST station
+ * in the horizontal plane. Used as the default when the user hasn't picked
+ * a custom view azimuth.
+ *
+ *   atan2(ΔEW, ΔNS) ⇒ azm in radians, clockwise from north
+ */
+export function naturalVsecAzm(stations: { ns: number; ew: number }[]): number {
+  if (stations.length < 2) return 0;
+  const first = stations[0];
+  const last = stations[stations.length - 1];
+  const dn = last.ns - first.ns;
+  const de = last.ew - first.ew;
+  if (dn === 0 && de === 0) return 0;
+  return Math.atan2(de, dn);
+}
+
+/**
+ * Parse the user's VSEC azimuth input (string in degrees, or null = natural).
+ * Returns the final reference azimuth in radians.
+ */
+export function resolveVsecAzm(inputStr: string | null, naturalAzm: number): number {
+  if (inputStr === null) return naturalAzm;
+  const cleaned = inputStr.trim();
+  if (!cleaned) return naturalAzm;
+  const deg = Number(cleaned);
+  if (!Number.isFinite(deg)) return naturalAzm;
+  return (deg * Math.PI) / 180;
+}
+
+/**
+ * Recompute VSEC for a station's (NS, EW) using a chosen reference azimuth.
+ * Mirrors Pascal Unit02.pas:2592 and the dispatcher's computeVsecPostPass.
+ */
+export function projectVsec(
+  ns: number, ew: number,
+  origin: { ns: number; ew: number },
+  refAzm: number,
+): number {
+  return (ns - origin.ns) * Math.cos(refAzm)
+       + (ew - origin.ew) * Math.sin(refAzm);
 }
 
 /**
@@ -91,6 +139,7 @@ function toDetails(s: StationRow): StationDetails {
 
 export function VerticalSectionChart({
   stations, lengthUnit = "ft", onHover, showDetailsPanel = true,
+  vsecAzmInputStr, onVsecAzmInputChange,
 }: Props) {
   // The vertical section is the projection of each station's horizontal
   // offset (NS, EW) onto a reference direction. Pascal Form23 lets the
@@ -98,28 +147,19 @@ export function VerticalSectionChart({
   // wellhead → last-station bearing (so VSEC matches the planned wellbore
   // axis). Override it from this chart's toolbar to view the trajectory
   // along any other azimuth (e.g. lease line, anti-collision corridor).
-  const naturalAzm = useMemo(() => {
-    if (stations.length < 2) return 0;
-    const first = stations[0];
-    const last = stations[stations.length - 1];
-    const dn = last.ns - first.ns;
-    const de = last.ew - first.ew;
-    if (dn === 0 && de === 0) return 0;
-    return Math.atan2(de, dn);  // azm = clockwise from north
-  }, [stations]);
+  const naturalAzm = useMemo(() => naturalVsecAzm(stations), [stations]);
 
-  // User-chosen azimuth in DEGREES (or null = use natural). Stored as
-  // a string so the input field can be edited freely; parsed when used.
-  const [azmInputStr, setAzmInputStr] = useState<string | null>(null);
-  const customAzmRad = (() => {
-    if (azmInputStr === null) return null;
-    const cleaned = azmInputStr.trim();
-    if (!cleaned) return null;
-    const deg = Number(cleaned);
-    if (!Number.isFinite(deg)) return null;
-    return (deg * Math.PI) / 180;
-  })();
-  const refAzm = customAzmRad ?? naturalAzm;
+  // The toolbar input is "controlled" when the parent passes
+  // vsecAzmInputStr/onVsecAzmInputChange (so the grid + stations tables can
+  // share the same azm), and "uncontrolled" otherwise.
+  const [localStr, setLocalStr] = useState<string | null>(null);
+  const azmInputStr = vsecAzmInputStr !== undefined ? vsecAzmInputStr : localStr;
+  const setAzmInputStr = (v: string | null) => {
+    if (onVsecAzmInputChange) onVsecAzmInputChange(v);
+    else setLocalStr(v);
+  };
+
+  const refAzm = resolveVsecAzm(azmInputStr, naturalAzm);
   const naturalAzmDeg = (naturalAzm * 180 / Math.PI + 360) % 360;
 
   const data = useMemo(() => {
@@ -152,12 +192,15 @@ export function VerticalSectionChart({
   const tip = data[data.length - 1];
   const chartCard = (
     <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0">
-      <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
-        <h3 className="text-sm font-medium text-gray-700">
+      {/* Title + view-angle controls on ONE line (no flex-wrap). The title
+          shrinks via min-w-0 + truncate if needed; the input + reset stay
+          intact on the right. */}
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <h3 className="text-sm font-medium text-gray-700 truncate min-w-0">
           Vertical Section — {withUnit("VSEC", lengthUnit)} × {withUnit("TVD", lengthUnit)}
         </h3>
-        <div className="flex items-center gap-1.5 text-xs">
-          <label htmlFor="vsec-azm" className="text-gray-500 whitespace-nowrap">
+        <div className="flex items-center gap-1.5 text-xs whitespace-nowrap shrink-0">
+          <label htmlFor="vsec-azm" className="text-gray-500">
             View azm:
           </label>
           <input

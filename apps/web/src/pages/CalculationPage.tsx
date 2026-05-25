@@ -19,6 +19,9 @@ const WellViewer3D = lazy(() =>
 const VerticalSectionChart = lazy(() =>
   import("../components/WellCharts.js").then((m) => ({ default: m.VerticalSectionChart }))
 );
+// Math helpers for the VSEC reference azimuth — kept in WellCharts so the
+// chart toolbar and the grid/stations tables agree on the formula.
+import { naturalVsecAzm, resolveVsecAzm, projectVsec } from "../components/WellCharts.js";
 const PlanViewChart = lazy(() =>
   import("../components/WellCharts.js").then((m) => ({ default: m.PlanViewChart }))
 );
@@ -129,6 +132,23 @@ export function CalculationPage() {
 
   const stations = data?.stations ?? [];
   const lastResult = calculateMut.data;
+
+  // ─── VSEC view-azimuth (shared between the chart + the grid/stations tables) ───
+  // null = use the natural azm (wellhead → last-station bearing); any string
+  // means the user typed an override in the VSEC chart's toolbar. Persisting
+  // it here lets the editable grid and Calculated Stations table reproject
+  // their VSEC columns whenever the chart toolbar changes.
+  const [vsecAzmInputStr, setVsecAzmInputStr] = useState<string | null>(null);
+  const naturalAzmRad = useMemo(() => naturalVsecAzm(stations), [stations]);
+  const vsecRefAzm = resolveVsecAzm(vsecAzmInputStr, naturalAzmRad);
+  // Helper that any table consumer can use to project a row's (ns, ew) into
+  // the chosen reference direction. Origin is always stations[0] (wellhead).
+  const projectVsecAt = useMemo(() => {
+    const origin = stations.length > 0
+      ? { ns: stations[0].ns, ew: stations[0].ew }
+      : { ns: 0, ew: 0 };
+    return (ns: number, ew: number) => projectVsec(ns, ew, origin, vsecRefAzm);
+  }, [stations, vsecRefAzm]);
 
   /**
    * Map from a segment's order to its profile-group number ("0" for the
@@ -365,6 +385,7 @@ export function CalculationPage() {
             onRemove={removeRow}
             onPickProfile={(order) => setPicker({ kind: "edit", order })}
             lengthUnit={lengthUnit}
+            projectVsec={projectVsecAt}
           />
           {stations.length > 0 && (
             <div className="mt-6">
@@ -381,6 +402,7 @@ export function CalculationPage() {
                 keypoints={data?.keypoints ?? []}
                 lengthUnit={lengthUnit}
                 groupLabelByOrder={groupLabelByOrder}
+                projectVsec={projectVsecAt}
               />
             </div>
           )}
@@ -396,7 +418,12 @@ export function CalculationPage() {
           />
         )}
         {tab === "charts" && (
-          <ChartsView stations={stations} lengthUnit={lengthUnit} />
+          <ChartsView
+            stations={stations}
+            lengthUnit={lengthUnit}
+            vsecAzmInputStr={vsecAzmInputStr}
+            onVsecAzmInputChange={setVsecAzmInputStr}
+          />
         )}
       </Suspense>
       {tab === "export" && (
@@ -446,10 +473,12 @@ export function CalculationPage() {
  * shared panel is the deep-dive inspector with the full Pascal column set.
  */
 function ChartsView({
-  stations, lengthUnit,
+  stations, lengthUnit, vsecAzmInputStr, onVsecAzmInputChange,
 }: {
   stations: NonNullable<CalculationDetail["stations"]>;
   lengthUnit: string;
+  vsecAzmInputStr: string | null;
+  onVsecAzmInputChange: (next: string | null) => void;
 }) {
   const [hovered, setHovered] = useState<StationDetails | null>(null);
 
@@ -461,6 +490,8 @@ function ChartsView({
           lengthUnit={lengthUnit}
           onHover={setHovered}
           showDetailsPanel={false}
+          vsecAzmInputStr={vsecAzmInputStr}
+          onVsecAzmInputChange={onVsecAzmInputChange}
         />
         <PlanViewChart
           stations={stations}
@@ -573,9 +604,15 @@ interface SegmentGridProps {
   onPickProfile: (order: number) => void;
   /** Project-scoped length unit shown next to length-typed column headers. */
   lengthUnit: string;
+  /** Reproject (ns, ew) onto the user's chosen VSEC reference azimuth.
+   *  Overrides the segment row's stored vsec so it stays in sync with
+   *  the VSEC chart's toolbar. */
+  projectVsec: (ns: number, ew: number) => number;
 }
 
-function SegmentGrid({ segments, keypoints, stations, onCell, onRemove, onPickProfile, lengthUnit }: SegmentGridProps) {
+function SegmentGrid({
+  segments, keypoints, stations, onCell, onRemove, onPickProfile, lengthUnit, projectVsec,
+}: SegmentGridProps) {
   /**
    * For each segment row, the exact algebraic milestone that should populate
    * its read-only cells. The dispatcher returns one keypoint per role within
@@ -823,10 +860,18 @@ function SegmentGrid({ segments, keypoints, stations, onCell, onRemove, onPickPr
                       computedStation && c.key in computedStation
                         ? (computedStation as unknown as Record<string, unknown>)[c.key]
                         : undefined;
-                    const raw =
+                    let raw: SegmentRow[keyof SegmentRow] | number | undefined =
                       !editable && typeof rawFromStation === "number"
                         ? rawFromStation
                         : rawFromSegment;
+                    // VSEC depends on the user-chosen view azimuth in the
+                    // Charts tab. Reproject the row's (ns, ew) here so the
+                    // grid value follows the chart's toolbar live.
+                    if (c.key === "vsec") {
+                      const sourceNs = (computedStation?.ns ?? s.ns) as number;
+                      const sourceEw = (computedStation?.ew ?? s.ew) as number;
+                      raw = projectVsec(sourceNs, sourceEw);
+                    }
                     const numeric = typeof raw === "number" ? raw : 0;
                     const isAngleDeg = c.unit === "deg";
                     const isDlsDeg = c.unit === "deg/L";
@@ -912,6 +957,7 @@ function StationsTable({
   keypoints,
   lengthUnit,
   groupLabelByOrder,
+  projectVsec,
 }: {
   stations: NonNullable<CalculationDetail["stations"]>;
   keypoints: KeypointRow[];
@@ -919,6 +965,9 @@ function StationsTable({
   /** segmentOrder → group-number string ("0", "1", "2", …). When the order
    *  isn't in the map the row falls back to its raw segmentOrder. */
   groupLabelByOrder: Map<number, string>;
+  /** Reproject (ns, ew) onto the user's chosen VSEC reference azimuth.
+   *  Lets this table follow the VSEC chart's toolbar live. */
+  projectVsec: (ns: number, ew: number) => number;
 }) {
   type Row = {
     key: string;
@@ -965,7 +1014,11 @@ function StationsTable({
         isKeypoint: false,
         label: groupFor(s.segmentOrder),
         comment: s.comment ?? "",
-        md: s.md, inc: s.inc, azm: s.azm, tvd: s.tvd, vsec: s.vsec,
+        md: s.md, inc: s.inc, azm: s.azm, tvd: s.tvd,
+        // Reproject onto the current VSEC reference azimuth so this table
+        // follows the chart toolbar live — bypasses the dispatcher's
+        // persisted s.vsec which was computed with the natural azm.
+        vsec: projectVsec(s.ns, s.ew),
         ew: s.ew, ns: s.ns, dls: s.dls, tf: s.tf,
         br: s.br, tr: s.tr, dmd: s.dmd,
       }));
@@ -974,7 +1027,8 @@ function StationsTable({
       isKeypoint: true,
       label: `${groupFor(k.segmentOrder)}-${k.roleIndex + 1}`,
       comment: k.comment ?? "",
-      md: k.md, inc: k.inc, azm: k.azm, tvd: k.tvd, vsec: k.vsec,
+      md: k.md, inc: k.inc, azm: k.azm, tvd: k.tvd,
+      vsec: projectVsec(k.ns, k.ew),
       ew: k.ew, ns: k.ns, dls: k.dls, tf: k.tf,
       br: k.br, tr: k.tr, dmd: k.dmd,
     }));
@@ -994,7 +1048,7 @@ function StationsTable({
       merged[i].dmd = i === 0 ? 0 : merged[i].md - merged[i - 1].md;
     }
     return merged;
-  }, [stations, keypoints]);
+  }, [stations, keypoints, projectVsec]);
 
   return (
     <div className="overflow-x-auto bg-white border border-gray-200 rounded max-h-96 overflow-y-auto">
