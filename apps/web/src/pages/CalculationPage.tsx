@@ -395,7 +395,12 @@ export function CalculationPage() {
           />
         )}
         {tab === "charts" && (
-          <div className="space-y-4">
+          // Side-by-side on wide screens (xl: ≥1280 px) so the user can see
+          // VSEC × TVD and EW × NS at the same time without scrolling. Falls
+          // back to a single column on narrower viewports because each chart
+          // already carries a ~290 px side panel — two of them side-by-side
+          // need ≥1100 px of horizontal room to stay readable.
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <VerticalSectionChart stations={stations} lengthUnit={lengthUnit} />
             <PlanViewChart stations={stations} lengthUnit={lengthUnit} />
           </div>
