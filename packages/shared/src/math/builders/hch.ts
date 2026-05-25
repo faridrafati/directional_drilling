@@ -41,6 +41,23 @@ export function hch(input: HCHInput): BuilderResult {
   const crvln = (theta - theta1) / dls;
 
   if (a < 0 || b < 0 || crvln < 0) {
+    // Port of Pascal Unit02.pas:2912-2952 min/max-DLS hint. The exact Pascal
+    // expression uses post-projection inc values which we don't have here,
+    // but the chord-vs-tangent geometry gives a useful approximation:
+    //   |tgt|² = (tvd-prev.tvd)² + horizontal² (here tgty² + tgtx²)
+    //   min radius ≈ chord / (2 · sin(Δinc/2))
+    // → min |DLS| (rad / unit) ≈ 2 · sin(Δinc/2) / chord.
+    const chord = Math.sqrt(tgtx * tgtx + tgty * tgty);
+    const sinHalf = Math.sin(Math.abs(theta - theta1) / 2);
+    if (chord > 0 && sinHalf > 0) {
+      const minDlsRad = (2 * sinHalf) / chord;
+      const minDlsDeg100 = (minDlsRad * 18000) / Math.PI;
+      const which = theta1 > theta ? "Maximum" : "Minimum";
+      return {
+        ok: false, keyPoints: [], stations: [],
+        reason: `HCH: geometry infeasible. ${which} usable DLS ≈ ${minDlsDeg100.toFixed(3)}°/100ft.`,
+      };
+    }
     return { ok: false, keyPoints: [], stations: [], reason: "Geometry infeasible (negative segment)" };
   }
 

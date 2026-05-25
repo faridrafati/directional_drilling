@@ -526,15 +526,26 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile }: S
     return map;
   }, [segments, keypoints]);
 
+  // Full Pascal column set (Unit02.pas:54-100 column convention):
+  //   MD, Inc, Azm, TVD, VSEC, NS, EW, DLS, TF, BR, TR, DMD
+  // VSEC and TF are read-only (computed by the dispatcher's post-passes).
+  // BR/TR are only editable on multi-curve combo profiles (codes 60..103)
+  // — see editPolicy.ts — but we always SHOW them so the user can see what
+  // was computed and so the grid never has columns appear/disappear under
+  // them mid-edit.
   const columns: Array<{ key: EditableKey; label: string; unit?: "deg" | "deg/L" }> = useMemo(() => [
     { key: "comment", label: "Comment" },
     { key: "md", label: "MD" },
     { key: "inc", label: "Inc", unit: "deg" },
     { key: "azm", label: "Azm", unit: "deg" },
     { key: "tvd", label: "TVD" },
-    { key: "ew", label: "EW" },
+    { key: "vsec", label: "VSEC" },
     { key: "ns", label: "NS" },
+    { key: "ew", label: "EW" },
     { key: "dls", label: "DLS", unit: "deg/L" },
+    { key: "tf", label: "TF", unit: "deg" },
+    { key: "br", label: "BR", unit: "deg/L" },
+    { key: "tr", label: "TR", unit: "deg/L" },
     { key: "dmd", label: "DMD" },
   ], []);
 
@@ -556,6 +567,13 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile }: S
   const inputCls =
     "w-20 px-1 py-0.5 border border-transparent hover:border-gray-300 " +
     "focus:border-blue-500 focus:outline-none rounded";
+  // Tighter width for rate/angle columns whose values fit in fewer chars
+  // (TF, DLS, BR, TR all display as e.g. "12.345" — 6 chars max).
+  const inputClsNarrow =
+    "w-14 px-1 py-0.5 border border-transparent hover:border-gray-300 " +
+    "focus:border-blue-500 focus:outline-none rounded";
+  const isNarrowCol = (key: EditableKey) =>
+    key === "tf" || key === "dls" || key === "br" || key === "tr";
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
@@ -567,11 +585,19 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile }: S
           <tr className="bg-gray-50 border-b border-gray-200 text-gray-700">
             <th className="sticky left-0 z-10 bg-gray-50 px-2 py-2 text-left w-10 border-r border-gray-200">#</th>
             <th className="sticky left-10 z-10 bg-gray-50 px-2 py-2 text-left w-28 border-r border-gray-200">Profile</th>
-            {columns.map((c) => (
-              <th key={String(c.key)} className="px-2 py-2 text-left font-medium whitespace-nowrap">
-                {c.label}{c.unit === "deg" ? " (°)" : c.unit === "deg/L" ? " (°/L)" : ""}
-              </th>
-            ))}
+            {columns.map((c) => {
+              const narrow = isNarrowCol(c.key);
+              return (
+                <th
+                  key={String(c.key)}
+                  className={`${narrow ? "px-1" : "px-2"} py-2 text-left font-medium whitespace-nowrap${
+                    narrow ? " text-[11px]" : ""
+                  }`}
+                >
+                  {c.label}{c.unit === "deg" ? " (°)" : c.unit === "deg/L" ? " (°/L)" : ""}
+                </th>
+              );
+            })}
             <th className="px-2 py-2 w-8"></th>
           </tr>
         </thead>
@@ -667,13 +693,20 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile }: S
                     const numeric = typeof raw === "number" ? raw : 0;
                     const isAngleDeg = c.unit === "deg";
                     const isDlsDeg = c.unit === "deg/L";
+                    // DLS is shown as a magnitude only — the dispatcher may have
+                    // chosen a negative sign internally (drop curve / branch flip)
+                    // but the user-facing convention matches Pascal:
+                    //   wlpt2[1].dls := abs(wlpta2[1].dls).
+                    // BR/TR keep their sign because direction is meaningful there
+                    // (negative BR = drop, negative TR = left turn).
+                    const isDlsCell = c.key === "dls";
 
-                    const format = (n: number) =>
-                      isAngleDeg
-                        ? rad2deg(n).toFixed(2)
-                        : isDlsDeg
-                          ? (rad2deg(n) * 100).toFixed(3)
-                          : n.toFixed(3);
+                    const format = (n: number) => {
+                      if (isDlsCell) return (Math.abs(rad2deg(n)) * 100).toFixed(3);
+                      if (isAngleDeg) return rad2deg(n).toFixed(2);
+                      if (isDlsDeg) return (rad2deg(n) * 100).toFixed(3);
+                      return n.toFixed(3);
+                    };
                     const parse = (str: string) => {
                       const cleaned = str.trim();
                       if (cleaned === "" || cleaned === "-" || cleaned === ".") return null;
@@ -686,14 +719,14 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile }: S
                           : n;
                     };
                     return (
-                      <td key={String(c.key)} className="px-2 py-1">
+                      <td key={String(c.key)} className={`${isNarrowCol(c.key) ? "px-1" : "px-2"} py-1`}>
                         <NumberCell
                           value={numeric}
                           format={format}
                           parse={parse}
                           onCommit={(n) => onCell(i, c.key, n as never)}
                           readOnly={!editable}
-                          className={inputCls}
+                          className={isNarrowCol(c.key) ? inputClsNarrow : inputCls}
                         />
                       </td>
                     );
@@ -749,8 +782,9 @@ function StationsTable({
     isKeypoint: boolean;
     label: string;
     comment: string;
-    md: number; inc: number; azm: number; tvd: number;
-    ew: number; ns: number; dls: number; dmd: number;
+    md: number; inc: number; azm: number; tvd: number; vsec: number;
+    ew: number; ns: number; dls: number; tf: number;
+    br: number; tr: number; dmd: number;
   };
 
   const rows = useMemo<Row[]>(() => {
@@ -779,16 +813,18 @@ function StationsTable({
         isKeypoint: false,
         label: String(s.order),
         comment: s.comment ?? "",
-        md: s.md, inc: s.inc, azm: s.azm, tvd: s.tvd,
-        ew: s.ew, ns: s.ns, dls: s.dls, dmd: s.dmd,
+        md: s.md, inc: s.inc, azm: s.azm, tvd: s.tvd, vsec: s.vsec,
+        ew: s.ew, ns: s.ns, dls: s.dls, tf: s.tf,
+        br: s.br, tr: s.tr, dmd: s.dmd,
       }));
     const keypointRows: Row[] = keypoints.map((k) => ({
       key: `k-${k.id}`,
       isKeypoint: true,
       label: `${k.segmentOrder}.${k.roleIndex + 1}`,
       comment: k.comment ?? "",
-      md: k.md, inc: k.inc, azm: k.azm, tvd: k.tvd,
-      ew: k.ew, ns: k.ns, dls: k.dls, dmd: k.dmd,
+      md: k.md, inc: k.inc, azm: k.azm, tvd: k.tvd, vsec: k.vsec,
+      ew: k.ew, ns: k.ns, dls: k.dls, tf: k.tf,
+      br: k.br, tr: k.tr, dmd: k.dmd,
     }));
     // Merge + sort by MD. (For equal MDs we'd still want keypoints last, but
     // de-dup already removed colliding stations.)
@@ -803,8 +839,30 @@ function StationsTable({
       <table className="min-w-full text-xs">
         <thead className="sticky top-0 bg-gray-50">
           <tr className="border-b border-gray-200">
-            {["#", "Comment", "MD", "Inc (°)", "Azm (°)", "TVD", "EW", "NS", "DLS (°/L)", "DMD"].map((h) => (
-              <th key={h} className="px-2 py-1 text-left">{h}</th>
+            {[
+              { label: "#" },
+              { label: "Comment" },
+              { label: "MD" },
+              { label: "Inc (°)" },
+              { label: "Azm (°)" },
+              { label: "TVD" },
+              { label: "VSEC" },
+              { label: "NS" },
+              { label: "EW" },
+              { label: "DLS (°/L)", narrow: true },
+              { label: "TF (°)",    narrow: true },
+              { label: "BR (°/L)",  narrow: true },
+              { label: "TR (°/L)",  narrow: true },
+              { label: "DMD" },
+            ].map((h) => (
+              <th
+                key={h.label}
+                className={`px-${h.narrow ? "1" : "2"} py-1 text-left whitespace-nowrap${
+                  h.narrow ? " text-[11px]" : ""
+                }`}
+              >
+                {h.label}
+              </th>
             ))}
           </tr>
         </thead>
@@ -824,9 +882,13 @@ function StationsTable({
               <td className="px-2 py-1">{rad2deg(r.inc).toFixed(2)}</td>
               <td className="px-2 py-1">{rad2deg(r.azm).toFixed(2)}</td>
               <td className="px-2 py-1">{r.tvd.toFixed(3)}</td>
-              <td className="px-2 py-1">{r.ew.toFixed(3)}</td>
+              <td className="px-2 py-1">{r.vsec.toFixed(3)}</td>
               <td className="px-2 py-1">{r.ns.toFixed(3)}</td>
-              <td className="px-2 py-1">{(rad2deg(r.dls) * 100).toFixed(3)}</td>
+              <td className="px-2 py-1">{r.ew.toFixed(3)}</td>
+              <td className="px-1 py-1 w-16">{(Math.abs(rad2deg(r.dls)) * 100).toFixed(3)}</td>
+              <td className="px-1 py-1 w-14">{rad2deg(r.tf).toFixed(2)}</td>
+              <td className="px-1 py-1 w-16">{(rad2deg(r.br) * 100).toFixed(3)}</td>
+              <td className="px-1 py-1 w-16">{(rad2deg(r.tr) * 100).toFixed(3)}</td>
               <td className="px-2 py-1">{r.dmd.toFixed(3)}</td>
             </tr>
           ))}

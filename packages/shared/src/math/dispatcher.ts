@@ -40,6 +40,9 @@ import { hch } from "./builders/hch.js";
 import { ch2dc1 } from "./builders/ch2dc1.js";
 import { ch2dc2 } from "./builders/ch2dc2.js";
 import { cc2d } from "./builders/cc2d.js";
+import { curveEoc } from "./builders/curveEoc.js";
+import { flyto } from "./builders/flyto.js";
+import { mcombo } from "./builders/mcombo.js";
 import type { BuilderResult } from "./builders/types.js";
 
 export interface DispatchOptions {
@@ -129,7 +132,188 @@ export function dispatch(segments: Segment[], options: DispatchOptions = {}): Di
     keypoints.push({ segmentOrder: target.order, points: kp });
   }
 
+  // Post-passes: fill VSEC, TF, BR, TR on every station and keypoint.
+  //
+  // Pascal sets these in the same loop as the dispatch (Unit02.pas:2578-2624,
+  // 4471-4472, 5253-5263); doing them here as single passes over the final
+  // station array is equivalent and simpler. All four depend only on the
+  // completed path geometry.
+  computeVsecPostPass(sorted, stations, keypoints);
+  computeTfPostPass(stations, keypoints);
+  computeBrTrPostPass(stations, keypoints);
+
   return { ok: errors.length === 0, stations, keypoints, errors };
+}
+
+/**
+ * Fill BR (build-rate) and TR (turn-rate) on every station and keypoint.
+ *
+ * Port of Unit02.pas:2578-2579, 2585-2586, 4471-4472, etc.
+ *
+ *   BR = (this.inc - prev.inc) / this.dmd
+ *   TR = (this.azm - prev.azm) / this.dmd
+ *
+ * Both are constant along a single arc, so the values land identical on
+ * every densified station of that arc. We compute station-by-station using
+ * consecutive deltas. Same for keypoints with prev = the previous keypoint
+ * (across group boundaries — Pascal's `wlpt[0]` refers to the running
+ * previous keypoint, not just the local group's).
+ *
+ * Edge cases:
+ *   - First station / first keypoint: no prev → BR=TR=0.
+ *   - dmd = 0 (duplicate MD): skip the divide.
+ *   - Azimuth wraparound (±π discontinuity): unwrap before subtracting so
+ *     TR doesn't spike to ±2π/dmd between e.g. 179°→-179°.
+ */
+function computeBrTrPostPass(
+  stations: Station[],
+  keypoints: DispatchResult["keypoints"],
+): void {
+  for (let i = 1; i < stations.length; i++) {
+    const s = stations[i];
+    const p = stations[i - 1];
+    if (!s.dmd || s.dmd === 0) continue;
+    s.br = (s.inc - p.inc) / s.dmd;
+    s.tr = unwrapAzm(s.azm - p.azm) / s.dmd;
+  }
+
+  // Keypoints flow across groups too. Pascal uses the previous keypoint OR
+  // the running previous station as the source of "prev" for the very first
+  // keypoint (Unit02.pas:2578-2579 `wlpt2[0].br:=(wlpt2[0].inc-wlptp.inc)/wlpt2[0].dmd`,
+  // where `wlptp` is the previous group's last computed station). We mirror
+  // that by inserting the START station at the front of the flat walk.
+  const flat: Station[] = [];
+  if (stations.length > 0) flat.push(stations[0]); // implicit start as prev
+  for (const g of keypoints) flat.push(...g.points);
+  for (let k = 1; k < flat.length; k++) {
+    const cur = flat[k];
+    const prev = flat[k - 1];
+    if (!cur.dmd || cur.dmd === 0) continue;
+    cur.br = (cur.inc - prev.inc) / cur.dmd;
+    cur.tr = unwrapAzm(cur.azm - prev.azm) / cur.dmd;
+  }
+}
+
+/** Bring an azimuth-delta into [-π, π] so 179° → -179° reads as -2°, not +358°. */
+function unwrapAzm(delta: number): number {
+  let d = delta;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  return d;
+}
+
+/**
+ * Fill VSEC on every station + keypoint.
+ *
+ * Port of Unit02.pas:2588-2595 and 5253-5263.
+ *
+ *   VSEC at station S = (S.ns·v0.ns + S.ew·v0.ew) / |v0|
+ *
+ * where v0 = (last-target.NS − start.NS, last-target.EW − start.EW).
+ *
+ * v0 is the **planned wellbore bearing in the horizontal plane** — projecting
+ * each station's (ns, ew) onto v0 gives the signed distance along that
+ * bearing, which is what reservoir engineers call "vertical section." It
+ * matches the chart's x-axis on the VSEC plot.
+ *
+ * If v0 is degenerate (vertical well — last target has same NS/EW as start),
+ * leave VSEC at 0 on every station.
+ */
+function computeVsecPostPass(
+  sortedInput: Segment[],
+  stations: Station[],
+  keypoints: DispatchResult["keypoints"],
+): void {
+  if (sortedInput.length < 2) return;
+  const start = sortedInput[0];
+  const lastTarget = sortedInput[sortedInput.length - 1];
+  const refNs = lastTarget.ns - start.ns;
+  const refEw = lastTarget.ew - start.ew;
+  const refLen = Math.sqrt(refNs * refNs + refEw * refEw);
+  if (refLen === 0) return;
+
+  const project = (ns: number, ew: number): number =>
+    ((ns - start.ns) * refNs + (ew - start.ew) * refEw) / refLen;
+
+  for (const s of stations) {
+    s.vsec = project(s.ns, s.ew);
+  }
+  for (const g of keypoints) {
+    for (const p of g.points) {
+      p.vsec = project(p.ns, p.ew);
+    }
+  }
+}
+
+/**
+ * Fill TF (tool face) on every keypoint where a curve starts/changes.
+ *
+ * Port of Unit02.pas:2596-2624 (and the same identity replicated for each
+ * profile). The spherical-triangle formula at the START of a curve segment
+ * gives the angle (around the wellbore axis at that point) between high-side
+ * and the curve's instantaneous tilt direction:
+ *
+ *   DL  = dls · dmd                       (total dogleg over the next curve)
+ *   sign = sign( sin(I2) · sin(A2−A1) / sin(DL) )
+ *   |TF| = arccos( (cos(I1)·cos(DL) − cos(I2)) / (sin(I1)·sin(DL)) )
+ *   TF  = sign · |TF|
+ *
+ * Pascal sets TF at keypoint K based on the NEXT keypoint's curve geometry
+ * (so the last keypoint of the trajectory has TF=0). We do the same: walk
+ * each profile group's keypoints, and for each (Kᵢ, Kᵢ₊₁) pair where the
+ * next keypoint's dls and dmd are non-zero, fill Kᵢ.tf using Kᵢ₊₁'s curve.
+ *
+ * For stations: Pascal does NOT set TF on the densified rows — they keep
+ * tf=0 — so we mirror that. (The TF column on the densified path is rarely
+ * meaningful anyway: it's a curve-start property, not a per-1ft-MD property.)
+ */
+function computeTfPostPass(
+  _stations: Station[],
+  keypoints: DispatchResult["keypoints"],
+): void {
+  // Flatten every keypoint into one ordered list so curve transitions ACROSS
+  // group boundaries are seen (e.g. CH ends → next group's CH3D starts).
+  const all: Station[] = [];
+  for (const g of keypoints) all.push(...g.points);
+
+  for (let k = 0; k < all.length - 1; k++) {
+    const p = all[k];
+    const n = all[k + 1];
+    p.tf = toolFaceAngle(p.inc, p.azm, n.inc, n.azm, n.dls, n.dmd);
+  }
+  // Last keypoint has no following curve → TF=0 by convention.
+  if (all.length > 0) {
+    all[all.length - 1].tf = 0;
+  }
+}
+
+/**
+ * Spherical-triangle tool-face formula. Returns a signed angle in radians.
+ *
+ * Returns 0 if the geometry is degenerate (DL=0, vertical pivot, or arg
+ * outside [−1,1] due to floating-point drift).
+ */
+function toolFaceAngle(
+  prevInc: number, prevAzm: number,
+  curInc: number, curAzm: number,
+  dls: number, dmd: number,
+): number {
+  const DL = dls * dmd;
+  const sDL = Math.sin(DL);
+  if (sDL === 0) return 0;
+  const sI1 = Math.sin(prevInc);
+  if (sI1 === 0) return 0;
+
+  const arg = (Math.cos(prevInc) * Math.cos(DL) - Math.cos(curInc)) / (sI1 * sDL);
+  // Clamp against fp-drift outside [-1, 1] — arccos NaNs otherwise.
+  const clamped = Math.max(-1, Math.min(1, arg));
+  const magnitude = Math.acos(clamped);
+
+  const dA = curAzm - prevAzm;
+  const sI2 = Math.sin(curInc);
+  const sDA = Math.sin(dA);
+  if (sI2 * sDA === 0) return magnitude;
+  return Math.sign((sI2 * sDA) / sDL) * magnitude;
 }
 
 /**
@@ -347,11 +531,114 @@ function buildOne(
       );
     }
 
+    case ProfileType.FLYTO_1:
+    case ProfileType.FLYTO_2:
+    case ProfileType.FLYTO_3:
+    case ProfileType.FLYTO_4:
+    case ProfileType.FLYTO_5: {
+      // FLYTO codes 51..55. The "fly-to" curve extends from prev using
+      // prev.tf as the initial tool-face. Pascal pulls tf from the previous
+      // station's TF field — we now compute that as a post-pass on every
+      // keypoint, so by the time we get here the running last-station's tf
+      // is meaningful for non-zero curves.
+      const variantMap: Record<number, 1 | 2 | 3 | 4 | 5> = {
+        [ProfileType.FLYTO_1]: 1,
+        [ProfileType.FLYTO_2]: 2,
+        [ProfileType.FLYTO_3]: 3,
+        [ProfileType.FLYTO_4]: 4,
+        [ProfileType.FLYTO_5]: 5,
+      };
+      const variant = variantMap[target.typ];
+      return tryDlsSigns([target.dls || 0], ([d]) => {
+        const r = flyto({
+          variant,
+          theta1: prev.inc,
+          prevAzm: prev.azm,
+          prevTvd: prev.tvd,
+          prevMd: prev.md,
+          prevTf: prev.tf,
+          md: target.md || undefined,
+          tvd: target.tvd || undefined,
+          dmd: target.dmd || undefined,
+          inc: target.inc || undefined,
+          azm: target.azm || undefined,
+          dls: d,
+          ppf,
+        });
+        if (!r.ok) return r;
+        const azm = r.solved.azm ?? prev.azm;
+        const translated = r.stations.map((s) => translate2DTo3D(s, prev, azm));
+        const keyTranslated = r.keyPoints.map((s) => translate2DTo3D(s, prev, azm));
+        return { ok: true, keyPoints: keyTranslated, stations: translated };
+      });
+    }
+
+    case ProfileType.CURVE_E1:
+    case ProfileType.CURVE_E2:
+    case ProfileType.CURVE_E3:
+    case ProfileType.CURVE_E4:
+    case ProfileType.CURVE_E5: {
+      // Five single-curve variants (Pascal rocal=31..35). Each derives one
+      // missing variable from the user's inputs, then builds a c3 curve.
+      // See `curveEoc.ts` for the per-variant math.
+      const variantMap: Record<number, 1 | 2 | 3 | 4 | 5> = {
+        [ProfileType.CURVE_E1]: 1,
+        [ProfileType.CURVE_E2]: 2,
+        [ProfileType.CURVE_E3]: 3,
+        [ProfileType.CURVE_E4]: 4,
+        [ProfileType.CURVE_E5]: 5,
+      };
+      const variant = variantMap[target.typ];
+      return tryDlsSigns([target.dls || 0], ([d]) => {
+        const r = curveEoc({
+          variant,
+          theta1: prev.inc,
+          prevAzm: prev.azm,
+          prevTvd: prev.tvd,
+          prevMd: prev.md,
+          md: target.md || undefined,
+          inc: target.inc || undefined,
+          azm: target.azm || undefined,
+          tvd: target.tvd || undefined,
+          dls: d || undefined,
+          ppf,
+        });
+        if (!r.ok) return r;
+        // c3 returns stations in the 2D (ew, tvd) plane with ns=0.
+        // Translate into 3D using the user-supplied or derived azimuth.
+        const azm = r.solved.azm ?? target.azm ?? prev.azm;
+        const translated = r.stations.map((s) => translate2DTo3D(s, prev, azm));
+        const keyTranslated = r.keyPoints.map((s) => translate2DTo3D(s, prev, azm));
+        return { ok: true, keyPoints: keyTranslated, stations: translated };
+      });
+    }
+
     default: {
-      // Single-curve fallback for codes 31..35, 51..55, 61..103.
-      // Treat as `c3` from prev.inc to target.inc at target.dls.
-      // Either sign is acceptable: c3's `md = (theta2 - theta1)/dls` flips
-      // negative for a drop curve unless dls is negative too.
+      // Multi-curve combos 61..103 — Pascal `trunc(code/10) ∈ {6,7,8,9,10}`,
+      // sub-types {1=BR, 2=TR, 3=both}. The mcombo builder derives the missing
+      // scalars from the user's BR/TR/MD/DMD/INC/AZM inputs and runs c3.
+      if (target.typ >= 60 && target.typ <= 103) {
+        const r = mcombo({
+          code: target.typ,
+          theta1: prev.inc,
+          prevAzm: prev.azm,
+          prevMd: prev.md,
+          md: target.md || undefined,
+          dmd: target.dmd || undefined,
+          inc: target.inc || undefined,
+          azm: target.azm || undefined,
+          tvd: target.tvd || undefined,
+          br: target.br || undefined,
+          tr: target.tr || undefined,
+          ppf,
+        });
+        if (!r.ok) return r;
+        const azm = r.solved.azm ?? prev.azm;
+        const translated = r.stations.map((s) => translate2DTo3D(s, prev, azm));
+        const keyTranslated = r.keyPoints.map((s) => translate2DTo3D(s, prev, azm));
+        return { ok: true, keyPoints: keyTranslated, stations: translated };
+      }
+      // Last-resort fallback: c3 from prev.inc to target.inc at target.dls.
       const dls = target.dls === 0 ? 0.001 : target.dls;
       return tryDlsSigns([dls], ([d]) =>
         shiftBy(c3({ theta1: prev.inc, theta2: target.inc, dls: d, ppf }), prev)

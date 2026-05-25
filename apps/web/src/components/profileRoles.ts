@@ -178,14 +178,20 @@ const ROW_EDITS: Record<number, EditableKey[][]> = {
   [ProfileType.FLYTO_4]: [["inc", "dls"]],
   [ProfileType.FLYTO_5]: [["azm", "dls"]],
 
-  // Multi-curve combos (jj=61..103) only edit BR/TR — neither column is in
-  // our grid, so the policy is "nothing editable". Add empty entries so the
-  // policy lookup doesn't fall through to the default.
+  // Multi-curve combos (jj=61..103) now have BR/TR exposed as editable —
+  // each variant picks ONE constraint from {MD, TVD, DMD, INC, AZM} (by group)
+  // plus BR/TR (by sub-type) per Pascal Unit02.pas:5087-5186.
 };
 for (const base of [60, 70, 80, 90, 100]) {
-  ROW_EDITS[base + 1] = [[]];
-  ROW_EDITS[base + 2] = [[]];
-  ROW_EDITS[base + 3] = [[]];
+  const groupKey: EditableKey =
+    base === 60 ? "md" :
+    base === 70 ? "tvd" :
+    base === 80 ? "dmd" :
+    base === 90 ? "inc" :
+                  "azm";
+  ROW_EDITS[base + 1] = [[groupKey, "br", "dls"]];
+  ROW_EDITS[base + 2] = [[groupKey, "tr", "dls"]];
+  ROW_EDITS[base + 3] = [[groupKey, "br", "tr", "dls"]];
 }
 
 /** Ordered roles for this profile (the rows it spawns). */

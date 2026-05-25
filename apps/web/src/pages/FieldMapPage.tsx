@@ -10,6 +10,8 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client.js";
 import type { GridApiResponse, WellOverlay } from "../components/MapViewer2D.js";
 import { useRecentMaps } from "../hooks/useRecent.js";
+import { clipPolygon } from "@dd/grd/polygonClip";
+import { gridFromBytes, gridToBytes } from "@dd/grd";
 
 // Three.js + Recharts are heavy — lazy-load so the grids list shows instantly.
 const MapViewer2D = lazy(() =>
@@ -96,6 +98,72 @@ export function FieldMapPage() {
   const [crossA, setCrossA] = useState<{ ns: number; ew: number } | null>(null);
   const [crossB, setCrossB] = useState<{ ns: number; ew: number } | null>(null);
   const [crossPickMode, setCrossPickMode] = useState<"A" | "B" | null>(null);
+
+  // Field-map editing tools (Unit21.pas: well-locator click + polygon clip).
+  // `mapTool` is the active map-click handler. Only one tool can be active
+  // at a time.
+  const [mapTool, setMapTool] = useState<"none" | "place-well" | "polygon-clip">("none");
+  const [pendingWellAt, setPendingWellAt] = useState<{ ns: number; ew: number } | null>(null);
+  const [pendingWellName, setPendingWellName] = useState("");
+
+  // Local-only polygon clip: render-time overlay that masks out cells outside
+  // the polygon. Doesn't persist — user can clear it. The Pascal stored it as
+  // a `draw[ii,jj]=false` mask in memory too.
+  const [clipPolygonVerts, setClipPolygonVerts] = useState<
+    Array<{ ns: number; ew: number }> | null
+  >(null);
+
+  // Mutation: create a new well at the clicked coords. Invalidates the wells
+  // query so the new pushpin shows up immediately.
+  const placeWellMut = useMutation({
+    mutationFn: (input: { fieldId: string; name: string; ns: number; ew: number }) =>
+      api.post("/wells", input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wells-with-paths", fieldId] });
+      setPendingWellAt(null);
+      setPendingWellName("");
+      setMapTool("none");
+    },
+  });
+
+  /**
+   * Build the grid we actually feed to MapViewer2D. When the user has drawn
+   * a polygon-clip, we apply `clipPolygon` to mask cells outside the polygon.
+   * The result is a brand-new GrdFile in memory; we re-encode its data back
+   * to base64 so the MapViewer2D's existing `gridFromBytes(api.data)` path
+   * keeps working without changes.
+   */
+  const displayGrid: GridApiResponse | undefined = useMemo(() => {
+    if (!activeQuery.data) return undefined;
+    if (!clipPolygonVerts || clipPolygonVerts.length < 3) return activeQuery.data;
+    // Decode the raw bytes, clip, re-encode.
+    const apiData = activeQuery.data;
+    const bin = atob(apiData.data);
+    const bytes = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+    const decoded = gridFromBytes(
+      {
+        errorValue: apiData.errorVal,
+        xmin: apiData.xmin, xmax: apiData.xmax,
+        ymin: apiData.ymin, ymax: apiData.ymax,
+        xinc: apiData.xinc, yinc: apiData.yinc,
+        ncol: apiData.ncol, nrow: apiData.nrow,
+        units: apiData.units,
+      },
+      bytes,
+    );
+    const clipped = clipPolygon(
+      decoded,
+      clipPolygonVerts.map((v) => ({ x: v.ew, y: v.ns })),
+    );
+    const reBytes = gridToBytes(clipped);
+    let reBase64 = "";
+    const chunk = 8192;
+    for (let i = 0; i < reBytes.length; i += chunk) {
+      reBase64 += String.fromCharCode.apply(null, Array.from(reBytes.subarray(i, i + chunk)));
+    }
+    return { ...apiData, data: btoa(reBase64) };
+  }, [activeQuery.data, clipPolygonVerts]);
 
   const wells = useQuery({
     queryKey: ["wells-with-paths", fieldId],
@@ -285,6 +353,47 @@ export function FieldMapPage() {
             </div>
           )}
 
+          {/* Map editing tools (well placement + polygon clip) */}
+          {activeQuery.data && view === "map" && (
+            <div className="bg-white border border-gray-200 rounded p-3 text-sm">
+              <h3 className="font-medium mb-2">Map tools</h3>
+              <div className="flex gap-1 mb-2">
+                <button
+                  onClick={() => {
+                    setMapTool(mapTool === "place-well" ? "none" : "place-well");
+                    setCrossPickMode(null);
+                  }}
+                  className={`flex-1 text-xs px-2 py-1 rounded ${
+                    mapTool === "place-well" ? "bg-emerald-600 text-white" : "bg-gray-100 hover:bg-gray-200"
+                  }`}
+                  title="Click the map to place a new well at that point"
+                >
+                  Place well
+                </button>
+                <button
+                  onClick={() => {
+                    setMapTool(mapTool === "polygon-clip" ? "none" : "polygon-clip");
+                    setCrossPickMode(null);
+                  }}
+                  className={`flex-1 text-xs px-2 py-1 rounded ${
+                    mapTool === "polygon-clip" ? "bg-violet-600 text-white" : "bg-gray-100 hover:bg-gray-200"
+                  }`}
+                  title="Click ≥3 points then double-click to clip the grid to that polygon"
+                >
+                  Clip polygon
+                </button>
+              </div>
+              {clipPolygonVerts && clipPolygonVerts.length >= 3 && (
+                <button
+                  onClick={() => setClipPolygonVerts(null)}
+                  className="w-full text-xs text-violet-700 hover:text-violet-900 underline"
+                >
+                  Clear active clip ({clipPolygonVerts.length} vertices)
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Cross-section controls */}
           {activeQuery.data && view === "map" && (
             <div className="bg-white border border-gray-200 rounded p-3 text-sm">
@@ -420,12 +529,21 @@ export function FieldMapPage() {
               <Suspense fallback={<div className="text-sm text-gray-500">Loading viewer…</div>}>
                 {view === "map" && (
                   <MapViewer2D
-                    grid={activeQuery.data}
+                    grid={displayGrid ?? activeQuery.data}
                     showContours={showContours}
                     contourLevels={contourLevels}
                     wells={wellOverlays}
                     showWells={showWells}
                     crossLine={crossA && crossB ? [crossA, crossB] : undefined}
+                    tool={
+                      mapTool === "place-well"
+                        ? "place-well"
+                        : mapTool === "polygon-clip"
+                          ? "polygon-clip"
+                          : crossPickMode
+                            ? "cross-section"
+                            : "none"
+                    }
                     onMapClick={
                       crossPickMode
                         ? (worldX, worldY) => {
@@ -436,6 +554,11 @@ export function FieldMapPage() {
                           }
                         : undefined
                     }
+                    onPlaceWell={(ns, ew) => setPendingWellAt({ ns, ew })}
+                    onPolygonClip={(verts) => {
+                      setClipPolygonVerts(verts);
+                      setMapTool("none");
+                    }}
                   />
                 )}
 
@@ -463,6 +586,74 @@ export function FieldMapPage() {
           )}
         </main>
       </div>
+
+      {/* Place-well modal: opens when the user clicks the map in "place-well"
+          mode. Lets them name the well before POSTing /wells. */}
+      {pendingWellAt && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => setPendingWellAt(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl p-5 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold mb-2">Place new well</h3>
+            <p className="text-xs text-gray-500 mb-3">
+              At NS={pendingWellAt.ns.toFixed(1)}, EW={pendingWellAt.ew.toFixed(1)}
+            </p>
+            <label className="block text-xs text-gray-600 mb-1">Well name</label>
+            <input
+              autoFocus
+              type="text"
+              value={pendingWellName}
+              onChange={(e) => setPendingWellName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && pendingWellName.trim() && fieldId) {
+                  placeWellMut.mutate({
+                    fieldId, name: pendingWellName.trim(),
+                    ns: pendingWellAt.ns, ew: pendingWellAt.ew,
+                  });
+                } else if (e.key === "Escape") {
+                  setPendingWellAt(null);
+                  setPendingWellName("");
+                }
+              }}
+              placeholder="e.g. Well-12"
+              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+            />
+            <div className="flex gap-2 mt-4 justify-end">
+              <button
+                onClick={() => {
+                  setPendingWellAt(null);
+                  setPendingWellName("");
+                }}
+                className="px-3 py-1.5 text-sm rounded bg-gray-200 hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!pendingWellName.trim() || placeWellMut.isPending || !fieldId}
+                onClick={() => {
+                  if (!fieldId) return;
+                  placeWellMut.mutate({
+                    fieldId, name: pendingWellName.trim(),
+                    ns: pendingWellAt.ns, ew: pendingWellAt.ew,
+                  });
+                }}
+                className="px-3 py-1.5 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-300"
+              >
+                {placeWellMut.isPending ? "Saving…" : "Create well"}
+              </button>
+            </div>
+            {placeWellMut.error && (
+              <div className="mt-2 text-xs text-red-600">
+                {String(placeWellMut.error)}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

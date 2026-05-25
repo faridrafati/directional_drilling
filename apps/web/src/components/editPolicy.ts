@@ -20,10 +20,13 @@ import type { SegmentRow } from "../api/client.js";
 /** All numeric column keys that ever appear in the grid. */
 export type EditableKey = Extract<
   keyof SegmentRow,
-  "comment" | "md" | "inc" | "azm" | "tvd" | "ew" | "ns" | "dls" | "dmd"
+  "comment" | "md" | "inc" | "azm" | "tvd" | "vsec" | "ew" | "ns" | "dls" | "tf" | "dmd" | "br" | "tr"
 >;
 
-const ALL: EditableKey[] = ["comment", "md", "inc", "azm", "tvd", "ew", "ns", "dls", "dmd"];
+// VSEC and TF are display-only (dispatcher post-pass fills them), so they're
+// never in any profile's edit mask — but the EditableKey type must include
+// them so the grid component can read+render those columns uniformly.
+const ALL: EditableKey[] = ["comment", "md", "inc", "azm", "tvd", "vsec", "ew", "ns", "dls", "tf", "dmd", "br", "tr"];
 
 const POLICY: Record<number, EditableKey[]> = {
   // START row: user sets the wellhead position + initial inclination/azimuth.
@@ -81,11 +84,23 @@ const POLICY: Record<number, EditableKey[]> = {
 };
 
 // Multi-curve combos (Form06 RadioGroup2 × CheckBox): inc-only / azm-only / both.
-//   *1 → inc only, *2 → azm only, *3 → both
+//   *1 → BR (build rate), *2 → TR (turn rate), *3 → both
+//   Per group, user also picks ONE constraint:
+//     6x  user gives MD     (curve-by-MD)
+//     7x  user gives TVD    (bisection — not yet implemented)
+//     8x  user gives DMD    (curve-by-DMD)
+//     9x  user gives target INC  (BR drives length)
+//    10x  user gives target AZM  (TR drives length)
 for (const base of [60, 70, 80, 90, 100]) {
-  POLICY[base + 1] = ["comment", "inc", "dls"];
-  POLICY[base + 2] = ["comment", "azm", "dls"];
-  POLICY[base + 3] = ["comment", "inc", "azm", "dls"];
+  const groupKey: EditableKey =
+    base === 60 ? "md" :
+    base === 70 ? "tvd" :
+    base === 80 ? "dmd" :
+    base === 90 ? "inc" :
+                  "azm";
+  POLICY[base + 1] = ["comment", groupKey, "br", "dls"];
+  POLICY[base + 2] = ["comment", groupKey, "tr", "dls"];
+  POLICY[base + 3] = ["comment", groupKey, "br", "tr", "dls"];
 }
 
 /** Returns the set of column keys the user can edit for this profile type. */

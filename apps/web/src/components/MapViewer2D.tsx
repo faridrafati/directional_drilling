@@ -44,6 +44,20 @@ export interface WellOverlay {
   path?: Array<{ ns: number; ew: number; tvd: number }>;
 }
 
+/**
+ * Which tool is currently active for map clicks.
+ *
+ *   "none"           — clicks do nothing (display-only).
+ *   "cross-section"  — pick 2 points to define an A→B cross-section line.
+ *                      Each click calls `onMapClick(x, y)`.
+ *   "place-well"     — single click drops a well at the world coords; fires
+ *                      `onPlaceWell(ns, ew)`. Ported from Unit21.pas:1158-1271.
+ *   "polygon-clip"   — accumulate vertices; double-click (or Finish button)
+ *                      to close the polygon and fire `onPolygonClip(vertices)`.
+ *                      Ported from Unit21.pas:1280-1361.
+ */
+export type MapTool = "none" | "cross-section" | "place-well" | "polygon-clip";
+
 interface Props {
   grid: GridApiResponse;
   ramp?: Ramp;
@@ -53,7 +67,13 @@ interface Props {
   showWells?: boolean;
   /** Two-point line picker for cross-section. Coords in world units. */
   crossLine?: [{ ns: number; ew: number }, { ns: number; ew: number }];
+  /** Active map tool. Defaults to "cross-section" if onMapClick is given, else "none". */
+  tool?: MapTool;
   onMapClick?: (worldX: number, worldY: number) => void;
+  /** Fired when the user clicks while `tool === "place-well"`. */
+  onPlaceWell?: (ns: number, ew: number) => void;
+  /** Fired when the user finishes a polygon (≥3 vertices) while `tool === "polygon-clip"`. */
+  onPolygonClip?: (vertices: Array<{ ns: number; ew: number }>) => void;
 }
 
 const MAX_PIXEL_WIDTH = 900;
@@ -66,11 +86,17 @@ export function MapViewer2D({
   wells,
   showWells = true,
   crossLine,
+  tool = "cross-section",
   onMapClick,
+  onPlaceWell,
+  onPolygonClip,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [hover, setHover] = useState<{ col: number; row: number; v: number } | null>(null);
+  // Accumulating polygon vertices for the clip tool. Each click adds one;
+  // double-click closes the polygon and fires onPolygonClip.
+  const [polygon, setPolygon] = useState<Array<{ ns: number; ew: number }>>([]);
 
   // Decode base64 once.
   const grid: GrdFile = useMemo(() => {
@@ -225,7 +251,34 @@ export function MapViewer2D({
       ctx.fillText("A", ax + 4, ay - 4);
       ctx.fillText("B", bx + 4, by - 4);
     }
-  }, [grid, showContours, contourLevels, api.valueMin, api.valueMax, w, h, wells, showWells, crossLine]);
+
+    // Polygon-clip outline while building.
+    if (tool === "polygon-clip" && polygon.length > 0) {
+      ctx.strokeStyle = "rgba(124, 58, 237, 0.95)"; // violet-600
+      ctx.fillStyle = "rgba(124, 58, 237, 0.15)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const [x0, y0] = worldToPx(polygon[0].ew, polygon[0].ns);
+      ctx.moveTo(x0, y0);
+      for (let p = 1; p < polygon.length; p++) {
+        const [px2, py2] = worldToPx(polygon[p].ew, polygon[p].ns);
+        ctx.lineTo(px2, py2);
+      }
+      if (polygon.length >= 3) {
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.stroke();
+      // Vertex markers
+      ctx.fillStyle = "rgba(124, 58, 237, 1)";
+      for (const v of polygon) {
+        const [vx, vy] = worldToPx(v.ew, v.ns);
+        ctx.beginPath();
+        ctx.arc(vx, vy, 3, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+  }, [grid, showContours, contourLevels, api.valueMin, api.valueMax, w, h, wells, showWells, crossLine, tool, polygon]);
 
   function onMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -242,28 +295,78 @@ export function MapViewer2D({
   }
 
   function onClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (!onMapClick) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
-    const [wx, wy] = pxToWorld(px, py);
-    onMapClick(wx, wy);
+    const [worldX, worldY] = pxToWorld(px, py);
+    if (tool === "place-well") {
+      // worldX is along the EW axis (longitude), worldY is along NS.
+      onPlaceWell?.(worldY, worldX);
+      return;
+    }
+    if (tool === "polygon-clip") {
+      // Add another vertex; UI shows the polygon outline live.
+      setPolygon((prev) => [...prev, { ns: worldY, ew: worldX }]);
+      return;
+    }
+    // Default: cross-section style point pick.
+    onMapClick?.(worldX, worldY);
   }
+
+  function onDoubleClick(_e: React.MouseEvent<HTMLCanvasElement>) {
+    if (tool === "polygon-clip" && polygon.length >= 3) {
+      onPolygonClip?.(polygon);
+      setPolygon([]);
+    }
+  }
+
+  function finishPolygon() {
+    if (polygon.length >= 3) {
+      onPolygonClip?.(polygon);
+      setPolygon([]);
+    }
+  }
+  function cancelPolygon() {
+    setPolygon([]);
+  }
+
+  const cursor = tool === "none" ? "default" : "crosshair";
 
   return (
     <div className="flex gap-4">
       <div className="bg-white border border-gray-200 rounded p-2 inline-block relative">
         <canvas
           ref={canvasRef}
-          style={{ display: "block", cursor: onMapClick ? "crosshair" : "default" }}
+          style={{ display: "block", cursor }}
           onMouseMove={onMouseMove}
           onMouseLeave={() => setHover(null)}
           onClick={onClick}
+          onDoubleClick={onDoubleClick}
         />
         <canvas
           ref={overlayRef}
           style={{ position: "absolute", left: 8, top: 8, pointerEvents: "none" }}
         />
+        {tool === "polygon-clip" && polygon.length > 0 && (
+          <div className="absolute top-2 left-2 bg-white/95 border border-violet-300 rounded px-2 py-1 text-xs flex items-center gap-2 shadow">
+            <span className="font-medium text-violet-700">
+              {polygon.length} vertex{polygon.length === 1 ? "" : "es"}
+            </span>
+            <button
+              onClick={finishPolygon}
+              disabled={polygon.length < 3}
+              className="px-2 py-0.5 rounded bg-violet-600 text-white text-xs hover:bg-violet-700 disabled:opacity-40"
+            >
+              Finish ({polygon.length < 3 ? `need ≥ 3` : "double-click ok"})
+            </button>
+            <button
+              onClick={cancelPolygon}
+              className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 text-xs hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       <Legend min={api.valueMin} max={api.valueMax} ramp={ramp} unit={api.units} />

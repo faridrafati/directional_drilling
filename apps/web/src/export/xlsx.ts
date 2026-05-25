@@ -23,7 +23,7 @@ export function exportCalculationXlsx(calc: CalculationDetail, wellName: string)
     s.vsec,
     s.ns,
     s.ew,
-    rad2deg(s.dls) * 100,
+    Math.abs(rad2deg(s.dls)) * 100,
     rad2deg(s.tf),
     rad2deg(s.br) * 100,
     rad2deg(s.tr) * 100,

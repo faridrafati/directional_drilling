@@ -35,6 +35,19 @@ export function ch(input: CHInput): BuilderResult {
   const b = -Math.cos(theta1) + tgtx / r1;
   const disc = a * a + b * b - 1;
   if (disc <= 0 || b === 1) {
+    // Pascal Unit02.pas:3136-3138 computes the minimum DLS that WOULD solve
+    // the geometry and shows it as a hint. We surface the same hint via the
+    // BuilderResult.reason so the UI can show "needed DLS ≥ X".
+    const denom = tgtx * tgtx + tgty * tgty;
+    if (denom > 0) {
+      const minDlsRad = Math.abs(2 * (tgtx * Math.cos(theta1) - tgty * Math.sin(theta1)) / denom);
+      // Convert rad/unit → deg/100ft for display.
+      const minDlsDeg100 = (minDlsRad * 18000) / Math.PI;
+      return {
+        ok: false, keyPoints: [], stations: [],
+        reason: `CH: target unreachable. Minimum DLS needed ≈ ${minDlsDeg100.toFixed(3)}°/100ft.`,
+      };
+    }
     return { ok: false, keyPoints: [], stations: [], reason: "Unsolvable quadratic" };
   }
   const root = Math.sqrt(disc);

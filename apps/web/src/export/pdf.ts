@@ -32,7 +32,7 @@ export function exportCalculationPdf(calc: CalculationDetail, meta: PdfMeta): vo
     s.vsec.toFixed(1),
     s.ns.toFixed(1),
     s.ew.toFixed(1),
-    (rad2deg(s.dls) * 100).toFixed(3),
+    (Math.abs(rad2deg(s.dls)) * 100).toFixed(3),
     (rad2deg(s.tf)).toFixed(2),
     (rad2deg(s.br) * 100).toFixed(3),
     (rad2deg(s.tr) * 100).toFixed(3),

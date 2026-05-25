@@ -96,26 +96,129 @@ describe("dispatch", () => {
     }
   });
 
-  it("accepts either DLS sign on the default c3 fallback (drop curve from a build-curve start)", () => {
-    // CURVE_E4 = build/drop curve to target inc. Stack: START (inc=0) →
-    // CURVE_E1 builds to 60° (correct sign) → CURVE_E4 drops to 30°
-    // BUT the user enters POSITIVE DLS on the drop. The dispatcher should
-    // flip the sign automatically and still solve.
+  it("accepts either DLS sign on CURVE_E4 drop curve", () => {
+    // CURVE_E4 (Inc+TVD+DLS) drop curve: START (inc=0) → CURVE_E1 builds to
+    // 60° → CURVE_E4 drops back to 30° at a target TVD. User enters POSITIVE
+    // DLS even though the math may need negative — dispatcher flips the sign
+    // automatically and the curveEoc builder solves.
     const segments: Segment[] = [
       startStation(),
-      // Build curve START→60° (positive DLS — correct direction).
       { ...startStation(), order: 1, typ: ProfileType.CURVE_E1,
         md: 1000, inc: 60 * PI / 180, dls: 6 * PI / 180 / 100 },
-      // Drop curve 60°→30°. User enters POSITIVE DLS even though the
-      // math needs negative for the drop direction.
       { ...startStation(), order: 2, typ: ProfileType.CURVE_E4,
-        inc: 30 * PI / 180, dls: 3 * PI / 180 / 100 },
+        inc: 30 * PI / 180, tvd: 2000, dls: 3 * PI / 180 / 100 },
     ];
     const r = dispatch(segments);
     expect(r.ok).toBe(true);
     expect(r.errors).toHaveLength(0);
     const last = r.stations[r.stations.length - 1];
     expect(last.inc).toBeCloseTo(30 * PI / 180, 3);
+  });
+
+  it("FLYTO_1 builds a curve to the given MD", () => {
+    // FLYTO_1 from start (vertical) with MD=1000 ft, DLS=2°/100ft.
+    // With prev.tf=0 the curve is in the prev.azm direction.
+    const segments: Segment[] = [
+      startStation(),
+      { ...startStation(), order: 1, typ: ProfileType.FLYTO_1,
+        md: 1000, dls: 2 * PI / 180 / 100 },
+    ];
+    const r = dispatch(segments);
+    expect(r.ok).toBe(true);
+    const last = r.stations[r.stations.length - 1];
+    expect(last.md).toBeCloseTo(1000, 1);
+  });
+
+  it("FLYTO_3 builds a curve to the given DMD", () => {
+    const segments: Segment[] = [
+      startStation(),
+      { ...startStation(), order: 1, typ: ProfileType.FLYTO_3,
+        dmd: 800, dls: 3 * PI / 180 / 100 },
+    ];
+    const r = dispatch(segments);
+    expect(r.ok).toBe(true);
+    const last = r.stations[r.stations.length - 1];
+    expect(last.dmd).toBeCloseTo(800 - (r.stations[r.stations.length - 2]?.md ?? 0), 0);
+  });
+
+  it("CURVE_E5 derives DLS from chord midpoint formula", () => {
+    // CURVE_E5 (Inc+Azm+TVD → derive DLS). User gives all 3 angles + TVD.
+    // The builder solves for the DLS that makes the geometry close.
+    const segments: Segment[] = [
+      startStation(),
+      { ...startStation(), order: 1, typ: ProfileType.CURVE_E5,
+        inc: 45 * PI / 180, azm: 30 * PI / 180, tvd: 1500 },
+    ];
+    const r = dispatch(segments);
+    expect(r.ok).toBe(true);
+    const last = r.stations[r.stations.length - 1];
+    expect(last.inc).toBeCloseTo(45 * PI / 180, 3);
+    expect(last.dls).toBeGreaterThan(0);
+  });
+
+  it("fills VSEC on every station as the projection onto the start→last-target bearing", () => {
+    // Build a simple HC3D so we have a curve + densified stations.
+    // Last target at (NS=0, EW=2000) → VSEC reference bearing is due east.
+    // For any station with NS=0, VSEC = EW; for the start, VSEC = 0.
+    const segments: Segment[] = [
+      startStation(),
+      {
+        ...startStation(),
+        order: 1, typ: ProfileType.HC3D,
+        ns: 0, ew: 2000, tvd: 6000,
+        inc: PI / 4, azm: PI / 2,
+      },
+    ];
+    const r = dispatch(segments);
+    expect(r.ok).toBe(true);
+    // Start station = (0,0) → VSEC = 0
+    expect(r.stations[0].vsec).toBeCloseTo(0, 6);
+    // Last station should equal target → VSEC ≈ 2000
+    const last = r.stations[r.stations.length - 1];
+    expect(last.vsec).toBeCloseTo(2000, 1);
+  });
+
+  it("fills BR and TR on keypoints and stations via the post-pass", () => {
+    // Build a HC3D so we have a real curve with both inc and azm changing.
+    const segments: Segment[] = [
+      startStation(),
+      {
+        ...startStation(),
+        order: 1, typ: ProfileType.HC3D,
+        ns: 0, ew: 2000, tvd: 6000,
+        inc: PI / 4, azm: PI / 2,
+      },
+    ];
+    const r = dispatch(segments);
+    expect(r.ok).toBe(true);
+    // The final keypoint (= target after curve) should have:
+    //   br ≈ Δinc / dmd, sign positive for a build curve.
+    //   tr finite (azm change exists too in HC3D).
+    const lastKp = r.keypoints[0].points[r.keypoints[0].points.length - 1];
+    expect(lastKp.br).toBeGreaterThan(0);
+    expect(Number.isFinite(lastKp.tr)).toBe(true);
+    // Densified stations along the curve must also have a nonzero br for any
+    // station whose MD is inside the curve portion (not the initial hold).
+    const inCurve = r.stations.find((s) => s.inc > 0.01 && s.dmd > 0);
+    expect(inCurve?.br ?? 0).toBeGreaterThan(0);
+  });
+
+  it("fills TF=0 on the final keypoint (no following curve)", () => {
+    // Pascal convention: the LAST keypoint of the trajectory has TF=0,
+    // because TF is set from the NEXT curve's dogleg, and there isn't one.
+    const segments: Segment[] = [
+      startStation(),
+      {
+        ...startStation(),
+        order: 1, typ: ProfileType.HC3D,
+        ns: 0, ew: 2000, tvd: 6000,
+        inc: PI / 4, azm: PI / 2,
+      },
+    ];
+    const r = dispatch(segments);
+    expect(r.ok).toBe(true);
+    const allKps = r.keypoints.flatMap((g) => g.points);
+    expect(allKps[allKps.length - 1].tf).toBe(0);
   });
 
   it("returns errors for infeasible geometry without crashing", () => {
