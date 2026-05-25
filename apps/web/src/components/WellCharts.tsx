@@ -163,7 +163,7 @@ function VsecAzmModal({
       onClick={onCancel}
     >
       <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-sm"
+        className="bg-white rounded-lg shadow-xl w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -182,10 +182,14 @@ function VsecAzmModal({
         </div>
 
         <div className="px-4 py-4 space-y-3 text-sm">
-          <p className="text-xs text-gray-500">
-            VSEC is the projection of each station's (NS, EW) onto a reference
-            bearing. <span className="font-mono">0° = N</span>, <span className="font-mono">90° = E</span>.
-            Default = wellhead → last-station bearing.
+          {/* The paragraph needs explicit whitespace-normal + break-words so
+              long words / arrow characters wrap inside the modal width
+              instead of overflowing. */}
+          <p className="text-xs text-gray-500 leading-relaxed whitespace-normal break-words">
+            VSEC is the projection of each station&apos;s (NS, EW) onto a
+            reference bearing. <span className="font-mono">0° = N</span>,
+            {" "}<span className="font-mono">90° = E</span>. Default =
+            wellhead-to-last-station bearing.
           </p>
 
           <label className="flex items-center gap-2 text-xs cursor-pointer">
