@@ -148,7 +148,22 @@ describe("dispatch", () => {
     expect(eoc.tvd).toBeCloseTo(985.29, 1);
     expect(eoc.ns).toBeCloseTo(2.81, 1);
     expect(eoc.ew).toBeCloseTo(157.83, 1);
+    // Keypoint stores the FULL profile length so BR = Δinc / dmd resolves
+    // to the displayable 1.0 °/100ft. (Last densified row holds the step.)
     expect(eoc.dmd).toBeCloseTo(1000, 0);
+    // VSEC must be non-zero — the post-pass should read the LAST computed
+    // station's NS/EW for the reference vector, not the input row (which
+    // has NS=EW=0 for CURVE_E1).
+    expect(eoc.vsec).toBeCloseTo(157.85, 0);   // |v0| ≈ sqrt(2.81² + 157.83²)
+    // BR / TR computed by the post-pass using the full dmd.
+    expect(rad2deg(eoc.br) * 100).toBeCloseTo(1.00, 1);
+    expect(rad2deg(eoc.tr) * 100).toBeCloseTo(5.75, 0);
+    // TF at the START station — computed by the TF post-pass using the
+    // CURVE to EOC. Pascal expected 76° per the screenshot.
+    const startRow = r.stations[0];
+    expect(rad2deg(startRow.tf)).toBeCloseTo(76, 0);
+    // EOC.tf = 0 per Pascal Unit02.pas:5376 (last keypoint of last segment).
+    expect(eoc.tf).toBe(0);
   });
 
   it("FLYTO_1 builds a curve to the given MD", () => {

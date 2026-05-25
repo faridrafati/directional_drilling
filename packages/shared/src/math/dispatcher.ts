@@ -209,26 +209,30 @@ function unwrapAzm(delta: number): number {
  *
  *   VSEC at station S = (S.ns·v0.ns + S.ew·v0.ew) / |v0|
  *
- * where v0 = (last-target.NS − start.NS, last-target.EW − start.EW).
+ * where v0 = (lastEnd.NS − start.NS, lastEnd.EW − start.EW). Pascal computes
+ * `wlptpt` by walking ADOTABLE2 to its LAST RECORD (5253-5260) — which at
+ * that point holds the POST-calculate computed NS/EW, not the user inputs.
+ * For profiles like CURVE_E1 / FLYTO_* where the user doesn't enter NS/EW
+ * (they're derived), the input row is still zeros — so we mirror Pascal by
+ * reading the LAST STATION'S computed NS/EW instead of the input segment.
  *
- * v0 is the **planned wellbore bearing in the horizontal plane** — projecting
- * each station's (ns, ew) onto v0 gives the signed distance along that
- * bearing, which is what reservoir engineers call "vertical section." It
- * matches the chart's x-axis on the VSEC plot.
- *
- * If v0 is degenerate (vertical well — last target has same NS/EW as start),
- * leave VSEC at 0 on every station.
+ * If v0 is degenerate (vertical well — last endpoint has same NS/EW as
+ * start), leave VSEC at 0 on every station.
  */
 function computeVsecPostPass(
   sortedInput: Segment[],
   stations: Station[],
   keypoints: DispatchResult["keypoints"],
 ): void {
-  if (sortedInput.length < 2) return;
+  if (sortedInput.length < 2 || stations.length < 1) return;
   const start = sortedInput[0];
-  const lastTarget = sortedInput[sortedInput.length - 1];
-  const refNs = lastTarget.ns - start.ns;
-  const refEw = lastTarget.ew - start.ew;
+  // Use the LAST COMPUTED station (= the trajectory's endpoint). For
+  // profiles that don't take user NS/EW input the segment row's ns/ew are
+  // zeros and would give a degenerate reference; this fix matches the
+  // Pascal behavior of reading the post-calc table value.
+  const lastEnd = stations[stations.length - 1];
+  const refNs = lastEnd.ns - start.ns;
+  const refEw = lastEnd.ew - start.ew;
   const refLen = Math.sqrt(refNs * refNs + refEw * refEw);
   if (refLen === 0) return;
 
@@ -268,12 +272,16 @@ function computeVsecPostPass(
  * meaningful anyway: it's a curve-start property, not a per-1ft-MD property.)
  */
 function computeTfPostPass(
-  _stations: Station[],
+  stations: Station[],
   keypoints: DispatchResult["keypoints"],
 ): void {
-  // Flatten every keypoint into one ordered list so curve transitions ACROSS
-  // group boundaries are seen (e.g. CH ends → next group's CH3D starts).
+  // Flatten the START + every keypoint into one ordered list so curve
+  // transitions ACROSS group boundaries are seen (e.g. CH ends → next
+  // group's CH3D starts). Pascal Unit02.pas:5341 sets the START station's
+  // TF using the FIRST curve's geometry, so we have to include it in the
+  // walk too (not just keypoints).
   const all: Station[] = [];
+  if (stations.length > 0) all.push(stations[0]);   // START as first prev
   for (const g of keypoints) all.push(...g.points);
 
   for (let k = 0; k < all.length - 1; k++) {
@@ -281,7 +289,8 @@ function computeTfPostPass(
     const n = all[k + 1];
     p.tf = toolFaceAngle(p.inc, p.azm, n.inc, n.azm, n.dls, n.dmd);
   }
-  // Last keypoint has no following curve → TF=0 by convention.
+  // Last keypoint has no following curve → TF=0 by Pascal convention
+  // (Unit02.pas:5376 — wlpt2[0].tf := 0 when kk = ll).
   if (all.length > 0) {
     all[all.length - 1].tf = 0;
   }
