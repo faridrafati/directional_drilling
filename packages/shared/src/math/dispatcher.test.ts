@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { dispatch } from "./dispatcher.js";
 import { ProfileType } from "./profile-types.js";
+import { rad2deg } from "../units/index.js";
 import type { Segment } from "../types.js";
 
 const PI = Math.PI;
@@ -113,6 +114,41 @@ describe("dispatch", () => {
     expect(r.errors).toHaveLength(0);
     const last = r.stations[r.stations.length - 1];
     expect(last.inc).toBeCloseTo(30 * PI / 180, 3);
+  });
+
+  it("CURVE_E1 matches Pascal MIXED.exe output (screenshot reference)", () => {
+    // Reference values captured from the original Delphi app, CURVE_E1:
+    //   START: MD=0, INCL=5°, AZM=45°, TVD=0
+    //   EOC:   MD=1000, INCL=15°, DLS=1.3°/100ft
+    //   → Pascal Form07 picks the −sqrt branch by default:
+    //   Expected EOC: AZM≈102.50°, TVD≈985.29, NS≈2.81, EW≈157.83
+    const segments: Segment[] = [
+      {
+        ...startStation(),
+        inc: 5 * PI / 180,
+        azm: 45 * PI / 180,
+      },
+      {
+        ...startStation(),
+        order: 1, typ: ProfileType.CURVE_E1,
+        md: 1000,
+        inc: 15 * PI / 180,
+        dls: 1.3 * PI / 180 / 100,
+      },
+    ];
+    const r = dispatch(segments);
+    expect(r.ok).toBe(true);
+    expect(r.errors).toHaveLength(0);
+
+    // The KEYPOINT (EOC) is what the grid shows on the second row.
+    const eoc = r.keypoints[0].points[r.keypoints[0].points.length - 1];
+    expect(eoc.md).toBeCloseTo(1000, 1);
+    expect(rad2deg(eoc.inc)).toBeCloseTo(15, 1);
+    expect(rad2deg(eoc.azm)).toBeCloseTo(102.50, 1);
+    expect(eoc.tvd).toBeCloseTo(985.29, 1);
+    expect(eoc.ns).toBeCloseTo(2.81, 1);
+    expect(eoc.ew).toBeCloseTo(157.83, 1);
+    expect(eoc.dmd).toBeCloseTo(1000, 0);
   });
 
   it("FLYTO_1 builds a curve to the given MD", () => {

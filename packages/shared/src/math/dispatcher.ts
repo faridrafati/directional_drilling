@@ -578,9 +578,11 @@ function buildOne(
     case ProfileType.CURVE_E3:
     case ProfileType.CURVE_E4:
     case ProfileType.CURVE_E5: {
-      // Five single-curve variants (Pascal rocal=31..35). Each derives one
-      // missing variable from the user's inputs, then builds a c3 curve.
-      // See `curveEoc.ts` for the per-variant math.
+      // Five single-curve variants (Pascal rocal=31..35). curveEoc returns
+      // world-relative 3D stations directly (ns/ew/tvd populated, not the
+      // 2D plane format) because the curve's azm changes along the arc and
+      // a single-azm plane rotation can't represent it. We just offset by
+      // prev's absolute position.
       const variantMap: Record<number, 1 | 2 | 3 | 4 | 5> = {
         [ProfileType.CURVE_E1]: 1,
         [ProfileType.CURVE_E2]: 2,
@@ -604,12 +606,11 @@ function buildOne(
           ppf,
         });
         if (!r.ok) return r;
-        // c3 returns stations in the 2D (ew, tvd) plane with ns=0.
-        // Translate into 3D using the user-supplied or derived azimuth.
-        const azm = r.solved.azm ?? target.azm ?? prev.azm;
-        const translated = r.stations.map((s) => translate2DTo3D(s, prev, azm));
-        const keyTranslated = r.keyPoints.map((s) => translate2DTo3D(s, prev, azm));
-        return { ok: true, keyPoints: keyTranslated, stations: translated };
+        return {
+          ok: true,
+          stations:  r.stations.map ((s) => offsetByPrev(s, prev)),
+          keyPoints: r.keyPoints.map((s) => offsetByPrev(s, prev)),
+        };
       });
     }
 
@@ -781,6 +782,22 @@ function translate2DTo3D(s: Station, prev: Segment, azm: number): Station {
     ew: prev.ew + s.ew * Math.sin(azm),
     tvd: prev.tvd + s.tvd,
     azm: s.inc !== 0 ? azm : prev.azm,
+  };
+}
+
+/**
+ * Add prev's absolute (md, ns, ew, tvd) to a builder-returned station that
+ * already has full 3D coordinates in world-relative form. Used for the
+ * minimum-curvature builders (curveEoc) that don't go through the
+ * 2D-plane-then-rotate flow.
+ */
+function offsetByPrev(s: Station, prev: Segment): Station {
+  return {
+    ...s,
+    md:  s.md  + prev.md,
+    ns:  s.ns  + prev.ns,
+    ew:  s.ew  + prev.ew,
+    tvd: s.tvd + prev.tvd,
   };
 }
 
