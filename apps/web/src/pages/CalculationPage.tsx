@@ -129,6 +129,25 @@ export function CalculationPage() {
   const stations = data?.stations ?? [];
   const lastResult = calculateMut.data;
 
+  /**
+   * Map from a segment's order to its profile-group number ("0" for the
+   * START row, "1", "2", … for each consecutive same-profileType run after
+   * it). The StationsTable joins stations + keypoints by segmentOrder
+   * (= the LAST row of each group) so we map order → groupNum directly.
+   */
+  const groupLabelByOrder = useMemo(() => {
+    const map = new Map<number, string>();
+    let groupNum = 0;
+    let lastType: number | null = null;
+    for (let i = 0; i < segments.length; i++) {
+      const t = segments[i].profileType;
+      if (i > 0 && t !== lastType) groupNum++;
+      map.set(segments[i].order, String(i === 0 ? 0 : groupNum));
+      lastType = t;
+    }
+    return map;
+  }, [segments]);
+
   // Parse the project's units JSON (stored as { length, angle, dls }) so we
   // can label chart axes / tooltips / 3D scale indicator with the right unit
   // suffix. The Project.units field is JSON-encoded (Pascal/SQLite has no
@@ -359,6 +378,7 @@ export function CalculationPage() {
                 stations={stations}
                 keypoints={data?.keypoints ?? []}
                 lengthUnit={lengthUnit}
+                groupLabelByOrder={groupLabelByOrder}
               />
             </div>
           )}
@@ -589,6 +609,33 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile, len
     return arr;
   }, [segments]);
 
+  /**
+   * Profile-group label for each row: `${groupIdx}-${posInGroup}` like
+   * "1-1", "1-2", "2-1". The START row is its own group #0 and gets a
+   * bare "0" since it has no role-position. Pascal numbered rows
+   * sequentially (1, 2, 3 …) — this scheme makes it obvious which rows
+   * belong together as one profile.
+   */
+  const rowLabelByIndex = useMemo(() => {
+    const labels: string[] = [];
+    let groupNum = 0;            // 0 = START
+    let posInGroup = 0;          // 1-based within a group
+    let lastType: number | null = null;
+    for (let i = 0; i < segments.length; i++) {
+      const t = segments[i].profileType;
+      if (i === 0) {
+        labels.push("0");
+        lastType = t;
+        continue;
+      }
+      if (t !== lastType) { groupNum++; posInGroup = 1; }
+      else                { posInGroup++; }
+      labels.push(`${groupNum}-${posInGroup}`);
+      lastType = t;
+    }
+    return labels;
+  }, [segments]);
+
   const inputCls =
     "w-20 px-1 py-0.5 border border-transparent hover:border-gray-300 " +
     "focus:border-blue-500 focus:outline-none rounded";
@@ -674,7 +721,7 @@ function SegmentGrid({ segments, keypoints, onCell, onRemove, onPickProfile, len
                   className={`hover:bg-blue-50/60 ${groupBg}${groupBorder}`}
                 >
                   <td className="sticky left-0 z-10 bg-inherit px-2 py-1.5 text-gray-400 font-mono border-r border-gray-200">
-                    {s.order}
+                    {rowLabelByIndex[i] ?? s.order}
                   </td>
                   <td className="sticky left-10 z-10 bg-inherit px-2 py-1.5 border-r border-gray-200 whitespace-nowrap">
                     {i === 0 ? (
@@ -804,10 +851,14 @@ function StationsTable({
   stations,
   keypoints,
   lengthUnit,
+  groupLabelByOrder,
 }: {
   stations: NonNullable<CalculationDetail["stations"]>;
   keypoints: KeypointRow[];
   lengthUnit: string;
+  /** segmentOrder → group-number string ("0", "1", "2", …). When the order
+   *  isn't in the map the row falls back to its raw segmentOrder. */
+  groupLabelByOrder: Map<number, string>;
 }) {
   type Row = {
     key: string;
@@ -838,12 +889,21 @@ function StationsTable({
       return false;
     };
 
+    // Build a "group-N" prefix from segmentOrder so the # column reads
+    // "1-1, 1-2, 2-1, …" exactly like the editable grid above. The raw
+    // segmentOrder is the LAST row of each profile group, so we resolve it
+    // through `groupLabelByOrder` (built from segments[]). Stations get
+    // bare "G" (no role position — they're between roles); keypoints get
+    // "G-roleIndex+1" so KOP/EOC/Target keep their position-in-group.
+    const groupFor = (segOrder: number) =>
+      groupLabelByOrder.get(segOrder) ?? String(segOrder);
+
     const stationRows: Row[] = stations
       .filter((s) => !isDuplicateOfKeypoint(s.md))
       .map((s) => ({
         key: `s-${s.id}`,
         isKeypoint: false,
-        label: String(s.order),
+        label: groupFor(s.segmentOrder),
         comment: s.comment ?? "",
         md: s.md, inc: s.inc, azm: s.azm, tvd: s.tvd, vsec: s.vsec,
         ew: s.ew, ns: s.ns, dls: s.dls, tf: s.tf,
@@ -852,7 +912,7 @@ function StationsTable({
     const keypointRows: Row[] = keypoints.map((k) => ({
       key: `k-${k.id}`,
       isKeypoint: true,
-      label: `${k.segmentOrder}.${k.roleIndex + 1}`,
+      label: `${groupFor(k.segmentOrder)}-${k.roleIndex + 1}`,
       comment: k.comment ?? "",
       md: k.md, inc: k.inc, azm: k.azm, tvd: k.tvd, vsec: k.vsec,
       ew: k.ew, ns: k.ns, dls: k.dls, tf: k.tf,
