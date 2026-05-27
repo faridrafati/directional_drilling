@@ -10,3 +10,51 @@ body {
   color: #1f2937;
   background: #f9fafb;
 }
+
+/*
+ * Print stylesheet: when the user invokes window.print() (via Ctrl+P or
+ * the "Print as PDF" button), hide everything except the element marked
+ * with .print-target. The browser's "Save as PDF" printer then produces a
+ * clean PDF of just the chart / 3D snapshot the user is viewing.
+ *
+ * Implementation notes:
+ *   - We hide siblings via `body * { visibility: hidden }` then re-show
+ *     `.print-target` and its descendants. Display:none would unmount
+ *     React Three Fiber's Canvas and lose the WebGL state; visibility
+ *     preserves it.
+ *   - `position: fixed; top:0; left:0` repositions the target so it
+ *     prints from page origin regardless of page scroll offset.
+ *   - Page background is white and color-adjust:exact forces chart
+ *     fills to print at their on-screen colours (otherwise Chrome
+ *     drops fills to save ink).
+ */
+@media print {
+  @page {
+    size: landscape;
+    margin: 1cm;
+  }
+  body {
+    background: white;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Hide chrome that should never appear in a printed PDF. */
+  .print-hidden { display: none !important; }
+  /* Isolate the print target. */
+  body.printing * { visibility: hidden !important; }
+  body.printing .print-target,
+  body.printing .print-target * {
+    visibility: visible !important;
+  }
+  body.printing .print-target {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+}

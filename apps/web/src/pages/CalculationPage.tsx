@@ -349,6 +349,39 @@ export function CalculationPage() {
     exportCalculationXlsx(data, data.well?.name ?? data.name);
   }
 
+  /**
+   * Print the current Charts / 3D View tab as a PDF.
+   *
+   * Strategy: toggle a body-level `printing` class so the print-only CSS
+   * in index.css hides everything except `.print-target` (the wrapper we
+   * placed around the WellViewer3D / ChartsView). Then invoke the browser
+   * print dialog — the user picks "Save as PDF" (or "Microsoft Print to
+   * PDF" on Windows) to get a downloadable file.
+   *
+   * The `afterprint` listener cleans up the class whether the user
+   * actually printed or hit Cancel. We also clear it before re-applying
+   * to guard against double-clicks.
+   *
+   * Why not pdfmake here? Capturing a live React Three Fiber Canvas (3D
+   * view) reliably into a PNG requires waiting for the next requestAnimationFrame
+   * and reading back from WebGL with preserveDrawingBuffer=true — neither
+   * is currently wired. The browser's print engine already handles the
+   * 3D canvas + Recharts SVGs natively, so this gives a higher-fidelity
+   * result with much less code.
+   */
+  function handlePrintCurrentTab() {
+    document.body.classList.remove("printing");
+    document.body.classList.add("printing");
+    const cleanup = () => {
+      document.body.classList.remove("printing");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    // Give the browser one paint to apply .printing CSS before opening the
+    // dialog; otherwise some browsers snapshot the pre-print layout.
+    requestAnimationFrame(() => window.print());
+  }
+
   return (
     <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
       <div className="mb-3">
@@ -384,18 +417,32 @@ export function CalculationPage() {
             error={saveMut.error ? String(saveMut.error) : null}
           />
           {(tab === "3d" || tab === "charts") && (
-            <label
-              className="inline-flex items-center gap-1.5 text-sm text-gray-700 select-none px-2 h-10 sm:h-9 rounded-md bg-gray-100 hover:bg-gray-200 cursor-pointer"
-              title="When on, the path is rendered as a smooth curve through stations (Recharts monotone + 3D Catmull-Rom). When off, straight polyline segments."
-            >
-              <input
-                type="checkbox"
-                checked={smoothLines}
-                onChange={(e) => setSmoothLines(e.target.checked)}
-                className="cursor-pointer"
-              />
-              Smooth lines
-            </label>
+            <>
+              <label
+                className="inline-flex items-center gap-1.5 text-sm text-gray-700 select-none px-2 h-10 sm:h-9 rounded-md bg-gray-100 hover:bg-gray-200 cursor-pointer"
+                title="When on, the path is rendered as a smooth curve through stations (Recharts monotone + 3D Catmull-Rom). When off, straight polyline segments."
+              >
+                <input
+                  type="checkbox"
+                  checked={smoothLines}
+                  onChange={(e) => setSmoothLines(e.target.checked)}
+                  className="cursor-pointer"
+                />
+                Smooth lines
+              </label>
+              <button
+                onClick={handlePrintCurrentTab}
+                className="px-3 h-10 sm:h-9 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 inline-flex items-center gap-1.5"
+                title="Open the browser print dialog. Choose 'Save as PDF' to export the current view."
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 6 2 18 2 18 9" />
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                  <rect x="6" y="14" width="12" height="8" />
+                </svg>
+                Print as PDF
+              </button>
+            </>
           )}
           {tab === "grid" && (
             <>
@@ -549,21 +596,25 @@ export function CalculationPage() {
 
       <Suspense fallback={<div className="p-4 text-sm text-gray-500">Loading viewer…</div>}>
         {tab === "3d" && (
-          <WellViewer3D
-            stations={stations}
-            keypoints={data?.keypoints ?? []}
-            lengthUnit={lengthUnit}
-            smoothLines={smoothLines}
-          />
+          <div className="print-target">
+            <WellViewer3D
+              stations={stations}
+              keypoints={data?.keypoints ?? []}
+              lengthUnit={lengthUnit}
+              smoothLines={smoothLines}
+            />
+          </div>
         )}
         {tab === "charts" && (
-          <ChartsView
-            stations={stations}
-            lengthUnit={lengthUnit}
-            vsecAzmInputStr={vsecAzmInputStr}
-            onVsecAzmInputChange={setVsecAzmInputStr}
-            smoothLines={smoothLines}
-          />
+          <div className="print-target">
+            <ChartsView
+              stations={stations}
+              lengthUnit={lengthUnit}
+              vsecAzmInputStr={vsecAzmInputStr}
+              onVsecAzmInputChange={setVsecAzmInputStr}
+              smoothLines={smoothLines}
+            />
+          </div>
         )}
       </Suspense>
       {tab === "export" && (
