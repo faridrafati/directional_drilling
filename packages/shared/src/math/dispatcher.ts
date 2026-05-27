@@ -35,6 +35,7 @@ import { sursta } from "./builders/sursta.js";
 import { hoctt } from "./builders/hoctt.js";
 import { hc3dtft } from "./builders/hc3dtft.js";
 import { hc3d3D } from "./builders/hc3d3D.js";
+import { ch3d3D } from "./builders/ch3d3D.js";
 import { ch3dffk } from "./builders/ch3dffk.js";
 import { ch } from "./builders/ch.js";
 import { hch } from "./builders/hch.js";
@@ -522,6 +523,36 @@ function buildOne(
 
     case ProfileType.CH3D:
     case ProfileType.CH3D_STAR: {
+      // Same reasoning as HC3D: for a deviated start (or a curve that
+      // requires a big azimuth turn from a tilted prev tangent), the 2D
+      // ch3dffk builder + single-rotation inPlane2D either fails outright
+      // ("Geometry infeasible") or produces wrong azimuths. Route through
+      // the direct 3D solver instead, which finds (curve length, hold
+      // length, target azm) by min-curvature 3-equation closure.
+      if (Math.abs(prev.inc) > 1e-4) {
+        const r3 = ch3d3D({
+          theta1: prev.inc,
+          prevAzm: prev.azm,
+          theta: target.inc,
+          tgtNs: target.ns - prev.ns,
+          tgtEw: target.ew - prev.ew,
+          tgtTvd: target.tvd - prev.tvd,
+          ppf,
+        });
+        if (!r3.ok) return r3;
+        const shift = (s: Station): Station => ({
+          ...s,
+          md: s.md + prev.md,
+          ns: s.ns + prev.ns,
+          ew: s.ew + prev.ew,
+          tvd: s.tvd + prev.tvd,
+        });
+        return {
+          ok: true,
+          stations: r3.stations.map(shift),
+          keyPoints: r3.keyPoints.map(shift),
+        };
+      }
       const r2 = solveAndBuild(prev, target, options, (tgtx, tgty, theta) =>
         ch3dffk({ theta1: prev.inc, tgtx, tgty, theta, ppf }),
       azmCandidates);

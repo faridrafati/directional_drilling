@@ -368,6 +368,46 @@ describe("dispatch", () => {
     expect(eoc.dmd).toBeCloseTo(388.464, 1);
   });
 
+  it("HC3D → CH3D chain matches Pascal MIXED.exe (deviated start, large turn)", () => {
+    // Reference: user's Pascal screenshot — START inc=10° azm=30°, then
+    // HC3D to (45°, NS=200, EW=200, TVD=1000), then CH3D from there to
+    // (30°, NS=-200, EW=100, TVD=2000). The CH3D needs a ~143° azimuth
+    // turn (60.974° → 204.396°) which the old 2D dispatcher couldn't
+    // close ("Segment 4: Geometry infeasible"); the new ch3d3D solver
+    // handles it directly via 3-equation min-curvature closure.
+    const segments: Segment[] = [
+      { ...startStation(), inc: 10 * PI / 180, azm: 30 * PI / 180 },
+      { ...startStation(), order: 1, typ: ProfileType.HC3D },
+      { ...startStation(), order: 2, typ: ProfileType.HC3D,
+        inc: 45 * PI / 180, tvd: 1000, ns: 200, ew: 200 },
+      { ...startStation(), order: 3, typ: ProfileType.CH3D },
+      { ...startStation(), order: 4, typ: ProfileType.CH3D,
+        inc: 30 * PI / 180, tvd: 2000, ns: -200, ew: 100 },
+    ];
+    const r = dispatch(segments);
+    expect(r.ok, r.errors[0]?.message).toBe(true);
+    expect(r.errors).toHaveLength(0);
+
+    const all = r.keypoints.flatMap((g) => g.points);
+    // CH3D EOC: large azm turn, sharp DLS.
+    const eocCH = all[2];
+    expect(eocCH.md).toBeCloseTo(1364.227, 1);
+    expect(rad2deg(eocCH.inc)).toBeCloseTo(30, 1);
+    expect(rad2deg(eocCH.azm)).toBeCloseTo(204.396, 1);
+    expect(eocCH.tvd).toBeCloseTo(1276.82, 1);
+    expect(eocCH.ns).toBeCloseTo(180.246, 1);
+    expect(eocCH.ew).toBeCloseTo(272.458, 1);
+    expect(rad2deg(eocCH.dls) * 100).toBeCloseTo(23.15, 1);
+
+    // CH3D Target: hold ends at the user's 3D target.
+    const tgt = all[3];
+    expect(tgt.md).toBeCloseTo(2199.283, 1);
+    expect(tgt.tvd).toBeCloseTo(2000, 1);
+    expect(tgt.ns).toBeCloseTo(-200, 1);
+    expect(tgt.ew).toBeCloseTo(100, 1);
+    expect(rad2deg(tgt.azm)).toBeCloseTo(204.396, 1);
+  });
+
   it("HC3D from a DEVIATED start: dispatcher handles 2 azm candidates", () => {
     // Same idea as the HCH azm test, but for HC3D — Pascal Unit02.pas:HC3DTFT
     // and the dispatcher's solveAndBuild() call azmfind() whenever target.azm
