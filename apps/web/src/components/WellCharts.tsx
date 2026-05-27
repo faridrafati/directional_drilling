@@ -20,7 +20,7 @@
 import React, { useMemo, useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceDot, Label,
+  ResponsiveContainer, ReferenceDot, Label, Legend,
 } from "recharts";
 import type { StationRow } from "../api/client.js";
 import { StationDetailsPanel, type StationDetails } from "./StationDetailsPanel.js";
@@ -52,6 +52,65 @@ interface Props {
 /** Append a unit suffix in parens if non-empty. "TVD" + "ft" → "TVD (ft)". */
 function withUnit(label: string, unit?: string): string {
   return unit && unit.trim() ? `${label} (${unit})` : label;
+}
+
+/**
+ * Compact legend rendered at the BOTTOM of each 2D chart. Identifies the
+ * three visual elements the user needs to interpret the plot:
+ *   - blue line  = wellbore trajectory (the densified path)
+ *   - green ▲   = START (wellhead at MD=0)
+ *   - red ●      = END (last calculated station)
+ *
+ * Recharts' built-in <Legend /> auto-discovers <Line /> series from their
+ * `name` prop but can't represent custom <ReferenceDot> shapes; we supply
+ * an explicit payload so all three appear with matching icons.
+ *
+ * Rendered with white halos on the swatches so they read against any
+ * print background; layout is centered+horizontal+small to stay out of
+ * the data area.
+ */
+function ChartLegend() {
+  const items = [
+    { value: "Trajectory", color: "#1e40af", shape: "line" as const },
+    { value: "Start",      color: "#16a34a", shape: "tri"  as const },
+    { value: "End",        color: "#dc2626", shape: "dot"  as const },
+  ];
+  return (
+    <Legend
+      verticalAlign="bottom"
+      height={26}
+      iconSize={0}
+      wrapperStyle={{ fontSize: 12, paddingTop: 6 }}
+      content={() => (
+        <div style={{
+          display: "flex", justifyContent: "center", gap: 16,
+          fontSize: 12, color: "#475569",
+        }}>
+          {items.map((it) => (
+            <span key={it.value} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <svg width="18" height="14" style={{ flexShrink: 0 }}>
+                {it.shape === "line" && (
+                  <line x1="0" y1="7" x2="18" y2="7" stroke={it.color} strokeWidth="2.5" />
+                )}
+                {it.shape === "tri" && (
+                  <polygon
+                    points="9,12 3,3 15,3"
+                    fill={it.color}
+                    stroke="white"
+                    strokeWidth="1"
+                  />
+                )}
+                {it.shape === "dot" && (
+                  <circle cx="9" cy="7" r="5" fill={it.color} stroke="white" strokeWidth="1" />
+                )}
+              </svg>
+              <span>{it.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    />
+  );
 }
 
 /**
@@ -602,9 +661,11 @@ export function VerticalSectionChart({
               unit: lengthUnit,
             })}
           />
+          <ChartLegend />
           <Line
             type={smoothLines ? "monotone" : "linear"}
             dataKey="tvd"
+            name="Trajectory"
             stroke="#1e40af"
             strokeWidth={2}
             dot={false}
@@ -713,9 +774,11 @@ export function PlanViewChart({
               unit: lengthUnit,
             })}
           />
+          <ChartLegend />
           <Line
             type={smoothLines ? "monotone" : "linear"}
             dataKey="ns"
+            name="Trajectory"
             stroke="#1e40af"
             strokeWidth={2}
             dot={false}

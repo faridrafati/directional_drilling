@@ -613,6 +613,12 @@ export function CalculationPage() {
               vsecAzmInputStr={vsecAzmInputStr}
               onVsecAzmInputChange={setVsecAzmInputStr}
               smoothLines={smoothLines}
+              meta={{
+                country: data?.well?.field?.country?.name ?? "?",
+                field: data?.well?.field?.name ?? "?",
+                well: data?.well?.name ?? "?",
+                calcName: data?.name ?? "",
+              }}
             />
           </div>
         )}
@@ -815,37 +821,125 @@ function AzmChoiceModal({
  */
 function ChartsView({
   stations, lengthUnit, vsecAzmInputStr, onVsecAzmInputChange, smoothLines,
+  meta,
 }: {
   stations: NonNullable<CalculationDetail["stations"]>;
   lengthUnit: string;
   vsecAzmInputStr: string | null;
   onVsecAzmInputChange: (next: string | null) => void;
   smoothLines: boolean;
+  /** Metadata for the printed header. Country / Field / Well names. */
+  meta: { country: string; field: string; well: string; calcName: string };
 }) {
   const [hovered, setHovered] = useState<StationDetails | null>(null);
 
   return (
-    <div className="flex flex-col xl:flex-row gap-3">
-      <div className="flex-1 grid grid-cols-1 xl:grid-cols-2 gap-4 min-w-0">
-        <VerticalSectionChart
-          stations={stations}
-          lengthUnit={lengthUnit}
-          onHover={setHovered}
-          showDetailsPanel={false}
-          vsecAzmInputStr={vsecAzmInputStr}
-          onVsecAzmInputChange={onVsecAzmInputChange}
-          smoothLines={smoothLines}
-        />
-        <PlanViewChart
-          stations={stations}
-          lengthUnit={lengthUnit}
-          onHover={setHovered}
-          showDetailsPanel={false}
-          smoothLines={smoothLines}
-        />
+    <>
+      {/* On-screen layout: charts side-by-side with the hover panel on the
+          right. Print-friendly classes (`print-charts-row`, `print-chart-card`)
+          let the @media print CSS rearrange the layout into a 1-row landscape
+          / 2-row portrait grid without affecting the screen view. */}
+      <div className="flex flex-col xl:flex-row gap-3">
+        {/* Print-only header — well / field metadata sits above the charts
+            in the printed PDF. Hidden on screen via .print-only. */}
+        <div className="print-only print-header">
+          <h1>{meta.field.toUpperCase()} — {meta.calcName}</h1>
+          <div className="print-meta">
+            Country: {meta.country} &nbsp;·&nbsp; Well: {meta.well} &nbsp;·&nbsp;
+            Generated {new Date().toLocaleString()}
+          </div>
+        </div>
+        <div className="flex-1 grid grid-cols-1 xl:grid-cols-2 gap-4 min-w-0 print-charts-row">
+          <div className="print-chart-card">
+            <VerticalSectionChart
+              stations={stations}
+              lengthUnit={lengthUnit}
+              onHover={setHovered}
+              showDetailsPanel={false}
+              vsecAzmInputStr={vsecAzmInputStr}
+              onVsecAzmInputChange={onVsecAzmInputChange}
+              smoothLines={smoothLines}
+            />
+          </div>
+          <div className="print-chart-card">
+            <PlanViewChart
+              stations={stations}
+              lengthUnit={lengthUnit}
+              onHover={setHovered}
+              showDetailsPanel={false}
+              smoothLines={smoothLines}
+            />
+          </div>
+        </div>
+        <div className="print-hidden">
+          <StationDetailsPanel
+            point={hovered}
+            lengthUnit={lengthUnit}
+            widthClass="w-72 xl:w-64"
+          />
+        </div>
       </div>
-      <StationDetailsPanel point={hovered} lengthUnit={lengthUnit} widthClass="w-72 xl:w-64" />
-    </div>
+
+      {/* Print-only stations table — paginated automatically by the browser
+          across pages; the @media print rules in index.css repeat the
+          header on each page and prevent rows from being split mid-page. */}
+      <div className="print-only">
+        <h2 style={{ fontSize: "11pt", color: "#1e3a8a", margin: "6mm 0 2mm 0" }}>
+          Calculated Stations ({stations.length})
+        </h2>
+        <PrintStationsTable stations={stations} lengthUnit={lengthUnit} />
+      </div>
+    </>
+  );
+}
+
+/**
+ * Plain HTML table styled by .print-stations-table CSS for the print PDF.
+ * Mirrors the on-screen StationsTable columns + units so the engineer gets
+ * the same view in their printed report. We render it as a separate
+ * lightweight component (no hover, no VSEC reprojection, no virtualisation)
+ * because it never appears on screen — only when the browser is in
+ * print mode and the print-only block becomes visible.
+ */
+function PrintStationsTable({
+  stations, lengthUnit,
+}: {
+  stations: NonNullable<CalculationDetail["stations"]>;
+  lengthUnit: string;
+}) {
+  const headers = [
+    "#", "Comment", `MD (${lengthUnit})`, "Inc (°)", "Azm (°)",
+    `TVD (${lengthUnit})`, `VSEC (${lengthUnit})`,
+    `NS (${lengthUnit})`, `EW (${lengthUnit})`,
+    "DLS (°/100ft)", "TF (°)", "BR (°/100ft)", "TR (°/100ft)",
+    `DMD (${lengthUnit})`,
+  ];
+  return (
+    <table className="print-stations-table">
+      <thead>
+        <tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr>
+      </thead>
+      <tbody>
+        {stations.map((s, i) => (
+          <tr key={s.id ?? i}>
+            <td>{i}</td>
+            <td>{s.comment ?? ""}</td>
+            <td>{s.md.toFixed(1)}</td>
+            <td>{rad2deg(s.inc).toFixed(2)}</td>
+            <td>{normalizeDeg360(rad2deg(s.azm)).toFixed(2)}</td>
+            <td>{s.tvd.toFixed(1)}</td>
+            <td>{s.vsec.toFixed(1)}</td>
+            <td>{s.ns.toFixed(1)}</td>
+            <td>{s.ew.toFixed(1)}</td>
+            <td>{(Math.abs(rad2deg(s.dls)) * 100).toFixed(3)}</td>
+            <td>{normalizeDeg360(rad2deg(s.tf)).toFixed(2)}</td>
+            <td>{(rad2deg(s.br) * 100).toFixed(3)}</td>
+            <td>{(rad2deg(s.tr) * 100).toFixed(3)}</td>
+            <td>{s.dmd.toFixed(1)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
