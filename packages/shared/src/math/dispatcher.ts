@@ -818,12 +818,21 @@ function solveAndBuild(
       const choice = options.azimuthChoices?.[target.order] ?? 1;
       const c1Deg = ((cands.candidate1 * 180) / Math.PI + 360) % 360;
       const c2Deg = ((cands.candidate2 * 180) / Math.PI + 360) % 360;
-      // Surface to the UI as long as the two candidates aren't literally
-      // the same number (which only happens when the solver collapsed,
-      // e.g. degenerate input). Pascal Form07 always showed both; we do
-      // too — picking branch 2 is meaningful even when the candidates
-      // are 180° apart, because the chosen azm drives the 3D unprojection.
-      if (azmCandidates && Math.abs(c1Deg - c2Deg) > 0.01) {
+      // Filter out spurious candidates. azmFind solves a quadratic; one
+      // root is always physical (matches the position bearing → curve
+      // closes at the user's target) and the other is its 180° mirror
+      // (curve closes at −NS/−EW, not the requested target). Surfacing
+      // the mirror as a "choice" misleads users: picking it appears to
+      // change the geometry but in fact the dispatcher still uses the
+      // bearing for the 3D unprojection so the curve always closes at
+      // the user-given NS/EW. We only emit candidates when the two are
+      // a GENUINE geometric choice — distinct AND not ~180° apart.
+      const sep = Math.min(
+        Math.abs(c1Deg - c2Deg),
+        360 - Math.abs(c1Deg - c2Deg),
+      );
+      const isRealChoice = sep > 0.01 && Math.abs(sep - 180) > 0.5;
+      if (azmCandidates && isRealChoice) {
         azmCandidates.push({
           segmentOrder: target.order,
           profileLabel: profileTypeLabel(target.typ),
@@ -837,14 +846,15 @@ function solveAndBuild(
         : [cands.candidate1, cands.candidate2];
       for (const candAzm of order) {
         const targetWithAzm = { ...target, azm: candAzm };
-        // Pass `candAzm` as the unprojection override so picking branch 2
-        // actually rotates the 3D curve to that orientation — without this,
-        // inPlane2D would fall back to `bearingFromPrevToTarget(prev, target)`
-        // (always equal to atan2(ΔEW, ΔNS)) and both branches collapse to the
-        // same curve regardless of which one the user picked.
+        // inPlane2D uses bearingFromPrevToTarget(prev, target) — atan2 of
+        // the NS/EW delta — so the curve always closes at the user's
+        // requested 3D position. The candidate azm flows through
+        // `targetWithAzm.azm` but doesn't change the unprojection;
+        // it's used by builders that read target.azm directly (e.g.
+        // CC3D_STAR's user-input azimuth path).
         const r = inPlane2D(prev, targetWithAzm, (tgtx, tgty) =>
-          buildIn2D(tgtx, tgty, theta),
-        candAzm);
+          buildIn2D(tgtx, tgty, theta)
+        );
         if (r.ok) return r;
       }
     }
