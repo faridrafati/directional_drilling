@@ -50,6 +50,15 @@ export interface D3DS3DInput {
   tgtEw: number;
   tgtTvd: number;
   ppf?: number;
+  /** Internal recursion guard — see hch3D.ts for the rationale. */
+  __noHint?: boolean;
+  /**
+   * Which candidate solution to use (1 = primary / shortest, 2 = alternate).
+   * The 2D minimiser may converge on different local minima from different
+   * starting points; the dispatcher surfaces both to the Form07 modal.
+   * Default 1.
+   */
+  branch?: 1 | 2;
 }
 
 export interface D3DS3DResult extends BuilderResult {
@@ -58,6 +67,14 @@ export interface D3DS3DResult extends BuilderResult {
   l1: number;
   lHold: number;
   l2: number;
+  /** All distinct candidates found, sorted by total length. */
+  candidates: Array<{
+    solvedMidInc: number;
+    solvedPlaneAzm: number;
+    l1: number;
+    lHold: number;
+    l2: number;
+  }>;
 }
 
 function curve1Deltas(
@@ -144,22 +161,19 @@ export function d3ds3D(input: D3DS3DInput): D3DS3DResult {
   const { theta1: I1, prevAzm: A1, theta, dls1, dls2,
           tgtNs: dN, tgtEw: dE, tgtTvd: dT } = input;
   const ppf = input.ppf ?? DEFAULT_PPF;
+  const branch = input.branch ?? 1;
 
   const empty: D3DS3DResult = {
     ok: false, keyPoints: [], stations: [], reason: "n/a",
     solvedMidInc: 0, solvedPlaneAzm: 0, l1: 0, lHold: 0, l2: 0,
+    candidates: [],
   };
 
   if (dls1 === 0 || dls2 === 0) {
     return { ...empty, reason: "D3DS 3D solver: both DLS values must be non-zero" };
   }
 
-  // 2D grid scan + Newton refinement. The objective is |R|² = RN² + RE²;
-  // we want this minimised to (essentially) zero at the true (I_mid, A_plane).
-  //
-  // Bisection on individual residual components proved unreliable here —
-  // residuals can touch zero from one side or have small bumps near
-  // singular geometries. A 2D scan-then-Newton is slower but robust.
+  // Objective: |R|² = RN² + RE². Driven to zero at the true (I_mid, A_plane).
   const errSquared = (Imid: number, Aplane: number): number => {
     const c = compute(I1, A1, theta, Imid, Aplane, dls1, dls2, dT, dN, dE);
     if (!c) return Infinity;
@@ -167,106 +181,165 @@ export function d3ds3D(input: D3DS3DInput): D3DS3DResult {
     return c.RN * c.RN + c.RE * c.RE;
   };
 
-  // Coarse grid scan to locate the global basin.
+  // Coarse grid scan → record EVERY cell, not just the best, so we can later
+  // identify multiple local minima for the Pascal 2-azm candidate behaviour.
   const nI = 48;
   const nA = 96;
-  let bestImid = -1, bestAplane = -1, bestErr = Infinity;
+  type Cell = { Imid: number; Aplane: number; err: number };
+  const cells: Cell[] = [];
+  let bestErr = Infinity;
   for (let i = 1; i < nI; i++) {
     const Imid = (i / nI) * Math.PI;
     for (let j = 0; j < nA; j++) {
       const Aplane = A1 - Math.PI + (j / nA) * 2 * Math.PI + 0.00731;
       const e = errSquared(Imid, Aplane);
-      if (e < bestErr) {
-        bestErr = e; bestImid = Imid; bestAplane = Aplane;
-      }
+      cells.push({ Imid, Aplane, err: e });
+      if (e < bestErr) bestErr = e;
     }
   }
   if (bestErr === Infinity) {
+    const hint = input.__noHint ? null : findMinDls(input);
+    const hintMsg = hint
+      ? ` — minimum DLS needed ≈ ${hint.toFixed(3)}°/100ft (applied to both arcs)`
+      : "";
     return {
       ...empty,
-      reason: "D3DS 3D solver: no feasible (I_mid, A_plane) found in scan",
+      reason: `D3DS 3D solver: no feasible (I_mid, A_plane) found in scan${hintMsg}`,
     };
   }
 
-  // Newton-like refinement via 2D Nelder-Mead simplex (simpler than Newton
-  // because it doesn't need the Jacobian). 20 iterations is plenty since we
-  // start within ~1° of the true solution.
-  let simplex: Array<[number, number]> = [
-    [bestImid, bestAplane],
-    [bestImid + 0.005, bestAplane],
-    [bestImid, bestAplane + 0.005],
-  ];
-  for (let it = 0; it < 100; it++) {
-    // Sort by error ascending
-    simplex.sort((a, b) => errSquared(a[0], a[1]) - errSquared(b[0], b[1]));
-    const [a, b, c] = simplex;
-    const fa = errSquared(a[0], a[1]);
-    const fc = errSquared(c[0], c[1]);
-    if (fa < 1e-12) break;
-    if (Math.abs(fa - fc) < 1e-12) break;
-    // Centroid of best 2
-    const cent: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-    // Reflect c through centroid
-    const refl: [number, number] = [2 * cent[0] - c[0], 2 * cent[1] - c[1]];
-    const fr = errSquared(refl[0], refl[1]);
-    if (fr < fa) {
-      // Expand
-      const exp: [number, number] = [3 * cent[0] - 2 * c[0], 3 * cent[1] - 2 * c[1]];
-      const fe = errSquared(exp[0], exp[1]);
-      simplex[2] = fe < fr ? exp : refl;
-    } else if (fr < fc) {
-      simplex[2] = refl;
-    } else {
-      // Contract
-      const con: [number, number] = [(cent[0] + c[0]) / 2, (cent[1] + c[1]) / 2];
-      const fcon = errSquared(con[0], con[1]);
-      if (fcon < fc) {
-        simplex[2] = con;
-      } else {
-        // Shrink toward best
-        simplex[1] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-        simplex[2] = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+  // Identify all LOCAL minima of the error surface — cells whose err is
+  // smaller than all 8 grid neighbours and below a generous near-best
+  // threshold. Each local minimum is a potential 2-azm candidate. We seed
+  // Nelder-Mead from each.
+  //
+  // The grid is dense enough (~3.75° in A, ~3.75° in I) that two distinct
+  // minima from the azmfind quadratic separated by tens of degrees won't
+  // share a basin.
+  const NEAR_BEST = Math.max(bestErr * 100, 1e3);
+  const idxOf = (i: number, j: number): number => (i - 1) * nA + j;
+  const localMinima: Cell[] = [];
+  for (let i = 1; i < nI; i++) {
+    for (let j = 0; j < nA; j++) {
+      const e = cells[idxOf(i, j)].err;
+      if (e > NEAR_BEST) continue;
+      let isMin = true;
+      for (let di = -1; di <= 1 && isMin; di++) {
+        for (let dj = -1; dj <= 1 && isMin; dj++) {
+          if (di === 0 && dj === 0) continue;
+          const ni = i + di;
+          const nj = ((j + dj) % nA + nA) % nA; // wrap A around
+          if (ni < 1 || ni >= nI) continue;
+          if (cells[idxOf(ni, nj)].err < e) { isMin = false; break; }
+        }
       }
+      if (isMin) localMinima.push(cells[idxOf(i, j)]);
     }
   }
-  simplex.sort((a, b) => errSquared(a[0], a[1]) - errSquared(b[0], b[1]));
-  const finalImid = simplex[0][0];
-  const finalAplane = simplex[0][1];
-  const finalErr = errSquared(finalImid, finalAplane);
-  if (finalErr > 1e-2) {
-    // The minimiser couldn't drive residual to ~zero — likely no feasible
-    // geometry for these DLS values + target. Surface as infeasible.
-    return {
-      ...empty,
-      reason: `D3DS 3D solver: residual ${finalErr.toFixed(4)} too large; geometry infeasible`,
-    };
+  // Always include the global best in case its 8-neighbour test was strict.
+  if (localMinima.length === 0) {
+    const globalBest = cells.reduce((acc, c) => (c.err < acc.err ? c : acc), cells[0]);
+    localMinima.push(globalBest);
   }
-  const finalCompute = compute(
-    I1, A1, theta, finalImid, finalAplane, dls1, dls2, dT, dN, dE,
-  );
-  if (!finalCompute || finalCompute.L1 <= 0 || finalCompute.L2 <= 0
-      || finalCompute.L_hold <= 0) {
+  // Sort starting points by error ascending so we refine the most-likely
+  // candidates first.
+  localMinima.sort((a, b) => a.err - b.err);
+
+  // Nelder-Mead refinement helper — extracted so we can apply it to every
+  // candidate starting point.
+  const refine = (startImid: number, startAplane: number): { Imid: number; Aplane: number; err: number } => {
+    let simplex: Array<[number, number]> = [
+      [startImid, startAplane],
+      [startImid + 0.005, startAplane],
+      [startImid, startAplane + 0.005],
+    ];
+    for (let it = 0; it < 100; it++) {
+      simplex.sort((a, b) => errSquared(a[0], a[1]) - errSquared(b[0], b[1]));
+      const [a, b, c] = simplex;
+      const fa = errSquared(a[0], a[1]);
+      const fc = errSquared(c[0], c[1]);
+      if (fa < 1e-12) break;
+      if (Math.abs(fa - fc) < 1e-12) break;
+      const cent: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      const refl: [number, number] = [2 * cent[0] - c[0], 2 * cent[1] - c[1]];
+      const fr = errSquared(refl[0], refl[1]);
+      if (fr < fa) {
+        const exp: [number, number] = [3 * cent[0] - 2 * c[0], 3 * cent[1] - 2 * c[1]];
+        const fe = errSquared(exp[0], exp[1]);
+        simplex[2] = fe < fr ? exp : refl;
+      } else if (fr < fc) {
+        simplex[2] = refl;
+      } else {
+        const con: [number, number] = [(cent[0] + c[0]) / 2, (cent[1] + c[1]) / 2];
+        const fcon = errSquared(con[0], con[1]);
+        if (fcon < fc) {
+          simplex[2] = con;
+        } else {
+          simplex[1] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+          simplex[2] = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+        }
+      }
+    }
+    simplex.sort((a, b) => errSquared(a[0], a[1]) - errSquared(b[0], b[1]));
     return {
-      ...empty,
-      reason: "D3DS 3D solver: refined solution has non-positive segment length",
+      Imid: simplex[0][0],
+      Aplane: simplex[0][1],
+      err: errSquared(simplex[0][0], simplex[0][1]),
     };
-  }
+  };
+
+  // Refine each local minimum; keep only feasible (err < 1e-2, lengths > 0)
+  // results. Dedupe by (Imid, Aplane) proximity (< 0.5°) so we don't surface
+  // numerical near-twins of the same physical minimum.
   type Solution = {
     Imid: number; Aplane: number; L1: number; L2: number; L_hold: number;
   };
-  const solutions: Solution[] = [{
-    Imid: finalImid, Aplane: finalAplane,
-    L1: finalCompute.L1, L2: finalCompute.L2, L_hold: finalCompute.L_hold,
-  }];
+  const normAzm = (x: number): number => {
+    let y = x;
+    while (y > Math.PI) y -= 2 * Math.PI;
+    while (y < -Math.PI) y += 2 * Math.PI;
+    return y;
+  };
+  const refined: Solution[] = [];
+  const TOO_CLOSE = 0.5 * Math.PI / 180;
+  for (const start of localMinima.slice(0, 8)) {
+    const r = refine(start.Imid, start.Aplane);
+    if (r.err > 1e-2) continue;
+    const c = compute(I1, A1, theta, r.Imid, r.Aplane, dls1, dls2, dT, dN, dE);
+    if (!c || c.L1 <= 0 || c.L2 <= 0 || c.L_hold <= 0) continue;
+    // Dedupe against existing solutions
+    let isDup = false;
+    for (const kept of refined) {
+      const dAzm = Math.abs(normAzm(r.Aplane - kept.Aplane));
+      const dAzmMirror = Math.abs(dAzm - Math.PI);
+      const dI = Math.abs(r.Imid - kept.Imid);
+      if ((dAzm < TOO_CLOSE || dAzmMirror < TOO_CLOSE) && dI < TOO_CLOSE) {
+        isDup = true; break;
+      }
+    }
+    if (!isDup) {
+      refined.push({
+        Imid: r.Imid, Aplane: r.Aplane,
+        L1: c.L1, L2: c.L2, L_hold: c.L_hold,
+      });
+    }
+  }
 
-  if (solutions.length === 0) {
+  if (refined.length === 0) {
+    const hint = input.__noHint ? null : findMinDls(input);
+    const hintMsg = hint
+      ? ` — minimum DLS needed ≈ ${hint.toFixed(3)}°/100ft (applied to both arcs)`
+      : "";
     return {
       ...empty,
-      reason: "D3DS 3D solver: no positive-length azimuth solution found",
+      reason: `D3DS 3D solver: no feasible solution${hintMsg}`,
     };
   }
-  solutions.sort((a, b) => (a.L1 + a.L_hold + a.L2) - (b.L1 + b.L_hold + b.L2));
-  const { Imid, Aplane, L1, L2, L_hold } = solutions[0];
+
+  // Sort by total length; pick the requested branch.
+  refined.sort((a, b) => (a.L1 + a.L_hold + a.L2) - (b.L1 + b.L_hold + b.L2));
+  const idx = branch === 2 ? Math.min(1, refined.length - 1) : 0;
+  const { Imid, Aplane, L1, L2, L_hold } = refined[idx];
 
   const dls1Abs = L1 < 1e-9 ? 0 : Math.abs(dls1);
   const dls2Abs = L2 < 1e-9 ? 0 : Math.abs(dls2);
@@ -364,5 +437,63 @@ export function d3ds3D(input: D3DS3DInput): D3DS3DResult {
     l1: L1,
     lHold: L_hold,
     l2: L2,
+    candidates: refined.map((s) => ({
+      solvedMidInc: s.Imid,
+      solvedPlaneAzm: s.Aplane,
+      l1: s.L1,
+      lHold: s.L_hold,
+      l2: s.L2,
+    })),
   };
+}
+
+/**
+ * Find the minimum DLS multiplier that would make this 3D-S geometry close,
+ * applied uniformly to both arcs' DLS values. Returns the SHARED min DLS in
+ * deg/100 length-unit (matching Pascal's "Minimum Needed DLS" hint, which
+ * is also a single number even though there are two arcs).
+ *
+ * Sweep + bisect on a scale factor — see hch3D.ts for the same pattern.
+ */
+function findMinDls(input: D3DS3DInput): number | null {
+  const sign1 = input.dls1 > 0 ? 1 : -1;
+  const sign2 = input.dls2 > 0 ? 1 : -1;
+  const absDls1 = Math.abs(input.dls1);
+  const absDls2 = Math.abs(input.dls2);
+  // Use the SMALLER absolute DLS as the reporting baseline (= the limiting
+  // arc whose tighter curvature the user usually needs to raise). The
+  // multiplier k scales BOTH arcs uniformly.
+  const baseline = Math.min(absDls1, absDls2);
+  if (baseline < 1e-12) return null;
+  const probe = (k: number): boolean => {
+    const r = d3ds3D({
+      ...input,
+      dls1: sign1 * absDls1 * k,
+      dls2: sign2 * absDls2 * k,
+      __noHint: true,
+    });
+    return r.ok;
+  };
+  const ladder = [1.02, 1.05, 1.1, 1.2, 1.5, 2, 3, 5, 8, 13, 21, 34, 55, 100];
+  let kLo: number | null = null;
+  let kHi: number | null = null;
+  let prevK = 1;
+  for (const k of ladder) {
+    if (probe(k)) {
+      kLo = prevK;
+      kHi = k;
+      break;
+    }
+    prevK = k;
+  }
+  if (kHi === null || kLo === null) return null;
+  let lo = kLo;
+  let hi = kHi;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (probe(mid)) hi = mid;
+    else lo = mid;
+    if (hi - lo < 1e-4) break;
+  }
+  return (baseline * hi * 18000) / Math.PI;
 }

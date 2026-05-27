@@ -75,7 +75,17 @@ export interface DispatchResult {
    * with — so the UI can join them.
    */
   keypoints: Array<{ segmentOrder: number; points: Station[] }>;
-  errors: Array<{ segmentIndex: number; message: string }>;
+  errors: Array<{
+    /** Sorted-array index of the LAST row in the failing profile group. */
+    segmentIndex: number;
+    /** 1-based ordinal of the profile group that failed (= "3" in "3.2"). */
+    groupNumber: number;
+    /** 1-based position of the failing row within its group (= "2" in "3.2"). */
+    groupPosition: number;
+    /** Total number of rows in the failing profile group. */
+    groupSize: number;
+    message: string;
+  }>;
   /**
    * Per-segment 2-azimuth ambiguity report (port of Pascal Form07's prompt).
    *
@@ -129,11 +139,14 @@ export function dispatch(segments: Segment[], options: DispatchOptions = {}): Di
   // The LAST row of a group is the build target; earlier rows are milestone
   // placeholders that will be filled with computed key-point values.
   let i = 1;
+  let groupNumber = 0; // 1-based ordinal for "Profile 3" in errors.
   while (i < sorted.length) {
     const start = i;
     const typ = sorted[i].typ;
     while (i < sorted.length && sorted[i].typ === typ) i++;
     const groupEnd = i - 1;            // last index in this group
+    const groupSize = groupEnd - start + 1;
+    groupNumber += 1;
 
     // `prev` must reflect WORLD state (the running end of the path) — NOT
     // the raw input segment, whose computed cells (md/tvd/ns/ew) are 0
@@ -148,7 +161,17 @@ export function dispatch(segments: Segment[], options: DispatchOptions = {}): Di
 
     const result = buildOne(prev, target, group, options, azmCandidates);
     if (!result.ok) {
-      errors.push({ segmentIndex: groupEnd, message: result.reason ?? "infeasible" });
+      errors.push({
+        segmentIndex: groupEnd,
+        groupNumber,
+        // The failing row is the dispatch target = LAST row of the group.
+        // UI may prefer to point to a different row (e.g. the row that
+        // owns the DLS input) — that's a presentation concern, so pass
+        // the full {groupNumber, groupSize} and let the UI decide.
+        groupPosition: groupSize,
+        groupSize,
+        message: result.reason ?? "infeasible",
+      });
       break;
     }
     // Drop the first station of each builder if it equals prev (avoid duplicates).
@@ -163,7 +186,6 @@ export function dispatch(segments: Segment[], options: DispatchOptions = {}): Di
     //
     // inPlane2D / shiftBy already translate them into world coords with
     // MD shifted by prev.md, so no extra offset here.
-    const groupSize = groupEnd - start + 1;
     const kp = result.keyPoints.slice(-groupSize).map((p) => ({
       ...p,
       order: target.order,
@@ -495,6 +517,7 @@ function buildOne(
       // hc3dtft 2D builder — there's no plane tilt to handle, and the
       // hc3dtft analytic equations are exact for that case.
       if (Math.abs(prev.inc) > 1e-4) {
+        const branch = options.azimuthChoices?.[target.order] ?? 1;
         const r3 = hc3d3D({
           theta1: prev.inc,
           prevAzm: prev.azm,
@@ -503,8 +526,22 @@ function buildOne(
           tgtEw: target.ew - prev.ew,
           tgtTvd: target.tvd - prev.tvd,
           ppf,
+          branch,
         });
         if (!r3.ok) return r3;
+        // Surface the 2-azm choice (Pascal Form07) when the solver found
+        // 2+ distinct positive-length azimuth solutions.
+        if (azmCandidates && r3.candidates.length >= 2) {
+          const c1Deg = ((r3.candidates[0].solvedAzm * 180) / Math.PI + 360) % 360;
+          const c2Deg = ((r3.candidates[1].solvedAzm * 180) / Math.PI + 360) % 360;
+          azmCandidates.push({
+            segmentOrder: target.order,
+            profileLabel: profileTypeLabel(target.typ),
+            candidate1Deg: c1Deg,
+            candidate2Deg: c2Deg,
+            chosen: branch,
+          });
+        }
         // The 3D solver returns stations in prev-relative world coords.
         // Add prev's absolute (ns, ew, tvd, md) to land in world frame.
         const shift = (s: Station): Station => ({
@@ -535,6 +572,7 @@ function buildOne(
       // the direct 3D solver instead, which finds (curve length, hold
       // length, target azm) by min-curvature 3-equation closure.
       if (Math.abs(prev.inc) > 1e-4) {
+        const branch = options.azimuthChoices?.[target.order] ?? 1;
         const r3 = ch3d3D({
           theta1: prev.inc,
           prevAzm: prev.azm,
@@ -543,8 +581,20 @@ function buildOne(
           tgtEw: target.ew - prev.ew,
           tgtTvd: target.tvd - prev.tvd,
           ppf,
+          branch,
         });
         if (!r3.ok) return r3;
+        if (azmCandidates && r3.candidates.length >= 2) {
+          const c1Deg = ((r3.candidates[0].solvedAzm * 180) / Math.PI + 360) % 360;
+          const c2Deg = ((r3.candidates[1].solvedAzm * 180) / Math.PI + 360) % 360;
+          azmCandidates.push({
+            segmentOrder: target.order,
+            profileLabel: profileTypeLabel(target.typ),
+            candidate1Deg: c1Deg,
+            candidate2Deg: c2Deg,
+            chosen: branch,
+          });
+        }
         const shift = (s: Station): Station => ({
           ...s,
           md: s.md + prev.md,
@@ -710,6 +760,7 @@ function buildOne(
       // constraint (curve 2 + hold share azimuth A_plane; curve 1 carries
       // the azimuth turn from prev to A_plane).
       if (Math.abs(prev.inc) > 1e-4) {
+        const branch = options.azimuthChoices?.[target.order] ?? 1;
         const tryD3ds3D = (d1: number, d2: number): BuilderResult => {
           const r3 = d3ds3D({
             theta1: prev.inc,
@@ -720,8 +771,20 @@ function buildOne(
             tgtEw: target.ew - prev.ew,
             tgtTvd: target.tvd - prev.tvd,
             ppf,
+            branch,
           });
           if (!r3.ok) return r3;
+          if (azmCandidates && r3.candidates.length >= 2) {
+            const c1Deg = ((r3.candidates[0].solvedPlaneAzm * 180) / Math.PI + 360) % 360;
+            const c2Deg = ((r3.candidates[1].solvedPlaneAzm * 180) / Math.PI + 360) % 360;
+            azmCandidates.push({
+              segmentOrder: target.order,
+              profileLabel: profileTypeLabel(target.typ),
+              candidate1Deg: c1Deg,
+              candidate2Deg: c2Deg,
+              chosen: branch,
+            });
+          }
           const shift = (s: Station): Station => ({
             ...s,
             md: s.md + prev.md,
@@ -769,6 +832,7 @@ function buildOne(
       // Mode B (D3DS_HOLD2 / *_STAR, where the user supplies the middle inc
       // and dmd is solved) still uses the 2D path — TODO to port.
       if (Math.abs(prev.inc) > 1e-4 && ddmmdd) {
+        const branch = options.azimuthChoices?.[target.order] ?? 1;
         const tryD3dsHold3D = (d1: number, d2: number): BuilderResult => {
           const r3 = d3dsHold3D({
             theta1: prev.inc,
@@ -780,8 +844,20 @@ function buildOne(
             tgtEw: target.ew - prev.ew,
             tgtTvd: target.tvd - prev.tvd,
             ppf,
+            branch,
           });
           if (!r3.ok) return r3;
+          if (azmCandidates && r3.candidates.length >= 2) {
+            const c1Deg = ((r3.candidates[0].solvedPlaneAzm * 180) / Math.PI + 360) % 360;
+            const c2Deg = ((r3.candidates[1].solvedPlaneAzm * 180) / Math.PI + 360) % 360;
+            azmCandidates.push({
+              segmentOrder: target.order,
+              profileLabel: profileTypeLabel(target.typ),
+              candidate1Deg: c1Deg,
+              candidate2Deg: c2Deg,
+              chosen: branch,
+            });
+          }
           const shift = (s: Station): Station => ({
             ...s,
             md: s.md + prev.md,

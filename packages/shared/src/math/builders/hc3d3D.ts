@@ -43,6 +43,12 @@ export interface HC3D3DInput {
   tgtEw: number;
   tgtTvd: number;
   ppf?: number;
+  /**
+   * Which candidate solution to use (1 = primary / shortest, 2 = alternate).
+   * The 3D scan can produce multiple positive-length azimuth solutions; the
+   * dispatcher surfaces both to the Form07 modal. Default 1.
+   */
+  branch?: 1 | 2;
 }
 
 export interface HC3D3DResult extends BuilderResult {
@@ -54,6 +60,12 @@ export interface HC3D3DResult extends BuilderResult {
   l2: number;
   /** Min-curvature DLS (rad / MD-unit) for the curve segment. */
   curveDls: number;
+  /**
+   * All distinct positive-length azimuth solutions, sorted by total length
+   * ascending. The dispatcher reads this to emit a Form07 entry whenever
+   * length >= 2. Distinct = differ by >0.5° AND not 180° apart.
+   */
+  candidates: Array<{ solvedAzm: number; l1: number; l2: number }>;
 }
 
 /**
@@ -112,60 +124,91 @@ function solveLinearForAzm(
 export function hc3d3D(input: HC3D3DInput): HC3D3DResult {
   const { theta1: I1, prevAzm: A1, theta: I2, tgtNs: dN, tgtEw: dE, tgtTvd: dT } = input;
   const ppf = input.ppf ?? DEFAULT_PPF;
+  const branch = input.branch ?? 1;
 
   const empty: HC3D3DResult = {
     ok: false, keyPoints: [], stations: [],
     reason: "n/a",
-    solvedAzm: 0, l1: 0, l2: 0, curveDls: 0,
+    solvedAzm: 0, l1: 0, l2: 0, curveDls: 0, candidates: [],
   };
 
-  // Bisect on A2 across [A1 - π, A1 + π]. The residual changes sign as A2
-  // sweeps; the bearing of the target gives a good initial seed.
-  const bearing = Math.atan2(dE, dN);
-  // Scan to find a sign change.
-  const samples = 32;
+  // Scan A2 across [A1 - π, A1 + π] for ALL sign changes in the residual;
+  // each bracket is one candidate target tangent azimuth that closes the
+  // 3-equation system. Pascal Unit02.pas:2489-2625 does the same via the
+  // `for qq := 1 to 2` loop calling azmfind twice.
+  const samples = 96;
+  const brackets: Array<{ lo: number; hi: number }> = [];
   let prevA = A1 - Math.PI;
   let prevRes = solveLinearForAzm(I1, A1, I2, prevA, dT, dN, dE).res;
-  let lo: number | null = null;
-  let hi: number | null = null;
   for (let s = 1; s <= samples; s++) {
     const a = A1 - Math.PI + (2 * Math.PI * s) / samples;
     const r = solveLinearForAzm(I1, A1, I2, a, dT, dN, dE);
     if (Number.isFinite(r.res) && Number.isFinite(prevRes) && r.res * prevRes < 0) {
-      lo = prevA; hi = a;
-      // Prefer the sign change closest to the bearing.
-      if (Math.abs(((prevA + a) / 2 - bearing + Math.PI) % (2 * Math.PI) - Math.PI) < Math.PI / 2) {
-        break;
-      }
+      brackets.push({ lo: prevA, hi: a });
     }
     prevA = a;
     prevRes = r.res;
   }
-  if (lo === null || hi === null) {
-    return { ...empty, reason: "HC3D 3D solver: no azimuth solution bracket found" };
+
+  // Refine each bracket to get the candidate A2 and check L1/L2 positivity.
+  type Solution = { A2: number; L1: number; L2: number; DL: number };
+  const rawSolutions: Solution[] = [];
+  for (const { lo: lo0, hi: hi0 } of brackets) {
+    let bisectLo = lo0;
+    let bisectHi = hi0;
+    for (let i = 0; i < 80; i++) {
+      const mid = (bisectLo + bisectHi) / 2;
+      const r = solveLinearForAzm(I1, A1, I2, mid, dT, dN, dE);
+      if (!Number.isFinite(r.res)) break;
+      const loR = solveLinearForAzm(I1, A1, I2, bisectLo, dT, dN, dE).res;
+      if (r.res * loR < 0) bisectHi = mid;
+      else bisectLo = mid;
+      if (Math.abs(r.res) < 1e-8) break;
+    }
+    const A2 = (bisectLo + bisectHi) / 2;
+    const sol = solveLinearForAzm(I1, A1, I2, A2, dT, dN, dE);
+    if (Number.isFinite(sol.L1) && Number.isFinite(sol.L2)
+        && sol.L1 >= 0 && sol.L2 >= 0) {
+      rawSolutions.push({ A2, L1: sol.L1, L2: sol.L2, DL: sol.DL });
+    }
   }
 
-  // Bisect to refine.
-  let bisectLo: number = lo;
-  let bisectHi: number = hi;
-  for (let i = 0; i < 80; i++) {
-    const mid: number = (bisectLo + bisectHi) / 2;
-    const r = solveLinearForAzm(I1, A1, I2, mid, dT, dN, dE);
-    if (!Number.isFinite(r.res)) break;
-    const loR = solveLinearForAzm(I1, A1, I2, bisectLo, dT, dN, dE).res;
-    if (r.res * loR < 0) bisectHi = mid;
-    else bisectLo = mid;
-    if (Math.abs(r.res) < 1e-8) break;
-  }
-  const A2 = (bisectLo + bisectHi) / 2;
-  const sol = solveLinearForAzm(I1, A1, I2, A2, dT, dN, dE);
-  if (!Number.isFinite(sol.L1) || !Number.isFinite(sol.L2) || sol.L1 < 0 || sol.L2 < 0) {
-    return { ...empty, reason: "HC3D 3D solver: L1 / L2 came out negative" };
+  if (rawSolutions.length === 0) {
+    return { ...empty, reason: "HC3D 3D solver: no positive-length azimuth solution found" };
   }
 
-  const L1 = sol.L1;
-  const L2 = sol.L2;
-  const DL = sol.DL;
+  // Sort by total length ascending (Pascal's "shortest path" preference).
+  rawSolutions.sort((a, b) => (a.L1 + a.L2) - (b.L1 + b.L2));
+
+  // Dedupe near-duplicates (numerical bisection from adjacent brackets that
+  // converge to the same root) and 180°-mirror solutions (geometrically
+  // equivalent — same curve traversed in the opposite tangent orientation).
+  const norm = (x: number): number => {
+    let y = x;
+    while (y > Math.PI) y -= 2 * Math.PI;
+    while (y < -Math.PI) y += 2 * Math.PI;
+    return y;
+  };
+  const distinct: Solution[] = [];
+  for (const cand of rawSolutions) {
+    let isDup = false;
+    for (const kept of distinct) {
+      const d = Math.abs(norm(cand.A2 - kept.A2));
+      const dMirror = Math.abs(d - Math.PI);
+      if (d < 0.5 * Math.PI / 180 || dMirror < 0.5 * Math.PI / 180) {
+        isDup = true; break;
+      }
+    }
+    if (!isDup) distinct.push(cand);
+  }
+
+  // Pick the requested branch (1 = primary / shortest, 2 = alternate).
+  const idx = branch === 2 ? Math.min(1, distinct.length - 1) : 0;
+  const picked = distinct[idx];
+  const A2 = picked.A2;
+  const L1 = picked.L1;
+  const L2 = picked.L2;
+  const DL = picked.DL;
   const curveDls = L2 < 1e-9 ? 0 : DL / L2;
 
   // Build the densified trajectory.
@@ -254,5 +297,8 @@ export function hc3d3D(input: HC3D3DInput): HC3D3DResult {
     l1: L1,
     l2: L2,
     curveDls,
+    candidates: distinct.map((c) => ({
+      solvedAzm: c.A2, l1: c.L1, l2: c.L2,
+    })),
   };
 }

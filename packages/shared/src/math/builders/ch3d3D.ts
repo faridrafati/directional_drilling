@@ -38,6 +38,12 @@ export interface CH3D3DInput {
   tgtEw: number;
   tgtTvd: number;
   ppf?: number;
+  /**
+   * Which candidate solution to use (1 = primary / shortest, 2 = alternate).
+   * The 3D scan can produce multiple positive-length azimuth solutions; the
+   * dispatcher surfaces both to the Form07 modal. Default 1.
+   */
+  branch?: 1 | 2;
 }
 
 export interface CH3D3DResult extends BuilderResult {
@@ -49,6 +55,12 @@ export interface CH3D3DResult extends BuilderResult {
   l2: number;
   /** Min-curvature DLS for the curve segment. */
   curveDls: number;
+  /**
+   * All distinct positive-length azimuth solutions, sorted by total length
+   * ascending. The dispatcher reads this to emit a Form07 entry whenever
+   * length >= 2. Distinct = differ by >0.5° AND not 180° apart.
+   */
+  candidates: Array<{ solvedAzm: number; l1: number; l2: number }>;
 }
 
 function minCurvDeltas(
@@ -103,15 +115,18 @@ function solveLinearForAzm(
 export function ch3d3D(input: CH3D3DInput): CH3D3DResult {
   const { theta1: I1, prevAzm: A1, theta: I2, tgtNs: dN, tgtEw: dE, tgtTvd: dT } = input;
   const ppf = input.ppf ?? DEFAULT_PPF;
+  const branch = input.branch ?? 1;
 
   const empty: CH3D3DResult = {
     ok: false, keyPoints: [], stations: [], reason: "n/a",
-    solvedAzm: 0, l1: 0, l2: 0, curveDls: 0,
+    solvedAzm: 0, l1: 0, l2: 0, curveDls: 0, candidates: [],
   };
 
-  // Scan A2 across [A1 - π, A1 + π] for a sign change in the residual.
-  const samples = 64;
-  type Bracket = { lo: number; hi: number; loR: number; hiR: number };
+  // Scan A2 across [A1 - π, A1 + π] for ALL sign changes in the residual.
+  // Each bracket gives one candidate target tangent azimuth (Pascal's
+  // `for qq := 1 to 2 do azmfind(...)` pattern at Unit02.pas:2671-2807).
+  const samples = 96;
+  type Bracket = { lo: number; hi: number };
   const brackets: Bracket[] = [];
   let prevA = A1 - Math.PI;
   let prevRes = solveLinearForAzm(I1, A1, I2, prevA, dT, dN, dE).res;
@@ -119,15 +134,15 @@ export function ch3d3D(input: CH3D3DInput): CH3D3DResult {
     const a = A1 - Math.PI + (2 * Math.PI * s) / samples;
     const r = solveLinearForAzm(I1, A1, I2, a, dT, dN, dE);
     if (Number.isFinite(r.res) && Number.isFinite(prevRes) && r.res * prevRes < 0) {
-      brackets.push({ lo: prevA, hi: a, loR: prevRes, hiR: r.res });
+      brackets.push({ lo: prevA, hi: a });
     }
     prevA = a;
     prevRes = r.res;
   }
 
-  // Each bracket can refine to a valid solution. We want the one with
-  // POSITIVE L1 and L2 (geometrically physical).
-  let best: { L1: number; L2: number; A2: number; DL: number; RF: number } | null = null;
+  // Refine each bracket; collect all positive-length solutions.
+  type Solution = { A2: number; L1: number; L2: number; DL: number };
+  const rawSolutions: Solution[] = [];
   for (const { lo: lo0, hi: hi0 } of brackets) {
     let lo = lo0;
     let hi = hi0;
@@ -143,17 +158,43 @@ export function ch3d3D(input: CH3D3DInput): CH3D3DResult {
     const A2 = (lo + hi) / 2;
     const r = solveLinearForAzm(I1, A1, I2, A2, dT, dN, dE);
     if (Number.isFinite(r.L1) && Number.isFinite(r.L2) && r.L1 > 0 && r.L2 > 0) {
-      if (!best || (r.L1 + r.L2) < (best.L1 + best.L2)) {
-        best = { L1: r.L1, L2: r.L2, A2, DL: r.DL, RF: r.RF };
-      }
+      rawSolutions.push({ A2, L1: r.L1, L2: r.L2, DL: r.DL });
     }
   }
 
-  if (!best) {
+  if (rawSolutions.length === 0) {
     return { ...empty, reason: "CH3D 3D solver: no positive-length azimuth solution found" };
   }
 
-  const { L1, L2, A2, DL } = best;
+  // Sort by total length ascending.
+  rawSolutions.sort((a, b) => (a.L1 + a.L2) - (b.L1 + b.L2));
+
+  // Dedupe near-duplicates and 180°-mirror solutions.
+  const norm = (x: number): number => {
+    let y = x;
+    while (y > Math.PI) y -= 2 * Math.PI;
+    while (y < -Math.PI) y += 2 * Math.PI;
+    return y;
+  };
+  const distinct: Solution[] = [];
+  for (const cand of rawSolutions) {
+    let isDup = false;
+    for (const kept of distinct) {
+      const d = Math.abs(norm(cand.A2 - kept.A2));
+      const dMirror = Math.abs(d - Math.PI);
+      if (d < 0.5 * Math.PI / 180 || dMirror < 0.5 * Math.PI / 180) {
+        isDup = true; break;
+      }
+    }
+    if (!isDup) distinct.push(cand);
+  }
+
+  const idx = branch === 2 ? Math.min(1, distinct.length - 1) : 0;
+  const picked = distinct[idx];
+  const L1 = picked.L1;
+  const L2 = picked.L2;
+  const A2 = picked.A2;
+  const DL = picked.DL;
   const curveDls = L1 < 1e-9 ? 0 : DL / L1;
 
   // Densify: start, curve interpolation, EOC keypoint, hold densification, Target keypoint.
@@ -233,5 +274,8 @@ export function ch3d3D(input: CH3D3DInput): CH3D3DResult {
     l1: L1,
     l2: L2,
     curveDls,
+    candidates: distinct.map((c) => ({
+      solvedAzm: c.A2, l1: c.L1, l2: c.L2,
+    })),
   };
 }

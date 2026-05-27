@@ -46,6 +46,13 @@ export interface HCH3DInput {
    * Default 1 = shortest total length.
    */
   branch?: 1 | 2;
+  /**
+   * Internal guard: when set, the failure path SKIPS the "min DLS needed"
+   * hint search to avoid infinite recursion (the hint search re-invokes
+   * this solver, which would otherwise re-trigger the hint search again).
+   * Set to true only from inside findMinDls.
+   */
+  __noHint?: boolean;
 }
 
 export interface HCH3DResult extends BuilderResult {
@@ -174,7 +181,21 @@ export function hch3D(input: HCH3DInput): HCH3DResult {
     }
   }
   if (solutions.length === 0) {
-    return { ...empty, reason: "HCH 3D solver: no all-positive-length azimuth solution found" };
+    // Port of Pascal Unit02.pas:2942 "Minimum Needed DLS to Reach target":
+    // when the user's DLS is too small to close the geometry, hint the
+    // smallest DLS that would. We do this numerically by binary-searching
+    // the DLS multiplier — the Pascal 2D formula doesn't generalise to
+    // arbitrary 3D plane tilts, so we sample the solver instead. The
+    // `__noHint` guard prevents infinite recursion when findMinDls calls
+    // this solver and the probe ALSO fails.
+    const hint = input.__noHint ? null : findMinDls(input);
+    const hintMsg = hint
+      ? ` — minimum DLS needed ≈ ${hint.toFixed(3)}°/100ft`
+      : "";
+    return {
+      ...empty,
+      reason: `HCH 3D solver: no all-positive-length azimuth solution found${hintMsg}`,
+    };
   }
 
   // Sort by total length ascending (matches Pascal's "shortest path" pick).
@@ -308,4 +329,51 @@ export function hch3D(input: HCH3DInput): HCH3DResult {
       solvedAzm: c.A2, l0: c.L0, l1: c.L1, l2: c.L2,
     })),
   };
+}
+
+/**
+ * Numerically find the minimum DLS (in deg/100 length-unit) that would make
+ * the HCH geometry close. We multiply the user's DLS by k and probe whether
+ * the scan-and-bisect finds an all-positive-length solution at that k; the
+ * smallest k that works tells the user how much higher their DLS needs to
+ * be. Returns null if even DLS×100 can't solve it.
+ *
+ * Pascal Unit02.pas:2942 computes a closed-form hint for the 2D case via
+ * inversion of (1 - cos ΔI) over the in-plane geometry; in 3D the plane is
+ * tilted and the closed form picks up extra terms that depend on the
+ * unknown target azimuth. A numerical sweep is robust to those wrinkles.
+ */
+function findMinDls(input: HCH3DInput): number | null {
+  const probe = (dlsTry: number): boolean => {
+    const r = hch3D({ ...input, dls: dlsTry, __noHint: true });
+    return r.ok;
+  };
+  const sign = input.dls > 0 ? 1 : -1;
+  const absDls = Math.abs(input.dls);
+  // Coarse sweep — multiply by 1.05, 1.1, 1.2, ..., 100. Find the first k
+  // where the solver finds a positive-length solution.
+  let kLo: number | null = null;
+  let kHi: number | null = null;
+  const ladder = [1.02, 1.05, 1.1, 1.2, 1.5, 2, 3, 5, 8, 13, 21, 34, 55, 100];
+  let prevK = 1;
+  for (const k of ladder) {
+    if (probe(sign * absDls * k)) {
+      kLo = prevK;
+      kHi = k;
+      break;
+    }
+    prevK = k;
+  }
+  if (kHi === null || kLo === null) return null;
+  // Bisect [kLo, kHi] to refine.
+  let lo = kLo;
+  let hi = kHi;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (probe(sign * absDls * mid)) hi = mid;
+    else lo = mid;
+    if (hi - lo < 1e-4) break;
+  }
+  // Convert rad/MD-unit back to deg/100-MD-unit (the user-facing unit).
+  return (absDls * hi * 18000) / Math.PI;
 }

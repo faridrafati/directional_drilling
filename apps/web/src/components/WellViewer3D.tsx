@@ -35,6 +35,10 @@ interface Props {
   keypoints?: KeypointRow[];
   /** Project length unit shown alongside dimensional values in the legend. */
   lengthUnit?: string;
+  /** When true (default), tube path is a Catmull-Rom spline through stations;
+   *  when false, straight line segments between consecutive stations.
+   *  Controlled from the page-level "Smooth lines" toggle. */
+  smoothLines?: boolean;
 }
 
 /**
@@ -50,7 +54,7 @@ interface PickedPoint {
   br: number; tr: number; dmd: number;
 }
 
-export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft" }: Props) {
+export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft", smoothLines = true }: Props) {
   // `selected` is "locked" by a click; `hovered` is transient while the
   // cursor is over the tube. Panel shows selected when locked, otherwise
   // whatever's being hovered.
@@ -82,6 +86,7 @@ export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft" }: Pr
               onHover={setHovered}
               selectedKey={selected ? selectedKey(selected) : null}
               lengthUnit={lengthUnit}
+              smoothLines={smoothLines}
             />
           </Suspense>
         </Canvas>
@@ -99,7 +104,7 @@ function selectedKey(p: PickedPoint): string {
 }
 
 function Scene({
-  stations, keypoints, onPick, onHover, selectedKey, lengthUnit,
+  stations, keypoints, onPick, onHover, selectedKey, lengthUnit, smoothLines,
 }: {
   stations: StationRow[];
   keypoints: KeypointRow[];
@@ -107,6 +112,7 @@ function Scene({
   onHover: (p: PickedPoint | null) => void;
   selectedKey: string | null;
   lengthUnit: string;
+  smoothLines: boolean;
 }) {
   // The 3D world-coords of the cursor's nearest-station hit on the tube.
   // Updated on every pointer move over the wellbore mesh; consumed by the
@@ -138,12 +144,31 @@ function Scene({
   const center = useMemo(() => bbox.getCenter(new THREE.Vector3()), [bbox]);
   const groundY = bbox.min.y;
 
-  // Build a smooth curve through the densified stations.
+  // Build the tube path through the densified stations.
+  //
+  // smoothLines=true (default): Catmull-Rom spline interpolates a smooth
+  // curve through every station — the tube bends visually between any two
+  // adjacent stations even if there are only a few of them.
+  //
+  // smoothLines=false: a CurvePath of LineCurve3 segments — straight tube
+  // between each consecutive pair of stations, with hard corners. Useful
+  // for verifying the densifier's resolution or seeing the raw polyline
+  // without spline-smoothing artifacts.
   const curveGeometry = useMemo(() => {
-    const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.1);
-    const tubularSegments = Math.max(64, points.length * 4);
-    return new THREE.TubeGeometry(curve, tubularSegments, 0.4, 8, false);
-  }, [points]);
+    if (smoothLines) {
+      const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.1);
+      const tubularSegments = Math.max(64, points.length * 4);
+      return new THREE.TubeGeometry(curve, tubularSegments, 0.4, 8, false);
+    }
+    const path = new THREE.CurvePath<THREE.Vector3>();
+    for (let i = 0; i < points.length - 1; i++) {
+      path.add(new THREE.LineCurve3(points[i], points[i + 1]));
+    }
+    // For a polyline, one tubular segment per source segment is enough —
+    // the result is a chain of cylinders with mitred joins at corners.
+    const tubularSegments = Math.max(1, points.length - 1);
+    return new THREE.TubeGeometry(path, tubularSegments, 0.4, 8, false);
+  }, [points, smoothLines]);
 
   const wellhead = points[0];
   const tip = points[points.length - 1];

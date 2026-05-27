@@ -161,6 +161,41 @@ export function CalculationPage() {
   const stations = data?.stations ?? [];
   const lastResult = calculateMut.data;
 
+  // Auto-dismiss the "Calculated N stations" banner so it doesn't linger
+  // forever — but ONLY on success. When there are errors, the banner stays
+  // visible until the user explicitly dismisses it (Pascal MIXED.exe behaves
+  // the same way for its error showmessage popups) so they don't miss the
+  // diagnostic. The ✕ button works either way.
+  const [bannerVisible, setBannerVisible] = useState(false);
+  useEffect(() => {
+    if (!lastResult) {
+      setBannerVisible(false);
+      return;
+    }
+    setBannerVisible(true);
+    const hasErrors = !lastResult.ok || lastResult.errors.length > 0;
+    if (hasErrors) return; // stay visible until manually dismissed
+    const t = setTimeout(() => setBannerVisible(false), 4000);
+    return () => clearTimeout(t);
+  }, [lastResult]);
+
+  // ─── Smooth lines preference (applies to 2D charts + 3D viewer) ───
+  // When ON: 2D charts use Recharts `type="monotone"` (smooth Bezier between
+  // stations) and the 3D viewer uses a CatmullRom spline through points.
+  // When OFF: both render straight polyline segments between stations —
+  // useful for verifying densified-station MD precision or when the
+  // smoothing visually hides a real kink in the trajectory. Persisted in
+  // localStorage so the user's choice survives page reloads.
+  const [smoothLines, setSmoothLines] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem("dd:smoothLines");
+      return raw === null ? true : raw === "true";
+    } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("dd:smoothLines", String(smoothLines)); } catch { /* noop */ }
+  }, [smoothLines]);
+
   // ─── VSEC view-azimuth (shared between the chart + the grid/stations tables) ───
   // null = use the natural azm (wellhead → last-station bearing); any string
   // means the user typed an override in the VSEC chart's toolbar. Persisting
@@ -333,6 +368,20 @@ export function CalculationPage() {
             savedAt={savedAt}
             error={saveMut.error ? String(saveMut.error) : null}
           />
+          {(tab === "3d" || tab === "charts") && (
+            <label
+              className="inline-flex items-center gap-1.5 text-sm text-gray-700 select-none px-2 h-10 sm:h-9 rounded-md bg-gray-100 hover:bg-gray-200 cursor-pointer"
+              title="When on, the path is rendered as a smooth curve through stations (Recharts monotone + 3D Catmull-Rom). When off, straight polyline segments."
+            >
+              <input
+                type="checkbox"
+                checked={smoothLines}
+                onChange={(e) => setSmoothLines(e.target.checked)}
+                className="cursor-pointer"
+              />
+              Smooth lines
+            </label>
+          )}
           {tab === "grid" && (
             <>
               <div className="flex gap-1">
@@ -375,20 +424,69 @@ export function CalculationPage() {
 
       <Tabs current={tab} onChange={setTab} />
 
-      {lastResult && tab === "grid" && (
+      {lastResult && bannerVisible && tab === "grid" && (
         <div
-          className={`mb-4 p-3 rounded text-sm ${
+          className={`mb-4 p-3 rounded text-sm relative transition-opacity duration-500 ${
             lastResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"
           }`}
         >
+          <button
+            type="button"
+            onClick={() => setBannerVisible(false)}
+            className="absolute top-1 right-2 text-xs opacity-60 hover:opacity-100"
+            aria-label="Dismiss"
+            title="Dismiss"
+          >
+            ✕
+          </button>
           {lastResult.ok
             ? `Calculated ${lastResult.stationCount} stations.`
             : `Calculated ${lastResult.stationCount} stations with errors:`}
           {lastResult.errors.length > 0 && (
             <ul className="mt-1 ml-4 list-disc">
-              {lastResult.errors.map((e, i) => (
-                <li key={i}>Segment {e.segmentIndex}: {e.message}</li>
-              ))}
+              {lastResult.errors.map((e, i) => {
+                // Show "Segment 3.2" — group.position — matching the grid's
+                // 1-1 / 1-2 / 2-1 / ... row labels. When the failure is
+                // about an input the user actually owns (e.g. DLS), point
+                // to the row that holds that input rather than the
+                // dispatcher's target row — so for HCH the alert reads
+                // "3.2" (the DLS row) not "3.3" (the Target row).
+                //
+                // Older API responses (without groupNumber) fall back to
+                // the raw sorted-index for compatibility.
+                let label: string;
+                if (typeof e.groupNumber === "number"
+                    && typeof e.groupPosition === "number") {
+                  let pos = e.groupPosition;
+                  const failingTyp = segments[e.segmentIndex]?.profileType;
+                  if (
+                    failingTyp != null
+                    && typeof e.groupSize === "number"
+                    && /\bDLS\b/i.test(e.message)
+                  ) {
+                    // Walk the group's rows; pick the first one whose
+                    // profileRoles editable mask includes "dls".
+                    const firstRow = e.segmentIndex - e.groupSize + 1;
+                    for (let k = 0; k < e.groupSize; k++) {
+                      const seg = segments[firstRow + k];
+                      const roles = profileRoles(failingTyp);
+                      const role = roles[k] ?? null;
+                      if (
+                        seg
+                        && role
+                        && isEditableForRole(failingTyp, role, "dls")
+                      ) {
+                        pos = k + 1; // 1-based for display
+                        break;
+                      }
+                    }
+                  }
+                  label = `Segment ${e.groupNumber}.${pos}`;
+                } else {
+                  label = `Segment ${e.segmentIndex}`;
+                }
+                return <li key={i}>{label}: {e.message}</li>;
+              })}
             </ul>
           )}
         </div>
@@ -440,6 +538,7 @@ export function CalculationPage() {
             stations={stations}
             keypoints={data?.keypoints ?? []}
             lengthUnit={lengthUnit}
+            smoothLines={smoothLines}
           />
         )}
         {tab === "charts" && (
@@ -448,6 +547,7 @@ export function CalculationPage() {
             lengthUnit={lengthUnit}
             vsecAzmInputStr={vsecAzmInputStr}
             onVsecAzmInputChange={setVsecAzmInputStr}
+            smoothLines={smoothLines}
           />
         )}
       </Suspense>
@@ -648,12 +748,13 @@ function AzmChoiceModal({
  * shared panel is the deep-dive inspector with the full Pascal column set.
  */
 function ChartsView({
-  stations, lengthUnit, vsecAzmInputStr, onVsecAzmInputChange,
+  stations, lengthUnit, vsecAzmInputStr, onVsecAzmInputChange, smoothLines,
 }: {
   stations: NonNullable<CalculationDetail["stations"]>;
   lengthUnit: string;
   vsecAzmInputStr: string | null;
   onVsecAzmInputChange: (next: string | null) => void;
+  smoothLines: boolean;
 }) {
   const [hovered, setHovered] = useState<StationDetails | null>(null);
 
@@ -667,12 +768,14 @@ function ChartsView({
           showDetailsPanel={false}
           vsecAzmInputStr={vsecAzmInputStr}
           onVsecAzmInputChange={onVsecAzmInputChange}
+          smoothLines={smoothLines}
         />
         <PlanViewChart
           stations={stations}
           lengthUnit={lengthUnit}
           onHover={setHovered}
           showDetailsPanel={false}
+          smoothLines={smoothLines}
         />
       </div>
       <StationDetailsPanel point={hovered} lengthUnit={lengthUnit} widthClass="w-72 xl:w-64" />
@@ -1197,30 +1300,76 @@ function StationsTable({
       return false;
     };
 
-    // Build a "group-N" prefix from segmentOrder so the # column reads
-    // "1-1, 1-2, 2-1, …" exactly like the editable grid above. The raw
-    // segmentOrder is the LAST row of each profile group, so we resolve it
-    // through `groupLabelByOrder` (built from segments[]). Stations get
-    // bare "G" (no role position — they're between roles); keypoints get
-    // "G-roleIndex+1" so KOP/EOC/Target keep their position-in-group.
+    // Build a "group-position-section" prefix from segmentOrder so the #
+    // column reads "1-1-1, 1-1-2, …, 1-2-1, …" — each densified station
+    // shows WHICH leg of WHICH profile it belongs to.
+    //
+    //   G = profile-group ordinal (matches the editable grid's "1-, 2-, 3-")
+    //   P = which keypoint slot we're walking TOWARDS (1 = KOP, 2 = EOC, …)
+    //   S = station counter WITHIN that leg (1, 2, 3 …)
+    //
+    // Keypoints themselves keep the 2-level label "G-P" so the table reads
+    //   1-1-1, 1-1-2, …, 1-1  (KOP keypoint),
+    //   1-2-1, 1-2-2, …, 1-2  (EOC keypoint),
+    //   1-3-1, 1-3-2, …, 1-3  (Target keypoint).
     const groupFor = (segOrder: number) =>
       groupLabelByOrder.get(segOrder) ?? String(segOrder);
 
+    // Group keypoints by segmentOrder + sort by MD so each group's
+    // keypoints are in walking order. We then assign each densified
+    // station to "the next keypoint slot it precedes (or equals)".
+    const kpsByGroup = new Map<number, KeypointRow[]>();
+    for (const k of keypoints) {
+      const arr = kpsByGroup.get(k.segmentOrder) ?? [];
+      arr.push(k);
+      kpsByGroup.set(k.segmentOrder, arr);
+    }
+    for (const arr of kpsByGroup.values()) {
+      arr.sort((a, b) => a.md - b.md);
+    }
+
+    // Counter per (segmentOrder, section) so labels stay sequential within
+    // each leg. Walked in MD order below, which matches the dispatcher's
+    // emitted station order.
+    const sectionCounters = new Map<string, number>();
+
     const stationRows: Row[] = stations
       .filter((s) => !isDuplicateOfKeypoint(s.md))
-      .map((s) => ({
-        key: `s-${s.id}`,
-        isKeypoint: false,
-        label: groupFor(s.segmentOrder),
-        comment: s.comment ?? "",
-        md: s.md, inc: s.inc, azm: s.azm, tvd: s.tvd,
-        // Reproject onto the current VSEC reference azimuth so this table
-        // follows the chart toolbar live — bypasses the dispatcher's
-        // persisted s.vsec which was computed with the natural azm.
-        vsec: projectVsec(s.ns, s.ew),
-        ew: s.ew, ns: s.ns, dls: s.dls, tf: s.tf,
-        br: s.br, tr: s.tr, dmd: s.dmd,
-      }));
+      .map((s) => {
+        const groupKps = kpsByGroup.get(s.segmentOrder) ?? [];
+        // Section = 1-based index of the FIRST keypoint whose md ≥ station.md
+        // (i.e. the keypoint this station is walking TOWARDS). If we somehow
+        // overshoot all keypoints, cap at the last slot.
+        let section = groupKps.length || 1;
+        for (let i = 0; i < groupKps.length; i++) {
+          if (s.md <= groupKps[i].md + EPS) {
+            section = i + 1;
+            break;
+          }
+        }
+        const sectionKey = `${s.segmentOrder}:${section}`;
+        const counter = (sectionCounters.get(sectionKey) ?? 0) + 1;
+        sectionCounters.set(sectionKey, counter);
+        const groupPrefix = groupFor(s.segmentOrder);
+        // The START row is segmentOrder=0 → groupLabelByOrder gives "0";
+        // keep it bare instead of "0-1-1" because there's no profile yet.
+        const label = s.segmentOrder === 0
+          ? groupPrefix
+          : `${groupPrefix}-${section}-${counter}`;
+        return {
+          key: `s-${s.id}`,
+          isKeypoint: false,
+          label,
+          comment: s.comment ?? "",
+          md: s.md, inc: s.inc, azm: s.azm, tvd: s.tvd,
+          // Reproject onto the current VSEC reference azimuth so this table
+          // follows the chart toolbar live — bypasses the dispatcher's
+          // persisted s.vsec which was computed with the natural azm.
+          vsec: projectVsec(s.ns, s.ew),
+          ew: s.ew, ns: s.ns, dls: s.dls, tf: s.tf,
+          br: s.br, tr: s.tr, dmd: s.dmd,
+        };
+      });
     const keypointRows: Row[] = keypoints.map((k) => ({
       key: `k-${k.id}`,
       isKeypoint: true,

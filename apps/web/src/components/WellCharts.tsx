@@ -42,6 +42,11 @@ interface Props {
    *  to these. Without it, the chart manages its own internal state. */
   vsecAzmInputStr?: string | null;
   onVsecAzmInputChange?: (next: string | null) => void;
+  /** When true (default), draw a smooth monotone Bezier through stations;
+   *  when false, straight linear segments. Controlled from the page-level
+   *  "Smooth lines" toggle so both 2D charts + the 3D viewer share the
+   *  same on/off state. */
+  smoothLines?: boolean;
 }
 
 /** Append a unit suffix in parens if non-empty. "TVD" + "ft" → "TVD (ft)". */
@@ -334,7 +339,7 @@ function toDetails(s: StationRow): StationDetails {
 
 export function VerticalSectionChart({
   stations, lengthUnit = "ft", onHover, showDetailsPanel = true,
-  vsecAzmInputStr, onVsecAzmInputChange,
+  vsecAzmInputStr, onVsecAzmInputChange, smoothLines = true,
 }: Props) {
   // The vertical section is the projection of each station's horizontal
   // offset (NS, EW) onto a reference direction. Pascal Form23 lets the
@@ -431,7 +436,7 @@ export function VerticalSectionChart({
             })}
           />
           <Line
-            type="monotone"
+            type={smoothLines ? "monotone" : "linear"}
             dataKey="tvd"
             stroke="#1e40af"
             strokeWidth={2}
@@ -462,6 +467,7 @@ export function VerticalSectionChart({
 
 export function PlanViewChart({
   stations, lengthUnit = "ft", onHover, showDetailsPanel = true,
+  smoothLines = true,
 }: Props) {
   const data = useMemo(
     () =>
@@ -522,7 +528,7 @@ export function PlanViewChart({
             })}
           />
           <Line
-            type="linear"
+            type={smoothLines ? "monotone" : "linear"}
             dataKey="ns"
             stroke="#1e40af"
             strokeWidth={2}

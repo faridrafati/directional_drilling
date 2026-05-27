@@ -109,7 +109,16 @@ export interface CalculationDetail {
 export interface CalculateResult {
   ok: boolean;
   stationCount: number;
-  errors: Array<{ segmentIndex: number; message: string }>;
+  errors: Array<{
+    segmentIndex: number;
+    /** 1-based group ordinal — e.g. "3" in "Segment 3.2". */
+    groupNumber: number;
+    /** 1-based position within the group — e.g. "2" in "Segment 3.2". */
+    groupPosition: number;
+    /** Total rows in the failing group. */
+    groupSize: number;
+    message: string;
+  }>;
   /**
    * Per-group 2-azimuth ambiguity entries. Each one represents a profile
    * group where the user supplied a 3D target offset without an azimuth,

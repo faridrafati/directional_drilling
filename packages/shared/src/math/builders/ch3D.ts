@@ -45,6 +45,8 @@ export interface CH3DInput {
   tgtEw: number;
   tgtTvd: number;
   ppf?: number;
+  /** Internal recursion guard — see hch3D.ts for the rationale. */
+  __noHint?: boolean;
 }
 
 export interface CH3DDeviatedResult extends BuilderResult {
@@ -209,12 +211,17 @@ export function ch3D(input: CH3DInput): CH3DDeviatedResult {
   }
 
   if (solutions.length === 0) {
-    // Pascal Unit02.pas:3136-3138 hint: if no curve can reach the target at
-    // this DLS, suggest the minimum DLS. We don't compute that here (3D
-    // version is more complex) — fall back to a generic infeasible message.
+    // Port of Pascal Unit02.pas:3136-3138 ("Minimum Needed DLS to Reach
+    // target"). The Pascal 2D closed-form doesn't generalise to arbitrary
+    // 3D plane tilts, so we sample the solver numerically. `__noHint` guards
+    // against infinite recursion from findMinDls re-invoking ch3D.
+    const hint = input.__noHint ? null : findMinDls(input);
+    const hintMsg = hint
+      ? ` — minimum DLS needed ≈ ${hint.toFixed(3)}°/100ft`
+      : "";
     return {
       ...empty,
-      reason: "CH 3D solver: no curve+hold can reach the target at this DLS",
+      reason: `CH 3D solver: no curve+hold can reach the target at this DLS${hintMsg}`,
     };
   }
 
@@ -291,4 +298,42 @@ export function ch3D(input: CH3DInput): CH3DDeviatedResult {
     l1: L1,
     l2: L2,
   };
+}
+
+/**
+ * Find the minimum DLS that would make the CH geometry close. Numerical
+ * sweep + bisection on a scale factor applied to the user's DLS — see
+ * the same pattern in hch3D.ts.
+ *
+ * Returns the answer in deg/100 length-unit (the user-facing display unit).
+ */
+function findMinDls(input: CH3DInput): number | null {
+  const probe = (dlsTry: number): boolean => {
+    const r = ch3D({ ...input, dls: dlsTry, __noHint: true });
+    return r.ok;
+  };
+  const sign = input.dls > 0 ? 1 : -1;
+  const absDls = Math.abs(input.dls);
+  const ladder = [1.02, 1.05, 1.1, 1.2, 1.5, 2, 3, 5, 8, 13, 21, 34, 55, 100];
+  let kLo: number | null = null;
+  let kHi: number | null = null;
+  let prevK = 1;
+  for (const k of ladder) {
+    if (probe(sign * absDls * k)) {
+      kLo = prevK;
+      kHi = k;
+      break;
+    }
+    prevK = k;
+  }
+  if (kHi === null || kLo === null) return null;
+  let lo = kLo;
+  let hi = kHi;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (probe(sign * absDls * mid)) hi = mid;
+    else lo = mid;
+    if (hi - lo < 1e-4) break;
+  }
+  return (absDls * hi * 18000) / Math.PI;
 }
