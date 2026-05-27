@@ -14,7 +14,8 @@ import type { Segment, Station } from "../src/types.js";
 
 interface FixtureInput {
   name?: string;
-  azimuthChoice?: 1 | 2;
+  /** Per-segment azimuth-branch picks (segmentOrder → 1 | 2). */
+  azimuthChoices?: Record<number, 1 | 2>;
   segments: Segment[];
 }
 
@@ -54,7 +55,7 @@ describe("MIXED.exe fixture regression", () => {
   for (const { name, input, expected } of inputs) {
     it(`matches ${name}`, () => {
       const result = dispatch(input.segments, {
-        azimuthChoice: input.azimuthChoice ?? 1,
+        azimuthChoices: input.azimuthChoices ?? {},
       });
       expect(result.ok).toBe(true);
       expect(result.stations.length).toBe(expected.stations.length);

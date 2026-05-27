@@ -46,8 +46,14 @@ import { mcombo } from "./builders/mcombo.js";
 import type { BuilderResult } from "./builders/types.js";
 
 export interface DispatchOptions {
-  /** When a builder has two azimuth solutions, which to pick (default 1). */
-  azimuthChoice?: 1 | 2;
+  /**
+   * Per-segment azimuth-branch picker, keyed by the segment group's last-row
+   * order. When the builder finds two azimuth solutions for a group, this
+   * map tells the dispatcher which branch to commit to. Groups not in the
+   * map default to branch 1. This replaces the old global `azimuthChoice`
+   * so the user can pick a different branch for each ambiguous profile.
+   */
+  azimuthChoices?: Record<number, 1 | 2>;
   /** Densification step in MD units (default 100). */
   ppf?: number;
 }
@@ -808,7 +814,8 @@ function solveAndBuild(
     const a3 = { ns: target.ns - prev.ns, ew: target.ew - prev.ew, tvd: target.tvd - prev.tvd };
     const cands = azmFind(a1, a2, a3, theta);
     if (cands.ok) {
-      const choice = options.azimuthChoice ?? 1;
+      // Per-segment branch pick: look up by target.order; default branch 1.
+      const choice = options.azimuthChoices?.[target.order] ?? 1;
       // Two distinct candidates → genuine ambiguity. Don't surface if the
       // solver collapsed both to the same number (which happens when the
       // prev tangent is vertical or otherwise fully constrains the plane).

@@ -114,22 +114,35 @@ export function CalculationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segments, isDirty]);
 
-  // Azimuth solution preference for ambiguous starred profiles. Persisted to
-  // localStorage per-calc so it survives reloads.
-  const azmStorageKey = id ? `azm-choice:${id}` : "";
-  const [azimuthChoice, setAzimuthChoice] = useState<1 | 2>(() => {
-    if (!azmStorageKey) return 1;
-    const v = localStorage.getItem(azmStorageKey);
-    return v === "2" ? 2 : 1;
+  // Per-segment azimuth-branch picks. Keyed by the profile group's
+  // segmentOrder (= the LAST row's order). Persisted to localStorage so a
+  // user's branch choices for each profile survive reloads. Empty map
+  // means branch 1 for every group.
+  const azmStorageKey = id ? `azm-choices:${id}` : "";
+  const [azimuthChoices, setAzimuthChoices] = useState<Record<number, 1 | 2>>(() => {
+    if (!azmStorageKey) return {};
+    try {
+      const raw = localStorage.getItem(azmStorageKey);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const out: Record<number, 1 | 2> = {};
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          if ((v === 1 || v === 2) && /^\d+$/.test(k)) out[Number(k)] = v;
+        }
+        return out;
+      }
+      return {};
+    } catch { return {}; }
   });
   useEffect(() => {
-    if (azmStorageKey) localStorage.setItem(azmStorageKey, String(azimuthChoice));
-  }, [azmStorageKey, azimuthChoice]);
+    if (azmStorageKey) localStorage.setItem(azmStorageKey, JSON.stringify(azimuthChoices));
+  }, [azmStorageKey, azimuthChoices]);
 
   const calculateMut = useMutation({
     mutationFn: async () => {
       await api.post(`/calculations/${id}/segments`, { segments });
-      return api.post<CalculateResult>(`/calculations/${id}/calculate`, { azimuthChoice });
+      return api.post<CalculateResult>(`/calculations/${id}/calculate`, { azimuthChoices });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["calculation", id] }),
   });
@@ -348,15 +361,6 @@ export function CalculationPage() {
               >
                 + Add profile
               </button>
-              <select
-                value={azimuthChoice}
-                onChange={(e) => setAzimuthChoice(e.target.value === "2" ? 2 : 1)}
-                title="When a starred profile has two azimuth solutions, prefer this branch."
-                className="h-10 sm:h-9 px-2 text-xs rounded-md border border-gray-300 bg-white"
-              >
-                <option value="1">Azm: Branch 1</option>
-                <option value="2">Azm: Branch 2</option>
-              </select>
             </>
           )}
           <button
@@ -484,16 +488,17 @@ export function CalculationPage() {
 
       {/* Azimuth-pick modal — Pascal Form07. Pops after a Calculate that
           returned 2 distinct azm candidates for one or more profile groups.
-          The user picks the global branch (1 vs 2); the modal is then
-          dismissed until the next Calculate so re-running with the chosen
-          branch doesn't immediately re-pop the modal in a loop. */}
+          The user picks branch 1 vs 2 PER profile group; only the curves
+          the user actually flagged get re-built. Dismissed until the next
+          toolbar Calculate so the picked branches don't keep re-popping
+          the modal in a loop. */}
       {!azmModalDismissed && lastResult?.azmCandidates?.length ? (
         <AzmChoiceModal
           candidates={lastResult.azmCandidates}
-          currentChoice={azimuthChoice}
-          onApply={(next) => {
+          currentChoices={azimuthChoices}
+          onApply={(picks) => {
             setAzmModalDismissed(true);
-            setAzimuthChoice(next);
+            setAzimuthChoices((prev) => ({ ...prev, ...picks }));
             calculateMut.mutate();
           }}
           onCancel={() => setAzmModalDismissed(true)}
@@ -504,34 +509,47 @@ export function CalculationPage() {
 }
 
 /**
- * Pascal Form07 modal — lets the user pick between two candidate target
- * azimuths when the dispatcher finds both feasible. Lists every profile
- * group that had a real choice; a single radio at the bottom commits the
- * GLOBAL branch (Pascal also asked once and applied to every group).
+ * Pascal Form07 modal — lets the user pick branch 1 vs 2 PER profile
+ * group when the dispatcher finds two feasible target azimuths for any
+ * of them. Each ambiguous group gets its own radio pair so the user can
+ * mix branches across the trajectory (e.g. HCH group #2 on branch 1 +
+ * HC3D group #4 on branch 2). Apply pushes the per-group picks into the
+ * parent's `azimuthChoices` map and re-runs Calculate.
  */
 function AzmChoiceModal({
-  candidates, currentChoice, onApply, onCancel,
+  candidates, currentChoices, onApply, onCancel,
 }: {
   candidates: NonNullable<CalculateResult["azmCandidates"]>;
-  currentChoice: 1 | 2;
-  onApply: (next: 1 | 2) => void;
+  currentChoices: Record<number, 1 | 2>;
+  onApply: (picks: Record<number, 1 | 2>) => void;
   onCancel: () => void;
 }) {
-  const [pick, setPick] = useState<1 | 2>(currentChoice);
+  // Draft picks indexed by the group's segmentOrder. Initially mirrors the
+  // dispatcher's `chosen` value so the radios reflect the current branch.
+  const [picks, setPicks] = useState<Record<number, 1 | 2>>(() => {
+    const out: Record<number, 1 | 2> = {};
+    for (const c of candidates) {
+      out[c.segmentOrder] = currentChoices[c.segmentOrder] ?? c.chosen;
+    }
+    return out;
+  });
+  const setOne = (segmentOrder: number, b: 1 | 2) =>
+    setPicks((prev) => ({ ...prev, [segmentOrder]: b }));
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
       onClick={onCancel}
     >
       <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-lg"
+        className="bg-white rounded-lg shadow-xl w-full max-w-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-900">
-            Two azimuth solutions found
+            Pick azimuth branch per profile
           </h3>
           <button
             onClick={onCancel}
@@ -546,57 +564,59 @@ function AzmChoiceModal({
 
         <div className="px-4 py-4 text-sm space-y-3">
           <p className="text-xs text-gray-500">
-            One or more profile groups admit two feasible target azimuths.
-            Pick which branch the calculation should commit to — same
-            branch is applied to every ambiguous group.
+            Each profile group below has two feasible target azimuths.
+            Pick which branch to commit to for each one independently.
+            Only the selected branches are re-calculated.
           </p>
 
-          <div className="border border-gray-200 rounded text-xs">
+          <div className="border border-gray-200 rounded text-xs overflow-hidden">
             <table className="w-full">
               <thead className="bg-gray-50 text-gray-600">
                 <tr>
                   <th className="px-2 py-1.5 text-left">Group</th>
                   <th className="px-2 py-1.5 text-left">Profile</th>
-                  <th className="px-2 py-1.5 text-right">Branch 1 azm</th>
-                  <th className="px-2 py-1.5 text-right">Branch 2 azm</th>
+                  <th className="px-2 py-1.5 text-center">Branch 1</th>
+                  <th className="px-2 py-1.5 text-center">Branch 2</th>
                 </tr>
               </thead>
               <tbody>
-                {candidates.map((c, i) => (
-                  <tr key={i} className="border-t border-gray-100">
-                    <td className="px-2 py-1.5 font-mono text-gray-500">#{c.segmentOrder}</td>
-                    <td className="px-2 py-1.5">{c.profileLabel}</td>
-                    <td className={`px-2 py-1.5 text-right font-mono ${pick === 1 ? "font-semibold text-blue-700" : "text-gray-700"}`}>
-                      {c.candidate1Deg.toFixed(2)}°
-                    </td>
-                    <td className={`px-2 py-1.5 text-right font-mono ${pick === 2 ? "font-semibold text-blue-700" : "text-gray-700"}`}>
-                      {c.candidate2Deg.toFixed(2)}°
-                    </td>
-                  </tr>
-                ))}
+                {candidates.map((c) => {
+                  const pick = picks[c.segmentOrder] ?? c.chosen;
+                  return (
+                    <tr key={c.segmentOrder} className="border-t border-gray-100">
+                      <td className="px-2 py-1.5 font-mono text-gray-500">#{c.segmentOrder}</td>
+                      <td className="px-2 py-1.5">{c.profileLabel}</td>
+                      <td className={`px-2 py-1.5 text-center font-mono ${pick === 1 ? "bg-blue-50" : ""}`}>
+                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`azm-${c.segmentOrder}`}
+                            checked={pick === 1}
+                            onChange={() => setOne(c.segmentOrder, 1)}
+                          />
+                          <span className={pick === 1 ? "font-semibold text-blue-700" : "text-gray-700"}>
+                            {c.candidate1Deg.toFixed(2)}°
+                          </span>
+                        </label>
+                      </td>
+                      <td className={`px-2 py-1.5 text-center font-mono ${pick === 2 ? "bg-blue-50" : ""}`}>
+                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`azm-${c.segmentOrder}`}
+                            checked={pick === 2}
+                            onChange={() => setOne(c.segmentOrder, 2)}
+                          />
+                          <span className={pick === 2 ? "font-semibold text-blue-700" : "text-gray-700"}>
+                            {c.candidate2Deg.toFixed(2)}°
+                          </span>
+                        </label>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
-          </div>
-
-          <div className="flex gap-4 pt-1">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="azm-branch"
-                checked={pick === 1}
-                onChange={() => setPick(1)}
-              />
-              <span>Use Branch 1</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="azm-branch"
-                checked={pick === 2}
-                onChange={() => setPick(2)}
-              />
-              <span>Use Branch 2</span>
-            </label>
           </div>
         </div>
 
@@ -608,7 +628,7 @@ function AzmChoiceModal({
             Keep current
           </button>
           <button
-            onClick={() => onApply(pick)}
+            onClick={() => onApply(picks)}
             className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
           >
             Apply &amp; recalculate

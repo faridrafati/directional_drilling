@@ -7,7 +7,12 @@ import { z } from "zod";
 
 const calculateBodySchema = z
   .object({
-    azimuthChoice: z.union([z.literal(1), z.literal(2)]).optional(),
+    /** Per-segment azimuth-branch picker (segmentOrder → 1 | 2). Omitted /
+     *  empty means branch 1 for every ambiguous group. Maps to the
+     *  dispatcher's azimuthChoices option. */
+    azimuthChoices: z
+      .record(z.string(), z.union([z.literal(1), z.literal(2)]))
+      .optional(),
   })
   .optional();
 
@@ -170,7 +175,16 @@ export async function registerCalculationRoutes(app: FastifyInstance, prisma: Pr
       milestoneRole: s.milestoneRole,
     }));
 
-    const result = dispatch(segments, body?.azimuthChoice ? { azimuthChoice: body.azimuthChoice } : {});
+    // Zod's record(z.string(), ...) keeps the keys as strings; the
+    // dispatcher's azimuthChoices wants numeric keys (segmentOrder), so
+    // remap here. Empty object = no overrides → branch 1 for every group.
+    const azimuthChoices: Record<number, 1 | 2> = {};
+    if (body?.azimuthChoices) {
+      for (const [k, v] of Object.entries(body.azimuthChoices)) {
+        azimuthChoices[Number(k)] = v;
+      }
+    }
+    const result = dispatch(segments, { azimuthChoices });
 
     // Persist stations and keyPoints. Both are wiped on every Calculate so
     // the database matches the latest dispatch result exactly.

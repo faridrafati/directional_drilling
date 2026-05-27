@@ -282,21 +282,19 @@ describe("dispatch", () => {
         tvd: 4000, ns: 500, ew: 1500 },                         // Target
     ];
 
-    // Both branches should be tried internally; whichever is feasible wins.
-    const r1 = dispatch(segments, { azimuthChoice: 1 });
+    // HCH group's target row has order=3 — the per-segment choice key.
+    const r1 = dispatch(segments, { azimuthChoices: { 3: 1 } });
     expect(r1.ok).toBe(true);
     expect(r1.errors).toHaveLength(0);
     const last1 = r1.stations[r1.stations.length - 1];
-    // The target NS/EW must round-trip — the curve closes to the user's
-    // requested 3D position regardless of which azm branch is picked.
     expect(last1.ns).toBeCloseTo(500, 0);
     expect(last1.ew).toBeCloseTo(1500, 0);
     expect(last1.tvd).toBeCloseTo(4000, 0);
     expect(rad2deg(last1.inc)).toBeCloseTo(45, 1);
 
-    // Branch 2 should also close to the target — same 3D point, the only
-    // difference is which side of the prev tangent the curve goes around.
-    const r2 = dispatch(segments, { azimuthChoice: 2 });
+    // Branch 2 for the same group also closes — different side of the
+    // start tangent, same 3D endpoint.
+    const r2 = dispatch(segments, { azimuthChoices: { 3: 2 } });
     expect(r2.ok).toBe(true);
     const last2 = r2.stations[r2.stations.length - 1];
     expect(last2.ns).toBeCloseTo(500, 0);
@@ -349,8 +347,9 @@ describe("dispatch", () => {
         tvd: 6000, ns: 1800, ew: 2400 },                        // EOC target
     ];
 
+    // The HC3D group's last row has order=2 — the key for per-segment choice.
     for (const choice of [1, 2] as const) {
-      const r = dispatch(segments, { azimuthChoice: choice });
+      const r = dispatch(segments, { azimuthChoices: { 2: choice } });
       expect(r.ok, `azimuthChoice=${choice} failed: ${r.errors[0]?.message}`).toBe(true);
       const last = r.stations[r.stations.length - 1];
       // Both branches must close to the user's requested 3D position.
