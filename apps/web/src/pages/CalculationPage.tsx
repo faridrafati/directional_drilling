@@ -134,6 +134,17 @@ export function CalculationPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["calculation", id] }),
   });
 
+  // The azimuth-pick modal is suppressed for the rest of the current
+  // "Calculate session" once the user has picked OR explicitly dismissed
+  // it — otherwise re-Calculating with the chosen branch would re-detect
+  // the same ambiguity and immediately re-pop the modal (loop). Cleared
+  // every time the user clicks the toolbar's Calculate button.
+  const [azmModalDismissed, setAzmModalDismissed] = useState(false);
+  const triggerCalculate = () => {
+    setAzmModalDismissed(false);
+    calculateMut.mutate();
+  };
+
   const stations = data?.stations ?? [];
   const lastResult = calculateMut.data;
 
@@ -349,7 +360,7 @@ export function CalculationPage() {
             </>
           )}
           <button
-            onClick={() => calculateMut.mutate()}
+            onClick={triggerCalculate}
             disabled={calculateMut.isPending}
             className="px-4 h-10 sm:h-9 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-300 font-medium min-w-[110px]"
           >
@@ -470,6 +481,140 @@ export function CalculationPage() {
           onCancel={() => setPicker(null)}
         />
       )}
+
+      {/* Azimuth-pick modal — Pascal Form07. Pops after a Calculate that
+          returned 2 distinct azm candidates for one or more profile groups.
+          The user picks the global branch (1 vs 2); the modal is then
+          dismissed until the next Calculate so re-running with the chosen
+          branch doesn't immediately re-pop the modal in a loop. */}
+      {!azmModalDismissed && lastResult?.azmCandidates?.length ? (
+        <AzmChoiceModal
+          candidates={lastResult.azmCandidates}
+          currentChoice={azimuthChoice}
+          onApply={(next) => {
+            setAzmModalDismissed(true);
+            setAzimuthChoice(next);
+            calculateMut.mutate();
+          }}
+          onCancel={() => setAzmModalDismissed(true)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Pascal Form07 modal — lets the user pick between two candidate target
+ * azimuths when the dispatcher finds both feasible. Lists every profile
+ * group that had a real choice; a single radio at the bottom commits the
+ * GLOBAL branch (Pascal also asked once and applied to every group).
+ */
+function AzmChoiceModal({
+  candidates, currentChoice, onApply, onCancel,
+}: {
+  candidates: NonNullable<CalculateResult["azmCandidates"]>;
+  currentChoice: 1 | 2;
+  onApply: (next: 1 | 2) => void;
+  onCancel: () => void;
+}) {
+  const [pick, setPick] = useState<1 | 2>(currentChoice);
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl w-full max-w-lg"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900">
+            Two azimuth solutions found
+          </h3>
+          <button
+            onClick={onCancel}
+            className="text-gray-400 hover:text-gray-600 -m-1 p-1 rounded"
+            aria-label="Close"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-4 py-4 text-sm space-y-3">
+          <p className="text-xs text-gray-500">
+            One or more profile groups admit two feasible target azimuths.
+            Pick which branch the calculation should commit to — same
+            branch is applied to every ambiguous group.
+          </p>
+
+          <div className="border border-gray-200 rounded text-xs">
+            <table className="w-full">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="px-2 py-1.5 text-left">Group</th>
+                  <th className="px-2 py-1.5 text-left">Profile</th>
+                  <th className="px-2 py-1.5 text-right">Branch 1 azm</th>
+                  <th className="px-2 py-1.5 text-right">Branch 2 azm</th>
+                </tr>
+              </thead>
+              <tbody>
+                {candidates.map((c, i) => (
+                  <tr key={i} className="border-t border-gray-100">
+                    <td className="px-2 py-1.5 font-mono text-gray-500">#{c.segmentOrder}</td>
+                    <td className="px-2 py-1.5">{c.profileLabel}</td>
+                    <td className={`px-2 py-1.5 text-right font-mono ${pick === 1 ? "font-semibold text-blue-700" : "text-gray-700"}`}>
+                      {c.candidate1Deg.toFixed(2)}°
+                    </td>
+                    <td className={`px-2 py-1.5 text-right font-mono ${pick === 2 ? "font-semibold text-blue-700" : "text-gray-700"}`}>
+                      {c.candidate2Deg.toFixed(2)}°
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex gap-4 pt-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="azm-branch"
+                checked={pick === 1}
+                onChange={() => setPick(1)}
+              />
+              <span>Use Branch 1</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="azm-branch"
+                checked={pick === 2}
+                onChange={() => setPick(2)}
+              />
+              <span>Use Branch 2</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200"
+          >
+            Keep current
+          </button>
+          <button
+            onClick={() => onApply(pick)}
+            className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            Apply &amp; recalculate
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

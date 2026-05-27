@@ -110,4 +110,22 @@ export interface CalculateResult {
   ok: boolean;
   stationCount: number;
   errors: Array<{ segmentIndex: number; message: string }>;
+  /**
+   * Per-group 2-azimuth ambiguity entries. Each one represents a profile
+   * group where the user supplied a 3D target offset without an azimuth,
+   * and the underlying solver returned two distinct candidate target
+   * tangent azimuths (e.g. HC3D / HCH / CH3D from a deviated start). The
+   * client pops a modal letting the user pick which branch the dispatcher
+   * should commit to (writes the choice back via `azimuthChoice`).
+   *
+   * Empty when no group had a real choice — the dispatcher's silent pick
+   * was the only feasible answer.
+   */
+  azmCandidates: Array<{
+    segmentOrder: number;
+    profileLabel: string;
+    candidate1Deg: number;
+    candidate2Deg: number;
+    chosen: 1 | 2;
+  }>;
 }

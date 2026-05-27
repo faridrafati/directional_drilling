@@ -28,7 +28,7 @@ import type { Station, Segment } from "../types.js";
 import { surToVct, vctToSur } from "./vector.js";
 import { projectToPlane, unprojectFromPlane } from "./plane.js";
 import { azmFind, incFind } from "./solve.js";
-import { ProfileType } from "./profile-types.js";
+import { ProfileType, profileTypeLabel } from "./profile-types.js";
 import { hold } from "./builders/hold.js";
 import { c3 } from "./builders/c3.js";
 import { sursta } from "./builders/sursta.js";
@@ -63,6 +63,32 @@ export interface DispatchResult {
    */
   keypoints: Array<{ segmentOrder: number; points: Station[] }>;
   errors: Array<{ segmentIndex: number; message: string }>;
+  /**
+   * Per-segment 2-azimuth ambiguity report (port of Pascal Form07's prompt).
+   *
+   * For HC3D / HCH / CH3D / D3DS / D3DS_HOLD / CC3D when the user supplies a
+   * 3D target position but no target azimuth, `azmFind` returns TWO candidate
+   * target tangent azimuths. The dispatcher picks one based on
+   * `DispatchOptions.azimuthChoice`; this array tells the UI which groups had
+   * a real choice so it can pop a "pick branch 1 or 2" modal.
+   *
+   * Empty when no group had a 2-azm choice (vertical starts, starred profiles
+   * with azm-input, etc.).
+   */
+  azmCandidates: Array<{
+    /** Order of the LAST row in the profile group (matches station/keypoint
+     *  segmentOrder, so the UI can highlight the row that has the choice). */
+    segmentOrder: number;
+    /** Human label for the modal — e.g. "Hold-Curve 3D" or "Hold-Curve-Hold". */
+    profileLabel: string;
+    /** Target azimuths in DEGREES (0=N, 90=E) — what the curve's final
+     *  tangent points at for each candidate. */
+    candidate1Deg: number;
+    candidate2Deg: number;
+    /** Which candidate the dispatcher actually used (1 or 2). Lets the UI
+     *  pre-select the active choice in the modal. */
+    chosen: 1 | 2;
+  }>;
 }
 
 /**
@@ -73,8 +99,9 @@ export interface DispatchResult {
 export function dispatch(segments: Segment[], options: DispatchOptions = {}): DispatchResult {
   const errors: DispatchResult["errors"] = [];
   const keypoints: DispatchResult["keypoints"] = [];
+  const azmCandidates: DispatchResult["azmCandidates"] = [];
   if (segments.length === 0) {
-    return { ok: true, stations: [], keypoints, errors };
+    return { ok: true, stations: [], keypoints, errors, azmCandidates };
   }
 
   // Sort by order to be safe; callers should already provide them in order.
@@ -106,7 +133,7 @@ export function dispatch(segments: Segment[], options: DispatchOptions = {}): Di
     const target = sorted[groupEnd];   // the row the dispatcher actually solves for
     const group = sorted.slice(start, groupEnd + 1);
 
-    const result = buildOne(prev, target, group, options);
+    const result = buildOne(prev, target, group, options, azmCandidates);
     if (!result.ok) {
       errors.push({ segmentIndex: groupEnd, message: result.reason ?? "infeasible" });
       break;
@@ -142,7 +169,7 @@ export function dispatch(segments: Segment[], options: DispatchOptions = {}): Di
   computeTfPostPass(stations, keypoints);
   computeBrTrPostPass(stations, keypoints);
 
-  return { ok: errors.length === 0, stations, keypoints, errors };
+  return { ok: errors.length === 0, stations, keypoints, errors, azmCandidates };
 }
 
 /**
@@ -403,7 +430,8 @@ function buildOne(
   prev: Segment,
   target: Segment,
   group: Segment[],
-  options: DispatchOptions
+  options: DispatchOptions,
+  azmCandidates: DispatchResult["azmCandidates"],
 ): BuilderResult {
   const ppf = options.ppf;
   // Cheap helper: first non-zero value of `key` across the group.
@@ -442,16 +470,16 @@ function buildOne(
     case ProfileType.HC3D:
     case ProfileType.HC3D_STAR: {
       const r2 = solveAndBuild(prev, target, options, (tgtx, tgty, theta) =>
-        hc3dtft({ theta1: prev.inc, tgtx, tgty, theta, ppf })
-      );
+        hc3dtft({ theta1: prev.inc, tgtx, tgty, theta, ppf }),
+      azmCandidates);
       return r2;
     }
 
     case ProfileType.CH3D:
     case ProfileType.CH3D_STAR: {
       const r2 = solveAndBuild(prev, target, options, (tgtx, tgty, theta) =>
-        ch3dffk({ theta1: prev.inc, tgtx, tgty, theta, ppf })
-      );
+        ch3dffk({ theta1: prev.inc, tgtx, tgty, theta, ppf }),
+      azmCandidates);
       return r2;
     }
 
@@ -464,8 +492,8 @@ function buildOne(
       const dls = groupVal("dls");
       return tryDlsSigns([dls], ([d]) =>
         solveAndBuild(prev, target, options, (tgtx, tgty, theta) =>
-          hch({ theta1: prev.inc, tgtx, tgty, theta, dls: d, ppf })
-        )
+          hch({ theta1: prev.inc, tgtx, tgty, theta, dls: d, ppf }),
+        azmCandidates)
       );
     }
 
@@ -506,8 +534,8 @@ function buildOne(
           ch2dc1({
             theta1: prev.inc, tgtx, tgty, theta,
             dls1: d1, dls2: d2, ppf,
-          })
-        )
+          }),
+        azmCandidates)
       );
     }
 
@@ -532,8 +560,8 @@ function buildOne(
             theta1: prev.inc, tgtx, tgty, theta,
             dls1: d1, dls2: d2,
             thetaex: target.inc, dmd, ddmmdd, ppf,
-          })
-        )
+          }),
+        azmCandidates)
       );
     }
 
@@ -758,7 +786,8 @@ function solveAndBuild(
   prev: Segment,
   target: Segment,
   options: DispatchOptions,
-  buildIn2D: (tgtx: number, tgty: number, theta: number) => BuilderResult
+  buildIn2D: (tgtx: number, tgty: number, theta: number) => BuilderResult,
+  azmCandidates?: DispatchResult["azmCandidates"],
 ): BuilderResult {
   // Case 1: solve inc from azm if needed.
   let theta = target.inc;
@@ -771,7 +800,8 @@ function solveAndBuild(
 
   // Case 2: target.azm wasn't given and the offset doesn't determine it
   // unambiguously → azmFind gives two candidates. Try both and pick by
-  // feasibility + the user's preference.
+  // feasibility + the user's preference. Also record the ambiguity so the
+  // UI can pop a "pick branch 1 vs branch 2" modal (Pascal Form07).
   if (target.azm === 0 && (target.ns !== prev.ns || target.ew !== prev.ew)) {
     const a1 = { ns: prev.ns, ew: prev.ew, tvd: prev.tvd };
     const a2 = surToVct({ inc: prev.inc, azm: prev.azm });
@@ -779,6 +809,20 @@ function solveAndBuild(
     const cands = azmFind(a1, a2, a3, theta);
     if (cands.ok) {
       const choice = options.azimuthChoice ?? 1;
+      // Two distinct candidates → genuine ambiguity. Don't surface if the
+      // solver collapsed both to the same number (which happens when the
+      // prev tangent is vertical or otherwise fully constrains the plane).
+      const c1Deg = ((cands.candidate1 * 180) / Math.PI + 360) % 360;
+      const c2Deg = ((cands.candidate2 * 180) / Math.PI + 360) % 360;
+      if (azmCandidates && Math.abs(c1Deg - c2Deg) > 0.01) {
+        azmCandidates.push({
+          segmentOrder: target.order,
+          profileLabel: profileTypeLabel(target.typ),
+          candidate1Deg: c1Deg,
+          candidate2Deg: c2Deg,
+          chosen: choice,
+        });
+      }
       const order = choice === 2
         ? [cands.candidate2, cands.candidate1]
         : [cands.candidate1, cands.candidate2];

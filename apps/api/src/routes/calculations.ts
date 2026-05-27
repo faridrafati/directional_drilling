@@ -209,6 +209,9 @@ export async function registerCalculationRoutes(app: FastifyInstance, prisma: Pr
       ok: result.ok,
       stationCount: result.stations.length,
       errors: result.errors,
+      // Per-group 2-azm ambiguity report (Pascal Form07). When non-empty
+      // the client pops a modal letting the user pick branch 1 vs branch 2.
+      azmCandidates: result.azmCandidates,
     });
   });
 }

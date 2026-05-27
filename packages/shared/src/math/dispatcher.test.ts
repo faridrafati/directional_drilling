@@ -303,6 +303,16 @@ describe("dispatch", () => {
     expect(last2.ew).toBeCloseTo(1500, 0);
     expect(last2.tvd).toBeCloseTo(4000, 0);
 
+    // azmCandidates must be populated — Pascal Form07 surfaced this choice
+    // to the user; we surface the same info so the React modal can pop.
+    expect(r1.azmCandidates.length).toBeGreaterThanOrEqual(1);
+    expect(r1.azmCandidates[0].candidate1Deg).not.toBeCloseTo(
+      r1.azmCandidates[0].candidate2Deg,
+      1,
+    );
+    expect(r1.azmCandidates[0].chosen).toBe(1);
+    expect(r2.azmCandidates[0]?.chosen).toBe(2);
+
     // For this specific geometry the curve plane is fully determined by the
     // start tangent + target position (atan2 of NS/EW delta), so azmFind's
     // two candidates collapse to the same plane after `inPlane2D`'s 3D
