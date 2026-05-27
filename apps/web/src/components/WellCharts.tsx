@@ -22,7 +22,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceDot, Label, Legend,
 } from "recharts";
-import type { StationRow } from "../api/client.js";
+import type { StationRow, KeypointRow } from "../api/client.js";
 import { StationDetailsPanel, type StationDetails } from "./StationDetailsPanel.js";
 
 interface Props {
@@ -47,6 +47,11 @@ interface Props {
    *  "Smooth lines" toggle so both 2D charts + the 3D viewer share the
    *  same on/off state. */
   smoothLines?: boolean;
+  /** Algebraic milestone keypoints (KOP / EOC / Target / EOC#1 / KOP#2 / ...)
+   *  from the dispatcher's solver output. Each renders as a labelled orange
+   *  diamond on the chart so the engineer can read off the exact MD / NS /
+   *  EW where each profile segment changes. */
+  keypoints?: KeypointRow[];
 }
 
 /** Append a unit suffix in parens if non-empty. "TVD" + "ft" → "TVD (ft)". */
@@ -56,24 +61,32 @@ function withUnit(label: string, unit?: string): string {
 
 /**
  * Compact legend rendered at the BOTTOM of each 2D chart. Identifies the
- * three visual elements the user needs to interpret the plot:
+ * visual elements the user needs to interpret the plot:
  *   - blue line  = wellbore trajectory (the densified path)
  *   - green ▲   = START (wellhead at MD=0)
  *   - red ●      = END (last calculated station)
+ *   - orange ◆  = KEYPOINT (KOP / EOC / Target — algebraic milestone)
  *
  * Recharts' built-in <Legend /> auto-discovers <Line /> series from their
- * `name` prop but can't represent custom <ReferenceDot> shapes; we supply
- * an explicit payload so all three appear with matching icons.
+ * `name` prop but can't represent the custom <ReferenceDot> shapes; we
+ * supply an explicit payload so all four appear with matching icons.
  *
  * Rendered with white halos on the swatches so they read against any
  * print background; layout is centered+horizontal+small to stay out of
  * the data area.
+ *
+ * `showKeypoint` is suppressed (default `true`) when the caller has zero
+ * keypoints to draw — keeps the legend honest on plain surveys with no
+ * algebraic milestones.
  */
-function ChartLegend() {
+function ChartLegend({ showKeypoint = true }: { showKeypoint?: boolean }) {
   const items = [
     { value: "Trajectory", color: "#1e40af", shape: "line" as const },
     { value: "Start",      color: "#16a34a", shape: "tri"  as const },
     { value: "End",        color: "#dc2626", shape: "dot"  as const },
+    ...(showKeypoint
+      ? [{ value: "Keypoint", color: "#f59e0b", shape: "diamond" as const }]
+      : []),
   ];
   return (
     <Legend
@@ -103,6 +116,14 @@ function ChartLegend() {
                 {it.shape === "dot" && (
                   <circle cx="9" cy="7" r="5" fill={it.color} stroke="white" strokeWidth="1" />
                 )}
+                {it.shape === "diamond" && (
+                  <polygon
+                    points="9,2 16,7 9,12 2,7"
+                    fill={it.color}
+                    stroke="white"
+                    strokeWidth="1"
+                  />
+                )}
               </svg>
               <span>{it.value}</span>
             </span>
@@ -111,6 +132,63 @@ function ChartLegend() {
       )}
     />
   );
+}
+
+/**
+ * Algebraic milestone marker — orange diamond ◆ with a short label.
+ * Used for every KOP / EOC / Target / EOC#1 / KOP#2 keypoint the
+ * dispatcher emits. Smaller than the start/end markers so it doesn't
+ * dominate the trajectory; label sits above the diamond.
+ *
+ * Label is the role name extracted from the keypoint's comment via
+ * shortKeypointLabel() — "KOP", "EOC", "Target", "EOC #2", etc. Truncated
+ * to ≤ 10 chars so a chain of close-by keypoints doesn't overlap.
+ */
+function KeypointMarker({
+  cx, cy, label,
+}: { cx: number; cy: number; label: string }) {
+  const fill = "#f59e0b"; // amber-500
+  const r = 4.5;
+  return (
+    <g pointerEvents="none">
+      {/* White halo */}
+      <circle cx={cx} cy={cy} r={r + 1.5} fill="white" stroke="white" strokeWidth={1} />
+      {/* Diamond ◆ */}
+      <polygon
+        points={`${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`}
+        fill={fill}
+        stroke="white"
+        strokeWidth={1}
+      />
+      <text
+        x={cx + r + 2}
+        y={cy - r - 1}
+        textAnchor="start"
+        fontSize={10}
+        fontWeight={600}
+        fill="#92400e" /* amber-800 */
+        stroke="white"
+        strokeWidth={2.5}
+        paintOrder="stroke"
+      >
+        {label}
+      </text>
+    </g>
+  );
+}
+
+/**
+ * Strip a keypoint's verbose comment ("KOP (Hold-Curve 3D*)") down to its
+ * role name ("KOP") so the chart label stays readable. Falls back to the
+ * raw comment truncated when no recognised role prefix appears.
+ */
+function shortKeypointLabel(comment: string | null | undefined): string {
+  if (!comment) return "•";
+  // Recognised Pascal role prefixes — see profileRoles.ts for the full
+  // list. We grep for the keyword optionally followed by " #N".
+  const m = comment.match(/^(KOP|EOC|Target|Survey Station)(\s*#\d+)?/i);
+  if (m) return m[0].replace(/\s+/g, " ");
+  return comment.length > 10 ? comment.slice(0, 9) + "…" : comment;
 }
 
 /**
@@ -566,6 +644,7 @@ function toDetails(s: StationRow): StationDetails {
 export function VerticalSectionChart({
   stations, lengthUnit = "ft", onHover, showDetailsPanel = true,
   vsecAzmInputStr, onVsecAzmInputChange, smoothLines = true,
+  keypoints = [],
 }: Props) {
   // The vertical section is the projection of each station's horizontal
   // offset (NS, EW) onto a reference direction. Pascal Form23 lets the
@@ -598,6 +677,21 @@ export function VerticalSectionChart({
       comment: s.comment,
     }));
   }, [stations, refAzm]);
+
+  // Project every keypoint onto the current view azimuth so it lands on
+  // the trajectory curve in this view (otherwise the marker would float
+  // beside it when the user picks a non-natural VSEC angle).
+  const kpProjected = useMemo(() => {
+    if (stations.length === 0 || keypoints.length === 0) return [];
+    const origin = stations[0];
+    const cos = Math.cos(refAzm), sin = Math.sin(refAzm);
+    return keypoints.map((k) => ({
+      vsec: (k.ns - origin.ns) * cos + (k.ew - origin.ew) * sin,
+      tvd: k.tvd,
+      label: shortKeypointLabel(k.comment),
+      key: `${k.segmentOrder}-${k.roleIndex}-${k.md}`,
+    }));
+  }, [keypoints, stations, refAzm]);
 
   // Recharts emits state.activePayload[0].payload on every mouse move over
   // the plot area. We resolve the data index back to the source station
@@ -661,7 +755,7 @@ export function VerticalSectionChart({
               unit: lengthUnit,
             })}
           />
-          <ChartLegend />
+          <ChartLegend showKeypoint={kpProjected.length > 0} />
           <Line
             type={smoothLines ? "monotone" : "linear"}
             dataKey="tvd"
@@ -671,6 +765,21 @@ export function VerticalSectionChart({
             dot={false}
             isAnimationActive={false}
           />
+          {/* Keypoints — orange ◆ at every KOP/EOC/Target. Rendered BEFORE
+              the start/end markers so the wellhead and last-station markers
+              sit on top in case a keypoint coincides with either. */}
+          {kpProjected.map((k) => (
+            <ReferenceDot
+              key={k.key}
+              x={k.vsec}
+              y={k.tvd}
+              ifOverflow="visible"
+              isFront
+              shape={(props: { cx?: number; cy?: number }) => (
+                <KeypointMarker cx={props.cx ?? 0} cy={props.cy ?? 0} label={k.label} />
+              )}
+            />
+          ))}
           {/* START — green ▲ pointing down at the wellhead */}
           <ReferenceDot
             x={data[0].vsec}
@@ -715,6 +824,7 @@ export function VerticalSectionChart({
 export function PlanViewChart({
   stations, lengthUnit = "ft", onHover, showDetailsPanel = true,
   smoothLines = true,
+  keypoints = [],
 }: Props) {
   const data = useMemo(
     () =>
@@ -774,7 +884,7 @@ export function PlanViewChart({
               unit: lengthUnit,
             })}
           />
-          <ChartLegend />
+          <ChartLegend showKeypoint={keypoints.length > 0} />
           <Line
             type={smoothLines ? "monotone" : "linear"}
             dataKey="ns"
@@ -784,6 +894,23 @@ export function PlanViewChart({
             dot={false}
             isAnimationActive={false}
           />
+          {/* Keypoints — orange ◆ at every KOP/EOC/Target. */}
+          {keypoints.map((k) => (
+            <ReferenceDot
+              key={`${k.segmentOrder}-${k.roleIndex}-${k.md}`}
+              x={k.ew}
+              y={k.ns}
+              ifOverflow="visible"
+              isFront
+              shape={(props: { cx?: number; cy?: number }) => (
+                <KeypointMarker
+                  cx={props.cx ?? 0}
+                  cy={props.cy ?? 0}
+                  label={shortKeypointLabel(k.comment)}
+                />
+              )}
+            />
+          ))}
           {/* START — green ▲ at the wellhead (origin) */}
           <ReferenceDot
             x={data[0].ew}

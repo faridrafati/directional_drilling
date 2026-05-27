@@ -609,6 +609,7 @@ export function CalculationPage() {
           <div className="print-target">
             <ChartsView
               stations={stations}
+              keypoints={data?.keypoints ?? []}
               lengthUnit={lengthUnit}
               vsecAzmInputStr={vsecAzmInputStr}
               onVsecAzmInputChange={setVsecAzmInputStr}
@@ -820,10 +821,11 @@ function AzmChoiceModal({
  * shared panel is the deep-dive inspector with the full Pascal column set.
  */
 function ChartsView({
-  stations, lengthUnit, vsecAzmInputStr, onVsecAzmInputChange, smoothLines,
-  meta,
+  stations, keypoints, lengthUnit, vsecAzmInputStr, onVsecAzmInputChange,
+  smoothLines, meta,
 }: {
   stations: NonNullable<CalculationDetail["stations"]>;
+  keypoints: KeypointRow[];
   lengthUnit: string;
   vsecAzmInputStr: string | null;
   onVsecAzmInputChange: (next: string | null) => void;
@@ -853,6 +855,7 @@ function ChartsView({
           <div className="print-chart-card">
             <VerticalSectionChart
               stations={stations}
+              keypoints={keypoints}
               lengthUnit={lengthUnit}
               onHover={setHovered}
               showDetailsPanel={false}
@@ -864,6 +867,7 @@ function ChartsView({
           <div className="print-chart-card">
             <PlanViewChart
               stations={stations}
+              keypoints={keypoints}
               lengthUnit={lengthUnit}
               onHover={setHovered}
               showDetailsPanel={false}
