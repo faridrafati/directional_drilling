@@ -37,7 +37,11 @@ old_delphi_code/**/*.identcache
 old_delphi_code/**/*.local
 old_delphi_code/**/*.ldb
 old_delphi_code/Temp.txt
+# The Delphi app writes both Temp.mdb (lowercase) and Temp.MDB (uppercase)
+# depending on how it was last opened. Match both spellings so the runtime
+# artifact never sneaks into a commit on case-sensitive filesystems.
 old_delphi_code/Temp.mdb
+old_delphi_code/Temp.MDB
 
 # Scratch files at repo root
 1.txt
