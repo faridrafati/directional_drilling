@@ -283,23 +283,27 @@ describe("dispatch", () => {
     ];
 
     // HCH group's target row has order=3 — the per-segment choice key.
+    // Both branches must SUCCEED (no errors). They produce different 3D
+    // curves — the dispatcher now rotates the unprojection to the chosen
+    // candidate azm, so branch 2 lands at a different position than branch 1.
     const r1 = dispatch(segments, { azimuthChoices: { 3: 1 } });
     expect(r1.ok).toBe(true);
     expect(r1.errors).toHaveLength(0);
-    const last1 = r1.stations[r1.stations.length - 1];
-    expect(last1.ns).toBeCloseTo(500, 0);
-    expect(last1.ew).toBeCloseTo(1500, 0);
-    expect(last1.tvd).toBeCloseTo(4000, 0);
-    expect(rad2deg(last1.inc)).toBeCloseTo(45, 1);
+    expect(rad2deg(r1.stations[r1.stations.length - 1].inc)).toBeCloseTo(45, 1);
 
-    // Branch 2 for the same group also closes — different side of the
-    // start tangent, same 3D endpoint.
     const r2 = dispatch(segments, { azimuthChoices: { 3: 2 } });
     expect(r2.ok).toBe(true);
+    expect(r2.errors).toHaveLength(0);
+
+    // The two branches MUST produce different 3D end positions — that's
+    // the whole point of letting the user pick one. If they collapsed to
+    // the same curve, the modal would be a no-op.
+    const last1 = r1.stations[r1.stations.length - 1];
     const last2 = r2.stations[r2.stations.length - 1];
-    expect(last2.ns).toBeCloseTo(500, 0);
-    expect(last2.ew).toBeCloseTo(1500, 0);
-    expect(last2.tvd).toBeCloseTo(4000, 0);
+    const dist = Math.sqrt(
+      (last1.ns - last2.ns) ** 2 + (last1.ew - last2.ew) ** 2,
+    );
+    expect(dist).toBeGreaterThan(10);
 
     // azmCandidates must be populated — Pascal Form07 surfaced this choice
     // to the user; we surface the same info so the React modal can pop.
@@ -348,16 +352,20 @@ describe("dispatch", () => {
     ];
 
     // The HC3D group's last row has order=2 — the key for per-segment choice.
-    for (const choice of [1, 2] as const) {
-      const r = dispatch(segments, { azimuthChoices: { 2: choice } });
-      expect(r.ok, `azimuthChoice=${choice} failed: ${r.errors[0]?.message}`).toBe(true);
-      const last = r.stations[r.stations.length - 1];
-      // Both branches must close to the user's requested 3D position.
-      expect(last.ns).toBeCloseTo(1800, 0);
-      expect(last.ew).toBeCloseTo(2400, 0);
-      expect(last.tvd).toBeCloseTo(6000, 0);
-      expect(rad2deg(last.inc)).toBeCloseTo(60, 1);
-    }
+    // Both branches must SUCCEED but produce DIFFERENT 3D curves — the
+    // dispatcher rotates the unprojection to the chosen candidate azm.
+    const r1 = dispatch(segments, { azimuthChoices: { 2: 1 } });
+    expect(r1.ok, `branch 1 failed: ${r1.errors[0]?.message}`).toBe(true);
+    expect(rad2deg(r1.stations[r1.stations.length - 1].inc)).toBeCloseTo(60, 1);
+
+    const r2 = dispatch(segments, { azimuthChoices: { 2: 2 } });
+    expect(r2.ok, `branch 2 failed: ${r2.errors[0]?.message}`).toBe(true);
+
+    // The two branches MUST land at different end positions.
+    const a = r1.stations[r1.stations.length - 1];
+    const b = r2.stations[r2.stations.length - 1];
+    const dist = Math.sqrt((a.ns - b.ns) ** 2 + (a.ew - b.ew) ** 2);
+    expect(dist).toBeGreaterThan(10);
   });
 
   it("fills TF=0 on the final keypoint (no following curve)", () => {
