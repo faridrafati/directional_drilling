@@ -85,7 +85,7 @@ export function CalculationPage() {
   );
 
   // null = closed.  { kind: "edit", order } = changing an existing row's profile.
-  // { kind: "create" } = "+ Add row" was clicked — pick a profile first, THEN add.
+  // { kind: "create" } = "+ Add profile" was clicked — pick a profile first, THEN add.
   type PickerMode =
     | null
     | { kind: "edit"; order: number }
@@ -194,7 +194,7 @@ export function CalculationPage() {
   function updateCell<K extends keyof SegmentRow>(index: number, key: K, value: SegmentRow[K]) {
     setSegments((prev) => prev.map((s, i) => (i === index ? { ...s, [key]: value } : s)));
   }
-  // "+ Add row" no longer creates a row directly — it opens the profile picker
+  // "+ Add profile" no longer creates a row directly — it opens the profile picker
   // in "create" mode so the user must choose a profile first. The new row is
   // appended in `applyProfile()` once a selection is made.
   function addRow() {
@@ -335,7 +335,7 @@ export function CalculationPage() {
                 onClick={addRow}
                 className="px-3 h-10 sm:h-9 text-sm rounded-md bg-gray-100 hover:bg-gray-200 active:bg-gray-300"
               >
-                + Add row
+                + Add profile
               </button>
               <select
                 value={azimuthChoice}

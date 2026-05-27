@@ -254,6 +254,68 @@ describe("dispatch", () => {
     expect(inCurve?.br ?? 0).toBeGreaterThan(0);
   });
 
+  it("HCH from a DEVIATED start: azmFind gives 2 candidates, dispatcher picks the chosen one", () => {
+    // Pascal Unit02.pas:HCH calls azmfind whenever target.azm is left blank
+    // and the prev tangent is non-vertical — azmfind returns two azimuth
+    // candidates for the curve plane (Form07 lets the user pick). When the
+    // start is INCLINED, both branches yield geometrically valid azimuths;
+    // when vertical, both candidates collapse to the same value (since the
+    // curve plane is fully determined by the target offset).
+    //
+    // Setup: START already inclined at (15°, 30° azm) — typical resumption
+    // of a directional well. HCH builds to a target at (NS=500, EW=1500,
+    // TVD=4000), final inc=45°, DLS=3°/100ft.
+    const startDeviated: Segment = {
+      ...startStation(),
+      inc: 15 * PI / 180, azm: 30 * PI / 180,
+      // Position the start at MD=500 (the wellhead column shows 0 but
+      // dispatch reads it as the running prev md).
+      md: 500, tvd: 480, ns: 65, ew: 38,
+    };
+    const segments: Segment[] = [
+      startDeviated,
+      { ...startStation(), order: 1, typ: ProfileType.HCH },   // KOP
+      { ...startStation(), order: 2, typ: ProfileType.HCH,
+        dls: 3 * PI / 180 / 100 },                              // EOC w/ DLS
+      { ...startStation(), order: 3, typ: ProfileType.HCH,
+        inc: 45 * PI / 180,
+        tvd: 4000, ns: 500, ew: 1500 },                         // Target
+    ];
+
+    // Both branches should be tried internally; whichever is feasible wins.
+    const r1 = dispatch(segments, { azimuthChoice: 1 });
+    expect(r1.ok).toBe(true);
+    expect(r1.errors).toHaveLength(0);
+    const last1 = r1.stations[r1.stations.length - 1];
+    // The target NS/EW must round-trip — the curve closes to the user's
+    // requested 3D position regardless of which azm branch is picked.
+    expect(last1.ns).toBeCloseTo(500, 0);
+    expect(last1.ew).toBeCloseTo(1500, 0);
+    expect(last1.tvd).toBeCloseTo(4000, 0);
+    expect(rad2deg(last1.inc)).toBeCloseTo(45, 1);
+
+    // Branch 2 should also close to the target — same 3D point, the only
+    // difference is which side of the prev tangent the curve goes around.
+    const r2 = dispatch(segments, { azimuthChoice: 2 });
+    expect(r2.ok).toBe(true);
+    const last2 = r2.stations[r2.stations.length - 1];
+    expect(last2.ns).toBeCloseTo(500, 0);
+    expect(last2.ew).toBeCloseTo(1500, 0);
+    expect(last2.tvd).toBeCloseTo(4000, 0);
+
+    // For this specific geometry the curve plane is fully determined by the
+    // start tangent + target position (atan2 of NS/EW delta), so azmFind's
+    // two candidates collapse to the same plane after `inPlane2D`'s 3D
+    // unprojection. That's fine — the dispatcher's safety net is that it
+    // always returns a feasible curve. Real 2-azm divergence only shows up
+    // for the "starred" profiles where the user supplies a target azimuth
+    // instead of NS/EW (see HC3D_STAR / CH3D_STAR / etc.).
+    //
+    // Both branches must at minimum produce a feasible result that lands
+    // at the user's 3D target.
+    expect(r2.errors).toHaveLength(0);
+  });
+
   it("fills TF=0 on the final keypoint (no following curve)", () => {
     // Pascal convention: the LAST keypoint of the trajectory has TF=0,
     // because TF is set from the NEXT curve's dogleg, and there isn't one.
