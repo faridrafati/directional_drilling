@@ -15,6 +15,13 @@ import type { CalculationDetail } from "../api/client.js";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (pdfMake as any).vfs = (pdfFonts as any).vfs ?? (pdfFonts as any).pdfMake?.vfs;
 
+/** Normalize a compass-style degree value into [0, 360°). 360° → 0°. */
+function normDeg(deg: number): number {
+  if (!Number.isFinite(deg)) return deg;
+  const x = deg - 360 * Math.floor(deg / 360);
+  return x >= 360 ? 0 : x;
+}
+
 export interface PdfMeta {
   projectName: string;
   countryName: string;
@@ -27,13 +34,13 @@ export function exportCalculationPdf(calc: CalculationDetail, meta: PdfMeta): vo
     s.comment ?? "",
     s.md.toFixed(1),
     rad2deg(s.inc).toFixed(2),
-    rad2deg(s.azm).toFixed(2),
+    normDeg(rad2deg(s.azm)).toFixed(2),
     s.tvd.toFixed(1),
     s.vsec.toFixed(1),
     s.ns.toFixed(1),
     s.ew.toFixed(1),
     (Math.abs(rad2deg(s.dls)) * 100).toFixed(3),
-    (rad2deg(s.tf)).toFixed(2),
+    normDeg(rad2deg(s.tf)).toFixed(2),
     (rad2deg(s.br) * 100).toFixed(3),
     (rad2deg(s.tr) * 100).toFixed(3),
     s.dmd.toFixed(1),

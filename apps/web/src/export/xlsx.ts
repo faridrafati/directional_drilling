@@ -12,19 +12,26 @@ import { saveAs } from "file-saver";
 import { rad2deg } from "@dd/shared";
 import type { CalculationDetail } from "../api/client.js";
 
+/** Normalize compass-style degree value into [0, 360°). 360° → 0°. */
+function normDeg(deg: number): number {
+  if (!Number.isFinite(deg)) return deg;
+  const x = deg - 360 * Math.floor(deg / 360);
+  return x >= 360 ? 0 : x;
+}
+
 export function exportCalculationXlsx(calc: CalculationDetail, wellName: string): void {
   const header = ["COMMENT", "MD", "INCL", "AZM", "TVD", "VSEC", "NS", "EW", "DLS", "TF", "BR", "TR", "DMD"];
   const rows = calc.stations.map((s) => [
     s.comment ?? "",
     s.md,
     rad2deg(s.inc),
-    rad2deg(s.azm),
+    normDeg(rad2deg(s.azm)),
     s.tvd,
     s.vsec,
     s.ns,
     s.ew,
     Math.abs(rad2deg(s.dls)) * 100,
-    rad2deg(s.tf),
+    normDeg(rad2deg(s.tf)),
     rad2deg(s.br) * 100,
     rad2deg(s.tr) * 100,
     s.dmd,

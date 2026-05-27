@@ -8,6 +8,15 @@
  */
 import { rad2deg } from "@dd/shared";
 
+/** Normalize a degree value into [0, 360°) for compass-style display.
+ *  Matches `normalizeDeg360` in CalculationPage so the hover panel and the
+ *  table show the same azm. */
+function normalizeDeg360(deg: number): number {
+  if (!Number.isFinite(deg)) return deg;
+  const x = deg - 360 * Math.floor(deg / 360);
+  return x >= 360 ? 0 : x;
+}
+
 export interface StationDetails {
   /** Headline shown at the top of the panel (profile name, role, etc.). */
   label?: string;
@@ -75,13 +84,13 @@ export function StationDetailsPanel({
         <Cell label={`MD${len}`}   value={point.md.toFixed(3)} />
         <Cell label={`DMD${len}`}  value={point.dmd.toFixed(3)} />
         <Cell label="Inc (°)"      value={rad2deg(point.inc).toFixed(2)} />
-        <Cell label="Azm (°)"      value={rad2deg(point.azm).toFixed(2)} />
+        <Cell label="Azm (°)"      value={normalizeDeg360(rad2deg(point.azm)).toFixed(2)} />
         <Cell label={`TVD${len}`}  value={point.tvd.toFixed(3)} />
         <Cell label={`VSEC${len}`} value={point.vsec.toFixed(3)} />
         <Cell label={`NS${len}`}   value={point.ns.toFixed(3)} />
         <Cell label={`EW${len}`}   value={point.ew.toFixed(3)} />
         <Cell label="DLS (°/L)"    value={(Math.abs(rad2deg(point.dls)) * 100).toFixed(3)} />
-        <Cell label="TF (°)"       value={rad2deg(point.tf).toFixed(2)} />
+        <Cell label="TF (°)"       value={normalizeDeg360(rad2deg(point.tf)).toFixed(2)} />
         <Cell label="BR (°/L)"     value={(rad2deg(point.br) * 100).toFixed(3)} />
         <Cell label="TR (°/L)"     value={(rad2deg(point.tr) * 100).toFixed(3)} />
       </dl>

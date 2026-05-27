@@ -203,6 +203,14 @@ export function dispatch(segments: Segment[], options: DispatchOptions = {}): Di
   computeVsecPostPass(sorted, stations, keypoints);
   computeTfPostPass(stations, keypoints);
   computeBrTrPostPass(stations, keypoints);
+  // NOTE: azimuth values are deliberately NOT normalized here. Downstream
+  // calculations (e.g. station-to-station tangent deltas, BR/TR continuity)
+  // rely on the raw signed-or-overshooting representation the solvers
+  // produce — wrapping to [0, 2π) at this point would inject a 2π jump
+  // wherever the path crosses 0° / 360°, breaking the unwrap arithmetic
+  // in any post-processing that subtracts azimuths. Normalisation is a
+  // pure display concern, handled in the web layer (CalculationPage,
+  // StationDetailsPanel, WellViewer3D, pdf, xlsx).
 
   return { ok: errors.length === 0, stations, keypoints, errors, azmCandidates };
 }

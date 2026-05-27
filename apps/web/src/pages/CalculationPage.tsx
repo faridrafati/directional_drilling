@@ -33,6 +33,21 @@ const PlanViewChart = lazy(() =>
 type Tab = "grid" | "3d" | "charts" | "export";
 
 /**
+ * Normalize a degree value into [0, 360°) for display. Compass-style azm /
+ * tool-face values are equivalent under 360°-wrap (337.38° == -22.62°), so
+ * we standardise on the unsigned representation everywhere they appear.
+ * 360 collapses to 0 per the user-facing convention.
+ *
+ * Pure function — safe to share across the editable Grid format/parse and
+ * the read-only Calculated-Stations table.
+ */
+function normalizeDeg360(deg: number): number {
+  if (!Number.isFinite(deg)) return deg;
+  const x = deg - 360 * Math.floor(deg / 360);
+  return x >= 360 ? 0 : x;
+}
+
+/**
  * Survey / Well-Design editor.
  * Tabs: Grid (edit segments) · 3D · Vertical Section · Plan View · Export
  */
@@ -1177,9 +1192,18 @@ function SegmentGrid({
                     // BR/TR keep their sign because direction is meaningful there
                     // (negative BR = drop, negative TR = left turn).
                     const isDlsCell = c.key === "dls";
+                    // Azimuth + toolface are directional compass angles —
+                    // display them in [0, 360°). 360° collapses to 0°. This
+                    // prevents the alternate-branch 337.38° from showing as
+                    // its (mathematically equivalent) -22.62° representation.
+                    // Inc / BR / TR keep their signed display: inc is a polar
+                    // angle bounded to [0, π]; BR/TR signs encode build-vs-drop
+                    // and right-vs-left, which the user needs to see.
+                    const isCompassAngle = c.key === "azm" || c.key === "tf";
 
                     const format = (n: number) => {
                       if (isDlsCell) return (Math.abs(rad2deg(n)) * 100).toFixed(3);
+                      if (isCompassAngle) return normalizeDeg360(rad2deg(n)).toFixed(2);
                       if (isAngleDeg) return rad2deg(n).toFixed(2);
                       if (isDlsDeg) return (rad2deg(n) * 100).toFixed(3);
                       return n.toFixed(3);
@@ -1189,6 +1213,7 @@ function SegmentGrid({
                       if (cleaned === "" || cleaned === "-" || cleaned === ".") return null;
                       const n = Number(cleaned);
                       if (!isFinite(n)) return null;
+                      if (isCompassAngle) return deg2rad(normalizeDeg360(n));
                       return isAngleDeg
                         ? deg2rad(n)
                         : isDlsDeg
@@ -1451,13 +1476,13 @@ function StationsTable({
               <td className="px-2 py-1">{r.comment}</td>
               <td className="px-2 py-1">{r.md.toFixed(3)}</td>
               <td className="px-2 py-1">{rad2deg(r.inc).toFixed(2)}</td>
-              <td className="px-2 py-1">{rad2deg(r.azm).toFixed(2)}</td>
+              <td className="px-2 py-1">{normalizeDeg360(rad2deg(r.azm)).toFixed(2)}</td>
               <td className="px-2 py-1">{r.tvd.toFixed(3)}</td>
               <td className="px-2 py-1">{r.vsec.toFixed(3)}</td>
               <td className="px-2 py-1">{r.ns.toFixed(3)}</td>
               <td className="px-2 py-1">{r.ew.toFixed(3)}</td>
               <td className="px-1 py-1 w-16">{(Math.abs(rad2deg(r.dls)) * 100).toFixed(3)}</td>
-              <td className="px-1 py-1 w-14">{rad2deg(r.tf).toFixed(2)}</td>
+              <td className="px-1 py-1 w-14">{normalizeDeg360(rad2deg(r.tf)).toFixed(2)}</td>
               <td className="px-1 py-1 w-16">{(rad2deg(r.br) * 100).toFixed(3)}</td>
               <td className="px-1 py-1 w-16">{(rad2deg(r.tr) * 100).toFixed(3)}</td>
               <td className="px-2 py-1">{r.dmd.toFixed(3)}</td>
