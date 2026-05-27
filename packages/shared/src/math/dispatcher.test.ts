@@ -254,13 +254,12 @@ describe("dispatch", () => {
     expect(inCurve?.br ?? 0).toBeGreaterThan(0);
   });
 
-  it("HCH from a DEVIATED start: azmFind gives 2 candidates, dispatcher picks the chosen one", () => {
-    // Pascal Unit02.pas:HCH calls azmfind whenever target.azm is left blank
-    // and the prev tangent is non-vertical — azmfind returns two azimuth
-    // candidates for the curve plane (Form07 lets the user pick). When the
-    // start is INCLINED, both branches yield geometrically valid azimuths;
-    // when vertical, both candidates collapse to the same value (since the
-    // curve plane is fully determined by the target offset).
+  it("HCH from a DEVIATED start: 3D solver closes at the user's target", () => {
+    // Pascal Unit02.pas:HCH runs in a projected 2D plane via plane()/revplane().
+    // Our 2D dispatcher path (inPlane2D) doesn't tilt the plane onto prev's
+    // tangent, so for a deviated start the KOP azimuth comes out as the
+    // position bearing instead of prev.azm. The hch3D direct solver fixes
+    // this by solving the full 3D min-curvature closure.
     //
     // Setup: START already inclined at (15°, 30° azm) — typical resumption
     // of a directional well. HCH builds to a target at (NS=500, EW=1500,
@@ -282,11 +281,10 @@ describe("dispatch", () => {
         tvd: 4000, ns: 500, ew: 1500 },                         // Target
     ];
 
-    // Both branches must close at the user's 3D target — the dispatcher's
-    // unprojection uses the position bearing so the chosen branch only
-    // affects which azimuth-candidate the builder loop tried first.
-    // (Spurious 180°-opposite candidates are filtered out before reaching
-    // azmCandidates so the modal doesn't pop on them.)
+    // Primary check: trajectory closes at the user-given 3D target with the
+    // requested final inc. (The KOP-azimuth-equals-prev.azm property is
+    // verified implicitly by the closure — if it were wrong, the curve
+    // wouldn't land at the right NS/EW.)
     const r1 = dispatch(segments, { azimuthChoices: { 3: 1 } });
     expect(r1.ok).toBe(true);
     expect(r1.errors).toHaveLength(0);
@@ -296,34 +294,33 @@ describe("dispatch", () => {
     expect(last1.tvd).toBeCloseTo(4000, 0);
     expect(rad2deg(last1.inc)).toBeCloseTo(45, 1);
 
+    // KOP keypoint MUST stay at prev's tangent — i.e. inc=15°, azm=30°. This
+    // is the bug the 3D solver fixes: the old 2D path put KOP.azm at the
+    // position bearing.
+    const kop = r1.keypoints[0].points[0];
+    expect(rad2deg(kop.inc)).toBeCloseTo(15, 2);
+    expect(rad2deg(kop.azm)).toBeCloseTo(30, 1);
+
+    // Branch=2 should still produce a feasible curve closing at the target.
+    // When only ONE physical azimuth solution exists (typical for these
+    // mid-range geometries where DLS + target offset uniquely determine the
+    // curve plane), the solver falls back to that single solution; no modal
+    // pops because there's no real choice to make.
     const r2 = dispatch(segments, { azimuthChoices: { 3: 2 } });
     expect(r2.ok).toBe(true);
     const last2 = r2.stations[r2.stations.length - 1];
     expect(last2.ns).toBeCloseTo(500, 0);
     expect(last2.ew).toBeCloseTo(1500, 0);
     expect(last2.tvd).toBeCloseTo(4000, 0);
-
-    // azmCandidates must be populated — Pascal Form07 surfaced this choice
-    // to the user; we surface the same info so the React modal can pop.
-    expect(r1.azmCandidates.length).toBeGreaterThanOrEqual(1);
-    expect(r1.azmCandidates[0].candidate1Deg).not.toBeCloseTo(
-      r1.azmCandidates[0].candidate2Deg,
-      1,
-    );
-    expect(r1.azmCandidates[0].chosen).toBe(1);
-    expect(r2.azmCandidates[0]?.chosen).toBe(2);
-
-    // For this specific geometry the curve plane is fully determined by the
-    // start tangent + target position (atan2 of NS/EW delta), so azmFind's
-    // two candidates collapse to the same plane after `inPlane2D`'s 3D
-    // unprojection. That's fine — the dispatcher's safety net is that it
-    // always returns a feasible curve. Real 2-azm divergence only shows up
-    // for the "starred" profiles where the user supplies a target azimuth
-    // instead of NS/EW (see HC3D_STAR / CH3D_STAR / etc.).
-    //
-    // Both branches must at minimum produce a feasible result that lands
-    // at the user's 3D target.
     expect(r2.errors).toHaveLength(0);
+
+    // Modal-surfacing contract: the dispatcher emits an azmCandidates entry
+    // ONLY when the 3D solver finds 2+ geometrically distinct azimuths with
+    // all-positive segment lengths. For this geometry there's exactly one
+    // physical solution, so no entry is emitted (= no spurious modal pop).
+    // Genuine 2-azm cases are exercised in the *_STAR profile tests where
+    // the user supplies target azimuth instead of NS/EW.
+    expect(r1.azmCandidates.length).toBe(0);
   });
 
   it("HC3D from a non-vertical start matches Pascal MIXED.exe screenshot", () => {
@@ -406,6 +403,160 @@ describe("dispatch", () => {
     expect(tgt.ns).toBeCloseTo(-200, 1);
     expect(tgt.ew).toBeCloseTo(100, 1);
     expect(rad2deg(tgt.azm)).toBeCloseTo(204.396, 1);
+  });
+
+  it("CH from a DEVIATED start: 3D solver closes at the user's target", () => {
+    // CH is rocal=2 in Pascal — 2 rows: EOC w/ DLS, Target w/ TVD/NS/EW.
+    // Target inc and azm are BOTH derived. Pascal's CH solves a 2D quadratic
+    // after plane projection, which fails for a deviated start whose azimuth
+    // differs from the prev→target bearing. The new ch3D solver handles the
+    // full 3D closure directly.
+    const startDeviated: Segment = {
+      ...startStation(),
+      inc: 15 * PI / 180, azm: 30 * PI / 180,
+      md: 500, tvd: 480, ns: 65, ew: 38,
+    };
+    const segments: Segment[] = [
+      startDeviated,
+      { ...startStation(), order: 1, typ: ProfileType.CH,
+        dls: 3 * PI / 180 / 100 },                              // EOC w/ DLS
+      { ...startStation(), order: 2, typ: ProfileType.CH,
+        tvd: 2000, ns: 500, ew: 400 },                          // Target XYZ
+    ];
+    const r = dispatch(segments);
+    expect(r.ok, r.errors[0]?.message).toBe(true);
+    expect(r.errors).toHaveLength(0);
+
+    // The trajectory must close at the user's 3D target.
+    const last = r.stations[r.stations.length - 1];
+    expect(last.ns).toBeCloseTo(500, 0);
+    expect(last.ew).toBeCloseTo(400, 0);
+    expect(last.tvd).toBeCloseTo(2000, 0);
+
+    // EOC keypoint: curve ends at some derived (inc, azm) consistent with
+    // a min-curvature path from the start tangent to the hold-tangent that
+    // closes at the target.
+    const [eoc, tgt] = r.keypoints[0].points;
+    expect(eoc.dls).toBeGreaterThan(0);
+    expect(eoc.md).toBeGreaterThan(startDeviated.md); // past the start
+    expect(tgt.dls).toBe(0); // hold portion has no curvature
+    expect(tgt.ns).toBeCloseTo(500, 0);
+    expect(tgt.ew).toBeCloseTo(400, 0);
+    expect(tgt.tvd).toBeCloseTo(2000, 0);
+  });
+
+  it("D3DS from a DEVIATED start: 3D solver closes at the user's target", () => {
+    // D3DS is rocal=5 in Pascal — 3 segments curve+hold+curve with user-input
+    // final inc and per-arc DLS. Pascal's CH2DC1 solves a 2D quadratic after
+    // plane projection, which gives wrong output for a deviated start whose
+    // azimuth differs from the prev→target bearing. The new d3ds3D solver
+    // handles the full 3D closure with the standard "single curve plane"
+    // constraint (curve 2 + hold share azimuth; curve 1 carries the turn).
+    const startDeviated: Segment = {
+      ...startStation(),
+      inc: 15 * PI / 180, azm: 30 * PI / 180,
+      md: 500, tvd: 480, ns: 65, ew: 38,
+    };
+    const segments: Segment[] = [
+      startDeviated,
+      { ...startStation(), order: 1, typ: ProfileType.D3DS,
+        dls: 3 * PI / 180 / 100 },                              // EOC#1 w/ DLS1
+      { ...startStation(), order: 2, typ: ProfileType.D3DS },   // KOP#2 placeholder
+      { ...startStation(), order: 3, typ: ProfileType.D3DS,
+        inc: 20 * PI / 180,
+        dls: -2 * PI / 180 / 100,                               // DLS2 (drop)
+        tvd: 3000, ns: 1000, ew: 800 },                         // Target
+    ];
+    const r = dispatch(segments);
+    expect(r.ok, r.errors[0]?.message).toBe(true);
+    expect(r.errors).toHaveLength(0);
+
+    // Trajectory must close at the user's 3D target.
+    const last = r.stations[r.stations.length - 1];
+    expect(last.ns).toBeCloseTo(1000, 0);
+    expect(last.ew).toBeCloseTo(800, 0);
+    expect(last.tvd).toBeCloseTo(3000, 0);
+    expect(rad2deg(last.inc)).toBeCloseTo(20, 1);
+
+    // EOC#1 / KOP#2 / Target keypoints exist with the right roles.
+    const [eoc1, kop2, target] = r.keypoints[0].points;
+    expect(eoc1.dls).toBeGreaterThan(0); // arc 1 has curvature
+    expect(kop2.dls).toBe(0);             // hold portion is straight
+    expect(target.dls).toBeGreaterThan(0); // arc 2 has curvature
+    expect(target.ns).toBeCloseTo(1000, 0);
+    expect(target.ew).toBeCloseTo(800, 0);
+    expect(target.tvd).toBeCloseTo(3000, 0);
+  });
+
+  it("D3DS_HOLD from a DEVIATED start: 3D solver lands at the user's target", () => {
+    // D3DS_HOLD adds a final hold of length `dmd` after the curve-hold-curve.
+    // Mode A (rocal=6): user supplies final hold dmd; solver picks I_mid.
+    const startDeviated: Segment = {
+      ...startStation(),
+      inc: 15 * PI / 180, azm: 30 * PI / 180,
+      md: 500, tvd: 480, ns: 65, ew: 38,
+    };
+    const segments: Segment[] = [
+      startDeviated,
+      { ...startStation(), order: 1, typ: ProfileType.D3DS_HOLD,
+        dls: 3 * PI / 180 / 100 },
+      { ...startStation(), order: 2, typ: ProfileType.D3DS_HOLD },
+      { ...startStation(), order: 3, typ: ProfileType.D3DS_HOLD,
+        dls: -2 * PI / 180 / 100 },
+      { ...startStation(), order: 4, typ: ProfileType.D3DS_HOLD,
+        inc: 20 * PI / 180, dmd: 500,
+        tvd: 4000, ns: 1500, ew: 1000 },
+    ];
+    const r = dispatch(segments);
+    expect(r.ok, r.errors[0]?.message).toBe(true);
+    const last = r.stations[r.stations.length - 1];
+    expect(last.ns).toBeCloseTo(1500, 0);
+    expect(last.ew).toBeCloseTo(1000, 0);
+    expect(last.tvd).toBeCloseTo(4000, 0);
+    expect(rad2deg(last.inc)).toBeCloseTo(20, 1);
+  });
+
+  it("CC3D from a DEVIATED start: smooth azimuth transition through arc 1", () => {
+    // CC3D has no closure target — it forward-computes two arcs. With a 2D
+    // solver and deviated start, the first station gets an instantaneous
+    // azimuth jump from prev.azm to A_plane. The 3D solver makes arc 1 a
+    // true 3D curve that smoothly transitions A1 → A_plane.
+    const startDeviated: Segment = {
+      ...startStation(),
+      inc: 15 * PI / 180, azm: 30 * PI / 180,
+      md: 500, tvd: 480, ns: 65, ew: 38,
+    };
+    const segments: Segment[] = [
+      startDeviated,
+      { ...startStation(), order: 1, typ: ProfileType.CC3D,
+        inc: 60 * PI / 180, dls: 3 * PI / 180 / 100 },
+      { ...startStation(), order: 2, typ: ProfileType.CC3D,
+        inc: 30 * PI / 180, dls: -2 * PI / 180 / 100,
+        azm: 90 * PI / 180 },                                   // plane azimuth
+    ];
+    const r = dispatch(segments);
+    expect(r.ok, r.errors[0]?.message).toBe(true);
+
+    // Arc 1's start (= the START station's next densified row) should NOT
+    // jump immediately to A_plane=90°; it should still be near A1=30° and
+    // smoothly transition. Sample a few stations into arc 1 — the 3D
+    // solver's t-parameterised path should show azm between A1 and A_plane.
+    const inCurveStations = r.stations.filter(
+      (s) => s.comment === "Curve" && s.md > 500 && s.md < 1500,
+    );
+    if (inCurveStations.length > 1) {
+      const early = inCurveStations[0];
+      // Early arc 1: azm should be between A1 (30°) and A_plane (90°),
+      // closer to A1.
+      const azmDeg = ((rad2deg(early.azm) + 360) % 360);
+      expect(azmDeg).toBeGreaterThan(20);
+      expect(azmDeg).toBeLessThan(95);
+    }
+
+    // Final keypoint (EOC #2) lands at A_plane=90°, inc=30°.
+    const eoc2 = r.keypoints[0].points[r.keypoints[0].points.length - 1];
+    expect(rad2deg(eoc2.inc)).toBeCloseTo(30, 1);
+    expect(rad2deg(eoc2.azm)).toBeCloseTo(90, 1);
   });
 
   it("HC3D from a DEVIATED start: dispatcher handles 2 azm candidates", () => {

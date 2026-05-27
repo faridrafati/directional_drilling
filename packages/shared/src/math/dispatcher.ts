@@ -38,10 +38,15 @@ import { hc3d3D } from "./builders/hc3d3D.js";
 import { ch3d3D } from "./builders/ch3d3D.js";
 import { ch3dffk } from "./builders/ch3dffk.js";
 import { ch } from "./builders/ch.js";
+import { ch3D } from "./builders/ch3D.js";
 import { hch } from "./builders/hch.js";
+import { hch3D } from "./builders/hch3D.js";
 import { ch2dc1 } from "./builders/ch2dc1.js";
 import { ch2dc2 } from "./builders/ch2dc2.js";
+import { d3ds3D } from "./builders/d3ds3D.js";
+import { d3dsHold3D } from "./builders/d3dsHold3D.js";
 import { cc2d } from "./builders/cc2d.js";
+import { cc3D } from "./builders/cc3D.js";
 import { curveEoc } from "./builders/curveEoc.js";
 import { flyto } from "./builders/flyto.js";
 import { mcombo } from "./builders/mcombo.js";
@@ -566,6 +571,63 @@ function buildOne(
       // negative for a drop curve unless dls is negative too. We try the
       // user's sign first, then fall back to the opposite.
       const dls = groupVal("dls");
+
+      // Deviated start: route to the direct 3D solver for the same reason
+      // as HC3D / CH3D — Pascal's hch runs in a 2D plane after projection,
+      // and our inPlane2D path doesn't tilt the plane onto prev's tangent,
+      // so KOP azimuth comes out as the position bearing instead of prev.azm.
+      // hch3D solves the full 3D min-curvature closure directly.
+      //
+      // The 3D solver can return multiple positive-length azimuth solutions
+      // — we surface them as `azmCandidates` so the Form07 modal can pop,
+      // and we honour the per-segment branch pick from azimuthChoices.
+      if (Math.abs(prev.inc) > 1e-4) {
+        const branch = options.azimuthChoices?.[target.order] ?? 1;
+        const tryHch3D = (d: number, br: 1 | 2): ReturnType<typeof hch3D> => hch3D({
+          theta1: prev.inc,
+          prevAzm: prev.azm,
+          theta: target.inc,
+          dls: d,
+          tgtNs: target.ns - prev.ns,
+          tgtEw: target.ew - prev.ew,
+          tgtTvd: target.tvd - prev.tvd,
+          ppf,
+          branch: br,
+        });
+        const result = tryDlsSigns([dls], ([d]) => {
+          const r = tryHch3D(d, branch);
+          if (!r.ok) return r;
+          // Surface the 2-azm choice if it exists. azmCandidates lets the
+          // UI pop Form07's "branch 1 vs branch 2" modal.
+          if (azmCandidates && r.candidates.length >= 2) {
+            const c1 = r.candidates[0].solvedAzm;
+            const c2 = r.candidates[1].solvedAzm;
+            const c1Deg = ((c1 * 180) / Math.PI + 360) % 360;
+            const c2Deg = ((c2 * 180) / Math.PI + 360) % 360;
+            azmCandidates.push({
+              segmentOrder: target.order,
+              profileLabel: profileTypeLabel(target.typ),
+              candidate1Deg: c1Deg,
+              candidate2Deg: c2Deg,
+              chosen: branch,
+            });
+          }
+          const shift = (s: Station): Station => ({
+            ...s,
+            md: s.md + prev.md,
+            ns: s.ns + prev.ns,
+            ew: s.ew + prev.ew,
+            tvd: s.tvd + prev.tvd,
+          });
+          return {
+            ok: true,
+            stations: r.stations.map(shift),
+            keyPoints: r.keyPoints.map(shift),
+          };
+        });
+        return result;
+      }
+
       return tryDlsSigns([dls], ([d]) =>
         solveAndBuild(prev, target, options, (tgtx, tgty, theta) =>
           hch({ theta1: prev.inc, tgtx, tgty, theta, dls: d, ppf }),
@@ -585,6 +647,40 @@ function buildOne(
       // polarity. The output keypoint's DLS sign tells the user which way the
       // curve actually turned.
       const dls = groupVal("dls");
+
+      // Deviated start: route to the direct 3D solver. Pascal's CH runs in
+      // a 2D plane after projection; our inPlane2D doesn't tilt the plane
+      // onto prev's tangent, so for a non-vertical prev whose azimuth
+      // differs from the prev→target bearing, the 2D solver computes the
+      // wrong target inc or returns "Geometry infeasible".
+      if (Math.abs(prev.inc) > 1e-4) {
+        const tryCh3D = (d: number): BuilderResult => {
+          const r3 = ch3D({
+            theta1: prev.inc,
+            prevAzm: prev.azm,
+            dls: d,
+            tgtNs: target.ns - prev.ns,
+            tgtEw: target.ew - prev.ew,
+            tgtTvd: target.tvd - prev.tvd,
+            ppf,
+          });
+          if (!r3.ok) return r3;
+          const shift = (s: Station): Station => ({
+            ...s,
+            md: s.md + prev.md,
+            ns: s.ns + prev.ns,
+            ew: s.ew + prev.ew,
+            tvd: s.tvd + prev.tvd,
+          });
+          return {
+            ok: true,
+            stations: r3.stations.map(shift),
+            keyPoints: r3.keyPoints.map(shift),
+          };
+        };
+        return tryDlsSigns([dls], ([d]) => tryCh3D(d));
+      }
+
       return tryDlsSigns([dls], ([d]) =>
         inPlane2D(prev, target, (tgtx, tgty) =>
           ch({ theta1: prev.inc, tgtx, tgty, dls: d, ppf })
@@ -605,6 +701,43 @@ function buildOne(
       const dls2Raw = group[group.length - 1]?.dls || dls1Raw;
       const dls1 = dls1Raw || dls2Raw;
       const dls2 = dls2Raw || dls1Raw;
+
+      // Deviated start: route to the direct 3D solver. The 2D ch2dc1 path
+      // doesn't tilt the curve plane onto prev's tangent, so for a non-
+      // vertical prev whose azimuth differs from the prev→target bearing,
+      // ch2dc1 picks the wrong root or returns "Geometry infeasible". The
+      // d3ds3D solver assumes the standard 3D-S "single curve plane"
+      // constraint (curve 2 + hold share azimuth A_plane; curve 1 carries
+      // the azimuth turn from prev to A_plane).
+      if (Math.abs(prev.inc) > 1e-4) {
+        const tryD3ds3D = (d1: number, d2: number): BuilderResult => {
+          const r3 = d3ds3D({
+            theta1: prev.inc,
+            prevAzm: prev.azm,
+            theta: target.inc,
+            dls1: d1, dls2: d2,
+            tgtNs: target.ns - prev.ns,
+            tgtEw: target.ew - prev.ew,
+            tgtTvd: target.tvd - prev.tvd,
+            ppf,
+          });
+          if (!r3.ok) return r3;
+          const shift = (s: Station): Station => ({
+            ...s,
+            md: s.md + prev.md,
+            ns: s.ns + prev.ns,
+            ew: s.ew + prev.ew,
+            tvd: s.tvd + prev.tvd,
+          });
+          return {
+            ok: true,
+            stations: r3.stations.map(shift),
+            keyPoints: r3.keyPoints.map(shift),
+          };
+        };
+        return tryDlsSigns([dls1, dls2], ([d1, d2]) => tryD3ds3D(d1, d2));
+      }
+
       return tryDlsSigns([dls1, dls2], ([d1, d2]) =>
         solveAndBuild(prev, target, options, (tgtx, tgty, theta) =>
           ch2dc1({
@@ -630,6 +763,41 @@ function buildOne(
       const dls1 = dls1Raw || dls2Raw;
       const dls2 = dls2Raw || dls1Raw;
       const dmd = groupVal("dmd");
+
+      // Deviated start: route Mode A (D3DS_HOLD / D3DS_HOLD_STAR, where the
+      // user supplies the final hold's dmd) through the direct 3D solver.
+      // Mode B (D3DS_HOLD2 / *_STAR, where the user supplies the middle inc
+      // and dmd is solved) still uses the 2D path — TODO to port.
+      if (Math.abs(prev.inc) > 1e-4 && ddmmdd) {
+        const tryD3dsHold3D = (d1: number, d2: number): BuilderResult => {
+          const r3 = d3dsHold3D({
+            theta1: prev.inc,
+            prevAzm: prev.azm,
+            theta: target.inc,
+            dls1: d1, dls2: d2,
+            dmd,
+            tgtNs: target.ns - prev.ns,
+            tgtEw: target.ew - prev.ew,
+            tgtTvd: target.tvd - prev.tvd,
+            ppf,
+          });
+          if (!r3.ok) return r3;
+          const shift = (s: Station): Station => ({
+            ...s,
+            md: s.md + prev.md,
+            ns: s.ns + prev.ns,
+            ew: s.ew + prev.ew,
+            tvd: s.tvd + prev.tvd,
+          });
+          return {
+            ok: true,
+            stations: r3.stations.map(shift),
+            keyPoints: r3.keyPoints.map(shift),
+          };
+        };
+        return tryDlsSigns([dls1, dls2], ([d1, d2]) => tryD3dsHold3D(d1, d2));
+      }
+
       return tryDlsSigns([dls1, dls2], ([d1, d2]) =>
         solveAndBuild(prev, target, options, (tgtx, tgty, theta) =>
           ch2dc2({
@@ -659,6 +827,39 @@ function buildOne(
         target.typ === ProfileType.CC3D_STAR
           ? (arc1.azm || arc2.azm || prev.azm)
           : (arc2.azm || arc1.azm || prev.azm);
+
+      // Deviated start: route through the direct 3D solver. The 2D path
+      // forces an instantaneous azimuth jump at the first station (from
+      // prev.azm to userAzm); the 3D solver makes arc 1 a true 3D curve
+      // that smoothly transitions between the two azimuths.
+      if (Math.abs(prev.inc) > 1e-4) {
+        const tryCc3D = (d1: number, d2: number): BuilderResult => {
+          const r3 = cc3D({
+            theta1: prev.inc,
+            prevAzm: prev.azm,
+            midInc: arc1.inc,
+            theta: arc2.inc,
+            planeAzm: userAzm,
+            dls1: d1, dls2: d2,
+            ppf,
+          });
+          if (!r3.ok) return r3;
+          const shift = (s: Station): Station => ({
+            ...s,
+            md: s.md + prev.md,
+            ns: s.ns + prev.ns,
+            ew: s.ew + prev.ew,
+            tvd: s.tvd + prev.tvd,
+          });
+          return {
+            ok: true,
+            stations: r3.stations.map(shift),
+            keyPoints: r3.keyPoints.map(shift),
+          };
+        };
+        return tryDlsSigns([arc1.dls, arc2.dls], ([d1, d2]) => tryCc3D(d1, d2));
+      }
+
       return tryDlsSigns([arc1.dls, arc2.dls], ([d1, d2]) =>
         inPlane2D(
           prev,
