@@ -35,6 +35,9 @@ old_delphi_code/**/*.dcu
 old_delphi_code/**/*.exe
 old_delphi_code/**/*.identcache
 old_delphi_code/**/*.local
+old_delphi_code/**/*.ldb
+old_delphi_code/Temp.txt
+old_delphi_code/Temp.mdb
 
 # Scratch files at repo root
 1.txt

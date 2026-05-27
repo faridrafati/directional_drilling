@@ -1,6 +1,0 @@
-A
-	C
-		NEW WELL
-			SURVEY EDITOR
-			WELL DESIGN
-			aaa
