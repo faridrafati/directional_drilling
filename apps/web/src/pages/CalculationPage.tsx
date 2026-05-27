@@ -30,7 +30,7 @@ const PlanViewChart = lazy(() =>
   import("../components/WellCharts.js").then((m) => ({ default: m.PlanViewChart }))
 );
 
-type Tab = "grid" | "3d" | "charts" | "export";
+type Tab = "grid" | "3d" | "charts";
 
 /**
  * Normalize a degree value into [0, 360°) for display. Compass-style azm /
@@ -591,6 +591,44 @@ export function CalculationPage() {
               />
             </div>
           )}
+
+          {/* Export controls — merged into the Grid tab so the calculated
+              stations and the buttons to download them as PDF / XLSX sit
+              together. The previous standalone "Export" tab was removed.
+              Buttons disable until there's a calculation result to export. */}
+          <div className="mt-6 bg-white border border-gray-200 rounded p-4 flex flex-wrap items-center gap-3">
+            <span className="text-sm text-gray-600">
+              {stations.length === 0
+                ? "Calculate the trajectory first to enable exports."
+                : `Export the ${stations.length} calculated stations:`}
+            </span>
+            <button
+              onClick={handlePdfExport}
+              disabled={stations.length === 0}
+              className="px-4 py-2 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-300 inline-flex items-center gap-1.5"
+              title="Download a multi-page PDF of the stations table."
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Download PDF
+            </button>
+            <button
+              onClick={handleXlsxExport}
+              disabled={stations.length === 0}
+              className="px-4 py-2 text-sm rounded bg-green-700 text-white hover:bg-green-800 disabled:bg-gray-300 inline-flex items-center gap-1.5"
+              title="Download an Excel workbook with the stations + segment inputs."
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Download Excel (.xlsx)
+            </button>
+          </div>
         </>
       )}
 
@@ -624,32 +662,6 @@ export function CalculationPage() {
           </div>
         )}
       </Suspense>
-      {tab === "export" && (
-        <div className="bg-white border border-gray-200 rounded p-6 space-y-4">
-          <p className="text-sm text-gray-600">
-            Export the {stations.length} calculated stations.
-          </p>
-          <div className="flex gap-3">
-            <button
-              onClick={handlePdfExport}
-              disabled={stations.length === 0}
-              className="px-4 py-2 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-300"
-            >
-              Download PDF
-            </button>
-            <button
-              onClick={handleXlsxExport}
-              disabled={stations.length === 0}
-              className="px-4 py-2 text-sm rounded bg-green-700 text-white hover:bg-green-800 disabled:bg-gray-300"
-            >
-              Download Excel (.xlsx)
-            </button>
-          </div>
-          {stations.length === 0 && (
-            <p className="text-xs text-gray-400">Calculate the trajectory first.</p>
-          )}
-        </div>
-      )}
 
       {picker !== null && (
         <ProfilePickerModal
@@ -954,7 +966,6 @@ function Tabs({ current, onChange }: { current: Tab; onChange: (t: Tab) => void 
     // Vertical Section + Plan View live on a single "Charts" tab so users
     // can see both 2D projections of the trajectory side-by-side.
     { id: "charts", label: "Charts" },
-    { id: "export", label: "Export" },
   ];
   return (
     <div className="flex border-b border-gray-200 mb-4 overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
