@@ -316,6 +316,41 @@ describe("dispatch", () => {
     expect(r2.errors).toHaveLength(0);
   });
 
+  it("HC3D from a DEVIATED start: dispatcher handles 2 azm candidates", () => {
+    // Same idea as the HCH azm test, but for HC3D — Pascal Unit02.pas:HC3DTFT
+    // and the dispatcher's solveAndBuild() call azmfind() whenever target.azm
+    // is left blank and the prev tangent is non-vertical, because the curve
+    // plane orientation can be one of two candidates.
+    //
+    // Setup mirrors a realistic sidetrack scenario: the well is already
+    // tilted (inc=10°, azm=20°) at some MD when the user adds an HC3D
+    // segment to a deviated target. Both `azimuthChoice: 1` and `:2` must
+    // produce a feasible curve that closes at the user's 3D target.
+    const startDeviated: Segment = {
+      ...startStation(),
+      inc: 10 * PI / 180, azm: 20 * PI / 180,
+      md: 800, tvd: 780, ns: 110, ew: 47,
+    };
+    const segments: Segment[] = [
+      startDeviated,
+      { ...startStation(), order: 1, typ: ProfileType.HC3D },  // KOP row
+      { ...startStation(), order: 2, typ: ProfileType.HC3D,
+        inc: 60 * PI / 180,
+        tvd: 6000, ns: 1800, ew: 2400 },                        // EOC target
+    ];
+
+    for (const choice of [1, 2] as const) {
+      const r = dispatch(segments, { azimuthChoice: choice });
+      expect(r.ok, `azimuthChoice=${choice} failed: ${r.errors[0]?.message}`).toBe(true);
+      const last = r.stations[r.stations.length - 1];
+      // Both branches must close to the user's requested 3D position.
+      expect(last.ns).toBeCloseTo(1800, 0);
+      expect(last.ew).toBeCloseTo(2400, 0);
+      expect(last.tvd).toBeCloseTo(6000, 0);
+      expect(rad2deg(last.inc)).toBeCloseTo(60, 1);
+    }
+  });
+
   it("fills TF=0 on the final keypoint (no following curve)", () => {
     // Pascal convention: the LAST keypoint of the trajectory has TF=0,
     // because TF is set from the NEXT curve's dogleg, and there isn't one.
