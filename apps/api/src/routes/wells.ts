@@ -9,11 +9,23 @@ export async function registerWellRoutes(app: FastifyInstance, prisma: PrismaCli
     return reply.code(201).send(w);
   });
 
-  app.put<{ Params: { id: string }; Body: Record<string, unknown> }>(
+  app.put<{
+    Params: { id: string };
+    Body: Partial<{ name: string; ns: number; ew: number; tvd: number; fieldId: string }>;
+  }>(
     "/wells/:id",
     async (req, reply) => {
       try {
-        const w = await prisma.well.update({ where: { id: req.params.id }, data: req.body });
+        // Whitelist fields. `fieldId` lets the sidebar tree move a well
+        // to a different field ("change sub items branch").
+        const { name, ns, ew, tvd, fieldId } = req.body;
+        const data: { name?: string; ns?: number; ew?: number; tvd?: number; fieldId?: string } = {};
+        if (name    !== undefined) data.name = name;
+        if (ns      !== undefined) data.ns = ns;
+        if (ew      !== undefined) data.ew = ew;
+        if (tvd     !== undefined) data.tvd = tvd;
+        if (fieldId !== undefined) data.fieldId = fieldId;
+        const w = await prisma.well.update({ where: { id: req.params.id }, data });
         return w;
       } catch {
         return reply.code(404).send({ error: "not found" });

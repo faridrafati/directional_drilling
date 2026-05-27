@@ -80,6 +80,39 @@ export async function registerCalculationRoutes(app: FastifyInstance, prisma: Pr
     }
   });
 
+  // Edit a calculation's name, type, or owning well. Lets the sidebar
+  // projects-tree rename a calc inline or move it under a different well
+  // (e.g. when the user realises a survey was attached to the wrong bore).
+  // All three fields are optional; any subset can be provided.
+  const calcUpdateSchema = z
+    .object({
+      name: z.string().min(1).max(120).optional(),
+      type: z.enum(["WellDesign", "SurveyEditor"]).optional(),
+      wellId: z.string().min(1).optional(),
+    })
+    .refine(
+      (b) => b.name !== undefined || b.type !== undefined || b.wellId !== undefined,
+      { message: "At least one of name, type, wellId must be set." },
+    );
+  app.put<{ Params: { id: string }; Body: unknown }>(
+    "/calculations/:id",
+    async (req, reply) => {
+      const parsed = calcUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.flatten() });
+      }
+      try {
+        const updated = await prisma.calculation.update({
+          where: { id: req.params.id },
+          data: parsed.data,
+        });
+        return reply.send(updated);
+      } catch {
+        return reply.code(404).send({ error: "not found" });
+      }
+    },
+  );
+
   /**
    * Replace all segments for a calculation in one transaction.
    *

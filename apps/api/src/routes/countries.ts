@@ -9,11 +9,18 @@ export async function registerCountryRoutes(app: FastifyInstance, prisma: Prisma
     return reply.code(201).send(c);
   });
 
-  app.put<{ Params: { id: string }; Body: { name?: string; area?: string } }>(
+  app.put<{ Params: { id: string }; Body: { name?: string; area?: string; projectId?: string } }>(
     "/countries/:id",
     async (req, reply) => {
       try {
-        const c = await prisma.country.update({ where: { id: req.params.id }, data: req.body });
+        // Whitelist forwarded fields. `projectId` lets the sidebar tree
+        // move a country to a different project ("change sub items branch").
+        const { name, area, projectId } = req.body;
+        const data: { name?: string; area?: string; projectId?: string } = {};
+        if (name !== undefined)      data.name = name;
+        if (area !== undefined)      data.area = area;
+        if (projectId !== undefined) data.projectId = projectId;
+        const c = await prisma.country.update({ where: { id: req.params.id }, data });
         return c;
       } catch {
         return reply.code(404).send({ error: "not found" });

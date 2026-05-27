@@ -37,11 +37,23 @@ export async function registerFieldRoutes(app: FastifyInstance, prisma: PrismaCl
     }
   );
 
-  app.put<{ Params: { id: string }; Body: Partial<{ name: string; ns: number; ew: number; msl: number }> }>(
+  app.put<{
+    Params: { id: string };
+    Body: Partial<{ name: string; ns: number; ew: number; msl: number; countryId: string }>;
+  }>(
     "/fields/:id",
     async (req, reply) => {
       try {
-        const f = await prisma.field.update({ where: { id: req.params.id }, data: req.body });
+        // Whitelist fields. `countryId` lets the sidebar tree move a
+        // field to a different country ("change sub items branch").
+        const { name, ns, ew, msl, countryId } = req.body;
+        const data: { name?: string; ns?: number; ew?: number; msl?: number; countryId?: string } = {};
+        if (name      !== undefined) data.name = name;
+        if (ns        !== undefined) data.ns = ns;
+        if (ew        !== undefined) data.ew = ew;
+        if (msl       !== undefined) data.msl = msl;
+        if (countryId !== undefined) data.countryId = countryId;
+        const f = await prisma.field.update({ where: { id: req.params.id }, data });
         return f;
       } catch {
         return reply.code(404).send({ error: "not found" });
