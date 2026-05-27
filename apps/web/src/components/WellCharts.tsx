@@ -55,6 +55,173 @@ function withUnit(label: string, unit?: string): string {
 }
 
 /**
+ * Endpoint marker for the trajectory: green ▲ for the wellhead (start),
+ * red ● for the last station (end). Adds a small text label so the user
+ * can tell which is which without relying on color alone (color-blind
+ * accessibility + black-and-white prints).
+ *
+ * Used inside Recharts' <ReferenceDot shape={...} /> — the wrapping
+ * ReferenceDot positions us at the right (cx, cy) in pixel space; this
+ * component just paints the SVG.
+ *
+ * Both marker types render:
+ *   1. a white halo ring to lift them off the curve
+ *   2. the colored fill shape
+ *   3. a small label above the marker
+ */
+function StartEndMarker({
+  cx, cy, kind, label,
+}: { cx: number; cy: number; kind: "start" | "end"; label: string }) {
+  const isStart = kind === "start";
+  const fill = isStart ? "#16a34a" : "#dc2626";       // green-600 / red-600
+  const r = 6;
+  return (
+    <g pointerEvents="none">
+      {/* White halo so the marker reads on top of any gridline / curve. */}
+      <circle cx={cx} cy={cy} r={r + 2.5} fill="white" stroke="white" strokeWidth={1.5} />
+      {isStart ? (
+        // Triangle pointing down — same visual language as a drillship
+        // hanging the bit at the wellhead.
+        <polygon
+          points={`${cx},${cy + r} ${cx - r},${cy - r} ${cx + r},${cy - r}`}
+          fill={fill}
+          stroke="white"
+          strokeWidth={1.2}
+        />
+      ) : (
+        <circle cx={cx} cy={cy} r={r} fill={fill} stroke="white" strokeWidth={1.2} />
+      )}
+      {/* Label above the marker. Keep it tiny so it doesn't crowd the
+          chart; the colour and shape are the primary visual cues. */}
+      <text
+        x={cx}
+        y={cy - r - 6}
+        textAnchor="middle"
+        fontSize={11}
+        fontWeight={600}
+        fill={fill}
+        stroke="white"
+        strokeWidth={3}
+        paintOrder="stroke"
+      >
+        {label}
+      </text>
+    </g>
+  );
+}
+
+/**
+ * Pick an engineering-friendly "nice" tick step covering `range` in roughly
+ * `targetMajorCount` major intervals. Snaps to 1 / 2 / 5 × 10ⁿ — the same
+ * mental scale every engineer uses for graph-paper gridlines.
+ *
+ *   range=4200, target=6  → rough = 700  → nice 500
+ *   range=350,  target=6  → rough = 58   → nice 50
+ *   range=12,   target=6  → rough = 2    → nice 2
+ */
+function niceStep(range: number, targetMajorCount = 6): number {
+  if (!Number.isFinite(range) || range <= 0) return 1;
+  const rough = range / targetMajorCount;
+  const pow10 = Math.pow(10, Math.floor(Math.log10(rough)));
+  const norm = rough / pow10; // 1 ≤ norm < 10
+  let mult: number;
+  if (norm < 1.5) mult = 1;
+  else if (norm < 3)  mult = 2;
+  else if (norm < 7)  mult = 5;
+  else                mult = 10;
+  return mult * pow10;
+}
+
+/**
+ * Engineering grid — major (darker, dashed) + minor (lighter, solid) lines.
+ *
+ * Recharts' built-in <CartesianGrid /> only draws at axis-tick positions
+ * and at one density. We stack TWO instances and feed each its own
+ * positions via `horizontal/verticalCoordinatesGenerator`. Major spacing
+ * is auto-picked from the axis domain via niceStep(); minor spacing is
+ * major / 5 — the universal graph-paper convention.
+ *
+ * Why this is needed: an engineer reading the printed Vertical Section
+ * needs to interpolate distances between gridlines. A single-density grid
+ * either makes the chart visually noisy (too fine) or unreadable (too
+ * coarse). The two-density grid mirrors what's on technical drafting
+ * paper (and what Pascal MIXED.exe's TeeChart used by default).
+ */
+function EngineeringGrid() {
+  // Both generators use the same niceStep logic. The minor generator
+  // returns every minor tick; the major generator returns every 5th
+  // (i.e. only positions that are multiples of the major step).
+  const minorH = (props: { yAxis?: { scale?: (v: number) => number; domain?: () => [number, number] } }): number[] => {
+    return computeGridPositions(props.yAxis, /*minor*/ true);
+  };
+  const majorH = (props: { yAxis?: { scale?: (v: number) => number; domain?: () => [number, number] } }): number[] => {
+    return computeGridPositions(props.yAxis, /*minor*/ false);
+  };
+  const minorV = (props: { xAxis?: { scale?: (v: number) => number; domain?: () => [number, number] } }): number[] => {
+    return computeGridPositions(props.xAxis, /*minor*/ true);
+  };
+  const majorV = (props: { xAxis?: { scale?: (v: number) => number; domain?: () => [number, number] } }): number[] => {
+    return computeGridPositions(props.xAxis, /*minor*/ false);
+  };
+  return (
+    <>
+      {/* Minor — fine, solid, very light */}
+      <CartesianGrid
+        stroke="#eef2f7"
+        strokeWidth={0.5}
+        horizontalCoordinatesGenerator={minorH as never}
+        verticalCoordinatesGenerator={minorV as never}
+      />
+      {/* Major — bolder, dashed, mid-gray */}
+      <CartesianGrid
+        stroke="#94a3b8"
+        strokeWidth={0.7}
+        strokeDasharray="3 4"
+        horizontalCoordinatesGenerator={majorH as never}
+        verticalCoordinatesGenerator={majorV as never}
+      />
+    </>
+  );
+}
+
+/**
+ * Translate every "nice" tick value within an axis's domain into a pixel
+ * position via the d3 scale Recharts exposes on the axis object. Returns
+ * minor (step = majorStep/5) or major (step = majorStep) positions.
+ *
+ * Robust to missing scale/domain (early renders) — returns [] so the grid
+ * just draws nothing rather than crashing.
+ */
+function computeGridPositions(
+  axis: { scale?: (v: number) => number; domain?: () => [number, number] } | undefined,
+  minor: boolean,
+): number[] {
+  if (!axis || typeof axis.scale !== "function" || typeof axis.domain !== "function") {
+    return [];
+  }
+  const [d0, d1] = axis.domain();
+  if (!Number.isFinite(d0) || !Number.isFinite(d1)) return [];
+  const lo = Math.min(d0, d1);
+  const hi = Math.max(d0, d1);
+  const range = hi - lo;
+  if (range === 0) return [];
+  const majorStep = niceStep(range, 6);
+  const step = minor ? majorStep / 5 : majorStep;
+  // Cap total lines to a sane upper bound so a tiny step (e.g. user
+  // zoomed into a millimetre-scale section) doesn't draw thousands.
+  const maxLines = 400;
+  const count = Math.min(maxLines, Math.ceil(range / step) + 2);
+  const start = Math.ceil(lo / step) * step;
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const v = start + i * step;
+    if (v > hi + 1e-9) break;
+    out.push(axis.scale(v));
+  }
+  return out;
+}
+
+/**
  * Natural VSEC azimuth = bearing from the FIRST station to the LAST station
  * in the horizontal plane. Used as the default when the user hasn't picked
  * a custom view azimuth.
@@ -415,7 +582,7 @@ export function VerticalSectionChart({
           }}
           onMouseLeave={() => setHoverIdx(null)}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <EngineeringGrid />
           <XAxis dataKey="vsec" type="number" stroke="#475569" fontSize={12}>
             <Label value={withUnit("Vertical Section", lengthUnit)} position="bottom" offset={10} fill="#475569" />
           </XAxis>
@@ -443,7 +610,26 @@ export function VerticalSectionChart({
             dot={false}
             isAnimationActive={false}
           />
-          <ReferenceDot x={tip.vsec} y={tip.tvd} r={5} fill="#dc2626" stroke="#fff" />
+          {/* START — green ▲ pointing down at the wellhead */}
+          <ReferenceDot
+            x={data[0].vsec}
+            y={data[0].tvd}
+            ifOverflow="visible"
+            isFront
+            shape={(props: { cx?: number; cy?: number }) => (
+              <StartEndMarker cx={props.cx ?? 0} cy={props.cy ?? 0} kind="start" label="Start" />
+            )}
+          />
+          {/* END — red ● at the last station */}
+          <ReferenceDot
+            x={tip.vsec}
+            y={tip.tvd}
+            ifOverflow="visible"
+            isFront
+            shape={(props: { cx?: number; cy?: number }) => (
+              <StartEndMarker cx={props.cx ?? 0} cy={props.cy ?? 0} kind="end" label="End" />
+            )}
+          />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -507,7 +693,7 @@ export function PlanViewChart({
           }}
           onMouseLeave={() => setHoverIdx(null)}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <EngineeringGrid />
           <XAxis dataKey="ew" type="number" stroke="#475569" fontSize={12}>
             <Label value={withUnit("East-West", lengthUnit)} position="bottom" offset={10} fill="#475569" />
           </XAxis>
@@ -535,7 +721,26 @@ export function PlanViewChart({
             dot={false}
             isAnimationActive={false}
           />
-          <ReferenceDot x={tip.ew} y={tip.ns} r={5} fill="#dc2626" stroke="#fff" />
+          {/* START — green ▲ at the wellhead (origin) */}
+          <ReferenceDot
+            x={data[0].ew}
+            y={data[0].ns}
+            ifOverflow="visible"
+            isFront
+            shape={(props: { cx?: number; cy?: number }) => (
+              <StartEndMarker cx={props.cx ?? 0} cy={props.cy ?? 0} kind="start" label="Start" />
+            )}
+          />
+          {/* END — red ● at the last station */}
+          <ReferenceDot
+            x={tip.ew}
+            y={tip.ns}
+            ifOverflow="visible"
+            isFront
+            shape={(props: { cx?: number; cy?: number }) => (
+              <StartEndMarker cx={props.cx ?? 0} cy={props.cy ?? 0} kind="end" label="End" />
+            )}
+          />
         </LineChart>
       </ResponsiveContainer>
     </div>

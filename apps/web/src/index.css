@@ -22,17 +22,19 @@ body {
  *     `.print-target` and its descendants. Display:none would unmount
  *     React Three Fiber's Canvas and lose the WebGL state; visibility
  *     preserves it.
- *   - `position: fixed; top:0; left:0` repositions the target so it
- *     prints from page origin regardless of page scroll offset.
+ *   - The .print-target is repositioned to the page origin so it prints
+ *     from the top regardless of scroll offset.
  *   - Page background is white and color-adjust:exact forces chart
  *     fills to print at their on-screen colours (otherwise Chrome
  *     drops fills to save ink).
+ *   - Orientation-aware layout: .print-charts-row uses flex-row in
+ *     landscape (charts side-by-side), flex-col in portrait (stacked).
+ *   - .print-only sections (e.g. the stations table accompanying the
+ *     Charts tab print) are hidden on screen, visible when printing.
+ *   - Tables get repeated headers via display:table-header-group and
+ *     break-inside:avoid to keep individual rows intact across pages.
  */
 @media print {
-  @page {
-    size: landscape;
-    margin: 1cm;
-  }
   body {
     background: white;
     -webkit-print-color-adjust: exact;
@@ -40,6 +42,8 @@ body {
   }
   /* Hide chrome that should never appear in a printed PDF. */
   .print-hidden { display: none !important; }
+  /* Show-on-print-only siblings (e.g. the engineering stations table). */
+  .print-only { display: block !important; }
   /* Isolate the print target. */
   body.printing * { visibility: hidden !important; }
   body.printing .print-target,
@@ -47,14 +51,93 @@ body {
     visibility: visible !important;
   }
   body.printing .print-target {
-    position: fixed !important;
+    position: absolute !important;
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
     width: 100% !important;
-    height: auto !important;
     margin: 0 !important;
     padding: 0 !important;
     background: white !important;
   }
+  /* Side-by-side in landscape, stacked in portrait. */
+  @media (orientation: landscape) {
+    .print-charts-row {
+      display: flex !important;
+      flex-direction: row !important;
+      gap: 8mm !important;
+    }
+    .print-charts-row > * {
+      flex: 1 1 0 !important;
+      min-width: 0 !important;
+      width: 50% !important;
+    }
+  }
+  @media (orientation: portrait) {
+    .print-charts-row {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 8mm !important;
+    }
+    .print-charts-row > * {
+      width: 100% !important;
+      page-break-inside: avoid;
+    }
+  }
+  /* Each chart card prints at a fixed height that fits half a landscape
+     A4 page (or full width of a portrait page). */
+  .print-target .print-chart-card {
+    height: 100mm !important;
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+  /* Engineering stations table that follows the charts. */
+  .print-stations-table {
+    margin-top: 6mm;
+    font-size: 8pt;
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .print-stations-table thead {
+    /* Repeat the header on every printed page. */
+    display: table-header-group;
+  }
+  .print-stations-table tbody tr {
+    /* Don't split a row across pages. */
+    page-break-inside: avoid;
+  }
+  .print-stations-table th,
+  .print-stations-table td {
+    border: 0.5pt solid #cbd5e1;
+    padding: 1mm 1.5mm;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .print-stations-table th {
+    background: #eef2f7 !important;
+    color: #1e3a8a;
+    font-weight: 600;
+  }
+  .print-stations-table th:first-child,
+  .print-stations-table td:first-child {
+    text-align: left;
+  }
+  /* Title block at the top of the print. */
+  .print-header {
+    text-align: center;
+    margin-bottom: 6mm;
+  }
+  .print-header h1 {
+    margin: 0 0 2mm 0;
+    font-size: 14pt;
+    color: #1e3a8a;
+  }
+  .print-header .print-meta {
+    font-size: 9pt;
+    color: #475569;
+  }
+}
+/* Hide the print-only block during normal screen viewing. */
+@media screen {
+  .print-only { display: none !important; }
 }
