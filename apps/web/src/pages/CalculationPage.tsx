@@ -168,6 +168,10 @@ export function CalculationPage() {
   // the same ambiguity and immediately re-pop the modal (loop). Cleared
   // every time the user clicks the toolbar's Calculate button.
   const [azmModalDismissed, setAzmModalDismissed] = useState(false);
+  // Export popup: toggled by the "Export" button next to Calculate. Shows
+  // three choices — Download PDF / Download Excel / Print Current View —
+  // so the user picks one place no matter which tab they're on.
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const triggerCalculate = () => {
     setAzmModalDismissed(false);
     calculateMut.mutate();
@@ -417,32 +421,18 @@ export function CalculationPage() {
             error={saveMut.error ? String(saveMut.error) : null}
           />
           {(tab === "3d" || tab === "charts") && (
-            <>
-              <label
-                className="inline-flex items-center gap-1.5 text-sm text-gray-700 select-none px-2 h-10 sm:h-9 rounded-md bg-gray-100 hover:bg-gray-200 cursor-pointer"
-                title="When on, the path is rendered as a smooth curve through stations (Recharts monotone + 3D Catmull-Rom). When off, straight polyline segments."
-              >
-                <input
-                  type="checkbox"
-                  checked={smoothLines}
-                  onChange={(e) => setSmoothLines(e.target.checked)}
-                  className="cursor-pointer"
-                />
-                Smooth lines
-              </label>
-              <button
-                onClick={handlePrintCurrentTab}
-                className="px-3 h-10 sm:h-9 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 inline-flex items-center gap-1.5"
-                title="Open the browser print dialog. Choose 'Save as PDF' to export the current view."
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="6 9 6 2 18 2 18 9" />
-                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                  <rect x="6" y="14" width="12" height="8" />
-                </svg>
-                Print as PDF
-              </button>
-            </>
+            <label
+              className="inline-flex items-center gap-1.5 text-sm text-gray-700 select-none px-2 h-10 sm:h-9 rounded-md bg-gray-100 hover:bg-gray-200 cursor-pointer"
+              title="When on, the path is rendered as a smooth curve through stations (Recharts monotone + 3D Catmull-Rom). When off, straight polyline segments."
+            >
+              <input
+                type="checkbox"
+                checked={smoothLines}
+                onChange={(e) => setSmoothLines(e.target.checked)}
+                className="cursor-pointer"
+              />
+              Smooth lines
+            </label>
           )}
           {tab === "grid" && (
             <>
@@ -480,6 +470,25 @@ export function CalculationPage() {
             className="px-4 h-10 sm:h-9 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-300 font-medium min-w-[110px]"
           >
             {calculateMut.isPending ? "Calculating…" : "Calculate"}
+          </button>
+          {/* Unified Export button — visible on every tab, sits next to
+              Calculate. Opens a popup with three options: download the
+              stations table as PDF, download as Excel, or print the
+              current view via the browser's Save-as-PDF flow. */}
+          <button
+            onClick={() => setExportMenuOpen(true)}
+            disabled={stations.length === 0}
+            className="px-3 h-10 sm:h-9 text-sm rounded-md bg-amber-600 text-white hover:bg-amber-700 active:bg-amber-800 disabled:bg-gray-300 inline-flex items-center gap-1.5"
+            title={stations.length === 0
+              ? "Calculate the trajectory first to enable exports."
+              : "Choose an export format (PDF, Excel, or print current view)."}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Export
           </button>
         </div>
       </div>
@@ -592,43 +601,6 @@ export function CalculationPage() {
             </div>
           )}
 
-          {/* Export controls — merged into the Grid tab so the calculated
-              stations and the buttons to download them as PDF / XLSX sit
-              together. The previous standalone "Export" tab was removed.
-              Buttons disable until there's a calculation result to export. */}
-          <div className="mt-6 bg-white border border-gray-200 rounded p-4 flex flex-wrap items-center gap-3">
-            <span className="text-sm text-gray-600">
-              {stations.length === 0
-                ? "Calculate the trajectory first to enable exports."
-                : `Export the ${stations.length} calculated stations:`}
-            </span>
-            <button
-              onClick={handlePdfExport}
-              disabled={stations.length === 0}
-              className="px-4 py-2 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-300 inline-flex items-center gap-1.5"
-              title="Download a multi-page PDF of the stations table."
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              Download PDF
-            </button>
-            <button
-              onClick={handleXlsxExport}
-              disabled={stations.length === 0}
-              className="px-4 py-2 text-sm rounded bg-green-700 text-white hover:bg-green-800 disabled:bg-gray-300 inline-flex items-center gap-1.5"
-              title="Download an Excel workbook with the stations + segment inputs."
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              Download Excel (.xlsx)
-            </button>
-          </div>
         </>
       )}
 
@@ -689,7 +661,161 @@ export function CalculationPage() {
           onCancel={() => setAzmModalDismissed(true)}
         />
       ) : null}
+
+      {/* Export-format chooser — pops when the user clicks the toolbar
+          "Export" button. Three actions: PDF (stations table), Excel
+          (workbook), Print Current View (browser print → Save as PDF).
+          The print option is only meaningful for the Charts / 3D tabs
+          where a `.print-target` wrapper exists; we disable it elsewhere
+          rather than producing an unhelpful whole-page print. */}
+      {exportMenuOpen && (
+        <ExportMenuModal
+          stationCount={stations.length}
+          currentTab={tab}
+          onDownloadPdf={() => { setExportMenuOpen(false); handlePdfExport(); }}
+          onDownloadXlsx={() => { setExportMenuOpen(false); handleXlsxExport(); }}
+          onPrintCurrentTab={() => { setExportMenuOpen(false); handlePrintCurrentTab(); }}
+          onClose={() => setExportMenuOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Export-format chooser modal. Three actions:
+ *   1. Download PDF  — multi-page stations table (pdfmake-generated)
+ *   2. Download Excel — .xlsx workbook with stations + segment inputs
+ *   3. Print Current View — uses the browser print dialog; user picks
+ *      "Save as PDF" to get a vector PDF of whatever the active tab
+ *      is showing (Charts: VSEC + Plan View + legends + stations
+ *      table; 3D: the WebGL snapshot).
+ *
+ * The Print option only does something useful on tabs that wrap content
+ * in `.print-target` (Charts, 3D View). On the Grid tab the call would
+ * print a blank page, so we disable that button instead.
+ */
+function ExportMenuModal({
+  stationCount, currentTab,
+  onDownloadPdf, onDownloadXlsx, onPrintCurrentTab, onClose,
+}: {
+  stationCount: number;
+  currentTab: Tab;
+  onDownloadPdf: () => void;
+  onDownloadXlsx: () => void;
+  onPrintCurrentTab: () => void;
+  onClose: () => void;
+}) {
+  const printAvailable = currentTab === "3d" || currentTab === "charts";
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-md w-[92vw] p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-semibold text-gray-900">Export</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            aria-label="Close"
+            title="Close"
+          >
+            ×
+          </button>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Choose an export format for the {stationCount} calculated station{stationCount === 1 ? "" : "s"}.
+        </p>
+
+        <div className="space-y-2">
+          <ExportMenuButton
+            color="red"
+            title="Download PDF"
+            subtitle="Multi-page stations table with field/well header"
+            iconPath={[
+              <path key="0" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />,
+              <polyline key="1" points="7 10 12 15 17 10" />,
+              <line key="2" x1="12" y1="15" x2="12" y2="3" />,
+            ]}
+            onClick={onDownloadPdf}
+          />
+          <ExportMenuButton
+            color="green"
+            title="Download Excel (.xlsx)"
+            subtitle="Workbook with stations + segment inputs"
+            iconPath={[
+              <path key="0" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />,
+              <polyline key="1" points="14 2 14 8 20 8" />,
+              <line key="2" x1="8"  y1="13" x2="16" y2="13" />,
+              <line key="3" x1="8"  y1="17" x2="16" y2="17" />,
+            ]}
+            onClick={onDownloadXlsx}
+          />
+          <ExportMenuButton
+            color="blue"
+            title="Print Current View as PDF"
+            subtitle={printAvailable
+              ? `Captures the ${currentTab === "charts" ? "2D charts + stations table" : "3D viewer"} via the browser's Save-as-PDF flow`
+              : "Switch to the Charts or 3D View tab to enable this option"}
+            disabled={!printAvailable}
+            iconPath={[
+              <polyline key="0" points="6 9 6 2 18 2 18 9" />,
+              <path key="1" d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />,
+              <rect key="2" x="6" y="14" width="12" height="8" />,
+            ]}
+            onClick={onPrintCurrentTab}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One option row inside ExportMenuModal — coloured icon + title + subtitle. */
+function ExportMenuButton({
+  color, title, subtitle, iconPath, onClick, disabled,
+}: {
+  color: "red" | "green" | "blue";
+  title: string;
+  subtitle: string;
+  iconPath: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const palette: Record<typeof color, { bg: string; text: string; ring: string }> = {
+    red:   { bg: "bg-red-50 hover:bg-red-100",   text: "text-red-700",   ring: "ring-red-200" },
+    green: { bg: "bg-green-50 hover:bg-green-100", text: "text-green-700", ring: "ring-green-200" },
+    blue:  { bg: "bg-blue-50 hover:bg-blue-100", text: "text-blue-700",  ring: "ring-blue-200" },
+  };
+  const p = palette[color];
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-md border border-transparent transition-colors
+        ${disabled
+          ? "bg-gray-50 text-gray-400 cursor-not-allowed"
+          : `${p.bg} hover:ring-2 ${p.ring}`}`}
+    >
+      <svg
+        width="22" height="22" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round"
+        className={disabled ? "text-gray-400" : p.text}
+      >
+        {iconPath}
+      </svg>
+      <div className="min-w-0 flex-1">
+        <div className={`text-sm font-medium ${disabled ? "text-gray-500" : "text-gray-900"}`}>
+          {title}
+        </div>
+        <div className="text-xs text-gray-500 truncate">{subtitle}</div>
+      </div>
+    </button>
   );
 }
 
