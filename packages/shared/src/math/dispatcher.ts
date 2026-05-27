@@ -816,12 +816,22 @@ function solveAndBuild(
     if (cands.ok) {
       // Per-segment branch pick: look up by target.order; default branch 1.
       const choice = options.azimuthChoices?.[target.order] ?? 1;
-      // Two distinct candidates → genuine ambiguity. Don't surface if the
-      // solver collapsed both to the same number (which happens when the
-      // prev tangent is vertical or otherwise fully constrains the plane).
       const c1Deg = ((cands.candidate1 * 180) / Math.PI + 360) % 360;
       const c2Deg = ((cands.candidate2 * 180) / Math.PI + 360) % 360;
-      if (azmCandidates && Math.abs(c1Deg - c2Deg) > 0.01) {
+      // Surface to the UI ONLY when the two candidates are a genuine
+      // geometric choice — i.e. they yield meaningfully different curves.
+      // azmFind's two solutions are often:
+      //   1. the same number (vertical prev → solver collapsed) → skip
+      //   2. exactly 180° apart → same line, opposite-facing tangent.
+      //      inPlane2D resolves the line direction from the target's NS/EW
+      //      bearing, so both picks produce the same curve. No real choice.
+      //      (Pascal's Form07 still showed these but had the same outcome.)
+      const sep = Math.min(
+        Math.abs(c1Deg - c2Deg),
+        360 - Math.abs(c1Deg - c2Deg),
+      );
+      const isRealChoice = sep > 0.01 && Math.abs(sep - 180) > 0.5;
+      if (azmCandidates && isRealChoice) {
         azmCandidates.push({
           segmentOrder: target.order,
           profileLabel: profileTypeLabel(target.typ),
