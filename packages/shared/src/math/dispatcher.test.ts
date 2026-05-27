@@ -326,6 +326,48 @@ describe("dispatch", () => {
     expect(r2.errors).toHaveLength(0);
   });
 
+  it("HC3D from a non-vertical start matches Pascal MIXED.exe screenshot", () => {
+    // Reference values from the user's Pascal screenshot:
+    //   START   inc=10° azm=30°
+    //   target  inc=45°, TVD=1000, NS=200, EW=200
+    //
+    //   Pascal KOP:  MD=669.827, Inc=10°,    Azm=30°,     TVD=659.651,
+    //                NS=100.731, EW=58.157,  DMD=669.827
+    //   Pascal EOC:  MD=1058.291, Inc=45°,   Azm=60.974°, TVD=1000,
+    //                NS=200,      EW=200,    DLS=9.451°/100ft, DMD=388.464
+    const start: Segment = {
+      ...startStation(),
+      inc: 10 * PI / 180, azm: 30 * PI / 180,
+    };
+    const segments: Segment[] = [
+      start,
+      { ...startStation(), order: 1, typ: ProfileType.HC3D },  // KOP placeholder
+      { ...startStation(), order: 2, typ: ProfileType.HC3D,
+        inc: 45 * PI / 180,
+        tvd: 1000, ns: 200, ew: 200 },                          // EOC target
+    ];
+    const r = dispatch(segments);
+    expect(r.ok, r.errors[0]?.message).toBe(true);
+
+    const [kop, eoc] = r.keypoints[0].points;
+    // KOP — hold ends at prev's orientation.
+    expect(kop.md).toBeCloseTo(669.827, 1);
+    expect(rad2deg(kop.inc)).toBeCloseTo(10, 2);
+    expect(rad2deg(kop.azm)).toBeCloseTo(30, 2);
+    expect(kop.tvd).toBeCloseTo(659.651, 1);
+    expect(kop.ns).toBeCloseTo(100.731, 1);
+    expect(kop.ew).toBeCloseTo(58.157, 1);
+    // EOC — at the user's target position with derived azimuth.
+    expect(eoc.md).toBeCloseTo(1058.291, 1);
+    expect(rad2deg(eoc.inc)).toBeCloseTo(45, 2);
+    expect(rad2deg(eoc.azm)).toBeCloseTo(60.974, 1);
+    expect(eoc.tvd).toBeCloseTo(1000, 1);
+    expect(eoc.ns).toBeCloseTo(200, 1);
+    expect(eoc.ew).toBeCloseTo(200, 1);
+    expect(rad2deg(eoc.dls) * 100).toBeCloseTo(9.451, 1);
+    expect(eoc.dmd).toBeCloseTo(388.464, 1);
+  });
+
   it("HC3D from a DEVIATED start: dispatcher handles 2 azm candidates", () => {
     // Same idea as the HCH azm test, but for HC3D — Pascal Unit02.pas:HC3DTFT
     // and the dispatcher's solveAndBuild() call azmfind() whenever target.azm

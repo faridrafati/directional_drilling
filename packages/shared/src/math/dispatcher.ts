@@ -34,6 +34,7 @@ import { c3 } from "./builders/c3.js";
 import { sursta } from "./builders/sursta.js";
 import { hoctt } from "./builders/hoctt.js";
 import { hc3dtft } from "./builders/hc3dtft.js";
+import { hc3d3D } from "./builders/hc3d3D.js";
 import { ch3dffk } from "./builders/ch3dffk.js";
 import { ch } from "./builders/ch.js";
 import { hch } from "./builders/hch.js";
@@ -475,6 +476,44 @@ function buildOne(
 
     case ProfileType.HC3D:
     case ProfileType.HC3D_STAR: {
+      // For a DEVIATED start (prev.inc > a small threshold), Pascal's
+      // HC3DTFT works only after a plane projection that tilts the 2D
+      // problem onto the (start-tangent, target-offset) plane. Our
+      // dispatcher's inPlane2D doesn't do that projection, so it gives
+      // the wrong KOP azimuth (= bearing instead of prev.azm) and a
+      // slightly-wrong curve geometry. Use the direct 3D min-curvature
+      // solver instead, which preserves prev.azm on the hold portion and
+      // derives the target tangent azimuth from the actual 3D geometry.
+      //
+      // Vertical-start (prev.inc ≈ 0) still routes through the original
+      // hc3dtft 2D builder — there's no plane tilt to handle, and the
+      // hc3dtft analytic equations are exact for that case.
+      if (Math.abs(prev.inc) > 1e-4) {
+        const r3 = hc3d3D({
+          theta1: prev.inc,
+          prevAzm: prev.azm,
+          theta: target.inc,
+          tgtNs: target.ns - prev.ns,
+          tgtEw: target.ew - prev.ew,
+          tgtTvd: target.tvd - prev.tvd,
+          ppf,
+        });
+        if (!r3.ok) return r3;
+        // The 3D solver returns stations in prev-relative world coords.
+        // Add prev's absolute (ns, ew, tvd, md) to land in world frame.
+        const shift = (s: Station): Station => ({
+          ...s,
+          md: s.md + prev.md,
+          ns: s.ns + prev.ns,
+          ew: s.ew + prev.ew,
+          tvd: s.tvd + prev.tvd,
+        });
+        return {
+          ok: true,
+          stations: r3.stations.map(shift),
+          keyPoints: r3.keyPoints.map(shift),
+        };
+      }
       const r2 = solveAndBuild(prev, target, options, (tgtx, tgty, theta) =>
         hc3dtft({ theta1: prev.inc, tgtx, tgty, theta, ppf }),
       azmCandidates);
