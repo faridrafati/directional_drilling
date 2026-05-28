@@ -392,7 +392,7 @@ export function CalculationPage() {
       {/* Frozen header — breadcrumb, title/toolbar and tabs stay pinned while
           the tab content below scrolls (freeze pane). */}
       <div className="shrink-0">
-      <div className="mb-3 flex items-center gap-4">
+      <div className="mb-2 flex items-center gap-4">
         <Link to="/projects" className="text-sm text-blue-600 hover:underline">
           ← All projects
         </Link>
@@ -412,12 +412,14 @@ export function CalculationPage() {
         )}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
-        <div className="min-w-0">
-          <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 truncate">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
+        {/* Title + breadcrumb on ONE line to keep the frozen header short. */}
+        <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 truncate shrink-0">
             {data.name}
           </h2>
-          <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+          <span className="text-gray-300 hidden sm:inline">·</span>
+          <p className="text-xs sm:text-sm text-gray-500 truncate">
             {data.type}
             {data.well && (
               <>
