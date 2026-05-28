@@ -13,6 +13,7 @@ import {
   type EivModel, type EivParams, type EivImageMode,
 } from "@dd/shared/las";
 import { EivHeatmap, type EivInspect } from "../components/eiv/EivHeatmap.js";
+import { LasHeaderModal, DataTablesModal, HistogramModal } from "../components/eiv/EivDialogs.js";
 
 const MODES: { id: EivImageMode; label: string; hint: string }[] = [
   { id: "raw", label: "Raw", hint: "Linear min→max per pad" },
@@ -34,6 +35,7 @@ export function LogAnalysisPage() {
   const [zoomX, setZoomX] = useState(3);
   const [zoomY, setZoomY] = useState(1);
   const [inspect, setInspect] = useState<EivInspect | null>(null);
+  const [dialog, setDialog] = useState<null | "header" | "tables" | "histogram">(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // Pads currently displayed (defaults to params.padOrder).
@@ -115,16 +117,51 @@ export function LogAnalysisPage() {
           >
             {busy ? "Working…" : "Open .las file"}
           </button>
-          {model && (
+          {las && (
             <button
-              onClick={() => exportComposite(model, show, displayPads, zoomX, zoomY)}
-              className="px-3 h-10 text-sm rounded-md bg-green-700 text-white hover:bg-green-800"
+              onClick={() => setDialog("header")}
+              className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
+              title="View the raw LAS header sections"
             >
-              Export PNG
+              LAS header
             </button>
+          )}
+          {model && (
+            <>
+              <button
+                onClick={() => setDialog("tables")}
+                className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
+                title="Per-pad min/max/clip/levels table"
+              >
+                Data tables
+              </button>
+              <button
+                onClick={() => setDialog("histogram")}
+                className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
+                title="Per-pad histograms"
+              >
+                Histograms
+              </button>
+              <button
+                onClick={() => exportComposite(model, show, displayPads, zoomX, zoomY)}
+                className="px-3 h-10 text-sm rounded-md bg-green-700 text-white hover:bg-green-800"
+              >
+                Export PNG
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {las && dialog === "header" && (
+        <LasHeaderModal las={las} onClose={() => setDialog(null)} />
+      )}
+      {model && dialog === "tables" && (
+        <DataTablesModal model={model} onClose={() => setDialog(null)} />
+      )}
+      {model && dialog === "histogram" && (
+        <HistogramModal model={model} onClose={() => setDialog(null)} />
+      )}
 
       {status && (
         <div className="mb-3 text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded px-3 py-2">
