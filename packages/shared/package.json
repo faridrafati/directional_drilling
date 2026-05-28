@@ -21,6 +21,10 @@
     "./schemas": {
       "types": "./dist/schemas/index.d.ts",
       "import": "./dist/schemas/index.js"
+    },
+    "./las": {
+      "types": "./dist/las/index.d.ts",
+      "import": "./dist/las/index.js"
     }
   },
   "scripts": {

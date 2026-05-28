@@ -1,0 +1,174 @@
+/**
+ * CWLS LAS 2.0 parser for EIV.
+ *
+ * Faithful behaviour port of old_eiv_code/Source/Unit3.pas `Open1Click`
+ * (which read a configurable grammar table from Unit7/Form3.StringGrid1).
+ * The Pascal walked the file char-by-char with a user-editable token table;
+ * we implement the same LAS 2.0 grammar directly (the grammar table's cells
+ * were just the standard LAS delimiters: section '~', comment '#', unit
+ * delimiter '.', description ':', the 'PAD' curve prefix, '[' / ']', and the
+ * STRT./STOP./STEP./NULL. mnemonics).
+ *
+ * What it extracts (matching Unit3's globals):
+ *   - sections + their lines (Form2.ComboBox1 / Form5 viewer)
+ *   - STRT / STOP / STEP / NULL from ~WELL  (matintro[18..20], error)
+ *   - the ~CURVE mnemonic list, and PADn[m] detection → padCount,
+ *     buttonsPerPad, firstPadCol, lastPadCol (matintro[2], matintro[3],
+ *     Form6.Edit3/Edit4)
+ *   - the ~ASCII numeric matrix (the data the `datareader` averages)
+ */
+import type { LasCurve, LasFile, LasWellInfo } from "./types.js";
+
+/** Identify a LAS section by the letter right after '~'. */
+function sectionKind(headerLine: string): string {
+  // "~CURVE INFORMATION" → "CURVE INFORMATION"; "~A" / "~ASCII" → data.
+  return headerLine.replace(/^~/, "").trim().toUpperCase();
+}
+
+/** Does a section header start the ASCII data block? (~A, ~ASCII, ~A ...). */
+function isAsciiHeader(headerLine: string): boolean {
+  const body = headerLine.replace(/^~/, "").trim().toUpperCase();
+  return body === "" ? false : body[0] === "A";
+}
+
+/**
+ * Parse one ~WELL / ~CURVE info line:
+ *   MNEM .UNIT   DATA            : DESCRIPTION
+ * Returns { mnem, unit, data, description }. Robust to missing pieces.
+ */
+function parseInfoLine(line: string): {
+  mnem: string; unit: string; data: string; description: string;
+} {
+  // Split off the description after the FIRST ':'.
+  const colon = line.indexOf(":");
+  const left = colon >= 0 ? line.slice(0, colon) : line;
+  const description = colon >= 0 ? line.slice(colon + 1).trim() : "";
+  // mnemonic is everything up to the first '.', unit is the token right
+  // after the '.', data is the rest of `left`.
+  const dot = left.indexOf(".");
+  if (dot < 0) {
+    return { mnem: left.trim(), unit: "", data: "", description };
+  }
+  const mnem = left.slice(0, dot).trim();
+  const afterDot = left.slice(dot + 1);
+  // Unit is the leading non-space run after the dot; data is the remainder.
+  const m = afterDot.match(/^(\S*)\s*(.*)$/);
+  const unit = m ? m[1] : "";
+  const data = m ? m[2].trim() : afterDot.trim();
+  return { mnem, unit, data, description };
+}
+
+/** Pull the first signed float out of a string (handles "6100.00069 :…"). */
+function firstFloat(s: string): number {
+  const m = s.match(/-?\d+(\.\d+)?([eE][-+]?\d+)?/);
+  return m ? parseFloat(m[0]) : NaN;
+}
+
+/**
+ * Detect a `PADn[m]` curve. Accepts PAD1[0], pad12[3], "PAD 1 [ 0 ]" loosely.
+ * Returns {pad, button} (pad 1-based, button as written) or null.
+ */
+function detectPad(mnem: string): { pad: number; button: number } | null {
+  const m = mnem.toUpperCase().match(/PAD\s*(\d+)\s*\[\s*(\d+)\s*\]/);
+  if (!m) return null;
+  return { pad: parseInt(m[1], 10), button: parseInt(m[2], 10) };
+}
+
+export function parseLas(text: string, fileName?: string): LasFile {
+  // Normalise line endings; keep blank lines out.
+  const rawLines = text.split(/\r\n|\r|\n/);
+
+  const sections: Record<string, string[]> = {};
+  const sectionOrder: string[] = [];
+  let currentSection: string | null = null;
+  let asciiStartIdx = -1;
+
+  // First pass: bucket non-comment lines into sections; find the ~A block.
+  const lines: string[] = [];
+  for (const raw of rawLines) lines.push(raw);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("~")) {
+      const name = sectionKind(trimmed);
+      currentSection = name;
+      if (!sections[name]) { sections[name] = []; sectionOrder.push(name); }
+      if (isAsciiHeader(trimmed)) { asciiStartIdx = i + 1; break; }
+      continue;
+    }
+    if (currentSection === null) continue;
+    if (trimmed.startsWith("#")) continue;       // comment
+    if (trimmed.trim() === "") continue;          // blank
+    sections[currentSection].push(line);
+  }
+
+  // ── ~WELL → STRT/STOP/STEP/NULL ───────────────────────────────────────
+  const wellSectionName = sectionOrder.find((s) => s.startsWith("WELL"));
+  const well: LasWellInfo = { strt: 0, stop: 0, step: 0, nullValue: -999.25 };
+  if (wellSectionName) {
+    for (const line of sections[wellSectionName]) {
+      const { mnem, data } = parseInfoLine(line);
+      const key = mnem.toUpperCase();
+      if (key === "STRT") well.strt = firstFloat(data || line);
+      else if (key === "STOP") well.stop = firstFloat(data || line);
+      else if (key === "STEP") well.step = firstFloat(data || line);
+      else if (key === "NULL") well.nullValue = firstFloat(data || line);
+    }
+  }
+
+  // ── ~CURVE → curve list + PADn[m] detection ───────────────────────────
+  const curveSectionName = sectionOrder.find((s) => s.startsWith("CURVE"));
+  const curves: LasCurve[] = [];
+  if (curveSectionName) {
+    for (const line of sections[curveSectionName]) {
+      const { mnem, unit, description } = parseInfoLine(line);
+      if (!mnem) continue;
+      const pad = detectPad(mnem);
+      curves.push({
+        mnemonic: mnem, unit, description,
+        pad: pad ? pad.pad : null,
+        button: pad ? pad.button : null,
+      });
+    }
+  }
+
+  // Pad geometry: padCount = max pad number; buttonsPerPad = max button+1.
+  let padCount = 0;
+  let maxButton = -1;
+  let firstPadCol = -1;
+  let lastPadCol = -1;
+  curves.forEach((c, col) => {
+    if (c.pad !== null && c.button !== null) {
+      if (c.pad > padCount) padCount = c.pad;
+      if (c.button > maxButton) maxButton = c.button;
+      if (firstPadCol < 0) firstPadCol = col;
+      lastPadCol = col;
+    }
+  });
+  const buttonsPerPad = maxButton >= 0 ? maxButton + 1 : 0;
+
+  // ── ~ASCII data matrix ────────────────────────────────────────────────
+  const data: number[][] = [];
+  if (asciiStartIdx >= 0) {
+    for (let i = asciiStartIdx; i < lines.length; i++) {
+      const line = lines[i];
+      const t = line.trim();
+      if (t === "" || t.startsWith("#") || t.startsWith("~")) continue;
+      // Whitespace / tab / NUL delimited numeric tokens (Unit3 datareader).
+      const toks = t.split(/[\s,;]+/).filter((x) => x.length > 0);
+      if (toks.length === 0) continue;
+      const row = toks.map((tok) => {
+        const v = Number(tok);
+        return Number.isFinite(v) ? v : NaN;
+      });
+      data.push(row);
+    }
+  }
+
+  return {
+    sections, sectionOrder, well, curves,
+    padCount, buttonsPerPad, firstPadCol, lastPadCol,
+    data, fileName,
+  };
+}
