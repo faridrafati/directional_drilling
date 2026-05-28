@@ -56,6 +56,14 @@ export function EivHeatmap({
   const w = Math.max(0, x1 - x0);
   const h = Math.max(0, y1 - y0);
 
+  // Depth orientation. LAS multi-pad logs are commonly stored deepest-first
+  // (negative STEP: row 0 = STRT = deepest). Well-log convention puts the
+  // NUMERICALLY LARGER depth at the BOTTOM, so flip the vertical mapping when
+  // row 0 is deeper than the last row. (Ascending files render unchanged.)
+  const flip = model.depthCount > 1 && model.depths[0] > model.depths[model.depthCount - 1];
+  /** Data row gy → screen scanline (0 = top), honouring `flip`. */
+  const screenRow = (gy: number) => (flip ? y1 - 1 - gy : gy - y0);
+
   // Cursor-following tooltip state (CSS px within the wrapper) + payload.
   const [tip, setTip] = useState<{ x: number; y: number; info: EivInspect } | null>(null);
   // Rubber-band selection rectangle (CSS px within the wrapper).
@@ -83,12 +91,12 @@ export function EivHeatmap({
           const value = matAt(model, gy, b, pad);
           [r, g, bl] = colorForPoint(pointForValue(value, mode, stats, nullVal));
         }
-        const idx = ((gy - y0) * w + (gx - x0)) * 4;
+        const idx = (screenRow(gy) * w + (gx - x0)) * 4;
         img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = bl; img.data[idx + 3] = 255;
       }
     }
     ctx.putImageData(img, 0, 0);
-  }, [model, mode, displayPads, buttons, x0, y0, x1, y1, w, h]);
+  }, [model, mode, displayPads, buttons, x0, y0, x1, y1, w, h, flip]);
 
   /** CSS-pixel cursor → native global (gx, gy) within the rendered window. */
   function toNative(e: React.MouseEvent): { gx: number; gy: number } | null {
@@ -98,7 +106,7 @@ export function EivHeatmap({
     const cx = Math.floor(((e.clientX - rect.left) / rect.width) * w);
     const cy = Math.floor(((e.clientY - rect.top) / rect.height) * h);
     if (cx < 0 || cx >= w || cy < 0 || cy >= h) return null;
-    return { gx: x0 + cx, gy: y0 + cy };
+    return { gx: x0 + cx, gy: flip ? y0 + (h - 1 - cy) : y0 + cy };
   }
 
   function inspectAt(gx: number, gy: number): EivInspect | null {
@@ -143,7 +151,9 @@ export function EivHeatmap({
     const toG = (cssX: number, cssY: number) => {
       const cx = Math.floor((cssX / rect.width) * w);
       const cy = Math.floor((cssY / rect.height) * h);
-      return { gx: x0 + Math.min(w - 1, Math.max(0, cx)), gy: y0 + Math.min(h - 1, Math.max(0, cy)) };
+      const ccx = Math.min(w - 1, Math.max(0, cx));
+      const ccy = Math.min(h - 1, Math.max(0, cy));
+      return { gx: x0 + ccx, gy: flip ? y0 + (h - 1 - ccy) : y0 + ccy };
     };
     const a = toG(s.ax, s.ay);
     const b = toG(e.clientX - rect.left, e.clientY - rect.top);

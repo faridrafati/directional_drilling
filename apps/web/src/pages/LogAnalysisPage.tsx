@@ -7,7 +7,7 @@
  * the mat[row][button][pad] model in the browser, then render the three
  * depth × circumference heatmaps (Raw / Corrected / Leveled) on canvases.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   parseLas, buildModelAsync, defaultParams,
   type EivModel, type EivParams, type EivImageMode,
@@ -46,6 +46,16 @@ export function LogAnalysisPage() {
 
   // Pads currently displayed (defaults to params.padOrder).
   const displayPads = params?.padOrder ?? [];
+
+  // Status is shown as a transient toast that auto-dismisses (errors linger a
+  // little longer). Re-arms on every new message; the progress bar carries the
+  // live phase feedback during a long compute.
+  useEffect(() => {
+    if (!status) return;
+    const isError = /^(error|no pad)/i.test(status);
+    const t = setTimeout(() => setStatus(""), isError ? 8000 : 4000);
+    return () => clearTimeout(t);
+  }, [status]);
 
   async function onFile(file: File) {
     setBusy(true);
@@ -190,12 +200,6 @@ export function LogAnalysisPage() {
         />
       )}
 
-      {status && (
-        <div className="mb-3 text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded px-3 py-2">
-          {status}
-        </div>
-      )}
-
       {/* Read / parse / compute progress bar (Unit3 ProgressBar1). */}
       {progress && (
         <div className="mb-3">
@@ -287,6 +291,22 @@ export function LogAnalysisPage() {
               ))}
             </div>
           </main>
+        </div>
+      )}
+
+      {/* Transient status toast — auto-dismisses (see the effect above). */}
+      {status && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm animate-[fadeIn_120ms_ease-out]">
+          <div className="flex items-start gap-2 bg-gray-900/90 text-white text-sm rounded-lg px-3 py-2 shadow-lg">
+            <span className="flex-1">{status}</span>
+            <button
+              onClick={() => setStatus("")}
+              className="text-gray-400 hover:text-white leading-none"
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -423,6 +443,9 @@ function DepthTrack({ model, zoomY }: { model: EivModel; zoomY: number }) {
   const n = model.depthCount;
   const ticks = 12;
   const rows = Array.from({ length: ticks + 1 }, (_, i) => Math.min(n - 1, Math.round((i / ticks) * (n - 1))));
+  // Match EivHeatmap's orientation: deeper depth at the bottom (flip when the
+  // data is stored deepest-first, i.e. depths[0] > depths[last]).
+  const flip = n > 1 && model.depths[0] > model.depths[n - 1];
   return (
     <div className="shrink-0 text-right" style={{ width: 70 }}>
       <div className="text-xs font-medium text-gray-700 mb-1">Depth</div>
@@ -431,7 +454,7 @@ function DepthTrack({ model, zoomY }: { model: EivModel; zoomY: number }) {
           <div
             key={r}
             className="absolute right-1 text-[10px] text-gray-500 -translate-y-1/2 whitespace-nowrap"
-            style={{ top: r * zoomY }}
+            style={{ top: (flip ? n - 1 - r : r) * zoomY }}
           >
             {model.depths[r]?.toFixed(1)} —
           </div>
@@ -616,6 +639,8 @@ async function exportComposite(
   const buttons = model.las.buttonsPerPad;
   const w = buttons * displayPads.length;
   const h = model.depthCount;
+  // Same depth orientation as the on-screen heatmap (deeper at the bottom).
+  const flip = h > 1 && model.depths[0] > model.depths[h - 1];
   const modes = (["raw", "corrected", "leveled"] as EivImageMode[]).filter((m) => show[m]);
   const gap = 8;
   const out = document.createElement("canvas");
@@ -637,7 +662,7 @@ async function exportComposite(
           const point = pointForValue(matAt(model, row, b, pad), mode, stats, model.params.nullValue);
           const [r, g, bl] = colorForPoint(point);
           const x = p * buttons + b;
-          const idx = (row * w + x) * 4;
+          const idx = ((flip ? h - 1 - row : row) * w + x) * 4;
           img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = bl; img.data[idx + 3] = 255;
         }
       }
