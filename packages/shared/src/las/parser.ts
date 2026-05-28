@@ -148,21 +148,54 @@ export function parseLas(text: string, fileName?: string): LasFile {
   });
   const buttonsPerPad = maxButton >= 0 ? maxButton + 1 : 0;
 
+  // ── WRAP mode (from ~VERSION) ─────────────────────────────────────────
+  // WRAP=YES → each depth record's values are spread across MULTIPLE physical
+  // lines (the index is on its own line, then the curve values wrap). We must
+  // reassemble one logical row per depth = exactly `curves.length` numbers.
+  // WRAP=NO → one physical line per depth (the simple case).
+  let wrap = false;
+  const versionSectionName = sectionOrder.find((s) => s.startsWith("VERSION"));
+  if (versionSectionName) {
+    for (const line of sections[versionSectionName]) {
+      const { mnem, data: d } = parseInfoLine(line);
+      if (mnem.toUpperCase() === "WRAP") {
+        wrap = /^Y/i.test((d || line.split(".").pop() || "").trim());
+        break;
+      }
+    }
+  }
+
   // ── ~ASCII data matrix ────────────────────────────────────────────────
   const data: number[][] = [];
+  const curveCount = curves.length;
   if (asciiStartIdx >= 0) {
-    for (let i = asciiStartIdx; i < lines.length; i++) {
-      const line = lines[i];
-      const t = line.trim();
-      if (t === "" || t.startsWith("#") || t.startsWith("~")) continue;
-      // Whitespace / tab / NUL delimited numeric tokens (Unit3 datareader).
-      const toks = t.split(/[\s,;]+/).filter((x) => x.length > 0);
-      if (toks.length === 0) continue;
-      const row = toks.map((tok) => {
-        const v = Number(tok);
-        return Number.isFinite(v) ? v : NaN;
-      });
-      data.push(row);
+    if (wrap && curveCount > 1) {
+      // Flatten every numeric token in the data section, then regroup into
+      // rows of `curveCount`. This is robust to however the producer wrapped
+      // the lines (LAS 2.0 guarantees curveCount values per depth record).
+      let row: number[] = [];
+      for (let i = asciiStartIdx; i < lines.length; i++) {
+        const t = lines[i].trim();
+        if (t === "" || t.startsWith("#") || t.startsWith("~")) continue;
+        const toks = t.split(/[\s,;]+/).filter((x) => x.length > 0);
+        for (const tok of toks) {
+          const v = Number(tok);
+          row.push(Number.isFinite(v) ? v : NaN);
+          if (row.length === curveCount) { data.push(row); row = []; }
+        }
+      }
+      if (row.length > 0) data.push(row); // trailing partial record (rare)
+    } else {
+      for (let i = asciiStartIdx; i < lines.length; i++) {
+        const t = lines[i].trim();
+        if (t === "" || t.startsWith("#") || t.startsWith("~")) continue;
+        const toks = t.split(/[\s,;]+/).filter((x) => x.length > 0);
+        if (toks.length === 0) continue;
+        data.push(toks.map((tok) => {
+          const v = Number(tok);
+          return Number.isFinite(v) ? v : NaN;
+        }));
+      }
     }
   }
 
