@@ -47,3 +47,8 @@ old_delphi_code/Temp.MDB
 1.txt
 screenshot.png
 *.bmp
+Directional Drilling.pdf
+
+# Legacy EIV Delphi project — porting reference only, never committed
+# (contains compiled binaries + large .las/.txt sample data)
+old_eiv_code/
