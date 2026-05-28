@@ -9,7 +9,7 @@
  */
 import { useRef, useState } from "react";
 import {
-  parseLas, buildModel, defaultParams,
+  parseLas, buildModelAsync, defaultParams,
   type EivModel, type EivParams, type EivImageMode,
 } from "@dd/shared/las";
 import { EivHeatmap, type EivInspect, type EivRegion } from "../components/eiv/EivHeatmap.js";
@@ -27,6 +27,9 @@ export function LogAnalysisPage() {
   const [model, setModel] = useState<EivModel | null>(null);
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  // Progress of the read → parse → tensor → levels pipeline (0..1 + a label).
+  // Drives the progress bar under the status line. null = idle / no job.
+  const [progress, setProgress] = useState<{ value: number; label: string } | null>(null);
 
   // Which heatmaps are shown — toggled by the left-panel "Graphs" checkboxes
   // (CheckBox1/2/3 in Unit3). Default to the Leveled view only so the page
@@ -47,13 +50,18 @@ export function LogAnalysisPage() {
   async function onFile(file: File) {
     setBusy(true);
     setStatus(`Reading ${file.name} (${(file.size / 1e6).toFixed(1)} MB)…`);
+    setProgress({ value: 0, label: "Reading file…" });
     try {
       const text = await file.text();
       setStatus("Parsing LAS…");
+      setProgress({ value: 0.05, label: "Parsing LAS…" });
+      // Let the "Parsing" frame paint before the synchronous parse blocks.
+      await new Promise((r) => setTimeout(r, 0));
       const parsed = parseLas(text, file.name);
       if (parsed.padCount === 0 || parsed.buttonsPerPad === 0) {
         setStatus("No PADn[m] curves found — is this an EMI multi-pad LAS?");
         setLas(parsed); setParams(null); setModel(null);
+        setProgress(null);
         setBusy(false);
         return;
       }
@@ -61,9 +69,12 @@ export function LogAnalysisPage() {
       setLas(parsed);
       setParams(p);
       setStatus("Computing levels…");
-      // Defer the heavy compute so the status paints first.
-      await new Promise((r) => setTimeout(r, 0));
-      setModel(buildModel(parsed, p));
+      // buildModelAsync yields between chunks, calling onProgress so the bar
+      // advances through the tensor (0–0.55) and per-pad stats (0.55–1) phases.
+      const m = await buildModelAsync(parsed, p, (frac, label) =>
+        setProgress({ value: frac, label }),
+      );
+      setModel(m);
       setStatus(
         `${parsed.fileName}: ${parsed.padCount} pads × ${parsed.buttonsPerPad} buttons, ` +
         `${parsed.data.length.toLocaleString()} samples.`,
@@ -71,26 +82,30 @@ export function LogAnalysisPage() {
     } catch (e) {
       setStatus(`Error: ${String(e)}`);
     } finally {
+      setProgress(null);
       setBusy(false);
     }
   }
 
   /** Re-run the pipeline after a parameter change (Unit3 Button1 "draw"). */
-  function recompute(next: EivParams) {
+  async function recompute(next: EivParams) {
     if (!las) return;
     setParams(next);
     setBusy(true);
     setStatus("Recomputing…");
-    setTimeout(() => {
-      try {
-        setModel(buildModel(las, next));
-        setStatus("Done.");
-      } catch (e) {
-        setStatus(`Error: ${String(e)}`);
-      } finally {
-        setBusy(false);
-      }
-    }, 0);
+    setProgress({ value: 0, label: "Recomputing…" });
+    try {
+      const m = await buildModelAsync(las, next, (frac, label) =>
+        setProgress({ value: frac, label }),
+      );
+      setModel(m);
+      setStatus("Done.");
+    } catch (e) {
+      setStatus(`Error: ${String(e)}`);
+    } finally {
+      setProgress(null);
+      setBusy(false);
+    }
   }
 
   return (
@@ -178,6 +193,22 @@ export function LogAnalysisPage() {
       {status && (
         <div className="mb-3 text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded px-3 py-2">
           {status}
+        </div>
+      )}
+
+      {/* Read / parse / compute progress bar (Unit3 ProgressBar1). */}
+      {progress && (
+        <div className="mb-3">
+          <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+            <span>{progress.label}</span>
+            <span className="tabular-nums">{Math.round(progress.value * 100)}%</span>
+          </div>
+          <div className="h-2 w-full bg-gray-200 rounded overflow-hidden">
+            <div
+              className="h-full bg-blue-600 transition-[width] duration-150 ease-out"
+              style={{ width: `${Math.max(2, Math.round(progress.value * 100))}%` }}
+            />
+          </div>
         </div>
       )}
 

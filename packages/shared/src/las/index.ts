@@ -5,6 +5,6 @@
 export * from "./types.js";
 export { parseLas } from "./parser.js";
 export {
-  buildTensor, buildModel, computeStats, defaultParams,
+  buildTensor, buildModel, buildModelAsync, computeStats, defaultParams,
   matAt, pointForValue, colorForPoint,
 } from "./compute.js";

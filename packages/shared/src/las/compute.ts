@@ -38,33 +38,37 @@ export function matAt(m: EivModel, row: number, button: number, pad: number): nu
  * rowsPerPixel = 1 and no nulls fall in the window — but null-aware averaging
  * avoids -999.25 contamination at higher compression).
  */
-export function buildTensor(las: LasFile, params: EivParams): {
-  mat: Float64Array; depths: Float64Array; depthCount: number;
-} {
-  const { data, padCount, buttonsPerPad, firstPadCol } = las;
+interface TensorState {
+  mat: Float64Array; depths: Float64Array; depthCount: number; rpp: number;
+}
+
+/** Allocate the (null-filled) tensor + depth array for a parsed LAS. */
+function allocTensor(las: LasFile, params: EivParams): TensorState {
+  const { data, padCount, buttonsPerPad } = las;
   const rpp = Math.max(1, Math.round(params.rowsPerPixel));
   const totalRows = data.length;
   const depthCount = Math.floor(totalRows / rpp) || (totalRows > 0 ? 1 : 0);
-  const isNull = (v: number) =>
-    !Number.isFinite(v) || v === params.nullValue;
-
   const mat = new Float64Array(depthCount * buttonsPerPad * padCount);
   mat.fill(params.nullValue);
-  const depths = new Float64Array(depthCount);
+  return { mat, depths: new Float64Array(depthCount), depthCount, rpp };
+}
 
-  for (let r = 0; r < depthCount; r++) {
-    const lo = r * rpp;
-    const hi = Math.min(totalRows, lo + rpp);
-
-    // Depth = mean of column 0 over the window.
+/** Fill output rows [r0, r1) of the tensor (datareader, null-aware averaging). */
+function fillTensorRows(
+  st: TensorState, las: LasFile, params: EivParams, r0: number, r1: number,
+): void {
+  const { data, padCount, buttonsPerPad, firstPadCol } = las;
+  const totalRows = data.length;
+  const isNull = (v: number) => !Number.isFinite(v) || v === params.nullValue;
+  for (let r = r0; r < r1; r++) {
+    const lo = r * st.rpp;
+    const hi = Math.min(totalRows, lo + st.rpp);
     let dSum = 0, dN = 0;
     for (let s = lo; s < hi; s++) {
       const v = data[s][0];
       if (Number.isFinite(v)) { dSum += v; dN++; }
     }
-    depths[r] = dN > 0 ? dSum / dN : params.nullValue;
-
-    // Each pad button = mean of its column over the window (null-aware).
+    st.depths[r] = dN > 0 ? dSum / dN : params.nullValue;
     for (let pad = 1; pad <= padCount; pad++) {
       for (let b = 0; b < buttonsPerPad; b++) {
         const col = firstPadCol + (pad - 1) * buttonsPerPad + b;
@@ -74,12 +78,25 @@ export function buildTensor(las: LasFile, params: EivParams): {
           const v = col < row.length ? row[col] : NaN;
           if (!isNull(v)) { sum += v; n++; }
         }
-        mat[matIndex(r, b, pad, buttonsPerPad, padCount)] =
+        st.mat[matIndex(r, b, pad, buttonsPerPad, padCount)] =
           n > 0 ? sum / n : params.nullValue;
       }
     }
   }
-  return { mat, depths, depthCount };
+}
+
+/** Build the averaged tensor (sync). */
+export function buildTensor(las: LasFile, params: EivParams): {
+  mat: Float64Array; depths: Float64Array; depthCount: number;
+} {
+  const st = allocTensor(las, params);
+  fillTensorRows(st, las, params, 0, st.depthCount);
+  return { mat: st.mat, depths: st.depths, depthCount: st.depthCount };
+}
+
+/** Yield to the event loop so the UI can repaint a progress bar. */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 /** Per-pad absolute min/max over valid (non-null, >0) readings. (maxmin) */
@@ -97,6 +114,75 @@ export function buildTensor(las: LasFile, params: EivParams): {
  *
  * Returns a 1-based array (index 0 unused) so pads[k] is physical pad k.
  */
+/** Per-pad stats: collect valid readings, sort, derive clip + quantile levels. */
+function statsForPad(
+  tensor: { mat: Float64Array; depthCount: number },
+  las: LasFile, params: EivParams, pad: number,
+  sections: number, errPct: number, bins: number,
+): EivPadStats {
+  const { buttonsPerPad, padCount } = las;
+  // Collect every valid (non-null, >0) reading for this pad, once.
+  const vals: number[] = [];
+  for (let r = 0; r < tensor.depthCount; r++) {
+    const base = (r * buttonsPerPad) * padCount + (pad - 1);
+    for (let b = 0; b < buttonsPerPad; b++) {
+      const v = tensor.mat[base + b * padCount];
+      if (v !== params.nullValue && v > 0 && Number.isFinite(v)) vals.push(v);
+    }
+  }
+  if (vals.length === 0) return makeEmptyStats(sections);
+  vals.sort((a, b) => a - b);
+  const n = vals.length;
+  const min = vals[0];
+  const max = vals[n - 1];
+
+  // Histogram: bins from max (bin 0) down to min (Pascal orientation).
+  const span = max - min || 1;
+  const histogram = new Array<number>(bins).fill(0);
+  for (const v of vals) {
+    let idx = Math.floor(((max - v) / span) * bins);
+    if (idx < 0) idx = 0; else if (idx >= bins) idx = bins - 1;
+    histogram[idx]++;
+  }
+  let peak = 0;
+  for (const c of histogram) if (c > peak) peak = c;
+
+  // ── Clip thresholds (analize §1): drop the lowest/highest errPct%. ──
+  const k = Math.min(n - 1, Math.max(0, Math.floor((n * errPct) / 100)));
+  const clipLow = vals[k];
+  const clipHigh = vals[n - 1 - k];
+
+  // ── Equal-population levels in [clipLow, clipHigh] (analize §2). ─────
+  const loIdx = lowerBound(vals, clipLow);
+  const hiIdx = upperBound(vals, clipHigh); // exclusive
+  const m = Math.max(1, hiIdx - loIdx);
+  const levels = new Array<number>(sections + 1);
+  levels[0] = clipHigh;
+  levels[sections] = clipLow;
+  for (let hh = 1; hh < sections; hh++) {
+    let rank = loIdx + Math.floor((m * (sections - hh)) / sections);
+    if (rank < loIdx) rank = loIdx;
+    if (rank > hiIdx - 1) rank = hiIdx - 1;
+    levels[hh] = vals[rank];
+  }
+
+  // ── colourset: per-band linear map to 0..768. ──────────────────────
+  const colourSlope = new Array<number>(sections).fill(0);
+  const colourIntercept = new Array<number>(sections).fill(0);
+  for (let hh = 0; hh < sections; hh++) {
+    const y0 = 768 - (768 * hh) / sections;
+    const y1 = 768 - (768 * (hh + 1)) / sections;
+    const x0 = levels[hh];
+    const x1 = levels[hh + 1];
+    const slope = x1 !== x0 ? (y1 - y0) / (x1 - x0) : 0;
+    colourSlope[hh] = slope;
+    colourIntercept[hh] = y0 - slope * x0;
+  }
+
+  return { min, max, clipLow, clipHigh, histogram, histogramPeak: peak, levels, colourSlope, colourIntercept };
+}
+
+/** All per-pad stats (sync). 1-based; pads[k] is physical pad k. */
 export function computeStats(
   tensor: { mat: Float64Array; depthCount: number },
   las: LasFile, params: EivParams,
@@ -104,77 +190,10 @@ export function computeStats(
   const sections = Math.max(1, Math.round(params.colorSections));
   const errPct = params.errorPercent;
   const bins = Math.max(1, Math.round(params.histogramBins));
-  const { buttonsPerPad, padCount } = las;
   const out: EivPadStats[] = [];
   out[0] = makeEmptyStats(sections);
-
-  for (let pad = 1; pad <= padCount; pad++) {
-    // Collect every valid (non-null, >0) reading for this pad, once.
-    const vals: number[] = [];
-    for (let r = 0; r < tensor.depthCount; r++) {
-      const base = (r * buttonsPerPad) * padCount + (pad - 1);
-      for (let b = 0; b < buttonsPerPad; b++) {
-        const v = tensor.mat[base + b * padCount];
-        if (v !== params.nullValue && v > 0 && Number.isFinite(v)) vals.push(v);
-      }
-    }
-    if (vals.length === 0) { out[pad] = makeEmptyStats(sections); continue; }
-    vals.sort((a, b) => a - b);
-    const n = vals.length;
-    const min = vals[0];
-    const max = vals[n - 1];
-
-    // Histogram: bins from max (bin 0) down to min (Pascal orientation).
-    const span = max - min || 1;
-    const histogram = new Array<number>(bins).fill(0);
-    for (const v of vals) {
-      let idx = Math.floor(((max - v) / span) * bins);
-      if (idx < 0) idx = 0; else if (idx >= bins) idx = bins - 1;
-      histogram[idx]++;
-    }
-    let peak = 0;
-    for (const c of histogram) if (c > peak) peak = c;
-
-    // ── Clip thresholds (analize §1): drop the lowest/highest errPct%. ──
-    const k = Math.min(n - 1, Math.max(0, Math.floor((n * errPct) / 100)));
-    const clipLow = vals[k];
-    const clipHigh = vals[n - 1 - k];
-
-    // ── Equal-population levels in [clipLow, clipHigh] (analize §2). ─────
-    // levels[0] = clipHigh (colour 768) … levels[sections] = clipLow (0),
-    // descending; intermediate levels are quantiles of the in-range values.
-    const loIdx = lowerBound(vals, clipLow);
-    const hiIdx = upperBound(vals, clipHigh); // exclusive
-    const m = Math.max(1, hiIdx - loIdx);
-    const levels = new Array<number>(sections + 1);
-    levels[0] = clipHigh;
-    levels[sections] = clipLow;
-    for (let hh = 1; hh < sections; hh++) {
-      // fraction (sections-hh)/sections of in-range values lie BELOW levels[hh].
-      let rank = loIdx + Math.floor((m * (sections - hh)) / sections);
-      if (rank < loIdx) rank = loIdx;
-      if (rank > hiIdx - 1) rank = hiIdx - 1;
-      levels[hh] = vals[rank];
-    }
-
-    // ── colourset: per-band linear map to 0..768. ──────────────────────
-    const colourSlope = new Array<number>(sections).fill(0);
-    const colourIntercept = new Array<number>(sections).fill(0);
-    for (let hh = 0; hh < sections; hh++) {
-      const y0 = 768 - (768 * hh) / sections;
-      const y1 = 768 - (768 * (hh + 1)) / sections;
-      const x0 = levels[hh];
-      const x1 = levels[hh + 1];
-      const slope = x1 !== x0 ? (y1 - y0) / (x1 - x0) : 0;
-      colourSlope[hh] = slope;
-      colourIntercept[hh] = y0 - slope * x0;
-    }
-
-    out[pad] = {
-      min, max, clipLow, clipHigh,
-      histogram, histogramPeak: peak,
-      levels, colourSlope, colourIntercept,
-    };
+  for (let pad = 1; pad <= las.padCount; pad++) {
+    out[pad] = statsForPad(tensor, las, params, pad, sections, errPct, bins);
   }
   return out;
 }
@@ -253,6 +272,43 @@ export function buildModel(las: LasFile, params: EivParams): EivModel {
   const { mat, depths, depthCount } = buildTensor(las, params);
   const pads = computeStats({ mat, depthCount }, las, params);
   return { las, params, depthCount, mat, depths, pads };
+}
+
+/**
+ * Async, chunked build that reports progress (0..1) and a phase label, and
+ * yields to the event loop between chunks so a progress bar repaints and the
+ * page stays responsive on big files. Same result as buildModel().
+ *
+ *   0.00 – 0.55  building the tensor (datareader), per row-chunk
+ *   0.55 – 1.00  analysing pads (maxmin/histogram/leveling), per pad
+ */
+export async function buildModelAsync(
+  las: LasFile, params: EivParams,
+  onProgress?: (frac: number, label: string) => void,
+): Promise<EivModel> {
+  const st = allocTensor(las, params);
+  const chunks = 20;
+  const chunkRows = Math.max(1, Math.ceil(st.depthCount / chunks));
+  for (let r0 = 0; r0 < st.depthCount; r0 += chunkRows) {
+    const r1 = Math.min(st.depthCount, r0 + chunkRows);
+    fillTensorRows(st, las, params, r0, r1);
+    onProgress?.(0.55 * (r1 / Math.max(1, st.depthCount)), "Reading data…");
+    await yieldToEventLoop();
+  }
+
+  const sections = Math.max(1, Math.round(params.colorSections));
+  const errPct = params.errorPercent;
+  const bins = Math.max(1, Math.round(params.histogramBins));
+  const tensor = { mat: st.mat, depthCount: st.depthCount };
+  const pads: EivPadStats[] = [];
+  pads[0] = makeEmptyStats(sections);
+  for (let pad = 1; pad <= las.padCount; pad++) {
+    pads[pad] = statsForPad(tensor, las, params, pad, sections, errPct, bins);
+    onProgress?.(0.55 + 0.45 * (pad / Math.max(1, las.padCount)), "Analysing pads…");
+    await yieldToEventLoop();
+  }
+  onProgress?.(1, "Done");
+  return { las, params, depthCount: st.depthCount, mat: st.mat, depths: st.depths, pads };
 }
 
 /** Default analysis params derived from a freshly parsed file. */
