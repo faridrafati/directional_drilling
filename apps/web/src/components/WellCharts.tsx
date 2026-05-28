@@ -348,6 +348,19 @@ function withUnit(label: string, unit?: string): string {
 }
 
 /**
+ * Axis tick formatter — at most 2 decimal places, trailing zeros trimmed.
+ *   1000      → "1,000"
+ *   1058.291  → "1,058.29"
+ *   1058.2    → "1,058.2"
+ * Used on every 2D-chart axis so zoomed-in ticks don't show long decimals.
+ */
+function fmtAxisTick(v: number | string): string {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+/**
  * Compact legend rendered at the BOTTOM of each 2D chart. Identifies the
  * visual elements the user needs to interpret the plot:
  *   - blue line  = wellbore trajectory (the densified path)
@@ -1011,6 +1024,7 @@ export function VerticalSectionChart({
             dataKey="vsec" type="number" stroke="#475569" fontSize={12}
             domain={zoom.xDomain ?? ["auto", "auto"]}
             allowDataOverflow={zoom.xDomain !== null}
+            tickFormatter={fmtAxisTick}
           >
             <Label value={withUnit("Vertical Section", lengthUnit)} position="bottom" offset={10} fill="#475569" />
           </XAxis>
@@ -1018,6 +1032,7 @@ export function VerticalSectionChart({
             dataKey="tvd" type="number" reversed stroke="#475569" fontSize={12}
             domain={zoom.yDomain ?? ["auto", "auto"]}
             allowDataOverflow={zoom.yDomain !== null}
+            tickFormatter={fmtAxisTick}
           >
             <Label
               value={withUnit("TVD", lengthUnit)}
@@ -1174,6 +1189,7 @@ export function PlanViewChart({
             dataKey="ew" type="number" stroke="#475569" fontSize={12}
             domain={planZoom.xDomain ?? ["auto", "auto"]}
             allowDataOverflow={planZoom.xDomain !== null}
+            tickFormatter={fmtAxisTick}
           >
             <Label value={withUnit("East-West", lengthUnit)} position="bottom" offset={10} fill="#475569" />
           </XAxis>
@@ -1181,6 +1197,7 @@ export function PlanViewChart({
             dataKey="ns" type="number" stroke="#475569" fontSize={12}
             domain={planZoom.yDomain ?? ["auto", "auto"]}
             allowDataOverflow={planZoom.yDomain !== null}
+            tickFormatter={fmtAxisTick}
           >
             <Label
               value={withUnit("North-South", lengthUnit)}
