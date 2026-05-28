@@ -22,9 +22,15 @@
  *     VSEC, NS, EW, DLS, TF, BR, TR, DMD.
  *   - Clicking empty space deselects (returns the legend to a key/usage hint).
  */
-import { Suspense, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, Grid, Text, Html } from "@react-three/drei";
+
+/** Minimal shape of the OrbitControls instance we drive imperatively. */
+interface OrbitControlsLike {
+  target: THREE.Vector3;
+  update: () => void;
+}
 import * as THREE from "three";
 import type { StationRow, KeypointRow } from "../api/client.js";
 import { rad2deg } from "@dd/shared";
@@ -78,9 +84,10 @@ export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft", smoo
   // on top of the auto-normalize so the user can stretch e.g. TVD 2× to
   // exaggerate vertical separation, or reset to 1:1 true scale.
   const [axisScale, setAxisScale] = useState<AxisScale>(TRUE_SCALE);
-  // Bumping this key forces the Canvas's OrbitControls to re-mount with a
-  // fresh camera — our "Reset view" button.
-  const [viewKey, setViewKey] = useState(0);
+  // Incrementing this re-frames the camera onto the (possibly rescaled)
+  // geometry — the "Reset view" button. We bump it whenever the axis scale
+  // changes too, so the camera reframes to keep the well in view.
+  const [resetSignal, setResetSignal] = useState(0);
 
   if (stations.length < 2) {
     return (
@@ -100,7 +107,6 @@ export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft", smoo
         >
           <Suspense fallback={null}>
             <Scene
-              key={viewKey}
               stations={stations}
               keypoints={keypoints}
               onPick={setSelected}
@@ -109,6 +115,7 @@ export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft", smoo
               lengthUnit={lengthUnit}
               smoothLines={smoothLines}
               axisScale={axisScale}
+              resetSignal={resetSignal}
             />
           </Suspense>
         </Canvas>
@@ -116,8 +123,8 @@ export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft", smoo
         {/* Axis-scale + view controls overlay (top-left). */}
         <AxisScaleControls
           axisScale={axisScale}
-          onChange={setAxisScale}
-          onResetView={() => setViewKey((k) => k + 1)}
+          onChange={(s) => { setAxisScale(s); setResetSignal((k) => k + 1); }}
+          onResetView={() => setResetSignal((k) => k + 1)}
         />
       </div>
 
@@ -155,51 +162,63 @@ function AxisScaleControls({
   const atTrueScale =
     axisScale.x === 1 && axisScale.y === 1 && axisScale.z === 1;
 
+  // Collapsed by default so it doesn't dominate small 3D panels; click the
+  // header to expand the steppers.
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className="absolute top-2 left-2 bg-white/95 border border-gray-200 rounded-md shadow-sm p-2 text-xs select-none">
-      <div className="font-medium text-gray-700 mb-1">Axis scale</div>
-      {rows.map(({ axis, label }) => (
-        <div key={axis} className="flex items-center gap-1.5 mb-1">
-          <span className="w-8 text-gray-500">{label}</span>
-          <button
-            onClick={() => bump(axis, 1 / STEP)}
-            className="w-5 h-5 rounded bg-gray-100 hover:bg-gray-200 leading-none"
-            title={`Shrink ${label} axis`}
-          >
-            −
-          </button>
-          <span className="w-10 text-center tabular-nums text-gray-700">
-            {axisScale[axis].toFixed(2)}×
-          </span>
-          <button
-            onClick={() => bump(axis, STEP)}
-            className="w-5 h-5 rounded bg-gray-100 hover:bg-gray-200 leading-none"
-            title={`Stretch ${label} axis`}
-          >
-            +
-          </button>
+    <div className="absolute top-1.5 left-1.5 bg-white/95 border border-gray-200 rounded shadow-sm text-[10px] select-none w-[112px]">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-1.5 py-1 font-medium text-gray-700 hover:bg-gray-50 rounded-t"
+        title="Axis scale & view controls"
+      >
+        <span>Axis scale</span>
+        <span className="text-gray-400">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="px-1.5 pb-1.5">
+          {rows.map(({ axis, label }) => (
+            <div key={axis} className="flex items-center gap-1 mb-0.5">
+              <span className="w-6 text-gray-500">{label}</span>
+              <button
+                onClick={() => bump(axis, 1 / STEP)}
+                className="w-4 h-4 rounded bg-gray-100 hover:bg-gray-200 leading-none"
+                title={`Shrink ${label}`}
+              >
+                −
+              </button>
+              <span className="flex-1 text-center tabular-nums text-gray-700">
+                {axisScale[axis].toFixed(1)}×
+              </span>
+              <button
+                onClick={() => bump(axis, STEP)}
+                className="w-4 h-4 rounded bg-gray-100 hover:bg-gray-200 leading-none"
+                title={`Stretch ${label}`}
+              >
+                +
+              </button>
+            </div>
+          ))}
+          <div className="flex gap-1 mt-1">
+            <button
+              onClick={() => onChange(TRUE_SCALE)}
+              disabled={atTrueScale}
+              className="flex-1 px-1 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40"
+              title="Reset all axes to true 1:1 scale"
+            >
+              1:1
+            </button>
+            <button
+              onClick={onResetView}
+              className="flex-1 px-1 py-0.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+              title="Re-centre the camera on the trajectory"
+            >
+              Center
+            </button>
+          </div>
         </div>
-      ))}
-      <div className="flex gap-1 mt-1.5">
-        <button
-          onClick={() => onChange(TRUE_SCALE)}
-          disabled={atTrueScale}
-          className="flex-1 px-1.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40"
-          title="Reset all axes to true 1:1 scale"
-        >
-          1:1
-        </button>
-        <button
-          onClick={onResetView}
-          className="flex-1 px-1.5 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-          title="Re-centre the camera"
-        >
-          Reset view
-        </button>
-      </div>
-      <div className="text-[10px] text-gray-400 mt-1.5 max-w-[150px] leading-tight">
-        Scroll to zoom · drag to rotate · right-drag to pan
-      </div>
+      )}
     </div>
   );
 }
@@ -211,7 +230,7 @@ function selectedKey(p: PickedPoint): string {
 
 function Scene({
   stations, keypoints, onPick, onHover, selectedKey, lengthUnit, smoothLines,
-  axisScale,
+  axisScale, resetSignal,
 }: {
   stations: StationRow[];
   keypoints: KeypointRow[];
@@ -221,7 +240,9 @@ function Scene({
   lengthUnit: string;
   smoothLines: boolean;
   axisScale: AxisScale;
+  resetSignal: number;
 }) {
+  const controlsRef = useRef<OrbitControlsLike | null>(null);
   // The 3D world-coords of the cursor's nearest-station hit on the tube.
   // Updated on every pointer move over the wellbore mesh; consumed by the
   // Html tooltip below so it follows the cursor along the path.
@@ -259,6 +280,13 @@ function Scene({
 
   const center = useMemo(() => bbox.getCenter(new THREE.Vector3()), [bbox]);
   const groundY = bbox.min.y;
+  // Bounding-sphere radius of the scaled geometry — drives camera framing
+  // distance + the OrbitControls dolly limits so zoom keeps working at any
+  // axis scale.
+  const sceneRadius = useMemo(
+    () => Math.max(1, bbox.getSize(new THREE.Vector3()).length() / 2),
+    [bbox],
+  );
 
   // Build the tube path through the densified stations.
   //
@@ -456,12 +484,24 @@ function Scene({
         radius={Math.max(20, bbox.getSize(new THREE.Vector3()).length() * 0.15)}
       />
 
-      {/* Camera controls */}
+      {/* Camera controls. maxDistance scales with the (possibly axis-scaled)
+          geometry so scroll-zoom-out keeps working after the user stretches
+          an axis — a fixed cap would clamp the dolly once the well grows
+          past it. minDistance lets the user zoom right into the tube. */}
       <OrbitControls
-        target={center}
+        ref={controlsRef as never}
         enableDamping
         dampingFactor={0.1}
-        maxDistance={1000}
+        minDistance={sceneRadius * 0.02}
+        maxDistance={sceneRadius * 12}
+      />
+      {/* Re-frames the camera onto the current geometry whenever resetSignal
+          changes (Reset/Center button, or an axis-scale change). */}
+      <CameraController
+        center={center}
+        radius={sceneRadius}
+        resetSignal={resetSignal}
+        controlsRef={controlsRef}
       />
 
       {/* Floating labels at the endpoints */}
@@ -487,6 +527,46 @@ function Scene({
 /** Stable selection key — duplicates selectedKey() but for raw inputs. */
 function selectedKey_of(kind: "wellhead" | "target", s: StationRow): string {
   return `${kind}:${s.md.toFixed(4)}:${s.ns.toFixed(4)}:${s.ew.toFixed(4)}`;
+}
+
+/**
+ * Headless component that re-frames the camera onto the trajectory whenever
+ * `resetSignal` changes. Positions the camera at an isometric offset a few
+ * radii back from the geometry centre and re-targets OrbitControls there.
+ *
+ * Why a component (not a callback): the camera + GL state live inside the
+ * Canvas's React-Three-Fiber context, only reachable via useThree() from a
+ * component rendered *inside* <Canvas>. Driving it through a `resetSignal`
+ * prop keeps the trigger in the parent's React state.
+ */
+function CameraController({
+  center, radius, resetSignal, controlsRef,
+}: {
+  center: THREE.Vector3;
+  radius: number;
+  resetSignal: number;
+  controlsRef: React.MutableRefObject<OrbitControlsLike | null>;
+}) {
+  const { camera } = useThree();
+  useEffect(() => {
+    // Isometric-ish framing: back off ~2.3 radii along (1,0.8,1).
+    const d = radius * 2.3 || 100;
+    camera.position.set(center.x + d * 0.7, center.y + d * 0.6, center.z + d * 0.7);
+    // Keep near/far sane for the (possibly huge) scaled geometry so nothing
+    // clips or z-fights.
+    const cam = camera as THREE.PerspectiveCamera;
+    cam.near = Math.max(0.01, radius * 0.005);
+    cam.far = Math.max(2000, radius * 60);
+    cam.updateProjectionMatrix();
+    const c = controlsRef.current;
+    if (c) {
+      c.target.copy(center);
+      c.update();
+    }
+    // Intentionally only on resetSignal — center/radius read fresh at fire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal]);
+  return null;
 }
 
 /**
