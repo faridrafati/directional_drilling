@@ -12,7 +12,7 @@ import {
   parseLas, buildModelAsync, defaultParams,
   type EivModel, type EivParams, type EivImageMode,
 } from "@dd/shared/las";
-import { EivHeatmap, type EivInspect, type EivRegion } from "../components/eiv/EivHeatmap.js";
+import { EivHeatmap, type EivRegion } from "../components/eiv/EivHeatmap.js";
 import { LasHeaderModal, DataTablesModal, HistogramModal } from "../components/eiv/EivDialogs.js";
 
 const MODES: { id: EivImageMode; label: string; hint: string }[] = [
@@ -43,9 +43,8 @@ export function LogAnalysisPage() {
   });
   const [zoomX, setZoomX] = useState(3);
   const [zoomY, setZoomY] = useState(1);
-  const [inspect, setInspect] = useState<EivInspect | null>(null);
   const [dialog, setDialog] = useState<
-    null | "header" | "tables" | "histogram" | "options" | "pads"
+    null | "header" | "tables" | "histogram" | "options"
   >(null);
   const [zoomRegion, setZoomRegion] = useState<EivRegion | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -152,22 +151,13 @@ export function LogAnalysisPage() {
             {busy ? "Working…" : "Open .las file"}
           </button>
           {model && params && (
-            <>
-              <button
-                onClick={() => setDialog("options")}
-                className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
-                title="Colour sections, error %, rows/pixel, histogram bins"
-              >
-                Data options
-              </button>
-              <button
-                onClick={() => setDialog("pads")}
-                className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
-                title="Reorder / show / hide the pad columns"
-              >
-                Pad order
-              </button>
-            </>
+            <button
+              onClick={() => setDialog("options")}
+              className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
+              title="Graphs, data options & pad order"
+            >
+              Options
+            </button>
           )}
           {las && (
             <button
@@ -206,24 +196,46 @@ export function LogAnalysisPage() {
       </div>
 
       {model && params && dialog === "options" && (
-        <Popup title="Data options" onClose={() => setDialog(null)}>
-          <DataOptions
-            params={params}
-            busy={busy}
-            onApply={(p) => { setDialog(null); recompute(p); }}
-          />
-        </Popup>
-      )}
-      {model && params && dialog === "pads" && (
-        <Popup
-          title={`Pad order (${params.padOrder.length}/${model.las.padCount})`}
-          onClose={() => setDialog(null)}
-        >
-          <PadSelector
-            padCount={model.las.padCount}
-            order={params.padOrder}
-            onChange={(order) => setParams({ ...params, padOrder: order })}
-          />
+        <Popup title="Options" onClose={() => setDialog(null)}>
+          <div className="space-y-4">
+            {/* Graphs — which heatmaps to show (toggles live). */}
+            <section>
+              <h4 className="font-medium text-sm">Graphs</h4>
+              <p className="text-[11px] text-gray-400 mb-1">Tick which images to show</p>
+              {MODES.map((m) => (
+                <label key={m.id} className="flex items-center gap-2 text-sm" title={m.hint}>
+                  <input
+                    type="checkbox"
+                    checked={show[m.id]}
+                    onChange={(e) => setShow({ ...show, [m.id]: e.target.checked })}
+                  />
+                  {m.label}
+                </label>
+              ))}
+            </section>
+            <hr className="border-gray-100" />
+            {/* Data options — needs a redraw (Apply closes the popup). */}
+            <section>
+              <h4 className="font-medium text-sm mb-2">Data options</h4>
+              <DataOptions
+                params={params}
+                busy={busy}
+                onApply={(p) => { setDialog(null); recompute(p); }}
+              />
+            </section>
+            <hr className="border-gray-100" />
+            {/* Pad order — reorders the heatmap columns live. */}
+            <section>
+              <h4 className="font-medium text-sm">
+                Pad order ({params.padOrder.length}/{model.las.padCount})
+              </h4>
+              <PadSelector
+                padCount={model.las.padCount}
+                order={params.padOrder}
+                onChange={(order) => setParams({ ...params, padOrder: order })}
+              />
+            </section>
+          </div>
         </Popup>
       )}
       {las && dialog === "header" && (
@@ -273,66 +285,45 @@ export function LogAnalysisPage() {
       )}
 
       {model && params && (
-        <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-4">
-          {/* Controls (graphs / zoom / legend). Data options & pad order are
-              now top-bar popups, next to Export PNG. */}
-          <aside className="space-y-3">
-            <div className="bg-white border border-gray-200 rounded p-3 text-sm space-y-2">
-              <h3 className="font-medium">Graphs</h3>
-              <p className="text-[11px] text-gray-400 -mt-1">Tick which images to show</p>
-              {MODES.map((m) => (
-                <label key={m.id} className="flex items-center gap-2" title={m.hint}>
-                  <input
-                    type="checkbox"
-                    checked={show[m.id]}
-                    onChange={(e) => setShow({ ...show, [m.id]: e.target.checked })}
-                  />
-                  {m.label}
-                </label>
-              ))}
-              <div className="border-t border-gray-100 my-1" />
-              <div className="flex items-center gap-2 pt-1">
-                <span className="text-gray-500 w-14">Zoom X</span>
-                <ZoomStepper value={zoomX} onChange={setZoomX} />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-500 w-14">Zoom Y</span>
-                <ZoomStepper value={zoomY} onChange={setZoomY} />
-              </div>
+        <main className="overflow-auto bg-white border border-gray-200 rounded p-3">
+          {/* Minimised toolbar just above the graph: zoom + colour scale. */}
+          <div className="flex items-center flex-wrap gap-x-5 gap-y-2 mb-3 text-xs text-gray-600">
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500">Zoom X</span>
+              <ZoomStepper value={zoomX} onChange={setZoomX} />
             </div>
-            <ColorLegend />
-            {inspect && <InspectPanel info={inspect} />}
-          </aside>
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500">Zoom Y</span>
+              <ZoomStepper value={zoomY} onChange={setZoomY} />
+            </div>
+            <ColorScaleBar />
+            <span className="text-gray-400">
+              Hover for the readout · drag a box to zoom a depth × pad range.
+            </span>
+          </div>
 
-          {/* Heatmaps + depth track */}
-          <main className="overflow-auto bg-white border border-gray-200 rounded p-3">
-            <p className="text-[11px] text-gray-400 mb-2">
-              Hover for the point readout · drag a box on any track to zoom into that depth × pad range.
-            </p>
-            <div className="flex gap-4 items-start">
-              <DepthTrack model={model} zoomY={zoomY} />
-              {MODES.filter((m) => show[m.id]).map((m) => (
-                <div key={m.id} className="shrink-0">
-                  <div className="text-xs font-medium text-gray-700 mb-1 text-center">
-                    {m.label}
-                  </div>
-                  {/* Pad numbers on top (header above the image). */}
-                  <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />
-                  <EivHeatmap
-                    model={model}
-                    mode={m.id}
-                    displayPads={displayPads}
-                    zoomX={zoomX}
-                    zoomY={zoomY}
-                    onInspect={setInspect}
-                    onSelectRegion={setZoomRegion}
-                    className="border-x border-b border-gray-300"
-                  />
+          <div className="flex gap-4 items-start">
+            <DepthTrack model={model} zoomY={zoomY} />
+            {MODES.filter((m) => show[m.id]).map((m) => (
+              <div key={m.id} className="shrink-0">
+                <div className="text-xs font-medium text-gray-700 mb-1 text-center">
+                  {m.label}
                 </div>
-              ))}
-            </div>
-          </main>
-        </div>
+                {/* Pad numbers on top (header above the image). */}
+                <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />
+                <EivHeatmap
+                  model={model}
+                  mode={m.id}
+                  displayPads={displayPads}
+                  zoomX={zoomX}
+                  zoomY={zoomY}
+                  onSelectRegion={setZoomRegion}
+                  className="border-x border-b border-gray-300"
+                />
+              </div>
+            ))}
+          </div>
+        </main>
       )}
 
       {/* Transient status toast — auto-dismisses (see the effect above). */}
@@ -544,40 +535,20 @@ function PadAxis({ displayPads, buttons, zoomX }: { displayPads: number[]; butto
   );
 }
 
-function ColorLegend() {
+/** Minimised colour-scale legend shown inline above the graph. */
+function ColorScaleBar() {
   // Mirror the white→yellow→red→black ramp.
   const grad = "linear-gradient(to right, rgb(255,255,255), rgb(255,255,0), rgb(255,0,0), rgb(0,0,0))";
   return (
-    <div className="bg-white border border-gray-200 rounded p-3 text-xs">
-      <h3 className="font-medium mb-1 text-sm">Colour scale</h3>
-      <div className="h-3 rounded" style={{ background: grad }} />
-      <div className="flex justify-between text-gray-500 mt-0.5">
-        <span>Low</span><span>High</span>
-      </div>
-      <div className="flex items-center gap-1.5 mt-1.5 text-gray-500">
-        <span className="inline-block w-3 h-3 rounded-sm" style={{ background: "rgb(0,0,255)" }} />
-        NULL / no reading
-      </div>
-    </div>
-  );
-}
-
-function InspectPanel({ info }: { info: EivInspect }) {
-  return (
-    <div className="bg-white border border-gray-200 rounded p-3 text-xs space-y-0.5">
-      <h3 className="font-medium text-sm mb-1">Point</h3>
-      <Row k="Depth" v={info.depth.toFixed(2)} />
-      <Row k="Pad" v={String(info.pad)} />
-      <Row k="Button" v={String(info.button)} />
-      <Row k="Value" v={Number.isFinite(info.value) ? info.value.toFixed(3) : "—"} />
-    </div>
-  );
-}
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex justify-between gap-2">
-      <span className="text-gray-500">{k}</span>
-      <span className="font-medium text-gray-800 tabular-nums">{v}</span>
+    <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+      <span>Low</span>
+      <div className="h-2.5 w-24 rounded border border-gray-200" style={{ background: grad }} />
+      <span>High</span>
+      <span
+        className="inline-block w-2.5 h-2.5 rounded-sm ml-1.5"
+        style={{ background: "rgb(0,0,255)" }}
+      />
+      <span>NULL</span>
     </div>
   );
 }
