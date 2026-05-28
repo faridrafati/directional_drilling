@@ -17,7 +17,7 @@
  * 3D viewer's click-to-inspect panel so the user gets one consistent
  * inspector across all three views.
  */
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceDot, ReferenceArea, Label, Legend,
@@ -28,26 +28,39 @@ import { StationDetailsPanel, type StationDetails } from "./StationDetailsPanel.
 /**
  * Zoom + per-axis-scale state for a 2D chart. Returns:
  *   - `xDomain` / `yDomain` to spread onto <XAxis>/<YAxis> `domain=`
- *   - mouse handlers for drag-box zoom (spread onto <LineChart>)
+ *   - mouse handlers (spread onto <LineChart>)
  *   - `<selectionArea>` — a <ReferenceArea> showing the live drag rectangle
  *   - `scaleAxis(axis, factor)` — zoom one axis in/out around its centre
  *   - `reset()` and `isZoomed`
  *
- * Drag-box zoom: press inside the plot, drag to the opposite corner, release.
- * We read the data value under the cursor from Recharts' event state
- * (`activeLabel` = x value, nearest payload = y value), so the zoom snaps to
- * the bounding box of the dragged-over data — pixel-precise enough on the
- * densified station path while staying robust across Recharts versions.
+ * Two gestures:
+ *   • LEFT-drag a box → zoom into that region.
+ *   • RIGHT-drag      → pan the view (the grabbed point sticks to the cursor).
+ *
+ * Both rely on Recharts' mouse-state `offset` (the plot rectangle in px) +
+ * `chartX` / `chartY` (cursor px) to convert pixels ↔ data, so they work
+ * for either axis and respect the reversed-Y vertical-section axis.
  */
 type Domain = [number, number] | null;
+// Loose structural type compatible with Recharts' CategoricalChartState —
+// all fields optional so the chart's `onMouse*` state assigns cleanly.
+type ChartState = {
+  activeLabel?: string | number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  activePayload?: Array<any>;
+  chartX?: number;
+  chartY?: number;
+  offset?: { top?: number; left?: number; width?: number; height?: number };
+} | null | undefined;
 function useChartZoom(
   xKey: string,
   yKey: string,
   data: ReadonlyArray<Record<string, unknown>>,
+  yReversed = false,
 ) {
   const [xDomain, setXDomain] = useState<Domain>(null);
   const [yDomain, setYDomain] = useState<Domain>(null);
-  // Live drag rectangle in DATA coords (null when not dragging).
+  // Live drag rectangle in DATA coords (null when not box-zooming).
   const [dragA, setDragA] = useState<{ x: number; y: number } | null>(null);
   const [dragB, setDragB] = useState<{ x: number; y: number } | null>(null);
 
@@ -65,40 +78,92 @@ function useChartZoom(
     return { x: [xMin, xMax] as [number, number], y: [yMin, yMax] as [number, number] };
   }, [data, xKey, yKey]);
 
-  const pointFromState = useCallback(
-    (s: { activeLabel?: string | number; activePayload?: Array<{ payload?: Record<string, number> }> } | null) => {
-      if (!s || s.activeLabel == null) return null;
+  // Active domains (fall back to natural extents when not zoomed). Kept in a
+  // ref so the pan math always reads the latest without re-subscribing.
+  const domRef = useRef({ x: extents.x, y: extents.y });
+  domRef.current = { x: xDomain ?? extents.x, y: yDomain ?? extents.y };
+
+  /** Convert a Recharts mouse state to DATA coords via the plot rectangle. */
+  const dataFromState = useCallback((s: ChartState): { x: number; y: number } | null => {
+    const o = s?.offset;
+    if (!o || !o.width || !o.height || s?.chartX == null || s?.chartY == null) {
+      // Fallback for box-zoom: use activeLabel (x) + nearest payload (y).
+      if (s?.activeLabel == null) return null;
       const x = Number(s.activeLabel);
       const y = s.activePayload?.[0]?.payload?.[yKey];
       if (!Number.isFinite(x) || !Number.isFinite(y as number)) return null;
       return { x, y: y as number };
-    },
-    [yKey],
-  );
+    }
+    const [dx0, dx1] = domRef.current.x;
+    const [dy0, dy1] = domRef.current.y;
+    const oLeft = o.left ?? 0, oTop = o.top ?? 0;
+    const fx = (s.chartX - oLeft) / o.width;      // 0 (left) → 1 (right)
+    const fy = (s.chartY - oTop) / o.height;      // 0 (top)  → 1 (bottom)
+    const x = dx0 + fx * (dx1 - dx0);
+    // Reversed Y (VSEC): top = min, bottom = max. Normal Y: top = max.
+    const y = yReversed ? dy0 + fy * (dy1 - dy0) : dy1 - fy * (dy1 - dy0);
+    return { x, y };
+  }, [yKey, yReversed]);
 
-  const onMouseDown = useCallback((s: Parameters<typeof pointFromState>[0]) => {
-    const p = pointFromState(s);
+  // Pan grab — the data point under the cursor when the right-drag started,
+  // plus the domain spans to keep constant. Held in a ref (no re-render).
+  const panRef = useRef<
+    | { grab: { x: number; y: number }; spanX: number; spanY: number }
+    | null
+  >(null);
+
+  const onMouseDown = useCallback((s: ChartState, button = 0) => {
+    if (button === 2) {
+      // Right button → start panning.
+      const p = dataFromState(s);
+      if (p) {
+        panRef.current = {
+          grab: p,
+          spanX: domRef.current.x[1] - domRef.current.x[0],
+          spanY: domRef.current.y[1] - domRef.current.y[0],
+        };
+      }
+      return;
+    }
+    // Left button → start box-zoom.
+    const p = dataFromState(s);
     if (p) { setDragA(p); setDragB(p); }
-  }, [pointFromState]);
+  }, [dataFromState]);
 
-  const onMouseMove = useCallback((s: Parameters<typeof pointFromState>[0]) => {
+  const onMouseMove = useCallback((s: ChartState) => {
+    // Panning takes priority over box-zoom.
+    const pan = panRef.current;
+    if (pan) {
+      const o = s?.offset;
+      if (!o || !o.width || !o.height || s?.chartX == null || s?.chartY == null) return;
+      const fx = (s.chartX - (o.left ?? 0)) / o.width;
+      const fy = (s.chartY - (o.top ?? 0)) / o.height;
+      // Keep the span fixed; shift the domain so `grab` lands under the cursor.
+      const newX0 = pan.grab.x - fx * pan.spanX;
+      const newY0 = yReversed
+        ? pan.grab.y - fy * pan.spanY
+        : pan.grab.y - (1 - fy) * pan.spanY;
+      setXDomain([newX0, newX0 + pan.spanX]);
+      setYDomain([newY0, newY0 + pan.spanY]);
+      return;
+    }
     if (!dragA) return;
-    const p = pointFromState(s);
+    const p = dataFromState(s);
     if (p) setDragB(p);
-  }, [dragA, pointFromState]);
+  }, [dragA, dataFromState, yReversed]);
 
   const onMouseUp = useCallback(() => {
+    // End a pan.
+    if (panRef.current) { panRef.current = null; return; }
+    // Commit a box-zoom.
     if (dragA && dragB) {
       const dx = Math.abs(dragA.x - dragB.x);
       const dy = Math.abs(dragA.y - dragB.y);
-      // Ignore tiny drags (treat as a click, not a zoom).
       const xSpan = extents.x[1] - extents.x[0] || 1;
       const ySpan = extents.y[1] - extents.y[0] || 1;
       if (dx > xSpan * 0.02 || dy > ySpan * 0.02) {
         const x1 = Math.min(dragA.x, dragB.x), x2 = Math.max(dragA.x, dragB.x);
         const y1 = Math.min(dragA.y, dragB.y), y2 = Math.max(dragA.y, dragB.y);
-        // Guard: never commit a zero-width / NaN domain — Recharts throws
-        // when min === max. Only set an axis whose span is meaningfully > 0.
         if (Number.isFinite(x1) && Number.isFinite(x2) && x2 - x1 > xSpan * 1e-4) {
           setXDomain([x1, x2]);
         }
@@ -129,6 +194,7 @@ function useChartZoom(
 
   const reset = useCallback(() => {
     setXDomain(null); setYDomain(null); setDragA(null); setDragB(null);
+    panRef.current = null;
   }, []);
 
   const isZoomed = xDomain !== null || yDomain !== null;
@@ -863,8 +929,9 @@ export function VerticalSectionChart({
   // (our `data` rows carry an `i` field for this) and feed it to the
   // side panel (or hoist to the parent via onHover).
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  // Drag-box zoom + per-axis scale for this chart.
-  const vsecZoom = useChartZoom("vsec", "tvd", data);
+  // Drag-box zoom + per-axis scale + right-drag pan. VSEC's Y axis is
+  // reversed (TVD grows downward), so tell the hook.
+  const vsecZoom = useChartZoom("vsec", "tvd", data, /*yReversed*/ true);
   // When the user picks a custom view angle, override the station's stored
   // VSEC in the details panel too — otherwise the side panel and the chart
   // would disagree.
@@ -880,9 +947,8 @@ export function VerticalSectionChart({
   const chartCard = (
     <div
       className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0 relative select-none"
-      // Suppress the browser right-click menu (copy / paste / print / save
-      // image) over the chart — it was popping during drag-zoom and
-      // interrupting the gesture. Left-drag still zooms; right-click is a no-op.
+      // Suppress the browser right-click menu so RIGHT-drag can pan the
+      // chart instead of popping copy / paste / print.
       onContextMenu={(e) => e.preventDefault()}
     >
       {/* Header: title (left), view-azm + zoom controls (right). All inline so
@@ -911,10 +977,8 @@ export function VerticalSectionChart({
           data={data}
           margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
           onMouseDown={(state, e) => {
-            // Only LEFT button starts a drag-zoom; ignore middle/right so the
-            // browser's native pan / context-menu don't fight the gesture.
-            if (e && (e as React.MouseEvent).button !== 0) return;
-            zoom.onMouseDown(state);
+            // LEFT = box-zoom, RIGHT = pan. Pass the button to the hook.
+            zoom.onMouseDown(state, (e as React.MouseEvent | undefined)?.button ?? 0);
           }}
           onMouseMove={(state) => {
             zoom.onMouseMove(state);
@@ -1080,8 +1144,8 @@ export function PlanViewChart({
           data={data}
           margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
           onMouseDown={(state, e) => {
-            if (e && (e as React.MouseEvent).button !== 0) return;
-            planZoom.onMouseDown(state);
+            // LEFT = box-zoom, RIGHT = pan.
+            planZoom.onMouseDown(state, (e as React.MouseEvent | undefined)?.button ?? 0);
           }}
           onMouseMove={(state) => {
             planZoom.onMouseMove(state);
