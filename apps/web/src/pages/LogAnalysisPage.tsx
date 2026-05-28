@@ -14,6 +14,7 @@ import {
 } from "@dd/shared/las";
 import { EivHeatmap, type EivRegion } from "../components/eiv/EivHeatmap.js";
 import { DetailsModal } from "../components/eiv/EivDialogs.js";
+import { exportEivPng, exportEivPdf, exportEivXlsx } from "../export/eiv.js";
 
 const MODES: { id: EivImageMode; label: string; hint: string }[] = [
   { id: "raw", label: "Raw", hint: "Linear min→max per pad" },
@@ -43,7 +44,7 @@ export function LogAnalysisPage() {
   });
   const [zoomX, setZoomX] = useState(3);
   const [zoomY, setZoomY] = useState(1);
-  const [dialog, setDialog] = useState<null | "details" | "options">(null);
+  const [dialog, setDialog] = useState<null | "details" | "options" | "export">(null);
   const [zoomRegion, setZoomRegion] = useState<EivRegion | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -169,10 +170,11 @@ export function LogAnalysisPage() {
           )}
           {model && (
             <button
-              onClick={() => exportComposite(model, show, displayPads, zoomX, zoomY)}
+              onClick={() => setDialog("export")}
               className="px-3 h-10 text-sm rounded-md bg-green-700 text-white hover:bg-green-800"
+              title="Export as PNG image, PDF report or Excel workbook"
             >
-              Export PNG
+              Export
             </button>
           )}
         </div>
@@ -218,6 +220,30 @@ export function LogAnalysisPage() {
                 onChange={(order) => setParams({ ...params, padOrder: order })}
               />
             </section>
+          </div>
+        </Popup>
+      )}
+      {model && params && dialog === "export" && (
+        <Popup title="Export" onClose={() => setDialog(null)}>
+          <p className="text-[11px] text-gray-400 mb-3">
+            Exports the currently shown graphs and pad order.
+          </p>
+          <div className="space-y-2">
+            <ExportChoice
+              label="PNG image"
+              hint="The visible heatmaps, full resolution"
+              onClick={() => { setDialog(null); exportEivPng(model, show, displayPads); }}
+            />
+            <ExportChoice
+              label="PDF report"
+              hint="Metadata + per-pad statistics + heatmap thumbnails"
+              onClick={() => { setDialog(null); void exportEivPdf(model, show, displayPads); }}
+            />
+            <ExportChoice
+              label="Excel workbook"
+              hint="Summary + per-pad statistics sheets (.xlsx)"
+              onClick={() => { setDialog(null); void exportEivXlsx(model, displayPads); }}
+            />
           </div>
         </Popup>
       )}
@@ -680,60 +706,15 @@ function ZoomModal({
   );
 }
 
-/**
- * Export the visible heatmaps side-by-side into one PNG (Unit19). Re-renders
- * each enabled mode to an offscreen canvas and composites them with a small
- * gap, then triggers a download.
- */
-async function exportComposite(
-  model: EivModel,
-  show: Record<EivImageMode, boolean>,
-  displayPads: number[],
-  zoomX: number, zoomY: number,
-) {
-  const { matAt, pointForValue, colorForPoint } = await import("@dd/shared/las");
-  const buttons = model.las.buttonsPerPad;
-  const w = buttons * displayPads.length;
-  const h = model.depthCount;
-  // Same depth orientation as the on-screen heatmap (deeper at the bottom).
-  const flip = h > 1 && model.depths[0] > model.depths[h - 1];
-  const modes = (["raw", "corrected", "leveled"] as EivImageMode[]).filter((m) => show[m]);
-  const gap = 8;
-  const out = document.createElement("canvas");
-  out.width = modes.length * w + (modes.length - 1) * gap;
-  out.height = h;
-  const octx = out.getContext("2d");
-  if (!octx) return;
-  octx.fillStyle = "#fff";
-  octx.fillRect(0, 0, out.width, out.height);
-
-  modes.forEach((mode, mi) => {
-    const img = octx.createImageData(w, h);
-    for (let p = 0; p < displayPads.length; p++) {
-      const pad = displayPads[p];
-      const stats = model.pads[pad];
-      if (!stats) continue;
-      for (let row = 0; row < h; row++) {
-        for (let b = 0; b < buttons; b++) {
-          const point = pointForValue(matAt(model, row, b, pad), mode, stats, model.params.nullValue);
-          const [r, g, bl] = colorForPoint(point);
-          const x = p * buttons + b;
-          const idx = ((flip ? h - 1 - row : row) * w + x) * 4;
-          img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = bl; img.data[idx + 3] = 255;
-        }
-      }
-    }
-    // Blit via a temp canvas so we can place at the right offset.
-    const tmp = document.createElement("canvas");
-    tmp.width = w; tmp.height = h;
-    tmp.getContext("2d")!.putImageData(img, 0, 0);
-    octx.drawImage(tmp, mi * (w + gap), 0);
-  });
-
-  void zoomX; void zoomY; // export at native resolution
-  const url = out.toDataURL("image/png");
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${(model.las.fileName ?? "emi-log").replace(/\.[^.]+$/, "")}_eiv.png`;
-  a.click();
+/** A single choice row inside the Export popup. */
+function ExportChoice({ label, hint, onClick }: { label: string; hint: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left px-3 py-2 rounded border border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+    >
+      <div className="text-sm font-medium text-gray-800">{label}</div>
+      <div className="text-[11px] text-gray-400">{hint}</div>
+    </button>
+  );
 }
