@@ -17,7 +17,7 @@
  * 3D viewer's click-to-inspect panel so the user gets one consistent
  * inspector across all three views.
  */
-import React, { useMemo, useState, useCallback, useRef } from "react";
+import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceDot, ReferenceArea, Label, Legend,
@@ -42,16 +42,6 @@ import { StationDetailsPanel, type StationDetails } from "./StationDetailsPanel.
  * for either axis and respect the reversed-Y vertical-section axis.
  */
 type Domain = [number, number] | null;
-// Loose structural type compatible with Recharts' CategoricalChartState —
-// all fields optional so the chart's `onMouse*` state assigns cleanly.
-type ChartState = {
-  activeLabel?: string | number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  activePayload?: Array<any>;
-  chartX?: number;
-  chartY?: number;
-  offset?: { top?: number; left?: number; width?: number; height?: number };
-} | null | undefined;
 function useChartZoom(
   xKey: string,
   yKey: string,
@@ -78,137 +68,160 @@ function useChartZoom(
     return { x: [xMin, xMax] as [number, number], y: [yMin, yMax] as [number, number] };
   }, [data, xKey, yKey]);
 
-  // Active domains (fall back to natural extents when not zoomed). Kept in a
-  // ref so the pan math always reads the latest without re-subscribing.
+  // Live refs so the native DOM listeners (attached once) always read the
+  // latest domain/extents without re-subscribing on every render.
   const domRef = useRef({ x: extents.x, y: extents.y });
   domRef.current = { x: xDomain ?? extents.x, y: yDomain ?? extents.y };
+  const extentsRef = useRef(extents);
+  extentsRef.current = extents;
+  const yRevRef = useRef(yReversed);
+  yRevRef.current = yReversed;
 
-  /** Convert a Recharts mouse state to DATA coords via the plot rectangle. */
-  const dataFromState = useCallback((s: ChartState): { x: number; y: number } | null => {
-    const o = s?.offset;
-    if (!o || !o.width || !o.height || s?.chartX == null || s?.chartY == null) {
-      // Fallback for box-zoom: use activeLabel (x) + nearest payload (y).
-      if (s?.activeLabel == null) return null;
-      const x = Number(s.activeLabel);
-      const y = s.activePayload?.[0]?.payload?.[yKey];
-      if (!Number.isFinite(x) || !Number.isFinite(y as number)) return null;
-      return { x, y: y as number };
-    }
-    const [dx0, dx1] = domRef.current.x;
-    const [dy0, dy1] = domRef.current.y;
-    const oLeft = o.left ?? 0, oTop = o.top ?? 0;
-    const fx = (s.chartX - oLeft) / o.width;      // 0 (left) → 1 (right)
-    const fy = (s.chartY - oTop) / o.height;      // 0 (top)  → 1 (bottom)
-    const x = dx0 + fx * (dx1 - dx0);
-    // Reversed Y (VSEC): top = min, bottom = max. Normal Y: top = max.
-    const y = yReversed ? dy0 + fy * (dy1 - dy0) : dy1 - fy * (dy1 - dy0);
-    return { x, y };
-  }, [yKey, yReversed]);
+  // The wrapper div we attach native mouse listeners to. Recharts' own mouse
+  // state never includes the plot `offset`, so we read the plot rectangle
+  // straight from the rendered `.recharts-cartesian-grid` group and convert
+  // client pixels → data ourselves. This works for BOTH mouse buttons and
+  // both axes, which Recharts' handlers can't reliably do.
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // Pan grab — the data point under the cursor when the right-drag started,
-  // plus the domain spans to keep constant. Held in a ref (no re-render).
-  const panRef = useRef<
-    | { grab: { x: number; y: number }; spanX: number; spanY: number }
-    | null
-  >(null);
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
 
-  const onMouseDown = useCallback((s: ChartState, button = 0) => {
-    if (button === 2) {
-      // Right button → start panning.
-      const p = dataFromState(s);
-      if (p) {
-        panRef.current = {
-          grab: p,
+    // Plot rect in CLIENT coords, taken from the grid group (spans exactly
+    // the plotting area). Falls back to the SVG surface if needed.
+    const plotRect = (): DOMRect | null => {
+      const grid = wrap.querySelector(".recharts-cartesian-grid");
+      let r = grid ? (grid as SVGGElement).getBoundingClientRect() : null;
+      if (!r || r.width < 2 || r.height < 2) {
+        const surf = wrap.querySelector(".recharts-surface");
+        r = surf ? (surf as SVGElement).getBoundingClientRect() : null;
+      }
+      return r && r.width >= 2 && r.height >= 2 ? r : null;
+    };
+
+    // Convert a client (x,y) to data coords via the plot rect + current domain.
+    const toData = (clientX: number, clientY: number, rect: DOMRect) => {
+      const [dx0, dx1] = domRef.current.x;
+      const [dy0, dy1] = domRef.current.y;
+      const fx = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      const fy = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+      const x = dx0 + fx * (dx1 - dx0);
+      const y = yRevRef.current ? dy0 + fy * (dy1 - dy0) : dy1 - fy * (dy1 - dy0);
+      return { x, y, fx, fy };
+    };
+
+    // Mutable gesture state for the lifetime of one drag.
+    let mode: "none" | "zoom" | "pan" = "none";
+    let rect: DOMRect | null = null;
+    let pan: { gx: number; gy: number; spanX: number; spanY: number } | null = null;
+
+    const onDown = (e: MouseEvent) => {
+      // Ignore clicks on the overlay buttons (they live outside the plot).
+      rect = plotRect();
+      if (!rect) return;
+      // Only react to presses inside the plot area.
+      if (e.clientX < rect.left || e.clientX > rect.right ||
+          e.clientY < rect.top || e.clientY > rect.bottom) return;
+      e.preventDefault();
+      const d = toData(e.clientX, e.clientY, rect);
+      if (e.button === 2) {
+        // RIGHT → pan (same as the 3D view's right-drag).
+        mode = "pan";
+        pan = {
+          gx: d.x, gy: d.y,
           spanX: domRef.current.x[1] - domRef.current.x[0],
           spanY: domRef.current.y[1] - domRef.current.y[0],
         };
+      } else if (e.button === 0) {
+        // LEFT → box-zoom.
+        mode = "zoom";
+        setDragA({ x: d.x, y: d.y });
+        setDragB({ x: d.x, y: d.y });
       }
-      return;
-    }
-    // Left button → start box-zoom.
-    const p = dataFromState(s);
-    if (p) { setDragA(p); setDragB(p); }
-  }, [dataFromState]);
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
 
-  const onMouseMove = useCallback((s: ChartState) => {
-    // Panning takes priority over box-zoom.
-    const pan = panRef.current;
-    if (pan) {
-      const o = s?.offset;
-      if (!o || !o.width || !o.height || s?.chartX == null || s?.chartY == null) return;
-      const fx = (s.chartX - (o.left ?? 0)) / o.width;
-      const fy = (s.chartY - (o.top ?? 0)) / o.height;
-      // Keep the span fixed; shift the domain so `grab` lands under the cursor.
-      const newX0 = pan.grab.x - fx * pan.spanX;
-      const newY0 = yReversed
-        ? pan.grab.y - fy * pan.spanY
-        : pan.grab.y - (1 - fy) * pan.spanY;
-      setXDomain([newX0, newX0 + pan.spanX]);
-      setYDomain([newY0, newY0 + pan.spanY]);
-      return;
-    }
-    if (!dragA) return;
-    const p = dataFromState(s);
-    if (p) setDragB(p);
-  }, [dragA, dataFromState, yReversed]);
-
-  const onMouseUp = useCallback(() => {
-    // End a pan.
-    if (panRef.current) { panRef.current = null; return; }
-    // Commit a box-zoom.
-    if (dragA && dragB) {
-      const dx = Math.abs(dragA.x - dragB.x);
-      const dy = Math.abs(dragA.y - dragB.y);
-      const xSpan = extents.x[1] - extents.x[0] || 1;
-      const ySpan = extents.y[1] - extents.y[0] || 1;
-      if (dx > xSpan * 0.02 || dy > ySpan * 0.02) {
-        const x1 = Math.min(dragA.x, dragB.x), x2 = Math.max(dragA.x, dragB.x);
-        const y1 = Math.min(dragA.y, dragB.y), y2 = Math.max(dragA.y, dragB.y);
-        if (Number.isFinite(x1) && Number.isFinite(x2) && x2 - x1 > xSpan * 1e-4) {
-          setXDomain([x1, x2]);
-        }
-        if (Number.isFinite(y1) && Number.isFinite(y2) && y2 - y1 > ySpan * 1e-4) {
-          setYDomain([y1, y2]);
-        }
+    const onMove = (e: MouseEvent) => {
+      if (mode === "none" || !rect) return;
+      if (mode === "pan" && pan) {
+        const fx = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+        const fy = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+        // Keep span fixed; shift domain so the grabbed point stays under cursor.
+        const newX0 = pan.gx - fx * pan.spanX;
+        const newY0 = yRevRef.current
+          ? pan.gy - fy * pan.spanY
+          : pan.gy - (1 - fy) * pan.spanY;
+        setXDomain([newX0, newX0 + pan.spanX]);
+        setYDomain([newY0, newY0 + pan.spanY]);
+      } else if (mode === "zoom") {
+        const d = toData(e.clientX, e.clientY, rect);
+        setDragB({ x: d.x, y: d.y });
       }
-    }
-    setDragA(null);
-    setDragB(null);
-  }, [dragA, dragB, extents]);
+    };
+
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (mode === "zoom") commitZoom();
+      mode = "none"; rect = null; pan = null;
+    };
+
+    const commitZoom = () => {
+      setDragA((a) => {
+        setDragB((b) => {
+          if (a && b) {
+            const ext = extentsRef.current;
+            const xSpan = ext.x[1] - ext.x[0] || 1;
+            const ySpan = ext.y[1] - ext.y[0] || 1;
+            const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y);
+            if (dx > xSpan * 0.02 || dy > ySpan * 0.02) {
+              const x1 = Math.min(a.x, b.x), x2 = Math.max(a.x, b.x);
+              const y1 = Math.min(a.y, b.y), y2 = Math.max(a.y, b.y);
+              if (Number.isFinite(x1) && x2 - x1 > xSpan * 1e-4) setXDomain([x1, x2]);
+              if (Number.isFinite(y1) && y2 - y1 > ySpan * 1e-4) setYDomain([y1, y2]);
+            }
+          }
+          return null; // clear dragB
+        });
+        return null;   // clear dragA
+      });
+    };
+
+    wrap.addEventListener("mousedown", onDown);
+    return () => {
+      wrap.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
 
   // Zoom one axis in (factor<1) or out (factor>1) around its current centre.
   const scaleAxis = useCallback((axis: "x" | "y", factor: number) => {
-    const cur = axis === "x" ? (xDomain ?? extents.x) : (yDomain ?? extents.y);
+    const cur = axis === "x" ? (domRef.current.x) : (domRef.current.y);
     const mid = (cur[0] + cur[1]) / 2;
     let half = ((cur[1] - cur[0]) / 2) * factor;
-    // Clamp the half-width so it never collapses to ~0 (Recharts errors on a
-    // zero-span domain) nor explodes past the natural extent by an absurd
-    // factor on repeated zoom-outs.
     const naturalHalf = axis === "x"
       ? (extents.x[1] - extents.x[0]) / 2 || 1
       : (extents.y[1] - extents.y[0]) / 2 || 1;
     half = Math.max(naturalHalf * 1e-3, Math.min(naturalHalf * 50, Math.abs(half)));
     const next: [number, number] = [mid - half, mid + half];
     if (axis === "x") setXDomain(next); else setYDomain(next);
-  }, [xDomain, yDomain, extents]);
+  }, [extents]);
 
   const reset = useCallback(() => {
     setXDomain(null); setYDomain(null); setDragA(null); setDragB(null);
-    panRef.current = null;
   }, []);
 
   const isZoomed = xDomain !== null || yDomain !== null;
 
-  // The live selection rectangle (only while dragging a non-trivial box).
+  // The live box-zoom selection rectangle (only while left-dragging).
   const selectionArea = dragA && dragB
     ? { x1: dragA.x, x2: dragB.x, y1: dragA.y, y2: dragB.y }
     : null;
 
-  return {
-    xDomain, yDomain, extents,
-    onMouseDown, onMouseMove, onMouseUp,
-    scaleAxis, reset, isZoomed, selectionArea,
-  };
+  return { wrapRef, xDomain, yDomain, extents, scaleAxis, reset, isZoomed, selectionArea };
 }
 
 /**
@@ -972,21 +985,16 @@ export function VerticalSectionChart({
           />
         </div>
       </div>
-      <ResponsiveContainer width="100%" height="86%">
+      <div ref={zoom.wrapRef} className="h-[86%] relative">
+      <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={data}
           margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
-          onMouseDown={(state, e) => {
-            // LEFT = box-zoom, RIGHT = pan. Pass the button to the hook.
-            zoom.onMouseDown(state, (e as React.MouseEvent | undefined)?.button ?? 0);
-          }}
           onMouseMove={(state) => {
-            zoom.onMouseMove(state);
             const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
             setHoverIdx(typeof idx === "number" ? idx : null);
           }}
-          onMouseUp={zoom.onMouseUp}
-          onMouseLeave={() => { setHoverIdx(null); zoom.onMouseUp(); }}
+          onMouseLeave={() => setHoverIdx(null)}
         >
           <EngineeringGrid />
           <XAxis
@@ -1075,6 +1083,7 @@ export function VerticalSectionChart({
           )}
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 
@@ -1135,7 +1144,8 @@ export function PlanViewChart({
           isZoomed={planZoom.isZoomed}
         />
       </div>
-      <ResponsiveContainer width="100%" height="90%">
+      <div ref={planZoom.wrapRef} className="h-[90%] relative">
+      <ResponsiveContainer width="100%" height="100%">
         {/* LineChart (not ScatterChart) — same as Vertical Section. Recharts
             ScatterChart needs visible shapes to detect hover; with the
             shapes hidden the activePayload never fires. LineChart triggers
@@ -1143,17 +1153,11 @@ export function PlanViewChart({
         <LineChart
           data={data}
           margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
-          onMouseDown={(state, e) => {
-            // LEFT = box-zoom, RIGHT = pan.
-            planZoom.onMouseDown(state, (e as React.MouseEvent | undefined)?.button ?? 0);
-          }}
           onMouseMove={(state) => {
-            planZoom.onMouseMove(state);
             const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
             setHoverIdx(typeof idx === "number" ? idx : null);
           }}
-          onMouseUp={planZoom.onMouseUp}
-          onMouseLeave={() => { setHoverIdx(null); planZoom.onMouseUp(); }}
+          onMouseLeave={() => setHoverIdx(null)}
         >
           <EngineeringGrid />
           <XAxis
@@ -1244,6 +1248,7 @@ export function PlanViewChart({
           )}
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 
