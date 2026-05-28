@@ -221,7 +221,36 @@ function useChartZoom(
     ? { x1: dragA.x, x2: dragB.x, y1: dragA.y, y2: dragB.y }
     : null;
 
-  return { wrapRef, xDomain, yDomain, extents, scaleAxis, reset, isZoomed, selectionArea };
+  // Effective (currently-visible) domain — the zoom override, else the data
+  // extents. EngineeringGrid uses these to compute gridline value arrays.
+  const effX = xDomain ?? extents.x;
+  const effY = yDomain ?? extents.y;
+
+  return {
+    wrapRef, xDomain, yDomain, extents, scaleAxis, reset, isZoomed,
+    selectionArea, effX, effY,
+  };
+}
+
+/**
+ * Nice tick VALUES (data units) across [lo, hi]. Major = niceStep, minor =
+ * niceStep/5 — the engineering graph-paper convention. Returned as a plain
+ * number[] for Recharts' horizontalValues / verticalValues props.
+ */
+function gridTickValues(lo: number, hi: number, minor: boolean): number[] {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [];
+  const a = Math.min(lo, hi), b = Math.max(lo, hi);
+  const range = b - a;
+  if (range <= 0) return [];
+  const major = niceStep(range, 6);
+  const step = minor ? major / 5 : major;
+  if (step <= 0) return [];
+  const out: number[] = [];
+  const start = Math.ceil(a / step) * step;
+  for (let v = start; v <= b + step * 1e-6 && out.length < 500; v += step) {
+    out.push(Number(v.toFixed(6)));
+  }
+  return out;
 }
 
 /**
@@ -528,90 +557,40 @@ function niceStep(range: number, targetMajorCount = 6): number {
  * coarse). The two-density grid mirrors what's on technical drafting
  * paper (and what Pascal MIXED.exe's TeeChart used by default).
  */
-function EngineeringGrid() {
-  // Both generators use the same niceStep logic. The minor generator
-  // returns every minor tick; the major generator returns every 5th
-  // (i.e. only positions that are multiples of the major step).
-  const minorH = (props: { yAxis?: { scale?: (v: number) => number; domain?: () => [number, number] } }): number[] => {
-    return computeGridPositions(props.yAxis, /*minor*/ true);
-  };
-  const majorH = (props: { yAxis?: { scale?: (v: number) => number; domain?: () => [number, number] } }): number[] => {
-    return computeGridPositions(props.yAxis, /*minor*/ false);
-  };
-  const minorV = (props: { xAxis?: { scale?: (v: number) => number; domain?: () => [number, number] } }): number[] => {
-    return computeGridPositions(props.xAxis, /*minor*/ true);
-  };
-  const majorV = (props: { xAxis?: { scale?: (v: number) => number; domain?: () => [number, number] } }): number[] => {
-    return computeGridPositions(props.xAxis, /*minor*/ false);
-  };
+function EngineeringGrid({
+  gridX, gridY,
+}: {
+  gridX: [number, number];
+  gridY: [number, number];
+}) {
+  // Recharts maps `horizontalValues` (Y data values → horizontal lines) and
+  // `verticalValues` (X data values → vertical lines) through its OWN axis
+  // scale internally, so we just hand it the nice tick values. This is far
+  // more robust than computing pixel positions ourselves (the old custom-
+  // generator path silently failed because the axis domain isn't where we
+  // expected it on the axis object).
+  const majorX = useMemo(() => gridTickValues(gridX[0], gridX[1], false), [gridX]);
+  const minorX = useMemo(() => gridTickValues(gridX[0], gridX[1], true), [gridX]);
+  const majorY = useMemo(() => gridTickValues(gridY[0], gridY[1], false), [gridY]);
+  const minorY = useMemo(() => gridTickValues(gridY[0], gridY[1], true), [gridY]);
   return (
     <>
       {/* Minor — fine, solid, very light (drawn first, under the majors). */}
       <CartesianGrid
         stroke="#eef2f7"
         strokeWidth={1}
-        horizontal
-        vertical
-        horizontalCoordinatesGenerator={minorH as never}
-        verticalCoordinatesGenerator={minorV as never}
+        horizontalValues={minorY}
+        verticalValues={minorX}
       />
       {/* Major — solid, slightly darker (Excel-style clean grid). */}
       <CartesianGrid
         stroke="#cbd5e1"
         strokeWidth={1}
-        horizontal
-        vertical
-        horizontalCoordinatesGenerator={majorH as never}
-        verticalCoordinatesGenerator={majorV as never}
+        horizontalValues={majorY}
+        verticalValues={majorX}
       />
     </>
   );
-}
-
-/**
- * Translate every "nice" tick value within an axis's domain into a pixel
- * position via the d3 scale Recharts exposes on the axis object. Returns
- * minor (step = majorStep/5) or major (step = majorStep) positions.
- *
- * Robust to missing scale/domain (early renders) — returns [] so the grid
- * just draws nothing rather than crashing.
- */
-function computeGridPositions(
-  // Recharts passes the axis config object; the d3 scale lives on `.scale`
-  // and exposes the numeric domain via `.scale.domain()` (NOT `axis.domain`,
-  // which is the raw `domain=` prop like ["auto","auto"]). Using axis.domain
-  // here was the bug that made the grid draw nothing.
-  axis:
-    | { scale?: ((v: number) => number) & { domain?: () => number[] } }
-    | undefined,
-  minor: boolean,
-): number[] {
-  const scale = axis?.scale;
-  if (typeof scale !== "function" || typeof scale.domain !== "function") {
-    return [];
-  }
-  const dom = scale.domain();
-  if (!dom || dom.length < 2) return [];
-  const d0 = Number(dom[0]);
-  const d1 = Number(dom[dom.length - 1]);
-  if (!Number.isFinite(d0) || !Number.isFinite(d1)) return [];
-  const lo = Math.min(d0, d1);
-  const hi = Math.max(d0, d1);
-  const range = hi - lo;
-  if (range <= 0) return [];
-  const majorStep = niceStep(range, 6);
-  const step = minor ? majorStep / 5 : majorStep;
-  if (step <= 0) return [];
-  // Cap total lines so a tiny step (deep zoom) doesn't draw thousands.
-  const maxLines = 500;
-  const start = Math.ceil(lo / step) * step;
-  const out: number[] = [];
-  for (let i = 0; i < maxLines; i++) {
-    const v = start + i * step;
-    if (v > hi + step * 1e-6) break;
-    out.push(scale(v));
-  }
-  return out;
 }
 
 /**
@@ -1008,7 +987,7 @@ export function VerticalSectionChart({
           }}
           onMouseLeave={() => setHoverIdx(null)}
         >
-          <EngineeringGrid />
+          <EngineeringGrid gridX={zoom.effX} gridY={zoom.effY} />
           <XAxis
             dataKey="vsec" type="number" stroke="#475569" fontSize={12}
             domain={zoom.xDomain ?? ["auto", "auto"]}
@@ -1171,7 +1150,7 @@ export function PlanViewChart({
           }}
           onMouseLeave={() => setHoverIdx(null)}
         >
-          <EngineeringGrid />
+          <EngineeringGrid gridX={planZoom.effX} gridY={planZoom.effY} />
           <XAxis
             dataKey="ew" type="number" stroke="#475569" fontSize={12}
             domain={planZoom.xDomain ?? ["auto", "auto"]}
