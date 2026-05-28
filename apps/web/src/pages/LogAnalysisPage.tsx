@@ -12,7 +12,7 @@ import {
   parseLas, buildModel, defaultParams,
   type EivModel, type EivParams, type EivImageMode,
 } from "@dd/shared/las";
-import { EivHeatmap, type EivInspect } from "../components/eiv/EivHeatmap.js";
+import { EivHeatmap, type EivInspect, type EivRegion } from "../components/eiv/EivHeatmap.js";
 import { LasHeaderModal, DataTablesModal, HistogramModal } from "../components/eiv/EivDialogs.js";
 
 const MODES: { id: EivImageMode; label: string; hint: string }[] = [
@@ -36,6 +36,7 @@ export function LogAnalysisPage() {
   const [zoomY, setZoomY] = useState(1);
   const [inspect, setInspect] = useState<EivInspect | null>(null);
   const [dialog, setDialog] = useState<null | "header" | "tables" | "histogram">(null);
+  const [zoomRegion, setZoomRegion] = useState<EivRegion | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // Pads currently displayed (defaults to params.padOrder).
@@ -162,6 +163,15 @@ export function LogAnalysisPage() {
       {model && dialog === "histogram" && (
         <HistogramModal model={model} onClose={() => setDialog(null)} />
       )}
+      {model && zoomRegion && (
+        <ZoomModal
+          model={model}
+          region={zoomRegion}
+          displayPads={displayPads}
+          show={show}
+          onClose={() => setZoomRegion(null)}
+        />
+      )}
 
       {status && (
         <div className="mb-3 text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded px-3 py-2">
@@ -217,6 +227,9 @@ export function LogAnalysisPage() {
 
           {/* Heatmaps + depth track */}
           <main className="overflow-auto bg-white border border-gray-200 rounded p-3">
+            <p className="text-[11px] text-gray-400 mb-2">
+              Hover for the point readout · drag a box on any track to zoom into that depth × pad range.
+            </p>
             <div className="flex gap-4 items-start">
               <DepthTrack model={model} zoomY={zoomY} />
               {MODES.filter((m) => show[m.id]).map((m) => (
@@ -231,6 +244,7 @@ export function LogAnalysisPage() {
                     zoomX={zoomX}
                     zoomY={zoomY}
                     onInspect={setInspect}
+                    onSelectRegion={setZoomRegion}
                     className="border border-gray-300"
                   />
                   <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />
@@ -470,6 +484,65 @@ function Stepper({ value, min, max, onChange }: { value: number; min: number; ma
       <button onClick={() => onChange(Math.max(min, value - 1))} className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200">−</button>
       <span className="w-8 text-center tabular-nums">{value}×</span>
       <button onClick={() => onChange(Math.min(max, value + 1))} className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200">+</button>
+    </div>
+  );
+}
+
+/**
+ * Zoom window (Unit13) — shows the rubber-band-selected depth × pad-button
+ * range from the main heatmaps, enlarged. A zoom stepper scales it further;
+ * the depth range of the selection is shown in the header.
+ */
+function ZoomModal({
+  model, region, displayPads, show, onClose,
+}: {
+  model: EivModel;
+  region: EivRegion;
+  displayPads: number[];
+  show: Record<EivImageMode, boolean>;
+  onClose: () => void;
+}) {
+  const [zx, setZx] = useState(6);
+  const [zy, setZy] = useState(3);
+  const modes = MODES.filter((m) => show[m.id]);
+  const dTop = model.depths[region.y0]?.toFixed(2);
+  const dBot = model.depths[Math.min(model.depthCount - 1, region.y1 - 1)]?.toFixed(2);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl max-w-[95vw] max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between gap-4">
+          <h3 className="text-sm font-semibold text-gray-900">
+            Zoom — depth {dTop} … {dBot}
+          </h3>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1">X
+              <Stepper value={zx} min={1} max={30} onChange={setZx} />
+            </span>
+            <span className="flex items-center gap-1">Y
+              <Stepper value={zy} min={1} max={30} onChange={setZy} />
+            </span>
+            <button onClick={onClose} className="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200">Close</button>
+          </div>
+        </div>
+        <div className="p-3 overflow-auto">
+          <div className="flex gap-4 items-start">
+            {modes.map((m) => (
+              <div key={m.id} className="shrink-0">
+                <div className="text-xs font-medium text-gray-700 mb-1 text-center">{m.label}</div>
+                <EivHeatmap
+                  model={model}
+                  mode={m.id}
+                  displayPads={displayPads}
+                  region={region}
+                  zoomX={zx}
+                  zoomY={zy}
+                  className="border border-gray-300"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
