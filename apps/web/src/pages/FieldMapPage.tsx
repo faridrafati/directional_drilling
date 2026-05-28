@@ -4,7 +4,7 @@
  *
  * Replaces the map-related forms (Form21, Form22, Form23, Form28, Form30).
  */
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client.js";
@@ -61,6 +61,7 @@ type ViewTab = "map" | "cross" | "3d";
 export function FieldMapPage() {
   const { id: fieldId } = useParams<{ id: string }>();
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const grids = useQuery({
     queryKey: ["grids", fieldId],
@@ -171,30 +172,52 @@ export function FieldMapPage() {
     enabled: !!fieldId,
   });
 
-  // Flatten wells + their station paths into the MapViewer2D `WellOverlay` shape.
-  // We pick the first calculation per well; for multi-calc wells this is a
-  // reasonable default (the original behaved the same — it iterated over SE tables).
+  // Flatten wells + ALL their calculations' station paths into the
+  // MapViewer2D `WellOverlay` shape. Each calculation becomes one typed
+  // trajectory so the planned Well Design and the actual Survey overlay
+  // on the same map, distinguished by colour (blue = design, amber = survey).
   const wellOverlays: WellOverlay[] = useMemo(() => {
     return (wells.data ?? [])
       .filter((w) => w.ew !== null && w.ns !== null)
       .map((w) => {
-        const calc = w.calculations[0];
         // Station ns/ew are LOCAL to the wellhead (computed by the dispatcher);
         // we add the wellhead's world position to get absolute coords. TVD is
         // already measured from the wellhead, so we pass it through unchanged.
-        const path = calc?.stations.map((s) => ({
-          ew: (w.ew ?? 0) + s.ew,
-          ns: (w.ns ?? 0) + s.ns,
-          tvd: s.tvd,
-        }));
+        const paths = w.calculations
+          .filter((c) => c.stations.length > 1)
+          .map((c) => ({
+            calcId: c.id,
+            calcName: c.name,
+            type: c.type,
+            points: c.stations.map((s) => ({
+              ew: (w.ew ?? 0) + s.ew,
+              ns: (w.ns ?? 0) + s.ns,
+              tvd: s.tvd,
+            })),
+          }));
         return {
           id: w.id, name: w.name,
           ns: w.ns!, ew: w.ew!,
           msl: w.msl ?? undefined,
-          path,
+          paths,
         };
       });
   }, [wells.data]);
+
+  // When the user clicks a well marker on the map (display mode), decide
+  // where to navigate. Zero calcs → no-op; one → straight to it; many →
+  // pop a small chooser so they pick design vs survey.
+  const [wellChooser, setWellChooser] = useState<WellWithPaths | null>(null);
+  const handleWellClick = (wellId: string) => {
+    const w = wells.data?.find((x) => x.id === wellId);
+    if (!w) return;
+    if (w.calculations.length === 1) {
+      navigate(`/calculations/${w.calculations[0].id}`);
+    } else if (w.calculations.length > 1) {
+      setWellChooser(w);
+    }
+    // 0 calcs: nothing to open.
+  };
 
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadMut = useMutation({
@@ -326,6 +349,19 @@ export function FieldMapPage() {
                 />
                 Show wells ({wellOverlays.length})
               </label>
+              {showWells && (
+                <div className="mt-2 pl-6 space-y-1 text-xs text-gray-500">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-4 h-0.5 bg-blue-700" /> Well Design
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-4 h-0.5 bg-amber-500" /> Survey
+                  </div>
+                  <div className="text-[11px] text-gray-400 italic">
+                    Click a well marker to open its calculation.
+                  </div>
+                </div>
+              )}
               {view === "3d" && (
                 <label className="flex items-center gap-2 mt-2">
                   <input
@@ -559,6 +595,7 @@ export function FieldMapPage() {
                       setClipPolygonVerts(verts);
                       setMapTool("none");
                     }}
+                    onWellClick={mapTool === "none" && !crossPickMode ? handleWellClick : undefined}
                   />
                 )}
 
@@ -586,6 +623,54 @@ export function FieldMapPage() {
           )}
         </main>
       </div>
+
+      {/* Well chooser: opens when a clicked well has more than one
+          calculation, so the user picks which Design / Survey to open. */}
+      {wellChooser && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => setWellChooser(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl p-5 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold mb-1">{wellChooser.name}</h3>
+            <p className="text-xs text-gray-500 mb-3">
+              This well has {wellChooser.calculations.length} calculations. Open which one?
+            </p>
+            <ul className="space-y-1.5">
+              {wellChooser.calculations.map((c) => (
+                <li key={c.id}>
+                  <button
+                    onClick={() => { setWellChooser(null); navigate(`/calculations/${c.id}`); }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100"
+                  >
+                    <span
+                      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                        c.type === "WellDesign"
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {c.type === "WellDesign" ? "Design" : "Survey"}
+                    </span>
+                    <span className="text-sm text-gray-800 truncate">{c.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setWellChooser(null)}
+                className="px-3 py-1.5 text-sm rounded bg-gray-200 hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Place-well modal: opens when the user clicks the map in "place-well"
           mode. Lets them name the well before POSTing /wells. */}

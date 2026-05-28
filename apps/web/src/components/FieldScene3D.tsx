@@ -24,7 +24,7 @@ import * as THREE from "three";
 import { gridFromBytes, type GrdFile } from "@dd/grd";
 import { sample, type Ramp } from "@dd/grd/colorramp";
 import { extractContours, suggestLevels } from "@dd/grd/contour";
-import type { GridApiResponse, WellOverlay } from "./MapViewer2D.js";
+import { wellPathColor, type GridApiResponse, type WellOverlay } from "./MapViewer2D.js";
 
 interface Props {
   grid: GridApiResponse;
@@ -267,47 +267,56 @@ function WellPipe({
     [well, wellheadMsl, transform]
   );
 
-  // Build the full curved trajectory by mapping each station's (ew, ns, tvd)
-  // through toScene. This is the fix — previously every station was projected
-  // onto the formation surface, collapsing the path to a flat 2D ribbon.
-  const tube = useMemo(() => {
-    if (!well.path || well.path.length < 2) return null;
-    const pts = well.path.map((p) =>
-      toScene(p.ew, p.ns, wellheadMsl + p.tvd, transform)
-    );
-    const curve = new THREE.CatmullRomCurve3(pts, false, "catmullrom", 0.05);
-    // Tube radius scales with the scene's horizontal span so it stays visible
-    // on both small 1 km grids and large 30 km fields.
-    const radius = transform.sceneSpan * 0.004;
-    return new THREE.TubeGeometry(curve, Math.max(64, pts.length * 4), radius, 8, false);
-  }, [well.path, wellheadMsl, transform]);
+  // Normalize to a list of typed trajectories — one per calculation. Falls
+  // back to the legacy single `path` for callers that haven't migrated.
+  const trajectories = useMemo(() => {
+    if (well.paths && well.paths.length > 0) return well.paths;
+    if (well.path && well.path.length > 1) {
+      return [{ calcId: "", calcName: "", type: "WellDesign", points: well.path }];
+    }
+    return [];
+  }, [well.paths, well.path]);
 
-  // Target marker at the deepest station.
-  const targetPos = useMemo(() => {
-    if (!well.path || well.path.length === 0) return null;
-    const last = well.path[well.path.length - 1];
-    return toScene(last.ew, last.ns, wellheadMsl + last.tvd, transform);
-  }, [well.path, wellheadMsl, transform]);
+  // Build one tube + target marker per trajectory. Each tube is coloured by
+  // its calculation type (Design = blue, Survey = amber) so the planned and
+  // actual bores are distinguishable in 3D.
+  const tubes = useMemo(() => {
+    const radius = transform.sceneSpan * 0.004;
+    return trajectories
+      .filter((t) => t.points.length >= 2)
+      .map((t) => {
+        const pts = t.points.map((p) =>
+          toScene(p.ew, p.ns, wellheadMsl + p.tvd, transform)
+        );
+        const curve = new THREE.CatmullRomCurve3(pts, false, "catmullrom", 0.05);
+        const geom = new THREE.TubeGeometry(
+          curve, Math.max(64, pts.length * 4), radius, 8, false,
+        );
+        const last = t.points[t.points.length - 1];
+        const target = toScene(last.ew, last.ns, wellheadMsl + last.tvd, transform);
+        return { geom, color: wellPathColor(t.type), target, key: t.calcId || t.type };
+      });
+  }, [trajectories, wellheadMsl, transform]);
 
   const markerR = transform.sceneSpan * 0.012;
 
   return (
     <>
-      {tube && (
-        <mesh geometry={tube}>
-          <meshStandardMaterial color="#0f172a" metalness={0.4} roughness={0.5} />
-        </mesh>
-      )}
+      {tubes.map((t) => (
+        <group key={t.key}>
+          <mesh geometry={t.geom}>
+            <meshStandardMaterial color={t.color} metalness={0.4} roughness={0.5} />
+          </mesh>
+          <mesh position={t.target}>
+            <sphereGeometry args={[markerR * 1.1, 16, 16]} />
+            <meshStandardMaterial color={t.color} />
+          </mesh>
+        </group>
+      ))}
       <mesh position={wellheadPos}>
         <sphereGeometry args={[markerR, 16, 16]} />
         <meshStandardMaterial color="#facc15" />
       </mesh>
-      {targetPos && (
-        <mesh position={targetPos}>
-          <sphereGeometry args={[markerR * 1.2, 16, 16]} />
-          <meshStandardMaterial color="#dc2626" />
-        </mesh>
-      )}
       <BillboardLabel
         position={[wellheadPos.x, wellheadPos.y + markerR * 3, wellheadPos.z]}
         text={well.name}

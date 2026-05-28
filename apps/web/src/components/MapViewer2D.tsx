@@ -31,6 +31,14 @@ export interface GridApiResponse {
   data: string; // base64 Float32Array
 }
 
+export interface WellTrajectory {
+  calcId: string;
+  calcName: string;
+  /** "WellDesign" | "SurveyEditor" — drives the path colour. */
+  type: string;
+  points: Array<{ ns: number; ew: number; tvd: number }>;
+}
+
 export interface WellOverlay {
   id: string;
   name: string;
@@ -39,9 +47,19 @@ export interface WellOverlay {
   ew: number;
   /** Mean sea level / Kelly bushing depth (positive downward from reference). */
   msl?: number;
-  /** Optional trajectory points in world coords. `tvd` is measured from the
-   *  wellhead, positive downward, matching the survey-station convention. */
+  /** Legacy single trajectory in world coords. Still honoured for callers
+   *  that only have one path; new code should use `paths`. */
   path?: Array<{ ns: number; ew: number; tvd: number }>;
+  /** All trajectories for this well — one per calculation (Well Design +
+   *  Survey). Each renders in a type-specific colour so the planned design
+   *  and the actual survey overlay on the same map. */
+  paths?: WellTrajectory[];
+}
+
+/** Path colour by calculation type — shared by the 2D map + 3D scene so the
+ *  two views stay visually consistent. Design = blue, Survey = amber. */
+export function wellPathColor(type: string): string {
+  return type === "SurveyEditor" ? "#f59e0b" : "#1e40af";
 }
 
 /**
@@ -74,6 +92,9 @@ interface Props {
   onPlaceWell?: (ns: number, ew: number) => void;
   /** Fired when the user finishes a polygon (≥3 vertices) while `tool === "polygon-clip"`. */
   onPolygonClip?: (vertices: Array<{ ns: number; ew: number }>) => void;
+  /** Fired when the user clicks ON a well's surface marker while `tool === "none"`.
+   *  Used to navigate from the map into that well's calculation(s). */
+  onWellClick?: (wellId: string) => void;
 }
 
 const MAX_PIXEL_WIDTH = 900;
@@ -90,6 +111,7 @@ export function MapViewer2D({
   onMapClick,
   onPlaceWell,
   onPolygonClip,
+  onWellClick,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -206,17 +228,27 @@ export function MapViewer2D({
       ctx.font = "11px sans-serif";
       for (const well of wells) {
         const [wx, wy] = worldToPx(well.ew, well.ns);
-        // Path (if any)
-        if (well.path && well.path.length > 1) {
-          ctx.strokeStyle = "rgba(15, 64, 175, 0.9)";
-          ctx.lineWidth = 1.5;
+        // Trajectories — one per calculation, coloured by type so the
+        // planned Well Design and the actual Survey overlay distinctly.
+        // Falls back to the legacy single `path` (blue) when `paths` is unset.
+        const trajectories = well.paths && well.paths.length > 0
+          ? well.paths
+          : well.path && well.path.length > 1
+            ? [{ calcId: "", calcName: "", type: "WellDesign", points: well.path }]
+            : [];
+        for (const traj of trajectories) {
+          if (traj.points.length < 2) continue;
+          ctx.strokeStyle = wellPathColor(traj.type);
+          ctx.globalAlpha = 0.9;
+          ctx.lineWidth = 1.8;
           ctx.beginPath();
-          for (let i = 0; i < well.path.length; i++) {
-            const [pxh, pyh] = worldToPx(well.path[i].ew, well.path[i].ns);
+          for (let i = 0; i < traj.points.length; i++) {
+            const [pxh, pyh] = worldToPx(traj.points[i].ew, traj.points[i].ns);
             if (i === 0) ctx.moveTo(pxh, pyh);
             else ctx.lineTo(pxh, pyh);
           }
           ctx.stroke();
+          ctx.globalAlpha = 1;
         }
         // Surface triangle marker (Pascal pt/pt2 polygon, simplified).
         ctx.fillStyle = "rgba(220, 38, 38, 0.95)";
@@ -280,10 +312,19 @@ export function MapViewer2D({
     }
   }, [grid, showContours, contourLevels, api.valueMin, api.valueMax, w, h, wells, showWells, crossLine, tool, polygon]);
 
+  // True when the cursor is over a clickable well marker (display mode) so
+  // we can switch the cursor to a pointer as an affordance.
+  const [overWell, setOverWell] = useState(false);
+
   function onMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
+    if (tool === "none" && onWellClick) {
+      setOverWell(wellHitTest(px, py) !== null);
+    } else if (overWell) {
+      setOverWell(false);
+    }
     const col = Math.floor((px / w) * grid.ncol);
     const row = Math.floor((py / h) * grid.nrow);
     if (col < 0 || col >= grid.ncol || row < 0 || row >= grid.nrow) {
@@ -292,6 +333,20 @@ export function MapViewer2D({
     }
     const v = grid.data[col * grid.nrow + row];
     setHover({ col, row, v: v === grid.errorValue ? NaN : v });
+  }
+
+  /** Distance² from a screen point to a well's surface marker, in px². */
+  function wellHitTest(px: number, py: number): WellOverlay | null {
+    if (!wells || !showWells) return null;
+    const R2 = 12 * 12; // 12-px grab radius around the pin
+    let best: WellOverlay | null = null;
+    let bestD = R2;
+    for (const well of wells) {
+      const [wx, wy] = worldToPx(well.ew, well.ns);
+      const d = (px - wx) ** 2 + (py - wy) ** 2;
+      if (d <= bestD) { bestD = d; best = well; }
+    }
+    return best;
   }
 
   function onClick(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -308,6 +363,11 @@ export function MapViewer2D({
       // Add another vertex; UI shows the polygon outline live.
       setPolygon((prev) => [...prev, { ns: worldY, ew: worldX }]);
       return;
+    }
+    // Display mode: clicking a well marker navigates into its calculation(s).
+    if (tool === "none" && onWellClick) {
+      const hit = wellHitTest(px, py);
+      if (hit) { onWellClick(hit.id); return; }
     }
     // Default: cross-section style point pick.
     onMapClick?.(worldX, worldY);
@@ -330,7 +390,7 @@ export function MapViewer2D({
     setPolygon([]);
   }
 
-  const cursor = tool === "none" ? "default" : "crosshair";
+  const cursor = overWell ? "pointer" : tool === "none" ? "default" : "crosshair";
 
   return (
     <div className="flex gap-4">

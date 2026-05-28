@@ -388,10 +388,24 @@ export function CalculationPage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
-      <div className="mb-3">
+      <div className="mb-3 flex items-center gap-4">
         <Link to="/projects" className="text-sm text-blue-600 hover:underline">
           ← All projects
         </Link>
+        {data.well?.field?.id && (
+          <Link
+            to={`/fields/${data.well.field.id}/maps`}
+            className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1"
+            title="Open this well's field map (the trajectory is overlaid on the grid)"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+              <line x1="8" y1="2" x2="8" y2="18" />
+              <line x1="16" y1="6" x2="16" y2="22" />
+            </svg>
+            View on field map
+          </Link>
+        )}
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
