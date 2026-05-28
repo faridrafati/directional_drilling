@@ -8,6 +8,7 @@ import { NumberCell, TextCell } from "../components/EditableCell.js";
 import { type EditableKey } from "../components/editPolicy.js";
 import { profileRoles, isEditableForRole } from "../components/profileRoles.js";
 import { StationDetailsPanel, type StationDetails } from "../components/StationDetailsPanel.js";
+import { InterpolatePanel } from "../components/InterpolatePanel.js";
 import { useHistoryState, useUndoRedoHotkeys } from "../hooks/useHistoryState.js";
 import { useRecentCalculations } from "../hooks/useRecent.js";
 
@@ -172,6 +173,9 @@ export function CalculationPage() {
   // three choices — Download PDF / Download Excel / Print Current View —
   // so the user picks one place no matter which tab they're on.
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  // "Find point between stations" interpolation tool, toggled by the Search
+  // button at the top of the Grid tab.
+  const [findOpen, setFindOpen] = useState(false);
   const triggerCalculate = () => {
     setAzmModalDismissed(false);
     calculateMut.mutate();
@@ -591,6 +595,32 @@ export function CalculationPage() {
 
       {tab === "grid" && (
         <>
+          {/* Search / interpolation tool — find parameters at a point between
+              calculated stations by a known MD / TVD / EW / DLS / … value. */}
+          {stations.length > 0 && (
+            <div className="mb-4">
+              {findOpen ? (
+                <InterpolatePanel
+                  stations={stations}
+                  lengthUnit={lengthUnit}
+                  projectVsec={projectVsecAt}
+                  onClose={() => setFindOpen(false)}
+                />
+              ) : (
+                <button
+                  onClick={() => setFindOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+                  title="Interpolate the other parameters at a known MD / TVD / EW / DLS / … value between calculated stations"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="7" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  Find point between stations
+                </button>
+              )}
+            </div>
+          )}
           <SegmentGrid
             segments={segments}
             keypoints={data?.keypoints ?? []}
