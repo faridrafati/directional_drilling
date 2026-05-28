@@ -557,22 +557,27 @@ function niceStep(range: number, targetMajorCount = 6): number {
  * coarse). The two-density grid mirrors what's on technical drafting
  * paper (and what Pascal MIXED.exe's TeeChart used by default).
  */
-function EngineeringGrid({
-  gridX, gridY,
-}: {
-  gridX: [number, number];
-  gridY: [number, number];
-}) {
-  // Recharts maps `horizontalValues` (Y data values → horizontal lines) and
-  // `verticalValues` (X data values → vertical lines) through its OWN axis
-  // scale internally, so we just hand it the nice tick values. This is far
-  // more robust than computing pixel positions ourselves (the old custom-
-  // generator path silently failed because the axis domain isn't where we
-  // expected it on the axis object).
-  const majorX = useMemo(() => gridTickValues(gridX[0], gridX[1], false), [gridX]);
-  const minorX = useMemo(() => gridTickValues(gridX[0], gridX[1], true), [gridX]);
-  const majorY = useMemo(() => gridTickValues(gridY[0], gridY[1], false), [gridY]);
-  const minorY = useMemo(() => gridTickValues(gridY[0], gridY[1], true), [gridY]);
+/**
+ * Returns the major + minor <CartesianGrid> elements as a Fragment.
+ *
+ * IMPORTANT: this is a plain FUNCTION, invoked as `{engineeringGrid(...)}`
+ * directly inside <LineChart> — NOT a `<Component/>`. Recharts locates its
+ * sub-elements (CartesianGrid, XAxis, Line, …) by scanning the chart's
+ * children and matching `type.displayName`. Its scanner flattens Fragments
+ * but does NOT recurse into custom components, so a `<EngineeringGrid/>`
+ * wrapper hides the grids from Recharts entirely (which is why earlier
+ * attempts drew nothing). Returning a Fragment from a function call keeps
+ * the CartesianGrids as direct, discoverable children.
+ *
+ * Recharts maps `horizontalValues` (Y data values → horizontal lines) and
+ * `verticalValues` (X data values → vertical lines) through its own axis
+ * scale, so we only supply the nice tick values.
+ */
+function engineeringGrid(gridX: [number, number], gridY: [number, number]) {
+  const majorX = gridTickValues(gridX[0], gridX[1], false);
+  const minorX = gridTickValues(gridX[0], gridX[1], true);
+  const majorY = gridTickValues(gridY[0], gridY[1], false);
+  const minorY = gridTickValues(gridY[0], gridY[1], true);
   return (
     <>
       {/* Minor — fine, solid, very light (drawn first, under the majors). */}
@@ -987,7 +992,7 @@ export function VerticalSectionChart({
           }}
           onMouseLeave={() => setHoverIdx(null)}
         >
-          <EngineeringGrid gridX={zoom.effX} gridY={zoom.effY} />
+          {engineeringGrid(zoom.effX, zoom.effY)}
           <XAxis
             dataKey="vsec" type="number" stroke="#475569" fontSize={12}
             domain={zoom.xDomain ?? ["auto", "auto"]}
@@ -1150,7 +1155,7 @@ export function PlanViewChart({
           }}
           onMouseLeave={() => setHoverIdx(null)}
         >
-          <EngineeringGrid gridX={planZoom.effX} gridY={planZoom.effY} />
+          {engineeringGrid(planZoom.effX, planZoom.effY)}
           <XAxis
             dataKey="ew" type="number" stroke="#475569" fontSize={12}
             domain={planZoom.xDomain ?? ["auto", "auto"]}
