@@ -13,6 +13,11 @@ const CalculationPage = lazy(() =>
 const FieldMapPage = lazy(() =>
   import("./pages/FieldMapPage.js").then((m) => ({ default: m.FieldMapPage }))
 );
+// EIV EMI-log analyzer (LAS heatmaps). Parses 4–38 MB files client-side, so
+// it's lazy-split to keep it out of the initial bundle.
+const LogAnalysisPage = lazy(() =>
+  import("./pages/LogAnalysisPage.js").then((m) => ({ default: m.LogAnalysisPage }))
+);
 
 export function App() {
   return (
@@ -24,6 +29,8 @@ export function App() {
           <Route path="/projects/:id" element={<ProjectDetailPage />} />
           <Route path="/calculations/:id" element={<CalculationPage />} />
           <Route path="/fields/:id/maps" element={<FieldMapPage />} />
+          {/* EIV EMI-log analyzer — standalone (no id) or per-well (?well=id). */}
+          <Route path="/logs" element={<LogAnalysisPage />} />
           <Route
             path="/3d/:id"
             element={<PlaceholderPage title="3D Field Visualization" phase="Phase 5" />}

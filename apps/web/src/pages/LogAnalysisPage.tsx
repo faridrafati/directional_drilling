@@ -1,0 +1,435 @@
+/**
+ * EIV — "Analyzing EMI Logs" page. Port of old_eiv_code/Source/Unit3.pas
+ * (TForm1) main view, plus the Data Options (Unit2), pad-order (Unit8/21),
+ * zoom (Unit13/14/16), point-inspect (Unit18) and export (Unit19) behaviour.
+ *
+ * Everything runs client-side: the user picks a .las file, we parse + build
+ * the mat[row][button][pad] model in the browser, then render the three
+ * depth × circumference heatmaps (Raw / Corrected / Leveled) on canvases.
+ */
+import { useRef, useState } from "react";
+import {
+  parseLas, buildModel, defaultParams,
+  type EivModel, type EivParams, type EivImageMode,
+} from "@dd/shared/las";
+import { EivHeatmap, type EivInspect } from "../components/eiv/EivHeatmap.js";
+
+const MODES: { id: EivImageMode; label: string; hint: string }[] = [
+  { id: "raw", label: "Raw", hint: "Linear min→max per pad" },
+  { id: "corrected", label: "Corrected", hint: "Extremes clipped to the error percentile" },
+  { id: "leveled", label: "Leveled", hint: "Histogram-equalised colour bands" },
+];
+
+export function LogAnalysisPage() {
+  const [las, setLas] = useState<ReturnType<typeof parseLas> | null>(null);
+  const [params, setParams] = useState<EivParams | null>(null);
+  const [model, setModel] = useState<EivModel | null>(null);
+  const [status, setStatus] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+
+  // Which heatmaps are shown (CheckBox1/2/3 in Unit3).
+  const [show, setShow] = useState<Record<EivImageMode, boolean>>({
+    raw: true, corrected: true, leveled: true,
+  });
+  const [zoomX, setZoomX] = useState(3);
+  const [zoomY, setZoomY] = useState(1);
+  const [inspect, setInspect] = useState<EivInspect | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  // Pads currently displayed (defaults to params.padOrder).
+  const displayPads = params?.padOrder ?? [];
+
+  async function onFile(file: File) {
+    setBusy(true);
+    setStatus(`Reading ${file.name} (${(file.size / 1e6).toFixed(1)} MB)…`);
+    try {
+      const text = await file.text();
+      setStatus("Parsing LAS…");
+      const parsed = parseLas(text, file.name);
+      if (parsed.padCount === 0 || parsed.buttonsPerPad === 0) {
+        setStatus("No PADn[m] curves found — is this an EMI multi-pad LAS?");
+        setLas(parsed); setParams(null); setModel(null);
+        setBusy(false);
+        return;
+      }
+      const p = defaultParams(parsed);
+      setLas(parsed);
+      setParams(p);
+      setStatus("Computing levels…");
+      // Defer the heavy compute so the status paints first.
+      await new Promise((r) => setTimeout(r, 0));
+      setModel(buildModel(parsed, p));
+      setStatus(
+        `${parsed.fileName}: ${parsed.padCount} pads × ${parsed.buttonsPerPad} buttons, ` +
+        `${parsed.data.length.toLocaleString()} samples.`,
+      );
+    } catch (e) {
+      setStatus(`Error: ${String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Re-run the pipeline after a parameter change (Unit3 Button1 "draw"). */
+  function recompute(next: EivParams) {
+    if (!las) return;
+    setParams(next);
+    setBusy(true);
+    setStatus("Recomputing…");
+    setTimeout(() => {
+      try {
+        setModel(buildModel(las, next));
+        setStatus("Done.");
+      } catch (e) {
+        setStatus(`Error: ${String(e)}`);
+      } finally {
+        setBusy(false);
+      }
+    }, 0);
+  }
+
+  return (
+    <div className="p-4 sm:p-6 max-w-[1500px] mx-auto">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">
+            EMI Log Analysis
+          </h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Multi-pad caliper/resistivity casing-inspection logs (LAS 2.0).
+            Port of the EIV tool.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".las,.txt"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }}
+          />
+          <button
+            onClick={() => fileInput.current?.click()}
+            disabled={busy}
+            className="px-4 h-10 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300"
+          >
+            {busy ? "Working…" : "Open .las file"}
+          </button>
+          {model && (
+            <button
+              onClick={() => exportComposite(model, show, displayPads, zoomX, zoomY)}
+              className="px-3 h-10 text-sm rounded-md bg-green-700 text-white hover:bg-green-800"
+            >
+              Export PNG
+            </button>
+          )}
+        </div>
+      </div>
+
+      {status && (
+        <div className="mb-3 text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded px-3 py-2">
+          {status}
+        </div>
+      )}
+
+      {!las && (
+        <div className="bg-white border-2 border-dashed border-gray-200 rounded-lg p-12 text-center">
+          <div className="text-4xl mb-2">📊</div>
+          <h3 className="text-base font-medium text-gray-900 mb-1">Open an EMI log</h3>
+          <p className="text-sm text-gray-500 max-w-md mx-auto">
+            Choose a multi-pad <code>.las</code> file (curves named PAD1[0], PAD1[1] …).
+            The trace renders entirely in your browser — nothing is uploaded.
+          </p>
+        </div>
+      )}
+
+      {model && params && (
+        <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-4">
+          {/* Controls (Data Options / pad order / zoom) */}
+          <aside className="space-y-3">
+            <DataOptions params={params} onApply={recompute} busy={busy} />
+            <PadSelector
+              padCount={model.las.padCount}
+              order={params.padOrder}
+              onChange={(order) => setParams({ ...params, padOrder: order })}
+            />
+            <div className="bg-white border border-gray-200 rounded p-3 text-sm space-y-2">
+              <h3 className="font-medium">Display</h3>
+              {MODES.map((m) => (
+                <label key={m.id} className="flex items-center gap-2" title={m.hint}>
+                  <input
+                    type="checkbox"
+                    checked={show[m.id]}
+                    onChange={(e) => setShow({ ...show, [m.id]: e.target.checked })}
+                  />
+                  {m.label}
+                </label>
+              ))}
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-gray-500 w-14">Zoom X</span>
+                <Stepper value={zoomX} min={1} max={20} onChange={setZoomX} />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500 w-14">Zoom Y</span>
+                <Stepper value={zoomY} min={1} max={20} onChange={setZoomY} />
+              </div>
+            </div>
+            <ColorLegend />
+            {inspect && <InspectPanel info={inspect} />}
+          </aside>
+
+          {/* Heatmaps + depth track */}
+          <main className="overflow-auto bg-white border border-gray-200 rounded p-3">
+            <div className="flex gap-4 items-start">
+              <DepthTrack model={model} zoomY={zoomY} />
+              {MODES.filter((m) => show[m.id]).map((m) => (
+                <div key={m.id} className="shrink-0">
+                  <div className="text-xs font-medium text-gray-700 mb-1 text-center">
+                    {m.label}
+                  </div>
+                  <EivHeatmap
+                    model={model}
+                    mode={m.id}
+                    displayPads={displayPads}
+                    zoomX={zoomX}
+                    zoomY={zoomY}
+                    onInspect={setInspect}
+                    className="border border-gray-300"
+                  />
+                  <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />
+                </div>
+              ))}
+            </div>
+          </main>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Data Options dialog (Unit2/Form6) — inline panel; Apply re-runs draw. */
+function DataOptions({
+  params, onApply, busy,
+}: { params: EivParams; onApply: (p: EivParams) => void; busy: boolean }) {
+  const [draft, setDraft] = useState(params);
+  // Keep draft in sync when params change externally (e.g. pad order).
+  const dirty = JSON.stringify(draft) !== JSON.stringify(params);
+  return (
+    <div className="bg-white border border-gray-200 rounded p-3 text-sm space-y-2">
+      <h3 className="font-medium">Data options</h3>
+      <NumField label="Colour sections" value={draft.colorSections}
+        onChange={(v) => setDraft({ ...draft, colorSections: v })} min={2} max={50} />
+      <NumField label="Error %" value={draft.errorPercent} step={0.1}
+        onChange={(v) => setDraft({ ...draft, errorPercent: v })} min={0} max={50} />
+      <NumField label="Rows / pixel" value={draft.rowsPerPixel}
+        onChange={(v) => setDraft({ ...draft, rowsPerPixel: v })} min={1} max={500} />
+      <NumField label="Histogram bins" value={draft.histogramBins}
+        onChange={(v) => setDraft({ ...draft, histogramBins: v })} min={2} max={500} />
+      <button
+        onClick={() => onApply(draft)}
+        disabled={busy || (!dirty && JSON.stringify(draft) === JSON.stringify(params))}
+        className="w-full px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300"
+      >
+        Apply &amp; redraw
+      </button>
+    </div>
+  );
+}
+
+/** Pad order / selection (Unit8 + Unit21). */
+function PadSelector({
+  padCount, order, onChange,
+}: { padCount: number; order: number[]; onChange: (o: number[]) => void }) {
+  const all = Array.from({ length: padCount }, (_, i) => i + 1);
+  const toggle = (pad: number) => {
+    onChange(order.includes(pad) ? order.filter((p) => p !== pad) : [...order, pad]);
+  };
+  return (
+    <div className="bg-white border border-gray-200 rounded p-3 text-sm">
+      <h3 className="font-medium mb-2">Pads ({order.length}/{padCount})</h3>
+      <div className="flex flex-wrap gap-1">
+        {all.map((pad) => {
+          const pos = order.indexOf(pad);
+          const on = pos >= 0;
+          return (
+            <button
+              key={pad}
+              onClick={() => toggle(pad)}
+              className={`w-8 h-8 rounded text-xs font-medium border ${
+                on ? "bg-blue-600 text-white border-blue-600" : "bg-gray-50 text-gray-500 border-gray-200"
+              }`}
+              title={on ? `Pad ${pad} (position ${pos + 1})` : `Pad ${pad} (hidden)`}
+            >
+              {pad}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex gap-1 mt-2">
+        <button onClick={() => onChange(all)} className="text-xs text-blue-600 hover:underline">All</button>
+        <span className="text-gray-300">·</span>
+        <button onClick={() => onChange([...all].reverse())} className="text-xs text-blue-600 hover:underline">Reverse</button>
+      </div>
+    </div>
+  );
+}
+
+function DepthTrack({ model, zoomY }: { model: EivModel; zoomY: number }) {
+  const n = model.depthCount;
+  const ticks = 12;
+  const rows = Array.from({ length: ticks + 1 }, (_, i) => Math.min(n - 1, Math.round((i / ticks) * (n - 1))));
+  return (
+    <div className="shrink-0 text-right" style={{ width: 70 }}>
+      <div className="text-xs font-medium text-gray-700 mb-1">Depth</div>
+      <div className="relative border-r border-gray-300" style={{ height: n * zoomY }}>
+        {rows.map((r) => (
+          <div
+            key={r}
+            className="absolute right-1 text-[10px] text-gray-500 -translate-y-1/2 whitespace-nowrap"
+            style={{ top: r * zoomY }}
+          >
+            {model.depths[r]?.toFixed(1)} —
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Pad number axis below a heatmap. */
+function PadAxis({ displayPads, buttons, zoomX }: { displayPads: number[]; buttons: number; zoomX: number }) {
+  return (
+    <div className="flex" style={{ width: buttons * displayPads.length * zoomX }}>
+      {displayPads.map((pad) => (
+        <div
+          key={pad}
+          className="text-[10px] text-gray-500 text-center border-r border-gray-200"
+          style={{ width: buttons * zoomX }}
+        >
+          {pad}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ColorLegend() {
+  // Mirror the white→yellow→red→black ramp.
+  const grad = "linear-gradient(to right, rgb(255,255,255), rgb(255,255,0), rgb(255,0,0), rgb(0,0,0))";
+  return (
+    <div className="bg-white border border-gray-200 rounded p-3 text-xs">
+      <h3 className="font-medium mb-1 text-sm">Colour scale</h3>
+      <div className="h-3 rounded" style={{ background: grad }} />
+      <div className="flex justify-between text-gray-500 mt-0.5">
+        <span>Low</span><span>High</span>
+      </div>
+      <div className="flex items-center gap-1.5 mt-1.5 text-gray-500">
+        <span className="inline-block w-3 h-3 rounded-sm" style={{ background: "rgb(0,0,255)" }} />
+        NULL / no reading
+      </div>
+    </div>
+  );
+}
+
+function InspectPanel({ info }: { info: EivInspect }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded p-3 text-xs space-y-0.5">
+      <h3 className="font-medium text-sm mb-1">Point</h3>
+      <Row k="Depth" v={info.depth.toFixed(2)} />
+      <Row k="Pad" v={String(info.pad)} />
+      <Row k="Button" v={String(info.button)} />
+      <Row k="Value" v={Number.isFinite(info.value) ? info.value.toFixed(3) : "—"} />
+    </div>
+  );
+}
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-gray-500">{k}</span>
+      <span className="font-medium text-gray-800 tabular-nums">{v}</span>
+    </div>
+  );
+}
+
+function NumField({
+  label, value, onChange, min, max, step = 1,
+}: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) {
+  return (
+    <label className="flex items-center justify-between gap-2">
+      <span className="text-gray-500">{label}</span>
+      <input
+        type="number"
+        value={value}
+        min={min} max={max} step={step}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-20 border border-gray-300 rounded px-2 py-1 text-right"
+      />
+    </label>
+  );
+}
+
+function Stepper({ value, min, max, onChange }: { value: number; min: number; max: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      <button onClick={() => onChange(Math.max(min, value - 1))} className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200">−</button>
+      <span className="w-8 text-center tabular-nums">{value}×</span>
+      <button onClick={() => onChange(Math.min(max, value + 1))} className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200">+</button>
+    </div>
+  );
+}
+
+/**
+ * Export the visible heatmaps side-by-side into one PNG (Unit19). Re-renders
+ * each enabled mode to an offscreen canvas and composites them with a small
+ * gap, then triggers a download.
+ */
+async function exportComposite(
+  model: EivModel,
+  show: Record<EivImageMode, boolean>,
+  displayPads: number[],
+  zoomX: number, zoomY: number,
+) {
+  const { matAt, pointForValue, colorForPoint } = await import("@dd/shared/las");
+  const buttons = model.las.buttonsPerPad;
+  const w = buttons * displayPads.length;
+  const h = model.depthCount;
+  const modes = (["raw", "corrected", "leveled"] as EivImageMode[]).filter((m) => show[m]);
+  const gap = 8;
+  const out = document.createElement("canvas");
+  out.width = modes.length * w + (modes.length - 1) * gap;
+  out.height = h;
+  const octx = out.getContext("2d");
+  if (!octx) return;
+  octx.fillStyle = "#fff";
+  octx.fillRect(0, 0, out.width, out.height);
+
+  modes.forEach((mode, mi) => {
+    const img = octx.createImageData(w, h);
+    for (let p = 0; p < displayPads.length; p++) {
+      const pad = displayPads[p];
+      const stats = model.pads[pad];
+      if (!stats) continue;
+      for (let row = 0; row < h; row++) {
+        for (let b = 0; b < buttons; b++) {
+          const point = pointForValue(matAt(model, row, b, pad), mode, stats, model.params.nullValue);
+          const [r, g, bl] = colorForPoint(point);
+          const x = p * buttons + b;
+          const idx = (row * w + x) * 4;
+          img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = bl; img.data[idx + 3] = 255;
+        }
+      }
+    }
+    // Blit via a temp canvas so we can place at the right offset.
+    const tmp = document.createElement("canvas");
+    tmp.width = w; tmp.height = h;
+    tmp.getContext("2d")!.putImageData(img, 0, 0);
+    octx.drawImage(tmp, mi * (w + gap), 0);
+  });
+
+  void zoomX; void zoomY; // export at native resolution
+  const url = out.toDataURL("image/png");
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(model.las.fileName ?? "emi-log").replace(/\.[^.]+$/, "")}_eiv.png`;
+  a.click();
+}

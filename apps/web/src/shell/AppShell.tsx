@@ -93,6 +93,7 @@ function Sidebar({
         </div>
 
         <Nav to="/projects" label="Projects" />
+        <Nav to="/logs" label="EMI Log Analysis" />
 
         <ProjectTree />
 
