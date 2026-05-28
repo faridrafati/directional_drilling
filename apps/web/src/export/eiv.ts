@@ -82,6 +82,115 @@ function renderModeCanvas(
   return canvas;
 }
 
+/**
+ * Render a complete, labelled figure: the visible heatmaps with a DEPTH axis
+ * on the left (deeper at the bottom), pad-number headers on top, per-mode
+ * titles, and a COLOUR-SCALE legend at the bottom. `rowStride` downsamples the
+ * depth axis for compact output (PDF); pass 1 for a full-resolution PNG.
+ */
+function renderFigure(
+  model: EivModel, modes: EivImageMode[], displayPads: number[], rowStride: number,
+): HTMLCanvasElement {
+  const buttons = model.las.buttonsPerPad;
+  const padW = buttons * displayPads.length;
+  const fullH = model.depthCount;
+  const imgH = Math.max(1, Math.ceil(fullH / rowStride));
+  const flip = isFlipped(model);
+  const depthUnit = model.las.curves[0]?.unit?.trim();
+
+  const mLeft = 70, mTop = 38, mBottom = 58, mRight = 14, gap = 16;
+  const W = mLeft + modes.length * padW + (modes.length - 1) * gap + mRight;
+  const H = mTop + imgH + mBottom;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, W, H);
+  ctx.imageSmoothingEnabled = false;
+
+  // Heatmaps + per-mode title + pad-number header.
+  modes.forEach((mode, mi) => {
+    const x = mLeft + mi * (padW + gap);
+    ctx.drawImage(renderModeCanvas(model, mode, displayPads, rowStride), x, mTop);
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, mTop + 0.5, padW, imgH);
+    ctx.fillStyle = "#374151";
+    ctx.font = "bold 12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(MODE_LABEL[mode], x + padW / 2, 10);
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "10px sans-serif";
+    displayPads.forEach((pad, p) => {
+      ctx.fillText(String(pad), x + p * buttons + buttons / 2, mTop - 9);
+    });
+  });
+
+  // Depth axis: header + major ticks/labels (deeper at the bottom).
+  ctx.fillStyle = "#374151";
+  ctx.font = "bold 12px sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillText(depthUnit ? `Depth (${depthUnit})` : "Depth", mLeft - 6, 10);
+  ctx.strokeStyle = "#9ca3af";
+  ctx.beginPath();
+  ctx.moveTo(mLeft - 0.5, mTop);
+  ctx.lineTo(mLeft - 0.5, mTop + imgH);
+  ctx.stroke();
+  ctx.fillStyle = "#6b7280";
+  ctx.font = "10px sans-serif";
+  const majorN = Math.max(2, Math.min(250, Math.round(imgH / 80)));
+  for (let i = 0; i <= majorN; i++) {
+    const sy = Math.round((i / majorN) * (imgH - 1));
+    const dataRow = Math.min(fullH - 1, Math.max(0, (flip ? imgH - 1 - sy : sy) * rowStride));
+    const depth = model.depths[dataRow];
+    const y = mTop + sy;
+    ctx.beginPath();
+    ctx.moveTo(mLeft - 6, y + 0.5);
+    ctx.lineTo(mLeft, y + 0.5);
+    ctx.stroke();
+    if (Number.isFinite(depth)) ctx.fillText(depth.toFixed(1), mLeft - 9, y);
+  }
+
+  // Colour-scale legend: white→yellow→red→black ramp + NULL swatch.
+  const legY = mTop + imgH + 20;
+  const legW = Math.min(220, Math.max(120, W - mLeft - mRight - 70));
+  const legH = 10;
+  const grad = ctx.createLinearGradient(mLeft, 0, mLeft + legW, 0);
+  grad.addColorStop(0, "rgb(255,255,255)");
+  grad.addColorStop(1 / 3, "rgb(255,255,0)");
+  grad.addColorStop(2 / 3, "rgb(255,0,0)");
+  grad.addColorStop(1, "rgb(0,0,0)");
+  ctx.fillStyle = "#6b7280";
+  ctx.font = "10px sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText("Colour: low → high (per-pad scaled)", mLeft, legY - 7);
+  ctx.fillStyle = grad;
+  ctx.fillRect(mLeft, legY, legW, legH);
+  ctx.strokeStyle = "#cbd5e1";
+  ctx.strokeRect(mLeft + 0.5, legY + 0.5, legW, legH);
+  ctx.fillStyle = "#6b7280";
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  ctx.fillText("Low", mLeft, legY + legH + 3);
+  ctx.textAlign = "right";
+  ctx.fillText("High", mLeft + legW, legY + legH + 3);
+  const nx = mLeft + legW + 18;
+  ctx.fillStyle = "rgb(0,0,255)";
+  ctx.fillRect(nx, legY, legH, legH);
+  ctx.strokeStyle = "#cbd5e1";
+  ctx.strokeRect(nx + 0.5, legY + 0.5, legH, legH);
+  ctx.fillStyle = "#6b7280";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.fillText("NULL", nx + legH + 4, legY + legH / 2);
+
+  return canvas;
+}
+
 /** Depth window [min,max] over valid output rows. */
 function depthRange(model: EivModel): { min: number; max: number } {
   let min = Infinity, max = -Infinity;
@@ -117,26 +226,12 @@ const fmt = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : "—");
 
 // ── PNG ─────────────────────────────────────────────────────────────────────
 
-/** Composite the visible heatmaps side-by-side into one PNG and download it. */
+/** Full-resolution labelled figure (heatmaps + depth axis + colour scale) → PNG. */
 export function exportEivPng(
   model: EivModel, show: Record<EivImageMode, boolean>, displayPads: number[],
 ): void {
-  const modes = visibleModes(show);
-  const buttons = model.las.buttonsPerPad;
-  const w = buttons * displayPads.length;
-  const h = model.depthCount;
-  const gap = 8;
-  const out = document.createElement("canvas");
-  out.width = modes.length * w + (modes.length - 1) * gap;
-  out.height = h;
-  const octx = out.getContext("2d");
-  if (!octx) return;
-  octx.fillStyle = "#fff";
-  octx.fillRect(0, 0, out.width, out.height);
-  modes.forEach((mode, mi) => {
-    octx.drawImage(renderModeCanvas(model, mode, displayPads), mi * (w + gap), 0);
-  });
-  downloadUrl(out.toDataURL("image/png"), `${baseName(model)}_eiv.png`);
+  const canvas = renderFigure(model, visibleModes(show), displayPads, 1);
+  downloadUrl(canvas.toDataURL("image/png"), `${baseName(model)}_eiv.png`);
 }
 
 // ── PDF ───────────────────────────────────────────────────────────────────--
@@ -159,15 +254,10 @@ export async function exportEivPdf(
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   const modes = visibleModes(show);
-  // Downsample the depth axis so thumbnails stay a sane size in the PDF.
-  const stride = Math.max(1, Math.ceil(model.depthCount / 800));
-  const thumbs = modes.map((mode) => ({
-    width: "auto" as const,
-    stack: [
-      { text: MODE_LABEL[mode], alignment: "center" as const, fontSize: 9, bold: true, margin: [0, 0, 0, 3] as [number, number, number, number] },
-      { image: renderModeCanvas(model, mode, displayPads, stride).toDataURL("image/png"), fit: [170, 470] as [number, number] },
-    ],
-  }));
+  // One labelled figure (depth axis + colour scale), depth downsampled so it
+  // stays a sane size and the axis labels stay legible in the PDF.
+  const stride = Math.max(1, Math.ceil(model.depthCount / 900));
+  const figure = renderFigure(model, modes, displayPads, stride).toDataURL("image/png");
 
   const statHeader = ["Pad", "Min", "Max", "Clip low", "Clip high", "Hist peak", "Levels (resistivity order)"];
   const statRows = displayPads
@@ -207,7 +297,7 @@ export async function exportEivPdf(
         margin: [0, 0, 0, 12] as [number, number, number, number],
       },
       { text: "Heatmaps", style: "subheader", margin: [0, 0, 0, 4] },
-      { columns: thumbs, columnGap: 12, margin: [0, 0, 0, 12] as [number, number, number, number] },
+      { image: figure, fit: [770, 450] as [number, number], alignment: "center" as const, margin: [0, 0, 0, 12] as [number, number, number, number] },
       { text: "Per-pad statistics", style: "subheader", margin: [0, 0, 0, 4], pageBreak: "before" as const },
       {
         table: {
