@@ -105,13 +105,13 @@ export function InterpolatePanel({ stations, lengthUnit, projectVsec, onClose }:
   const showResults = valueStr.trim() !== "" && Number.isFinite(target);
 
   return (
-    <div className="mb-4 border border-blue-200 bg-blue-50/50 rounded-lg p-3">
-      <div className="flex items-center gap-2 flex-wrap text-sm">
-        <span className="font-medium text-gray-800">Find point between stations:</span>
+    <div className="mb-2 border border-blue-200 bg-blue-50/50 rounded-md px-2 py-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap text-xs">
+        <span className="text-gray-500">Known</span>
         <select
           value={key}
           onChange={(e) => setKey(e.target.value as Key)}
-          className="border border-gray-300 rounded px-2 py-1 bg-white"
+          className="border border-gray-300 rounded px-1.5 py-0.5 bg-white text-xs"
         >
           {params.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
         </select>
@@ -122,17 +122,17 @@ export function InterpolatePanel({ stations, lengthUnit, projectVsec, onClose }:
           onChange={(e) => setValueStr(e.target.value)}
           placeholder="value"
           autoFocus
-          className="w-32 border border-gray-300 rounded px-2 py-1 text-right"
+          className="w-24 border border-gray-300 rounded px-1.5 py-0.5 text-right text-xs"
         />
-        <span className="text-xs text-gray-500">{labelOf(key).unit}</span>
+        <span className="text-gray-500">{labelOf(key).unit}</span>
         {range && (
-          <span className="text-xs text-gray-400">
+          <span className="text-gray-400">
             range {fmt(range.lo, labelOf(key).digits)} … {fmt(range.hi, labelOf(key).digits)}
           </span>
         )}
         <button
           onClick={onClose}
-          className="ml-auto w-6 h-6 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 leading-none"
+          className="ml-auto w-5 h-5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 leading-none"
           title="Close"
         >
           ×

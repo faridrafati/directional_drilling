@@ -595,32 +595,6 @@ export function CalculationPage() {
 
       {tab === "grid" && (
         <>
-          {/* Search / interpolation tool — find parameters at a point between
-              calculated stations by a known MD / TVD / EW / DLS / … value. */}
-          {stations.length > 0 && (
-            <div className="mb-4">
-              {findOpen ? (
-                <InterpolatePanel
-                  stations={stations}
-                  lengthUnit={lengthUnit}
-                  projectVsec={projectVsecAt}
-                  onClose={() => setFindOpen(false)}
-                />
-              ) : (
-                <button
-                  onClick={() => setFindOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
-                  title="Interpolate the other parameters at a known MD / TVD / EW / DLS / … value between calculated stations"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="11" cy="11" r="7" />
-                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  </svg>
-                  Find point between stations
-                </button>
-              )}
-            </div>
-          )}
           <SegmentGrid
             segments={segments}
             keypoints={data?.keypoints ?? []}
@@ -636,14 +610,39 @@ export function CalculationPage() {
           />
           {stations.length > 0 && (
             <div className="mt-6">
-              <h3 className="text-lg font-medium mb-2">
-                Calculated Stations ({stations.length})
-                {(data?.keypoints?.length ?? 0) > 0 && (
-                  <span className="text-sm text-amber-700 font-normal ml-2">
-                    + {data?.keypoints?.length ?? 0} key points ★
-                  </span>
-                )}
-              </h3>
+              <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+                <h3 className="text-lg font-medium">
+                  Calculated Stations ({stations.length})
+                  {(data?.keypoints?.length ?? 0) > 0 && (
+                    <span className="text-sm text-amber-700 font-normal ml-2">
+                      + {data?.keypoints?.length ?? 0} key points ★
+                    </span>
+                  )}
+                </h3>
+                <button
+                  onClick={() => setFindOpen((o) => !o)}
+                  className={`inline-flex items-center gap-1 px-2 h-7 text-xs rounded border ${
+                    findOpen
+                      ? "border-blue-300 bg-blue-50 text-blue-700"
+                      : "border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+                  }`}
+                  title="Interpolate the other parameters at a known MD / TVD / EW / DLS / … value between calculated stations"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="7" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  Find point
+                </button>
+              </div>
+              {findOpen && (
+                <InterpolatePanel
+                  stations={stations}
+                  lengthUnit={lengthUnit}
+                  projectVsec={projectVsecAt}
+                  onClose={() => setFindOpen(false)}
+                />
+              )}
               <StationsTable
                 stations={stations}
                 keypoints={data?.keypoints ?? []}
