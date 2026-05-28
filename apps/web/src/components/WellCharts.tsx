@@ -546,18 +546,21 @@ function EngineeringGrid() {
   };
   return (
     <>
-      {/* Minor — fine, solid, very light */}
+      {/* Minor — fine, solid, very light (drawn first, under the majors). */}
       <CartesianGrid
         stroke="#eef2f7"
-        strokeWidth={0.5}
+        strokeWidth={1}
+        horizontal
+        vertical
         horizontalCoordinatesGenerator={minorH as never}
         verticalCoordinatesGenerator={minorV as never}
       />
-      {/* Major — bolder, dashed, mid-gray */}
+      {/* Major — solid, slightly darker (Excel-style clean grid). */}
       <CartesianGrid
-        stroke="#94a3b8"
-        strokeWidth={0.7}
-        strokeDasharray="3 4"
+        stroke="#cbd5e1"
+        strokeWidth={1}
+        horizontal
+        vertical
         horizontalCoordinatesGenerator={majorH as never}
         verticalCoordinatesGenerator={majorV as never}
       />
@@ -574,30 +577,39 @@ function EngineeringGrid() {
  * just draws nothing rather than crashing.
  */
 function computeGridPositions(
-  axis: { scale?: (v: number) => number; domain?: () => [number, number] } | undefined,
+  // Recharts passes the axis config object; the d3 scale lives on `.scale`
+  // and exposes the numeric domain via `.scale.domain()` (NOT `axis.domain`,
+  // which is the raw `domain=` prop like ["auto","auto"]). Using axis.domain
+  // here was the bug that made the grid draw nothing.
+  axis:
+    | { scale?: ((v: number) => number) & { domain?: () => number[] } }
+    | undefined,
   minor: boolean,
 ): number[] {
-  if (!axis || typeof axis.scale !== "function" || typeof axis.domain !== "function") {
+  const scale = axis?.scale;
+  if (typeof scale !== "function" || typeof scale.domain !== "function") {
     return [];
   }
-  const [d0, d1] = axis.domain();
+  const dom = scale.domain();
+  if (!dom || dom.length < 2) return [];
+  const d0 = Number(dom[0]);
+  const d1 = Number(dom[dom.length - 1]);
   if (!Number.isFinite(d0) || !Number.isFinite(d1)) return [];
   const lo = Math.min(d0, d1);
   const hi = Math.max(d0, d1);
   const range = hi - lo;
-  if (range === 0) return [];
+  if (range <= 0) return [];
   const majorStep = niceStep(range, 6);
   const step = minor ? majorStep / 5 : majorStep;
-  // Cap total lines to a sane upper bound so a tiny step (e.g. user
-  // zoomed into a millimetre-scale section) doesn't draw thousands.
-  const maxLines = 400;
-  const count = Math.min(maxLines, Math.ceil(range / step) + 2);
+  if (step <= 0) return [];
+  // Cap total lines so a tiny step (deep zoom) doesn't draw thousands.
+  const maxLines = 500;
   const start = Math.ceil(lo / step) * step;
   const out: number[] = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < maxLines; i++) {
     const v = start + i * step;
-    if (v > hi + 1e-9) break;
-    out.push(axis.scale(v));
+    if (v > hi + step * 1e-6) break;
+    out.push(scale(v));
   }
   return out;
 }
