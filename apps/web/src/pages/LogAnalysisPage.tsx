@@ -122,8 +122,9 @@ export function LogAnalysisPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1500px] mx-auto">
-      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+    <div className="h-full flex flex-col p-4 sm:p-6">
+     <div className="w-full max-w-[1500px] mx-auto flex flex-col flex-1 min-h-0">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap shrink-0">
         <div>
           <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">
             EMI Log Analysis
@@ -261,9 +262,9 @@ export function LogAnalysisPage() {
       )}
 
       {model && params && (
-        <main className="overflow-auto bg-white border border-gray-200 rounded p-3">
-          {/* Minimised toolbar just above the graph: zoom + colour scale. */}
-          <div className="flex items-center flex-wrap gap-x-5 gap-y-2 mb-3 text-xs text-gray-600">
+        <main className="flex-1 min-h-0 flex flex-col overflow-hidden bg-white border border-gray-200 rounded p-3">
+          {/* Frozen toolbar just above the graph: zoom + colour scale. */}
+          <div className="flex items-center flex-wrap gap-x-5 gap-y-2 mb-3 text-xs text-gray-600 shrink-0">
             <div className="flex items-center gap-1.5">
               <span className="text-gray-500">Zoom X</span>
               <ZoomStepper value={zoomX} onChange={setZoomX} />
@@ -278,29 +279,37 @@ export function LogAnalysisPage() {
             </span>
           </div>
 
-          <div className="flex gap-4 items-start">
-            <DepthTrack model={model} zoomY={zoomY} />
-            {MODES.filter((m) => show[m.id]).map((m) => (
-              <div key={m.id} className="shrink-0">
-                <div className="text-xs font-medium text-gray-700 mb-1 text-center">
-                  {m.label}
+          {/* Freeze-pane viewport: scrolls internally. The depth column stays
+              frozen on the left and the pad-number headers stay frozen on top
+              (position: sticky) so they remain visible as you scroll. */}
+          <div className="flex-1 min-h-0 overflow-auto">
+            <div className="flex gap-4 items-start w-max">
+              <DepthTrack model={model} zoomY={zoomY} />
+              {MODES.filter((m) => show[m.id]).map((m) => (
+                <div key={m.id} className="shrink-0">
+                  {/* Frozen header (mode label + pad numbers) stays on top. */}
+                  <div className="sticky top-0 z-10 bg-white">
+                    <div className="text-xs font-medium text-gray-700 mb-1 text-center">
+                      {m.label}
+                    </div>
+                    <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />
+                  </div>
+                  <EivHeatmap
+                    model={model}
+                    mode={m.id}
+                    displayPads={displayPads}
+                    zoomX={zoomX}
+                    zoomY={zoomY}
+                    onSelectRegion={setZoomRegion}
+                    className="border-x border-b border-gray-300"
+                  />
                 </div>
-                {/* Pad numbers on top (header above the image). */}
-                <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />
-                <EivHeatmap
-                  model={model}
-                  mode={m.id}
-                  displayPads={displayPads}
-                  zoomX={zoomX}
-                  zoomY={zoomY}
-                  onSelectRegion={setZoomRegion}
-                  className="border-x border-b border-gray-300"
-                />
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </main>
       )}
+     </div>
 
       {/* Transient status toast — auto-dismisses (see the effect above). */}
       {status && (
@@ -461,10 +470,15 @@ function DepthTrack({ model, zoomY }: { model: EivModel; zoomY: number }) {
   const topOf = (r: number) => (flip ? n - 1 - r : r) * zoomY;
   const marks = Array.from({ length: totalMinor + 1 }, (_, i) => i);
   return (
-    <div className="shrink-0 text-right" style={{ width: 72 }}>
-      <div className="text-xs font-medium text-gray-700 mb-1">Depth</div>
-      {/* Spacer aligns the ruler top with the heatmap image (below pad nums). */}
-      <div style={{ height: PAD_AXIS_H }} />
+    // Frozen on the LEFT (sticky) so the depth axis stays visible while
+    // scrolling pads horizontally.
+    <div className="shrink-0 sticky left-0 z-20 bg-white text-right" style={{ width: 72 }}>
+      {/* Top-left CORNER: frozen on top AND left (above everything). */}
+      <div className="sticky top-0 z-30 bg-white">
+        <div className="text-xs font-medium text-gray-700 mb-1">Depth</div>
+        {/* Spacer aligns the ruler top with the heatmap image (below pad nums). */}
+        <div style={{ height: PAD_AXIS_H }} />
+      </div>
       <div className="relative border-r border-gray-300" style={{ height: heightPx }}>
         {marks.map((i) => {
           const isMajor = i % MINOR_PER === 0;
