@@ -1,26 +1,28 @@
 /**
  * Secondary EIV dialogs, ported from the Delphi forms:
- *   LasHeaderModal   ← Unit5  (Form2) — section combo + raw section text
- *   DataTablesModal  ← Unit10 (Form9) — per-pad min/max/clip/levels grid
- *   HistogramModal   ← Unit22 (Form22) + Unit3.histogram — per-pad bars
+ *   LAS header tab   ← Unit5  (Form2) — section combo + raw section text
+ *   Data tables tab  ← Unit10 (Form9) — per-pad min/max/clip/levels grid
+ *   Histograms tab   ← Unit22 (Form22) + Unit3.histogram — per-pad bars
  *
- * All read from the already-parsed LasFile / EivModel — no recompute.
+ * They are presented together in a single tabbed `DetailsModal` (one top-bar
+ * "Details" button). All read from the already-parsed LasFile / EivModel —
+ * no recompute.
  */
 import { useState } from "react";
 import type { EivModel, LasFile } from "@dd/shared/las";
 
 function ModalShell({
   title, onClose, children, wide,
-}: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+}: { title: React.ReactNode; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div
         className={`bg-white rounded-lg shadow-xl w-full ${wide ? "max-w-4xl" : "max-w-2xl"} max-h-[85vh] flex flex-col`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none" aria-label="Close">×</button>
+        <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between gap-4">
+          {title}
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none shrink-0" aria-label="Close">×</button>
         </div>
         <div className="p-4 overflow-auto">{children}</div>
       </div>
@@ -28,12 +30,60 @@ function ModalShell({
   );
 }
 
+const DETAIL_TABS = [
+  { id: "header", label: "LAS header", needsModel: false },
+  { id: "tables", label: "Data tables", needsModel: true },
+  { id: "histogram", label: "Histograms", needsModel: true },
+] as const;
+type DetailTab = typeof DETAIL_TABS[number]["id"];
+
+/**
+ * One modal, three tabs (LAS header / Data tables / Histograms). The data-tab
+ * pair only appears once a model exists; with a header-only file (no PAD
+ * curves) just the LAS-header tab shows.
+ */
+export function DetailsModal({
+  las, model, onClose, initialTab,
+}: { las: LasFile; model: EivModel | null; onClose: () => void; initialTab?: DetailTab }) {
+  const tabs = DETAIL_TABS.filter((t) => !t.needsModel || model);
+  const [tab, setTab] = useState<DetailTab>(
+    initialTab && tabs.some((t) => t.id === initialTab) ? initialTab : tabs[0].id,
+  );
+  return (
+    <ModalShell
+      wide
+      onClose={onClose}
+      title={
+        <div className="flex items-center gap-1 flex-wrap">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-3 py-1.5 text-sm rounded-t border-b-2 -mb-px ${
+                tab === t.id
+                  ? "border-blue-600 text-blue-700 font-medium"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      {tab === "header" && <LasHeaderBody las={las} />}
+      {tab === "tables" && model && <DataTablesBody model={model} />}
+      {tab === "histogram" && model && <HistogramBody model={model} />}
+    </ModalShell>
+  );
+}
+
 /** Unit5 — pick a LAS section, see its raw lines. */
-export function LasHeaderModal({ las, onClose }: { las: LasFile; onClose: () => void }) {
+function LasHeaderBody({ las }: { las: LasFile }) {
   const [section, setSection] = useState(las.sectionOrder[0] ?? "");
   const lines = las.sections[section] ?? [];
   return (
-    <ModalShell title="LAS header / sections" onClose={onClose}>
+    <>
       <div className="flex items-center gap-2 mb-3 text-sm">
         <span className="text-gray-500">Section</span>
         <select
@@ -50,16 +100,16 @@ export function LasHeaderModal({ las, onClose }: { las: LasFile; onClose: () => 
       <pre className="text-[11px] leading-relaxed bg-gray-50 border border-gray-200 rounded p-3 overflow-auto max-h-[55vh] whitespace-pre font-mono">
         {lines.length ? lines.join("\n") : "(empty)"}
       </pre>
-    </ModalShell>
+    </>
   );
 }
 
 /** Unit10 — per-pad statistics table. */
-export function DataTablesModal({ model, onClose }: { model: EivModel; onClose: () => void }) {
+function DataTablesBody({ model }: { model: EivModel }) {
   const pads = Array.from({ length: model.las.padCount }, (_, i) => i + 1);
   const fmt = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : "—");
   return (
-    <ModalShell title="Data tables — per-pad statistics" onClose={onClose} wide>
+    <>
       <table className="text-xs border-collapse w-full">
         <thead>
           <tr className="bg-gray-50">
@@ -97,18 +147,18 @@ export function DataTablesModal({ model, onClose }: { model: EivModel; onClose: 
         {" "}{model.las.buttonsPerPad} buttons/pad ·
         rows/pixel {model.params.rowsPerPixel} · error {model.params.errorPercent}%
       </p>
-    </ModalShell>
+    </>
   );
 }
 
 /** Unit22 — per-pad histogram bars (uses the counts computed in maxmin). */
-export function HistogramModal({ model, onClose }: { model: EivModel; onClose: () => void }) {
+function HistogramBody({ model }: { model: EivModel }) {
   const pads = Array.from({ length: model.las.padCount }, (_, i) => i + 1);
   const [pad, setPad] = useState(pads[0] ?? 1);
   const s = model.pads[pad];
   const peak = s?.histogramPeak || 1;
   return (
-    <ModalShell title="Histograms" onClose={onClose} wide>
+    <>
       <div className="flex items-center gap-2 mb-3 text-sm">
         <span className="text-gray-500">Pad</span>
         <select value={pad} onChange={(e) => setPad(Number(e.target.value))} className="border border-gray-300 rounded px-2 py-1 bg-white">
@@ -133,6 +183,6 @@ export function HistogramModal({ model, onClose }: { model: EivModel; onClose: (
         <span>max ({s?.max.toFixed(0)})</span>
         <span>min ({s?.min.toFixed(0)})</span>
       </div>
-    </ModalShell>
+    </>
   );
 }

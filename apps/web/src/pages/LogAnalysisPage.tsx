@@ -13,7 +13,7 @@ import {
   type EivModel, type EivParams, type EivImageMode,
 } from "@dd/shared/las";
 import { EivHeatmap, type EivRegion } from "../components/eiv/EivHeatmap.js";
-import { LasHeaderModal, DataTablesModal, HistogramModal } from "../components/eiv/EivDialogs.js";
+import { DetailsModal } from "../components/eiv/EivDialogs.js";
 
 const MODES: { id: EivImageMode; label: string; hint: string }[] = [
   { id: "raw", label: "Raw", hint: "Linear min→max per pad" },
@@ -43,9 +43,7 @@ export function LogAnalysisPage() {
   });
   const [zoomX, setZoomX] = useState(3);
   const [zoomY, setZoomY] = useState(1);
-  const [dialog, setDialog] = useState<
-    null | "header" | "tables" | "histogram" | "options"
-  >(null);
+  const [dialog, setDialog] = useState<null | "details" | "options">(null);
   const [zoomRegion, setZoomRegion] = useState<EivRegion | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -161,36 +159,20 @@ export function LogAnalysisPage() {
           )}
           {las && (
             <button
-              onClick={() => setDialog("header")}
+              onClick={() => setDialog("details")}
               className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
-              title="View the raw LAS header sections"
+              title="LAS header, data tables & histograms"
             >
-              LAS header
+              Details
             </button>
           )}
           {model && (
-            <>
-              <button
-                onClick={() => setDialog("tables")}
-                className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
-                title="Per-pad min/max/clip/levels table"
-              >
-                Data tables
-              </button>
-              <button
-                onClick={() => setDialog("histogram")}
-                className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
-                title="Per-pad histograms"
-              >
-                Histograms
-              </button>
-              <button
-                onClick={() => exportComposite(model, show, displayPads, zoomX, zoomY)}
-                className="px-3 h-10 text-sm rounded-md bg-green-700 text-white hover:bg-green-800"
-              >
-                Export PNG
-              </button>
-            </>
+            <button
+              onClick={() => exportComposite(model, show, displayPads, zoomX, zoomY)}
+              className="px-3 h-10 text-sm rounded-md bg-green-700 text-white hover:bg-green-800"
+            >
+              Export PNG
+            </button>
           )}
         </div>
       </div>
@@ -238,14 +220,8 @@ export function LogAnalysisPage() {
           </div>
         </Popup>
       )}
-      {las && dialog === "header" && (
-        <LasHeaderModal las={las} onClose={() => setDialog(null)} />
-      )}
-      {model && dialog === "tables" && (
-        <DataTablesModal model={model} onClose={() => setDialog(null)} />
-      )}
-      {model && dialog === "histogram" && (
-        <HistogramModal model={model} onClose={() => setDialog(null)} />
+      {las && dialog === "details" && (
+        <DetailsModal las={las} model={model} onClose={() => setDialog(null)} />
       )}
       {model && zoomRegion && (
         <ZoomModal
