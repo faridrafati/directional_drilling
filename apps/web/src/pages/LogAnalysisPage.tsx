@@ -273,39 +273,98 @@ function DataOptions({
   );
 }
 
-/** Pad order / selection (Unit8 + Unit21). */
+/**
+ * Pad order / selection (Unit8 "Pad sequence" + Unit21). The `order` array IS
+ * the left→right display order of the heatmap columns, so reordering it
+ * reorders the pads on screen.
+ *
+ * Interactions:
+ *   • Drag a chip in the ordered list to move it (native HTML5 DnD).
+ *   • ◀ / ▶ nudge a chip one slot (keyboard/touch fallback).
+ *   • × removes a pad from the display; click a hidden pad to append it.
+ *   • All / Reverse / Sort shortcuts.
+ */
 function PadSelector({
   padCount, order, onChange,
 }: { padCount: number; order: number[]; onChange: (o: number[]) => void }) {
   const all = Array.from({ length: padCount }, (_, i) => i + 1);
-  const toggle = (pad: number) => {
-    onChange(order.includes(pad) ? order.filter((p) => p !== pad) : [...order, pad]);
+  const hidden = all.filter((p) => !order.includes(p));
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= order.length || from === to) return;
+    const next = [...order];
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    onChange(next);
   };
+  const remove = (pad: number) => onChange(order.filter((p) => p !== pad));
+
   return (
     <div className="bg-white border border-gray-200 rounded p-3 text-sm">
-      <h3 className="font-medium mb-2">Pads ({order.length}/{padCount})</h3>
-      <div className="flex flex-wrap gap-1">
-        {all.map((pad) => {
-          const pos = order.indexOf(pad);
-          const on = pos >= 0;
-          return (
-            <button
-              key={pad}
-              onClick={() => toggle(pad)}
-              className={`w-8 h-8 rounded text-xs font-medium border ${
-                on ? "bg-blue-600 text-white border-blue-600" : "bg-gray-50 text-gray-500 border-gray-200"
-              }`}
-              title={on ? `Pad ${pad} (position ${pos + 1})` : `Pad ${pad} (hidden)`}
-            >
-              {pad}
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex gap-1 mt-2">
-        <button onClick={() => onChange(all)} className="text-xs text-blue-600 hover:underline">All</button>
-        <span className="text-gray-300">·</span>
-        <button onClick={() => onChange([...all].reverse())} className="text-xs text-blue-600 hover:underline">Reverse</button>
+      <h3 className="font-medium mb-1">
+        Pad order ({order.length}/{padCount})
+      </h3>
+      <p className="text-[11px] text-gray-400 mb-2">Drag to reorder · ◀ ▶ to nudge</p>
+
+      {/* Ordered, draggable list — one row per displayed pad. */}
+      <ul className="space-y-1">
+        {order.map((pad, idx) => (
+          <li
+            key={pad}
+            draggable
+            onDragStart={() => setDragIdx(idx)}
+            onDragOver={(e) => { e.preventDefault(); setOverIdx(idx); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragIdx !== null) move(dragIdx, idx);
+              setDragIdx(null); setOverIdx(null);
+            }}
+            onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+            className={`flex items-center gap-1.5 px-1.5 py-1 rounded border cursor-grab active:cursor-grabbing ${
+              overIdx === idx && dragIdx !== null && dragIdx !== idx
+                ? "border-blue-400 bg-blue-50"
+                : "border-gray-200 bg-gray-50"
+            }`}
+            title={`Position ${idx + 1} → Pad ${pad}`}
+          >
+            <span className="text-gray-300 select-none">⠿</span>
+            <span className="w-5 text-[10px] text-gray-400 tabular-nums">{idx + 1}.</span>
+            <span className="flex-1 font-medium text-gray-800">Pad {pad}</span>
+            <button onClick={() => move(idx, idx - 1)} disabled={idx === 0}
+              className="w-5 h-5 rounded hover:bg-gray-200 disabled:opacity-30" title="Move up">◀</button>
+            <button onClick={() => move(idx, idx + 1)} disabled={idx === order.length - 1}
+              className="w-5 h-5 rounded hover:bg-gray-200 disabled:opacity-30" title="Move down">▶</button>
+            <button onClick={() => remove(pad)}
+              className="w-5 h-5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50" title="Hide pad">×</button>
+          </li>
+        ))}
+      </ul>
+
+      {/* Hidden pads — click to append to the display order. */}
+      {hidden.length > 0 && (
+        <div className="mt-2">
+          <div className="text-[11px] text-gray-400 mb-1">Hidden — click to add</div>
+          <div className="flex flex-wrap gap-1">
+            {hidden.map((pad) => (
+              <button
+                key={pad}
+                onClick={() => onChange([...order, pad])}
+                className="w-7 h-7 rounded text-xs border border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100"
+                title={`Add Pad ${pad}`}
+              >
+                {pad}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2 mt-2 text-xs">
+        <button onClick={() => onChange(all)} className="text-blue-600 hover:underline">All</button>
+        <button onClick={() => onChange([...order].reverse())} className="text-blue-600 hover:underline">Reverse</button>
+        <button onClick={() => onChange([...order].sort((a, b) => a - b))} className="text-blue-600 hover:underline">Sort</button>
       </div>
     </div>
   );
