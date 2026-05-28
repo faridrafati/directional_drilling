@@ -222,13 +222,28 @@ function useChartZoom(
     : null;
 
   // Effective (currently-visible) domain — the zoom override, else the data
-  // extents. EngineeringGrid uses these to compute gridline value arrays.
+  // extents. Both halves are referentially stable between renders (extents
+  // is memoised; xDomain/yDomain only change on a zoom/pan), so the memo
+  // below keeps the gridline arrays stable too.
   const effX = xDomain ?? extents.x;
   const effY = yDomain ?? extents.y;
+  const effX0 = effX[0], effX1 = effX[1], effY0 = effY[0], effY1 = effY[1];
+
+  // Pre-computed, MEMOISED gridline value arrays. Passing a fresh array as
+  // a CartesianGrid prop every render makes Recharts' child-equality check
+  // fail → it setStates in componentDidUpdate → infinite render loop
+  // ("Maximum update depth exceeded"). Memoising on the scalar domain
+  // bounds keeps the references stable so the loop can't start.
+  const gridLines = useMemo(() => ({
+    majorX: gridTickValues(effX0, effX1, false),
+    minorX: gridTickValues(effX0, effX1, true),
+    majorY: gridTickValues(effY0, effY1, false),
+    minorY: gridTickValues(effY0, effY1, true),
+  }), [effX0, effX1, effY0, effY1]);
 
   return {
     wrapRef, xDomain, yDomain, extents, scaleAxis, reset, isZoomed,
-    selectionArea, effX, effY,
+    selectionArea, gridLines,
   };
 }
 
@@ -573,26 +588,25 @@ function niceStep(range: number, targetMajorCount = 6): number {
  * `verticalValues` (X data values → vertical lines) through its own axis
  * scale, so we only supply the nice tick values.
  */
-function engineeringGrid(gridX: [number, number], gridY: [number, number]) {
-  const majorX = gridTickValues(gridX[0], gridX[1], false);
-  const minorX = gridTickValues(gridX[0], gridX[1], true);
-  const majorY = gridTickValues(gridY[0], gridY[1], false);
-  const minorY = gridTickValues(gridY[0], gridY[1], true);
+interface GridLines {
+  majorX: number[]; minorX: number[]; majorY: number[]; minorY: number[];
+}
+function engineeringGrid(g: GridLines) {
   return (
     <>
       {/* Minor — fine, solid, very light (drawn first, under the majors). */}
       <CartesianGrid
         stroke="#eef2f7"
         strokeWidth={1}
-        horizontalValues={minorY}
-        verticalValues={minorX}
+        horizontalValues={g.minorY}
+        verticalValues={g.minorX}
       />
       {/* Major — solid, slightly darker (Excel-style clean grid). */}
       <CartesianGrid
         stroke="#cbd5e1"
         strokeWidth={1}
-        horizontalValues={majorY}
-        verticalValues={majorX}
+        horizontalValues={g.majorY}
+        verticalValues={g.majorX}
       />
     </>
   );
@@ -992,7 +1006,7 @@ export function VerticalSectionChart({
           }}
           onMouseLeave={() => setHoverIdx(null)}
         >
-          {engineeringGrid(zoom.effX, zoom.effY)}
+          {engineeringGrid(zoom.gridLines)}
           <XAxis
             dataKey="vsec" type="number" stroke="#475569" fontSize={12}
             domain={zoom.xDomain ?? ["auto", "auto"]}
@@ -1155,7 +1169,7 @@ export function PlanViewChart({
           }}
           onMouseLeave={() => setHoverIdx(null)}
         >
-          {engineeringGrid(planZoom.effX, planZoom.effY)}
+          {engineeringGrid(planZoom.gridLines)}
           <XAxis
             dataKey="ew" type="number" stroke="#475569" fontSize={12}
             domain={planZoom.xDomain ?? ["auto", "auto"]}
