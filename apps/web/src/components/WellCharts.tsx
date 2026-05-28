@@ -95,8 +95,16 @@ function useChartZoom(
       const xSpan = extents.x[1] - extents.x[0] || 1;
       const ySpan = extents.y[1] - extents.y[0] || 1;
       if (dx > xSpan * 0.02 || dy > ySpan * 0.02) {
-        setXDomain([Math.min(dragA.x, dragB.x), Math.max(dragA.x, dragB.x)]);
-        setYDomain([Math.min(dragA.y, dragB.y), Math.max(dragA.y, dragB.y)]);
+        const x1 = Math.min(dragA.x, dragB.x), x2 = Math.max(dragA.x, dragB.x);
+        const y1 = Math.min(dragA.y, dragB.y), y2 = Math.max(dragA.y, dragB.y);
+        // Guard: never commit a zero-width / NaN domain — Recharts throws
+        // when min === max. Only set an axis whose span is meaningfully > 0.
+        if (Number.isFinite(x1) && Number.isFinite(x2) && x2 - x1 > xSpan * 1e-4) {
+          setXDomain([x1, x2]);
+        }
+        if (Number.isFinite(y1) && Number.isFinite(y2) && y2 - y1 > ySpan * 1e-4) {
+          setYDomain([y1, y2]);
+        }
       }
     }
     setDragA(null);
@@ -107,7 +115,14 @@ function useChartZoom(
   const scaleAxis = useCallback((axis: "x" | "y", factor: number) => {
     const cur = axis === "x" ? (xDomain ?? extents.x) : (yDomain ?? extents.y);
     const mid = (cur[0] + cur[1]) / 2;
-    const half = ((cur[1] - cur[0]) / 2) * factor;
+    let half = ((cur[1] - cur[0]) / 2) * factor;
+    // Clamp the half-width so it never collapses to ~0 (Recharts errors on a
+    // zero-span domain) nor explodes past the natural extent by an absurd
+    // factor on repeated zoom-outs.
+    const naturalHalf = axis === "x"
+      ? (extents.x[1] - extents.x[0]) / 2 || 1
+      : (extents.y[1] - extents.y[0]) / 2 || 1;
+    half = Math.max(naturalHalf * 1e-3, Math.min(naturalHalf * 50, Math.abs(half)));
     const next: [number, number] = [mid - half, mid + half];
     if (axis === "x") setXDomain(next); else setYDomain(next);
   }, [xDomain, yDomain, extents]);
@@ -130,7 +145,11 @@ function useChartZoom(
   };
 }
 
-/** Compact per-axis zoom controls overlaid on a chart card. */
+/**
+ * Compact per-axis zoom controls. Rendered INLINE in the chart header (not
+ * absolutely positioned) so it never overlaps the title or the VSEC
+ * view-azimuth control.
+ */
 function ZoomControls({
   onScaleX, onScaleY, onReset, isZoomed,
 }: {
@@ -141,11 +160,11 @@ function ZoomControls({
 }) {
   const IN = 0.6, OUT = 1.6; // zoom-in shrinks the domain; zoom-out grows it
   return (
-    <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1 bg-white/90 border border-gray-200 rounded px-1 py-0.5 text-[11px] shadow-sm">
-      <span className="text-gray-500 px-0.5">X</span>
+    <div className="flex items-center gap-0.5 text-[11px] shrink-0">
+      <span className="text-gray-400 px-0.5">X</span>
       <ZoomBtn onClick={() => onScaleX(IN)} title="Zoom in X">+</ZoomBtn>
       <ZoomBtn onClick={() => onScaleX(OUT)} title="Zoom out X">−</ZoomBtn>
-      <span className="text-gray-500 px-0.5 ml-1">Y</span>
+      <span className="text-gray-400 px-0.5 ml-0.5">Y</span>
       <ZoomBtn onClick={() => onScaleY(IN)} title="Zoom in Y">+</ZoomBtn>
       <ZoomBtn onClick={() => onScaleY(OUT)} title="Zoom out Y">−</ZoomBtn>
       <button
@@ -859,32 +878,44 @@ export function VerticalSectionChart({
   const tip = data[data.length - 1];
   const zoom = vsecZoom;
   const chartCard = (
-    <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0 relative">
-      <ZoomControls
-        onScaleX={(f) => zoom.scaleAxis("x", f)}
-        onScaleY={(f) => zoom.scaleAxis("y", f)}
-        onReset={zoom.reset}
-        isZoomed={zoom.isZoomed}
-      />
-      {/* Title + view-angle controls on ONE line (no flex-wrap). The title
-          shrinks via min-w-0 + truncate if needed; the input + reset stay
-          intact on the right. */}
-      <div className="flex items-center justify-between gap-3 mb-2">
+    <div
+      className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0 relative select-none"
+      // Suppress the browser right-click menu (copy / paste / print / save
+      // image) over the chart — it was popping during drag-zoom and
+      // interrupting the gesture. Left-drag still zooms; right-click is a no-op.
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {/* Header: title (left), view-azm + zoom controls (right). All inline so
+          nothing overlaps. Wraps on very narrow widths. */}
+      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
         <h3 className="text-sm font-medium text-gray-700 truncate min-w-0">
           Vertical Section — {withUnit("VSEC", lengthUnit)} × {withUnit("TVD", lengthUnit)}
         </h3>
-        <VsecAzmControl
-          inputStr={azmInputStr}
-          naturalAzm={naturalAzm}
-          onChange={setAzmInputStr}
-          label="View azm:"
-        />
+        <div className="flex items-center gap-2 shrink-0">
+          <VsecAzmControl
+            inputStr={azmInputStr}
+            naturalAzm={naturalAzm}
+            onChange={setAzmInputStr}
+            label="View azm:"
+          />
+          <ZoomControls
+            onScaleX={(f) => zoom.scaleAxis("x", f)}
+            onScaleY={(f) => zoom.scaleAxis("y", f)}
+            onReset={zoom.reset}
+            isZoomed={zoom.isZoomed}
+          />
+        </div>
       </div>
       <ResponsiveContainer width="100%" height="86%">
         <LineChart
           data={data}
           margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
-          onMouseDown={zoom.onMouseDown}
+          onMouseDown={(state, e) => {
+            // Only LEFT button starts a drag-zoom; ignore middle/right so the
+            // browser's native pan / context-menu don't fight the gesture.
+            if (e && (e as React.MouseEvent).button !== 0) return;
+            zoom.onMouseDown(state);
+          }}
           onMouseMove={(state) => {
             zoom.onMouseMove(state);
             const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
@@ -1025,16 +1056,21 @@ export function PlanViewChart({
   if (data.length < 2) return <Empty label="Plan View" />;
   const tip = data[data.length - 1];
   const chartCard = (
-    <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0 relative">
-      <ZoomControls
-        onScaleX={(f) => planZoom.scaleAxis("x", f)}
-        onScaleY={(f) => planZoom.scaleAxis("y", f)}
-        onReset={planZoom.reset}
-        isZoomed={planZoom.isZoomed}
-      />
-      <h3 className="text-sm font-medium text-gray-700 mb-2">
-        Plan View — {withUnit("EW", lengthUnit)} × {withUnit("NS", lengthUnit)}
-      </h3>
+    <div
+      className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0 relative select-none"
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+        <h3 className="text-sm font-medium text-gray-700 truncate min-w-0">
+          Plan View — {withUnit("EW", lengthUnit)} × {withUnit("NS", lengthUnit)}
+        </h3>
+        <ZoomControls
+          onScaleX={(f) => planZoom.scaleAxis("x", f)}
+          onScaleY={(f) => planZoom.scaleAxis("y", f)}
+          onReset={planZoom.reset}
+          isZoomed={planZoom.isZoomed}
+        />
+      </div>
       <ResponsiveContainer width="100%" height="90%">
         {/* LineChart (not ScatterChart) — same as Vertical Section. Recharts
             ScatterChart needs visible shapes to detect hover; with the
@@ -1043,7 +1079,10 @@ export function PlanViewChart({
         <LineChart
           data={data}
           margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
-          onMouseDown={planZoom.onMouseDown}
+          onMouseDown={(state, e) => {
+            if (e && (e as React.MouseEvent).button !== 0) return;
+            planZoom.onMouseDown(state);
+          }}
           onMouseMove={(state) => {
             planZoom.onMouseMove(state);
             const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
