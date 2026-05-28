@@ -11,9 +11,11 @@ import type { TDocumentDefinitions, Content } from "pdfmake/interfaces";
 import { rad2deg } from "@dd/shared";
 import type { CalculationDetail } from "../api/client.js";
 
-// pdfmake VFS bootstrap
+// pdfmake VFS bootstrap. In pdfmake 0.2.x, vfs_fonts.js is `module.exports =
+// vfs` (the flat font map), so pdfFonts itself IS the vfs; older builds nested
+// it under `.vfs` / `.pdfMake.vfs`. Try those, then fall back to the map.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-(pdfMake as any).vfs = (pdfFonts as any).vfs ?? (pdfFonts as any).pdfMake?.vfs;
+(pdfMake as any).vfs = (pdfFonts as any).vfs ?? (pdfFonts as any).pdfMake?.vfs ?? pdfFonts;
 
 /** Normalize a compass-style degree value into [0, 360°). 360° → 0°. */
 function normDeg(deg: number): number {

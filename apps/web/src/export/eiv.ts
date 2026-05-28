@@ -149,10 +149,13 @@ export async function exportEivPdf(
     import("pdfmake/build/pdfmake.js"),
     import("pdfmake/build/vfs_fonts.js"),
   ]);
+  // pdfmake 0.2.x ships vfs_fonts.js as `module.exports = vfs` (the flat font
+  // map directly), so the default export IS the vfs. Older builds nested it
+  // under `.vfs` / `.pdfMake.vfs` — try those first, then fall back to the map.
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const f = fonts as any;
   (pdfMake as any).vfs =
-    f.vfs ?? f.default?.vfs ?? f.default?.pdfMake?.vfs ?? f.pdfMake?.vfs;
+    f.vfs ?? f.default?.vfs ?? f.default?.pdfMake?.vfs ?? f.pdfMake?.vfs ?? f.default ?? f;
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   const modes = visibleModes(show);
