@@ -249,6 +249,9 @@ function Scene({
   const [hoverPos, setHoverPos] = useState<THREE.Vector3 | null>(null);
   const [hoverMd, setHoverMd]   = useState<number | null>(null);
   const [hoverTvd, setHoverTvd] = useState<number | null>(null);
+  const [hoverNs, setHoverNs]   = useState<number | null>(null);
+  const [hoverEw, setHoverEw]   = useState<number | null>(null);
+  const [hoverDls, setHoverDls] = useState<number | null>(null);
   const [hoverComment, setHoverComment] = useState<string>("");
   // Build points + bounding box for the densified path (always at least 2 points
   // when this component renders, so safe to index .max/.min on the box).
@@ -364,6 +367,9 @@ function Scene({
     setHoverPos(p);
     setHoverMd(s.md);
     setHoverTvd(s.tvd);
+    setHoverNs(s.ns);
+    setHoverEw(s.ew);
+    setHoverDls(s.dls);
     setHoverComment(s.comment ?? "");
     // Mirror to the side panel so it updates in tandem.
     onHover({
@@ -415,7 +421,8 @@ function Scene({
         <meshStandardMaterial color="#1e40af" metalness={0.3} roughness={0.4} />
       </mesh>
 
-      {hoverPos && hoverMd !== null && hoverTvd !== null && (
+      {hoverPos && hoverMd !== null && hoverTvd !== null
+        && hoverNs !== null && hoverEw !== null && hoverDls !== null && (
         <Html
           position={hoverPos}
           center
@@ -431,6 +438,15 @@ function Scene({
             </div>
             <div className="text-gray-700">
               <span className="text-gray-500">TVD:</span> {hoverTvd.toFixed(2)} {lengthUnit}
+            </div>
+            <div className="text-gray-700">
+              <span className="text-gray-500">NS:</span> {hoverNs.toFixed(2)} {lengthUnit}
+            </div>
+            <div className="text-gray-700">
+              <span className="text-gray-500">EW:</span> {hoverEw.toFixed(2)} {lengthUnit}
+            </div>
+            <div className="text-gray-700">
+              <span className="text-gray-500">DLS:</span> {(Math.abs(rad2deg(hoverDls)) * 100).toFixed(3)} °/100{lengthUnit}
             </div>
           </div>
         </Html>
