@@ -387,7 +387,11 @@ export function CalculationPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
+    <div className="h-full flex flex-col p-4 sm:p-6">
+     <div className="w-full max-w-[1400px] mx-auto flex flex-col flex-1 min-h-0">
+      {/* Frozen header — breadcrumb, title/toolbar and tabs stay pinned while
+          the tab content below scrolls (freeze pane). */}
+      <div className="shrink-0">
       <div className="mb-3 flex items-center gap-4">
         <Link to="/projects" className="text-sm text-blue-600 hover:underline">
           ← All projects
@@ -508,6 +512,12 @@ export function CalculationPage() {
       </div>
 
       <Tabs current={tab} onChange={setTab} />
+      </div>
+
+      {/* Scrolling content area (freeze pane). `print:` resets the bounded
+          scroll so the .print-target export isn't clipped when printing. */}
+      <div className="flex-1 min-h-0 overflow-auto pt-4 print:overflow-visible print:flex-none">
+
 
       {lastResult && bannerVisible && tab === "grid" && (
         <div
@@ -648,6 +658,7 @@ export function CalculationPage() {
           </div>
         )}
       </Suspense>
+      </div>
 
       {picker !== null && (
         <ProfilePickerModal
@@ -692,6 +703,7 @@ export function CalculationPage() {
           onClose={() => setExportMenuOpen(false)}
         />
       )}
+     </div>
     </div>
   );
 }
