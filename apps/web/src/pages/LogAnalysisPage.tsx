@@ -7,7 +7,7 @@
  * the mat[row][button][pad] model in the browser, then render the three
  * depth × circumference heatmaps (Raw / Corrected / Leveled) on canvases.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   parseLas, buildModelAsync, defaultParams,
   type EivModel, type EivParams, type EivImageMode,
@@ -20,6 +20,10 @@ const MODES: { id: EivImageMode; label: string; hint: string }[] = [
   { id: "corrected", label: "Corrected", hint: "Extremes clipped to the error percentile" },
   { id: "leveled", label: "Leveled", hint: "Histogram-equalised colour bands" },
 ];
+
+/** Height (px) of the pad-number header above each heatmap. The depth track
+ *  reserves a matching spacer so the image rows line up across columns. */
+const PAD_AXIS_H = 18;
 
 export function LogAnalysisPage() {
   const [las, setLas] = useState<ReturnType<typeof parseLas> | null>(null);
@@ -40,7 +44,9 @@ export function LogAnalysisPage() {
   const [zoomX, setZoomX] = useState(3);
   const [zoomY, setZoomY] = useState(1);
   const [inspect, setInspect] = useState<EivInspect | null>(null);
-  const [dialog, setDialog] = useState<null | "header" | "tables" | "histogram">(null);
+  const [dialog, setDialog] = useState<
+    null | "header" | "tables" | "histogram" | "options" | "pads"
+  >(null);
   const [zoomRegion, setZoomRegion] = useState<EivRegion | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -130,7 +136,7 @@ export function LogAnalysisPage() {
             Port of the EIV tool.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <input
             ref={fileInput}
             type="file"
@@ -145,6 +151,24 @@ export function LogAnalysisPage() {
           >
             {busy ? "Working…" : "Open .las file"}
           </button>
+          {model && params && (
+            <>
+              <button
+                onClick={() => setDialog("options")}
+                className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
+                title="Colour sections, error %, rows/pixel, histogram bins"
+              >
+                Data options
+              </button>
+              <button
+                onClick={() => setDialog("pads")}
+                className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
+                title="Reorder / show / hide the pad columns"
+              >
+                Pad order
+              </button>
+            </>
+          )}
           {las && (
             <button
               onClick={() => setDialog("header")}
@@ -181,6 +205,27 @@ export function LogAnalysisPage() {
         </div>
       </div>
 
+      {model && params && dialog === "options" && (
+        <Popup title="Data options" onClose={() => setDialog(null)}>
+          <DataOptions
+            params={params}
+            busy={busy}
+            onApply={(p) => { setDialog(null); recompute(p); }}
+          />
+        </Popup>
+      )}
+      {model && params && dialog === "pads" && (
+        <Popup
+          title={`Pad order (${params.padOrder.length}/${model.las.padCount})`}
+          onClose={() => setDialog(null)}
+        >
+          <PadSelector
+            padCount={model.las.padCount}
+            order={params.padOrder}
+            onChange={(order) => setParams({ ...params, padOrder: order })}
+          />
+        </Popup>
+      )}
       {las && dialog === "header" && (
         <LasHeaderModal las={las} onClose={() => setDialog(null)} />
       )}
@@ -229,14 +274,9 @@ export function LogAnalysisPage() {
 
       {model && params && (
         <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-4">
-          {/* Controls (Data Options / pad order / zoom) */}
+          {/* Controls (graphs / zoom / legend). Data options & pad order are
+              now top-bar popups, next to Export PNG. */}
           <aside className="space-y-3">
-            <DataOptions params={params} onApply={recompute} busy={busy} />
-            <PadSelector
-              padCount={model.las.padCount}
-              order={params.padOrder}
-              onChange={(order) => setParams({ ...params, padOrder: order })}
-            />
             <div className="bg-white border border-gray-200 rounded p-3 text-sm space-y-2">
               <h3 className="font-medium">Graphs</h3>
               <p className="text-[11px] text-gray-400 -mt-1">Tick which images to show</p>
@@ -276,6 +316,8 @@ export function LogAnalysisPage() {
                   <div className="text-xs font-medium text-gray-700 mb-1 text-center">
                     {m.label}
                   </div>
+                  {/* Pad numbers on top (header above the image). */}
+                  <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />
                   <EivHeatmap
                     model={model}
                     mode={m.id}
@@ -284,9 +326,8 @@ export function LogAnalysisPage() {
                     zoomY={zoomY}
                     onInspect={setInspect}
                     onSelectRegion={setZoomRegion}
-                    className="border border-gray-300"
+                    className="border-x border-b border-gray-300"
                   />
-                  <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />
                 </div>
               ))}
             </div>
@@ -313,7 +354,7 @@ export function LogAnalysisPage() {
   );
 }
 
-/** Data Options dialog (Unit2/Form6) — inline panel; Apply re-runs draw. */
+/** Data Options dialog (Unit2/Form6) — shown in a top-bar popup; Apply redraws. */
 function DataOptions({
   params, onApply, busy,
 }: { params: EivParams; onApply: (p: EivParams) => void; busy: boolean }) {
@@ -321,8 +362,7 @@ function DataOptions({
   // Keep draft in sync when params change externally (e.g. pad order).
   const dirty = JSON.stringify(draft) !== JSON.stringify(params);
   return (
-    <div className="bg-white border border-gray-200 rounded p-3 text-sm space-y-2">
-      <h3 className="font-medium">Data options</h3>
+    <div className="text-sm space-y-2">
       <NumField label="Colour sections" value={draft.colorSections}
         onChange={(v) => setDraft({ ...draft, colorSections: v })} min={2} max={50} />
       <NumField label="Error %" value={draft.errorPercent} step={0.1}
@@ -371,11 +411,8 @@ function PadSelector({
   const remove = (pad: number) => onChange(order.filter((p) => p !== pad));
 
   return (
-    <div className="bg-white border border-gray-200 rounded p-3 text-sm">
-      <h3 className="font-medium mb-1">
-        Pad order ({order.length}/{padCount})
-      </h3>
-      <p className="text-[11px] text-gray-400 mb-2">Drag to reorder · ◀ ▶ to nudge</p>
+    <div className="text-sm">
+      <p className="text-[11px] text-gray-400 mb-2">Drag to reorder · ◀ ▶ to nudge · × to hide</p>
 
       {/* Ordered, draggable list — one row per displayed pad. */}
       <ul className="space-y-1">
@@ -439,40 +476,66 @@ function PadSelector({
   );
 }
 
+/**
+ * Depth ruler with MAJOR (labelled, long tick) and MINOR (short tick,
+ * unlabelled) gridlines on the Y axis. Major spacing targets ~70 px and each
+ * major interval is split into `MINOR_PER` minor divisions. Orientation
+ * matches EivHeatmap (deeper depth at the bottom when data is deepest-first).
+ */
+const MINOR_PER = 5;
 function DepthTrack({ model, zoomY }: { model: EivModel; zoomY: number }) {
   const n = model.depthCount;
-  const ticks = 12;
-  const rows = Array.from({ length: ticks + 1 }, (_, i) => Math.min(n - 1, Math.round((i / ticks) * (n - 1))));
-  // Match EivHeatmap's orientation: deeper depth at the bottom (flip when the
-  // data is stored deepest-first, i.e. depths[0] > depths[last]).
+  const heightPx = Math.max(1, n * zoomY);
   const flip = n > 1 && model.depths[0] > model.depths[n - 1];
+  // Number of major intervals (≈ every 70 px), clamped to a sane range.
+  const majorN = Math.max(2, Math.min(20, Math.round(heightPx / 70)));
+  const totalMinor = majorN * MINOR_PER;
+  const rowAt = (frac: number) => Math.min(n - 1, Math.max(0, Math.round(frac * (n - 1))));
+  const topOf = (r: number) => (flip ? n - 1 - r : r) * zoomY;
+  const marks = Array.from({ length: totalMinor + 1 }, (_, i) => i);
   return (
-    <div className="shrink-0 text-right" style={{ width: 70 }}>
+    <div className="shrink-0 text-right" style={{ width: 72 }}>
       <div className="text-xs font-medium text-gray-700 mb-1">Depth</div>
-      <div className="relative border-r border-gray-300" style={{ height: n * zoomY }}>
-        {rows.map((r) => (
-          <div
-            key={r}
-            className="absolute right-1 text-[10px] text-gray-500 -translate-y-1/2 whitespace-nowrap"
-            style={{ top: (flip ? n - 1 - r : r) * zoomY }}
-          >
-            {model.depths[r]?.toFixed(1)} —
-          </div>
-        ))}
+      {/* Spacer aligns the ruler top with the heatmap image (below pad nums). */}
+      <div style={{ height: PAD_AXIS_H }} />
+      <div className="relative border-r border-gray-300" style={{ height: heightPx }}>
+        {marks.map((i) => {
+          const isMajor = i % MINOR_PER === 0;
+          const r = rowAt(i / totalMinor);
+          const top = topOf(r);
+          return (
+            <div key={i} className="absolute right-0" style={{ top }}>
+              {/* Horizontal tick at the axis: long+darker for major. */}
+              <div
+                className={`absolute right-0 -translate-y-1/2 border-t ${
+                  isMajor ? "w-2.5 border-gray-400" : "w-1.5 border-gray-300"
+                }`}
+              />
+              {isMajor && (
+                <div className="absolute right-3.5 -translate-y-1/2 text-[10px] text-gray-500 whitespace-nowrap">
+                  {model.depths[r]?.toFixed(1)}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-/** Pad number axis below a heatmap. */
+/** Pad-number header shown ON TOP of a heatmap (one cell per displayed pad). */
 function PadAxis({ displayPads, buttons, zoomX }: { displayPads: number[]; buttons: number; zoomX: number }) {
   return (
-    <div className="flex" style={{ width: buttons * displayPads.length * zoomX }}>
+    <div
+      className="flex border border-gray-300 bg-gray-50"
+      style={{ width: buttons * displayPads.length * zoomX, height: PAD_AXIS_H }}
+    >
       {displayPads.map((pad) => (
         <div
           key={pad}
-          className="text-[10px] text-gray-500 text-center border-r border-gray-200"
-          style={{ width: buttons * zoomX }}
+          className="text-[10px] font-medium text-gray-600 text-center border-r border-gray-200 last:border-r-0"
+          style={{ width: buttons * zoomX, lineHeight: `${PAD_AXIS_H}px` }}
         >
           {pad}
         </div>
@@ -561,6 +624,38 @@ function ZoomStepper({ value, onChange }: { value: number; onChange: (v: number)
       <span className="w-10 text-center tabular-nums">{fmtZoom(value)}</span>
       <button onClick={inc} disabled={idx === ZOOM_LADDER.length - 1}
         className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-30" title="Zoom in">+</button>
+    </div>
+  );
+}
+
+/**
+ * Lightweight popup shell (title bar + close + scrollable body), used by the
+ * top-bar "Data options" and "Pad order" buttons. Click the backdrop to close.
+ */
+function Popup({
+  title, onClose, children,
+}: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 pt-20"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl w-full max-w-sm max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+          <button
+            onClick={onClose}
+            className="w-6 h-6 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 leading-none"
+            title="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="p-3 overflow-auto">{children}</div>
+      </div>
     </div>
   );
 }
