@@ -391,7 +391,11 @@ export function CalculationPage() {
   }
 
   return (
-    <div className="h-full flex flex-col p-4 sm:p-6">
+    // Render the whole Directional Drilling page at 85% (compact). CSS `zoom`
+    // (not transform) scales the layout box too, so the freeze-pane height
+    // chain and the grid/3D pointer math stay correct. height is divided by the
+    // zoom factor so the scaled page still fills the viewport (no bottom gap).
+    <div className="flex flex-col p-4 sm:p-6" style={{ zoom: 0.85, height: "calc(100% / 0.85)" }}>
      <div className="w-full max-w-[1400px] mx-auto flex flex-col flex-1 min-h-0">
       {/* Frozen header — breadcrumb, title/toolbar and tabs stay pinned while
           the tab content below scrolls (freeze pane). */}
