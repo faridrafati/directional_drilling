@@ -17,13 +17,159 @@
  * 3D viewer's click-to-inspect panel so the user gets one consistent
  * inspector across all three views.
  */
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceDot, Label, Legend,
+  ResponsiveContainer, ReferenceDot, ReferenceArea, Label, Legend,
 } from "recharts";
 import type { StationRow, KeypointRow } from "../api/client.js";
 import { StationDetailsPanel, type StationDetails } from "./StationDetailsPanel.js";
+
+/**
+ * Zoom + per-axis-scale state for a 2D chart. Returns:
+ *   - `xDomain` / `yDomain` to spread onto <XAxis>/<YAxis> `domain=`
+ *   - mouse handlers for drag-box zoom (spread onto <LineChart>)
+ *   - `<selectionArea>` — a <ReferenceArea> showing the live drag rectangle
+ *   - `scaleAxis(axis, factor)` — zoom one axis in/out around its centre
+ *   - `reset()` and `isZoomed`
+ *
+ * Drag-box zoom: press inside the plot, drag to the opposite corner, release.
+ * We read the data value under the cursor from Recharts' event state
+ * (`activeLabel` = x value, nearest payload = y value), so the zoom snaps to
+ * the bounding box of the dragged-over data — pixel-precise enough on the
+ * densified station path while staying robust across Recharts versions.
+ */
+type Domain = [number, number] | null;
+function useChartZoom(
+  xKey: string,
+  yKey: string,
+  data: ReadonlyArray<Record<string, unknown>>,
+) {
+  const [xDomain, setXDomain] = useState<Domain>(null);
+  const [yDomain, setYDomain] = useState<Domain>(null);
+  // Live drag rectangle in DATA coords (null when not dragging).
+  const [dragA, setDragA] = useState<{ x: number; y: number } | null>(null);
+  const [dragB, setDragB] = useState<{ x: number; y: number } | null>(null);
+
+  // Natural extents — used as the base for per-axis scaling and as the
+  // domain when not explicitly zoomed.
+  const extents = useMemo(() => {
+    if (data.length === 0) return { x: [0, 1] as [number, number], y: [0, 1] as [number, number] };
+    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+    for (const d of data) {
+      const x = Number(d[xKey]), y = Number(d[yKey]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (x < xMin) xMin = x; if (x > xMax) xMax = x;
+      if (y < yMin) yMin = y; if (y > yMax) yMax = y;
+    }
+    return { x: [xMin, xMax] as [number, number], y: [yMin, yMax] as [number, number] };
+  }, [data, xKey, yKey]);
+
+  const pointFromState = useCallback(
+    (s: { activeLabel?: string | number; activePayload?: Array<{ payload?: Record<string, number> }> } | null) => {
+      if (!s || s.activeLabel == null) return null;
+      const x = Number(s.activeLabel);
+      const y = s.activePayload?.[0]?.payload?.[yKey];
+      if (!Number.isFinite(x) || !Number.isFinite(y as number)) return null;
+      return { x, y: y as number };
+    },
+    [yKey],
+  );
+
+  const onMouseDown = useCallback((s: Parameters<typeof pointFromState>[0]) => {
+    const p = pointFromState(s);
+    if (p) { setDragA(p); setDragB(p); }
+  }, [pointFromState]);
+
+  const onMouseMove = useCallback((s: Parameters<typeof pointFromState>[0]) => {
+    if (!dragA) return;
+    const p = pointFromState(s);
+    if (p) setDragB(p);
+  }, [dragA, pointFromState]);
+
+  const onMouseUp = useCallback(() => {
+    if (dragA && dragB) {
+      const dx = Math.abs(dragA.x - dragB.x);
+      const dy = Math.abs(dragA.y - dragB.y);
+      // Ignore tiny drags (treat as a click, not a zoom).
+      const xSpan = extents.x[1] - extents.x[0] || 1;
+      const ySpan = extents.y[1] - extents.y[0] || 1;
+      if (dx > xSpan * 0.02 || dy > ySpan * 0.02) {
+        setXDomain([Math.min(dragA.x, dragB.x), Math.max(dragA.x, dragB.x)]);
+        setYDomain([Math.min(dragA.y, dragB.y), Math.max(dragA.y, dragB.y)]);
+      }
+    }
+    setDragA(null);
+    setDragB(null);
+  }, [dragA, dragB, extents]);
+
+  // Zoom one axis in (factor<1) or out (factor>1) around its current centre.
+  const scaleAxis = useCallback((axis: "x" | "y", factor: number) => {
+    const cur = axis === "x" ? (xDomain ?? extents.x) : (yDomain ?? extents.y);
+    const mid = (cur[0] + cur[1]) / 2;
+    const half = ((cur[1] - cur[0]) / 2) * factor;
+    const next: [number, number] = [mid - half, mid + half];
+    if (axis === "x") setXDomain(next); else setYDomain(next);
+  }, [xDomain, yDomain, extents]);
+
+  const reset = useCallback(() => {
+    setXDomain(null); setYDomain(null); setDragA(null); setDragB(null);
+  }, []);
+
+  const isZoomed = xDomain !== null || yDomain !== null;
+
+  // The live selection rectangle (only while dragging a non-trivial box).
+  const selectionArea = dragA && dragB
+    ? { x1: dragA.x, x2: dragB.x, y1: dragA.y, y2: dragB.y }
+    : null;
+
+  return {
+    xDomain, yDomain, extents,
+    onMouseDown, onMouseMove, onMouseUp,
+    scaleAxis, reset, isZoomed, selectionArea,
+  };
+}
+
+/** Compact per-axis zoom controls overlaid on a chart card. */
+function ZoomControls({
+  onScaleX, onScaleY, onReset, isZoomed,
+}: {
+  onScaleX: (factor: number) => void;
+  onScaleY: (factor: number) => void;
+  onReset: () => void;
+  isZoomed: boolean;
+}) {
+  const IN = 0.6, OUT = 1.6; // zoom-in shrinks the domain; zoom-out grows it
+  return (
+    <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1 bg-white/90 border border-gray-200 rounded px-1 py-0.5 text-[11px] shadow-sm">
+      <span className="text-gray-500 px-0.5">X</span>
+      <ZoomBtn onClick={() => onScaleX(IN)} title="Zoom in X">+</ZoomBtn>
+      <ZoomBtn onClick={() => onScaleX(OUT)} title="Zoom out X">−</ZoomBtn>
+      <span className="text-gray-500 px-0.5 ml-1">Y</span>
+      <ZoomBtn onClick={() => onScaleY(IN)} title="Zoom in Y">+</ZoomBtn>
+      <ZoomBtn onClick={() => onScaleY(OUT)} title="Zoom out Y">−</ZoomBtn>
+      <button
+        onClick={onReset}
+        disabled={!isZoomed}
+        className="ml-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40"
+        title="Reset to true scale"
+      >
+        Reset
+      </button>
+    </div>
+  );
+}
+function ZoomBtn({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="w-5 h-5 rounded bg-gray-100 hover:bg-gray-200 leading-none text-gray-700"
+    >
+      {children}
+    </button>
+  );
+}
 
 interface Props {
   stations: StationRow[];
@@ -698,6 +844,8 @@ export function VerticalSectionChart({
   // (our `data` rows carry an `i` field for this) and feed it to the
   // side panel (or hoist to the parent via onHover).
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // Drag-box zoom + per-axis scale for this chart.
+  const vsecZoom = useChartZoom("vsec", "tvd", data);
   // When the user picks a custom view angle, override the station's stored
   // VSEC in the details panel too — otherwise the side panel and the chart
   // would disagree.
@@ -709,8 +857,15 @@ export function VerticalSectionChart({
 
   if (data.length < 2) return <Empty label="Vertical Section" />;
   const tip = data[data.length - 1];
+  const zoom = vsecZoom;
   const chartCard = (
-    <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0">
+    <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0 relative">
+      <ZoomControls
+        onScaleX={(f) => zoom.scaleAxis("x", f)}
+        onScaleY={(f) => zoom.scaleAxis("y", f)}
+        onReset={zoom.reset}
+        isZoomed={zoom.isZoomed}
+      />
       {/* Title + view-angle controls on ONE line (no flex-wrap). The title
           shrinks via min-w-0 + truncate if needed; the input + reset stay
           intact on the right. */}
@@ -729,17 +884,28 @@ export function VerticalSectionChart({
         <LineChart
           data={data}
           margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
+          onMouseDown={zoom.onMouseDown}
           onMouseMove={(state) => {
+            zoom.onMouseMove(state);
             const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
             setHoverIdx(typeof idx === "number" ? idx : null);
           }}
-          onMouseLeave={() => setHoverIdx(null)}
+          onMouseUp={zoom.onMouseUp}
+          onMouseLeave={() => { setHoverIdx(null); zoom.onMouseUp(); }}
         >
           <EngineeringGrid />
-          <XAxis dataKey="vsec" type="number" stroke="#475569" fontSize={12}>
+          <XAxis
+            dataKey="vsec" type="number" stroke="#475569" fontSize={12}
+            domain={zoom.xDomain ?? ["auto", "auto"]}
+            allowDataOverflow={zoom.xDomain !== null}
+          >
             <Label value={withUnit("Vertical Section", lengthUnit)} position="bottom" offset={10} fill="#475569" />
           </XAxis>
-          <YAxis dataKey="tvd" type="number" reversed stroke="#475569" fontSize={12}>
+          <YAxis
+            dataKey="tvd" type="number" reversed stroke="#475569" fontSize={12}
+            domain={zoom.yDomain ?? ["auto", "auto"]}
+            allowDataOverflow={zoom.yDomain !== null}
+          >
             <Label
               value={withUnit("TVD", lengthUnit)}
               position="insideLeft"
@@ -800,6 +966,18 @@ export function VerticalSectionChart({
               <StartEndMarker cx={props.cx ?? 0} cy={props.cy ?? 0} kind="end" label="End" />
             )}
           />
+          {/* Live drag-box zoom selection rectangle. */}
+          {vsecZoom.selectionArea && (
+            <ReferenceArea
+              x1={vsecZoom.selectionArea.x1}
+              x2={vsecZoom.selectionArea.x2}
+              y1={vsecZoom.selectionArea.y1}
+              y2={vsecZoom.selectionArea.y2}
+              strokeOpacity={0.3}
+              fill="#3b82f6"
+              fillOpacity={0.1}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -838,6 +1016,7 @@ export function PlanViewChart({
   );
 
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const planZoom = useChartZoom("ew", "ns", data);
   const hovered: StationDetails | null = hoverIdx !== null && stations[hoverIdx]
     ? toDetails(stations[hoverIdx])
     : null;
@@ -846,7 +1025,13 @@ export function PlanViewChart({
   if (data.length < 2) return <Empty label="Plan View" />;
   const tip = data[data.length - 1];
   const chartCard = (
-    <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0">
+    <div className="flex-1 bg-white border border-gray-200 rounded p-4 h-[500px] min-w-0 relative">
+      <ZoomControls
+        onScaleX={(f) => planZoom.scaleAxis("x", f)}
+        onScaleY={(f) => planZoom.scaleAxis("y", f)}
+        onReset={planZoom.reset}
+        isZoomed={planZoom.isZoomed}
+      />
       <h3 className="text-sm font-medium text-gray-700 mb-2">
         Plan View — {withUnit("EW", lengthUnit)} × {withUnit("NS", lengthUnit)}
       </h3>
@@ -858,17 +1043,28 @@ export function PlanViewChart({
         <LineChart
           data={data}
           margin={{ top: 10, right: 30, left: 30, bottom: 30 }}
+          onMouseDown={planZoom.onMouseDown}
           onMouseMove={(state) => {
+            planZoom.onMouseMove(state);
             const idx = (state?.activePayload?.[0]?.payload as { i?: number } | undefined)?.i;
             setHoverIdx(typeof idx === "number" ? idx : null);
           }}
-          onMouseLeave={() => setHoverIdx(null)}
+          onMouseUp={planZoom.onMouseUp}
+          onMouseLeave={() => { setHoverIdx(null); planZoom.onMouseUp(); }}
         >
           <EngineeringGrid />
-          <XAxis dataKey="ew" type="number" stroke="#475569" fontSize={12}>
+          <XAxis
+            dataKey="ew" type="number" stroke="#475569" fontSize={12}
+            domain={planZoom.xDomain ?? ["auto", "auto"]}
+            allowDataOverflow={planZoom.xDomain !== null}
+          >
             <Label value={withUnit("East-West", lengthUnit)} position="bottom" offset={10} fill="#475569" />
           </XAxis>
-          <YAxis dataKey="ns" type="number" stroke="#475569" fontSize={12}>
+          <YAxis
+            dataKey="ns" type="number" stroke="#475569" fontSize={12}
+            domain={planZoom.yDomain ?? ["auto", "auto"]}
+            allowDataOverflow={planZoom.yDomain !== null}
+          >
             <Label
               value={withUnit("North-South", lengthUnit)}
               position="insideLeft"
@@ -931,6 +1127,18 @@ export function PlanViewChart({
               <StartEndMarker cx={props.cx ?? 0} cy={props.cy ?? 0} kind="end" label="End" />
             )}
           />
+          {/* Live drag-box zoom selection rectangle. */}
+          {planZoom.selectionArea && (
+            <ReferenceArea
+              x1={planZoom.selectionArea.x1}
+              x2={planZoom.selectionArea.x2}
+              y1={planZoom.selectionArea.y1}
+              y2={planZoom.selectionArea.y2}
+              strokeOpacity={0.3}
+              fill="#3b82f6"
+              fillOpacity={0.1}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>

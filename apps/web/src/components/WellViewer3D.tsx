@@ -62,6 +62,10 @@ interface PickedPoint {
   br: number; tr: number; dmd: number;
 }
 
+/** Per-axis scale multipliers. 1 = true scale; >1 stretches that axis. */
+export interface AxisScale { x: number; y: number; z: number }
+const TRUE_SCALE: AxisScale = { x: 1, y: 1, z: 1 };
+
 export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft", smoothLines = true }: Props) {
   // `selected` is "locked" by a click; `hovered` is transient while the
   // cursor is over the tube. Panel shows selected when locked, otherwise
@@ -69,6 +73,14 @@ export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft", smoo
   const [selected, setSelected] = useState<PickedPoint | null>(null);
   const [hovered, setHovered]   = useState<PickedPoint | null>(null);
   const display = selected ?? hovered;
+
+  // Per-axis scale: EW (x), TVD (y, vertical exaggeration), NS (z). Applied
+  // on top of the auto-normalize so the user can stretch e.g. TVD 2× to
+  // exaggerate vertical separation, or reset to 1:1 true scale.
+  const [axisScale, setAxisScale] = useState<AxisScale>(TRUE_SCALE);
+  // Bumping this key forces the Canvas's OrbitControls to re-mount with a
+  // fresh camera — our "Reset view" button.
+  const [viewKey, setViewKey] = useState(0);
 
   if (stations.length < 2) {
     return (
@@ -80,7 +92,7 @@ export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft", smoo
   return (
     <div className="flex gap-3 h-[600px]">
       {/* 3D canvas */}
-      <div className="flex-1 border border-gray-200 rounded bg-gradient-to-b from-sky-50 to-white overflow-hidden">
+      <div className="flex-1 border border-gray-200 rounded bg-gradient-to-b from-sky-50 to-white overflow-hidden relative">
         <Canvas
           shadows
           camera={{ position: [50, 50, 50], fov: 45, near: 0.1, far: 100000 }}
@@ -88,6 +100,7 @@ export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft", smoo
         >
           <Suspense fallback={null}>
             <Scene
+              key={viewKey}
               stations={stations}
               keypoints={keypoints}
               onPick={setSelected}
@@ -95,13 +108,98 @@ export function WellViewer3D({ stations, keypoints = [], lengthUnit = "ft", smoo
               selectedKey={selected ? selectedKey(selected) : null}
               lengthUnit={lengthUnit}
               smoothLines={smoothLines}
+              axisScale={axisScale}
             />
           </Suspense>
         </Canvas>
+
+        {/* Axis-scale + view controls overlay (top-left). */}
+        <AxisScaleControls
+          axisScale={axisScale}
+          onChange={setAxisScale}
+          onResetView={() => setViewKey((k) => k + 1)}
+        />
       </div>
 
       {/* Side legend */}
       <PointLegend point={display} keypointCount={keypoints.length} lengthUnit={lengthUnit} />
+    </div>
+  );
+}
+
+/**
+ * Floating control panel over the 3D canvas. Three per-axis scale steppers
+ * (EW / TVD / NS) plus a "1:1" reset for the scales and a "Reset view"
+ * that re-centres the camera. Scroll-wheel zoom + drag-rotate + right-drag
+ * pan are handled natively by OrbitControls, so this panel focuses on the
+ * axis exaggeration that OrbitControls can't do.
+ */
+function AxisScaleControls({
+  axisScale, onChange, onResetView,
+}: {
+  axisScale: AxisScale;
+  onChange: (s: AxisScale) => void;
+  onResetView: () => void;
+}) {
+  const STEP = 1.5; // each +/- multiplies or divides by this
+  const MIN = 0.1, MAX = 20;
+  const clamp = (v: number) => Math.min(MAX, Math.max(MIN, v));
+  const bump = (axis: keyof AxisScale, factor: number) =>
+    onChange({ ...axisScale, [axis]: clamp(axisScale[axis] * factor) });
+
+  const rows: Array<{ axis: keyof AxisScale; label: string }> = [
+    { axis: "x", label: "EW" },
+    { axis: "y", label: "TVD" },
+    { axis: "z", label: "NS" },
+  ];
+  const atTrueScale =
+    axisScale.x === 1 && axisScale.y === 1 && axisScale.z === 1;
+
+  return (
+    <div className="absolute top-2 left-2 bg-white/95 border border-gray-200 rounded-md shadow-sm p-2 text-xs select-none">
+      <div className="font-medium text-gray-700 mb-1">Axis scale</div>
+      {rows.map(({ axis, label }) => (
+        <div key={axis} className="flex items-center gap-1.5 mb-1">
+          <span className="w-8 text-gray-500">{label}</span>
+          <button
+            onClick={() => bump(axis, 1 / STEP)}
+            className="w-5 h-5 rounded bg-gray-100 hover:bg-gray-200 leading-none"
+            title={`Shrink ${label} axis`}
+          >
+            −
+          </button>
+          <span className="w-10 text-center tabular-nums text-gray-700">
+            {axisScale[axis].toFixed(2)}×
+          </span>
+          <button
+            onClick={() => bump(axis, STEP)}
+            className="w-5 h-5 rounded bg-gray-100 hover:bg-gray-200 leading-none"
+            title={`Stretch ${label} axis`}
+          >
+            +
+          </button>
+        </div>
+      ))}
+      <div className="flex gap-1 mt-1.5">
+        <button
+          onClick={() => onChange(TRUE_SCALE)}
+          disabled={atTrueScale}
+          className="flex-1 px-1.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40"
+          title="Reset all axes to true 1:1 scale"
+        >
+          1:1
+        </button>
+        <button
+          onClick={onResetView}
+          className="flex-1 px-1.5 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+          title="Re-centre the camera"
+        >
+          Reset view
+        </button>
+      </div>
+      <div className="text-[10px] text-gray-400 mt-1.5 max-w-[150px] leading-tight">
+        Scroll to zoom · drag to rotate · right-drag to pan
+      </div>
     </div>
   );
 }
@@ -113,6 +211,7 @@ function selectedKey(p: PickedPoint): string {
 
 function Scene({
   stations, keypoints, onPick, onHover, selectedKey, lengthUnit, smoothLines,
+  axisScale,
 }: {
   stations: StationRow[];
   keypoints: KeypointRow[];
@@ -121,6 +220,7 @@ function Scene({
   selectedKey: string | null;
   lengthUnit: string;
   smoothLines: boolean;
+  axisScale: AxisScale;
 }) {
   // The 3D world-coords of the cursor's nearest-station hit on the tube.
   // Updated on every pointer move over the wellbore mesh; consumed by the
@@ -140,14 +240,22 @@ function Scene({
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
     // Normalise the geometry to ~100 units so the camera/grid spans are sensible.
     const k = 100 / maxDim;
-    const scaled = pts.map((p) => p.multiplyScalar(k));
+    // Apply per-axis scale multipliers ON TOP of the uniform normalize. This
+    // lets the user exaggerate one axis (e.g. TVD 2×) for vertical clarity
+    // while 1:1 keeps the geometry true-to-scale. Positions are baked into
+    // the points so marker spheres stay perfectly round (a <group scale> on
+    // the whole scene would distort them into ellipsoids).
+    const { x: sx, y: sy, z: sz } = axisScale;
+    const scaled = pts.map(
+      (p) => new THREE.Vector3(p.x * k * sx, p.y * k * sy, p.z * k * sz),
+    );
     const scaledBox = new THREE.Box3().setFromPoints(scaled);
     // Same scaling for keypoints so they sit on the tube exactly.
     const kp = keypoints.map(
-      (p) => new THREE.Vector3(p.ew * k, -p.tvd * k, p.ns * k),
+      (p) => new THREE.Vector3(p.ew * k * sx, -p.tvd * k * sy, p.ns * k * sz),
     );
     return { points: scaled, kpPoints: kp, bbox: scaledBox, scale: k };
-  }, [stations, keypoints]);
+  }, [stations, keypoints, axisScale]);
 
   const center = useMemo(() => bbox.getCenter(new THREE.Vector3()), [bbox]);
   const groundY = bbox.min.y;
