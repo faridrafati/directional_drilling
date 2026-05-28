@@ -28,9 +28,11 @@ export function LogAnalysisPage() {
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
 
-  // Which heatmaps are shown (CheckBox1/2/3 in Unit3).
+  // Which heatmaps are shown — toggled by the left-panel "Graphs" checkboxes
+  // (CheckBox1/2/3 in Unit3). Default to the Leveled view only so the page
+  // opens with ONE graph; the user ticks Raw / Corrected to compare.
   const [show, setShow] = useState<Record<EivImageMode, boolean>>({
-    raw: true, corrected: true, leveled: true,
+    raw: false, corrected: false, leveled: true,
   });
   const [zoomX, setZoomX] = useState(3);
   const [zoomY, setZoomY] = useState(1);
@@ -201,7 +203,8 @@ export function LogAnalysisPage() {
               onChange={(order) => setParams({ ...params, padOrder: order })}
             />
             <div className="bg-white border border-gray-200 rounded p-3 text-sm space-y-2">
-              <h3 className="font-medium">Display</h3>
+              <h3 className="font-medium">Graphs</h3>
+              <p className="text-[11px] text-gray-400 -mt-1">Tick which images to show</p>
               {MODES.map((m) => (
                 <label key={m.id} className="flex items-center gap-2" title={m.hint}>
                   <input
@@ -212,13 +215,14 @@ export function LogAnalysisPage() {
                   {m.label}
                 </label>
               ))}
+              <div className="border-t border-gray-100 my-1" />
               <div className="flex items-center gap-2 pt-1">
                 <span className="text-gray-500 w-14">Zoom X</span>
-                <Stepper value={zoomX} min={1} max={20} onChange={setZoomX} />
+                <ZoomStepper value={zoomX} onChange={setZoomX} />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-500 w-14">Zoom Y</span>
-                <Stepper value={zoomY} min={1} max={20} onChange={setZoomY} />
+                <ZoomStepper value={zoomY} onChange={setZoomY} />
               </div>
             </div>
             <ColorLegend />
@@ -478,12 +482,31 @@ function NumField({
   );
 }
 
-function Stepper({ value, min, max, onChange }: { value: number; min: number; max: number; onChange: (v: number) => void }) {
+/**
+ * Zoom ladder including fractional zoom-OUT (1/8 … 1/2) and zoom-IN (1 … 30).
+ * Needed because a tall depth range (tens of thousands of rows) is unusable at
+ * 1× — the user must be able to shrink the Y axis to 1/2, 1/3, etc. to fit.
+ */
+const ZOOM_LADDER = [
+  1 / 8, 1 / 6, 1 / 5, 1 / 4, 1 / 3, 1 / 2,
+  1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 30,
+];
+function fmtZoom(v: number): string {
+  return v < 1 ? `1/${Math.round(1 / v)}` : `${v}×`;
+}
+function ZoomStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  // Snap the current value to the nearest ladder index.
+  let idx = 0, best = Infinity;
+  ZOOM_LADDER.forEach((z, i) => { const d = Math.abs(z - value); if (d < best) { best = d; idx = i; } });
+  const dec = () => onChange(ZOOM_LADDER[Math.max(0, idx - 1)]);
+  const inc = () => onChange(ZOOM_LADDER[Math.min(ZOOM_LADDER.length - 1, idx + 1)]);
   return (
     <div className="flex items-center gap-1">
-      <button onClick={() => onChange(Math.max(min, value - 1))} className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200">−</button>
-      <span className="w-8 text-center tabular-nums">{value}×</span>
-      <button onClick={() => onChange(Math.min(max, value + 1))} className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200">+</button>
+      <button onClick={dec} disabled={idx === 0}
+        className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-30" title="Zoom out">−</button>
+      <span className="w-10 text-center tabular-nums">{fmtZoom(value)}</span>
+      <button onClick={inc} disabled={idx === ZOOM_LADDER.length - 1}
+        className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-30" title="Zoom in">+</button>
     </div>
   );
 }
@@ -516,10 +539,10 @@ function ZoomModal({
           </h3>
           <div className="flex items-center gap-3 text-xs">
             <span className="flex items-center gap-1">X
-              <Stepper value={zx} min={1} max={30} onChange={setZx} />
+              <ZoomStepper value={zx} onChange={setZx} />
             </span>
             <span className="flex items-center gap-1">Y
-              <Stepper value={zy} min={1} max={30} onChange={setZy} />
+              <ZoomStepper value={zy} onChange={setZy} />
             </span>
             <button onClick={onClose} className="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200">Close</button>
           </div>
