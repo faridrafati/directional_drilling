@@ -36,12 +36,18 @@ interface Props {
   onSelectRegion?: (region: EivRegion) => void;
   /** Show the floating tooltip near the cursor (default true). */
   floatingTooltip?: boolean;
+  /**
+   * Optional per-output-row pad-1 azimuth (degrees). When supplied, each
+   * scanline is rotated horizontally so the image is compass-oriented
+   * (old_fmi_code/Unit7.pas:609-611). Omit (the default) for an unrotated image.
+   */
+  azimuth?: Float64Array;
   className?: string;
 }
 
 export function EivHeatmap({
   model, mode, displayPads, zoomX = 1, zoomY = 1, region,
-  onInspect, onSelectRegion, floatingTooltip = true, className,
+  onInspect, onSelectRegion, floatingTooltip = true, azimuth, className,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const buttons = model.las.buttonsPerPad;
@@ -80,12 +86,20 @@ export function EivHeatmap({
     const img = ctx.createImageData(w, h);
     const nullVal = model.params.nullValue;
 
-    for (let gx = x0; gx < x1; gx++) {
-      const p = Math.floor(gx / buttons);
-      const b = gx % buttons;
-      const pad = displayPads[p];
-      const stats = pad != null ? model.pads[pad] : undefined;
-      for (let gy = y0; gy < y1; gy++) {
+    // Per-row azimuth rotation (Unit7.pas:609-611): shift the source column by
+    // a fraction of the full circumference. Wraps around the whole image width.
+    const oriented = azimuth != null && fullW > 0;
+    for (let gy = y0; gy < y1; gy++) {
+      const shift = oriented && Number.isFinite(azimuth![gy])
+        ? ((Math.round((azimuth![gy] / 360) * fullW) % fullW) + fullW) % fullW
+        : 0;
+      for (let gx = x0; gx < x1; gx++) {
+        // Screen column gx samples source column (gx+shift) mod fullW.
+        const sx = oriented ? (gx + shift) % fullW : gx;
+        const p = Math.floor(sx / buttons);
+        const b = sx % buttons;
+        const pad = displayPads[p];
+        const stats = pad != null ? model.pads[pad] : undefined;
         let r = 0, g = 0, bl = 255;
         if (stats) {
           const value = matAt(model, gy, b, pad);
@@ -96,7 +110,7 @@ export function EivHeatmap({
       }
     }
     ctx.putImageData(img, 0, 0);
-  }, [model, mode, displayPads, buttons, x0, y0, x1, y1, w, h, flip]);
+  }, [model, mode, displayPads, buttons, x0, y0, x1, y1, w, h, flip, azimuth, fullW]);
 
   /** CSS-pixel cursor → native global (gx, gy) within the rendered window. */
   function toNative(e: React.MouseEvent): { gx: number; gy: number } | null {
@@ -110,8 +124,15 @@ export function EivHeatmap({
   }
 
   function inspectAt(gx: number, gy: number): EivInspect | null {
-    const p = Math.floor(gx / buttons);
-    const b = gx % buttons;
+    // Apply the same per-row azimuth shift the renderer used, so the readout
+    // names the button actually drawn under the cursor.
+    let sx = gx;
+    if (azimuth != null && fullW > 0 && Number.isFinite(azimuth[gy])) {
+      const shift = ((Math.round((azimuth[gy] / 360) * fullW) % fullW) + fullW) % fullW;
+      sx = (gx + shift) % fullW;
+    }
+    const p = Math.floor(sx / buttons);
+    const b = sx % buttons;
     const pad = displayPads[p];
     if (pad == null) return null;
     return { row: gy, depth: model.depths[gy], pad, button: b, value: matAt(model, gy, b, pad) };

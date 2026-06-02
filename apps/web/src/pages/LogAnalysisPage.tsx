@@ -9,10 +9,11 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  parseLas, buildModelAsync, defaultParams,
+  parseLas, buildModelAsync, defaultParams, mergeLasFiles,
   type EivModel, type EivParams, type EivImageMode,
 } from "@dd/shared/las";
 import { EivHeatmap, type EivRegion } from "../components/eiv/EivHeatmap.js";
+import { EivTraces, availableTraces } from "../components/eiv/EivTraces.js";
 import { DetailsModal } from "../components/eiv/EivDialogs.js";
 import { exportEivPng, exportEivPdf, exportEivXlsx } from "../export/eiv.js";
 
@@ -44,12 +45,20 @@ export function LogAnalysisPage() {
   });
   const [zoomX, setZoomX] = useState(3);
   const [zoomY, setZoomY] = useState(1);
-  const [dialog, setDialog] = useState<null | "details" | "options" | "export">(null);
+  // Compass-orient the image by pad-1 azimuth (FMI files only; Unit7.pas:609).
+  const [oriented, setOriented] = useState(false);
+  // Show the aux side-track line plots (conductivity / accel / GR) — FMI only.
+  const [showTraces, setShowTraces] = useState(true);
+  const [dialog, setDialog] = useState<null | "details" | "options" | "export" | "merge">(null);
   const [zoomRegion, setZoomRegion] = useState<EivRegion | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // Pads currently displayed (defaults to params.padOrder).
   const displayPads = params?.padOrder ?? [];
+  // Pad-1 azimuth per output row (FMI only) — drives compass orientation.
+  const azimuthCol = model?.aux?.P1AZ;
+  // Whether this file has the FMI aux curves the trace/compass features need.
+  const hasAux = !!model && availableTraces(model).length > 0;
 
   // Status is shown as a transient toast that auto-dismisses (errors linger a
   // little longer). Re-arms on every new message; the progress bar carries the
@@ -67,16 +76,29 @@ export function LogAnalysisPage() {
     setProgress({ value: 0, label: "Reading file…" });
     try {
       const text = await file.text();
+      await loadLasText(text, file.name);
+    } catch (e) {
+      setStatus(`Error: ${String(e)}`);
+      setProgress(null);
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Parse already-read LAS text, build the model and show it. Shared by the
+   * file-open path and the merge dialog's "Open in viewer" action. Assumes the
+   * caller set busy=true; always clears busy/progress when done.
+   */
+  async function loadLasText(text: string, name: string) {
+    try {
       setStatus("Parsing LAS…");
       setProgress({ value: 0.05, label: "Parsing LAS…" });
       // Let the "Parsing" frame paint before the synchronous parse blocks.
       await new Promise((r) => setTimeout(r, 0));
-      const parsed = parseLas(text, file.name);
+      const parsed = parseLas(text, name);
       if (parsed.padCount === 0 || parsed.buttonsPerPad === 0) {
-        setStatus("No PADn[m] curves found — is this an EMI multi-pad LAS?");
+        setStatus("No imaging-button curves found (PADn[m] or FMI FC[A-D]r[m]) — is this a multi-pad EMI/FMI LAS?");
         setLas(parsed); setParams(null); setModel(null);
-        setProgress(null);
-        setBusy(false);
         return;
       }
       const p = defaultParams(parsed);
@@ -150,6 +172,14 @@ export function LogAnalysisPage() {
           >
             {busy ? "Working…" : "Open .las file"}
           </button>
+          <button
+            onClick={() => setDialog("merge")}
+            disabled={busy}
+            className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:text-gray-400"
+            title="Merge a hi-res FMI button file with a lo-res auxiliary file by depth"
+          >
+            Merge…
+          </button>
           {model && params && (
             <button
               onClick={() => setDialog("options")}
@@ -197,6 +227,21 @@ export function LogAnalysisPage() {
                   {m.label}
                 </label>
               ))}
+              {/* FMI-only display options — shown when the file has aux curves. */}
+              {hasAux && (
+                <>
+                  <label className="flex items-center gap-2 text-sm mt-1" title="Show conductivity / acceleration / gamma-ray side tracks (Unit7)">
+                    <input type="checkbox" checked={showTraces} onChange={(e) => setShowTraces(e.target.checked)} />
+                    Overlay traces
+                  </label>
+                  {azimuthCol && (
+                    <label className="flex items-center gap-2 text-sm" title="Rotate the image by pad-1 azimuth so it is compass-oriented (Unit7.pas:609)">
+                      <input type="checkbox" checked={oriented} onChange={(e) => setOriented(e.target.checked)} />
+                      Oriented (compass)
+                    </label>
+                  )}
+                </>
+              )}
             </section>
             <hr className="border-gray-100" />
             {/* Data options — needs a redraw (Apply closes the popup). */}
@@ -232,12 +277,12 @@ export function LogAnalysisPage() {
             <ExportChoice
               label="PNG image"
               hint="The visible heatmaps, full resolution"
-              onClick={() => { setDialog(null); exportEivPng(model, show, displayPads); }}
+              onClick={() => { setDialog(null); exportEivPng(model, show, displayPads, showTraces && hasAux); }}
             />
             <ExportChoice
               label="PDF report"
               hint="Metadata + per-pad statistics + heatmap thumbnails"
-              onClick={() => { setDialog(null); void exportEivPdf(model, show, displayPads); }}
+              onClick={() => { setDialog(null); void exportEivPdf(model, show, displayPads, showTraces && hasAux); }}
             />
             <ExportChoice
               label="Excel workbook"
@@ -245,6 +290,22 @@ export function LogAnalysisPage() {
               onClick={() => { setDialog(null); void exportEivXlsx(model, displayPads); }}
             />
           </div>
+        </Popup>
+      )}
+      {dialog === "merge" && (
+        <Popup title="Merge two LAS files" onClose={() => setDialog(null)}>
+          <MergeDialog
+            busy={busy}
+            onOpen={async (text, name) => {
+              setDialog(null);
+              setBusy(true);
+              setStatus("Merging…");
+              setProgress({ value: 0.02, label: "Merging…" });
+              await new Promise((r) => setTimeout(r, 0));
+              await loadLasText(text, name);
+            }}
+            onError={(msg) => setStatus(`Error: ${msg}`)}
+          />
         </Popup>
       )}
       {las && dialog === "details" && (
@@ -316,7 +377,7 @@ export function LogAnalysisPage() {
                   {/* Frozen header (mode label + pad numbers) stays on top. */}
                   <div className="sticky top-0 z-10 bg-white">
                     <div className="text-xs font-medium text-gray-700 mb-1 text-center">
-                      {m.label}
+                      {m.label}{oriented && azimuthCol ? " · compass" : ""}
                     </div>
                     <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />
                   </div>
@@ -326,11 +387,21 @@ export function LogAnalysisPage() {
                     displayPads={displayPads}
                     zoomX={zoomX}
                     zoomY={zoomY}
+                    azimuth={oriented ? azimuthCol : undefined}
                     onSelectRegion={setZoomRegion}
                     className="border-x border-b border-gray-300"
                   />
                 </div>
               ))}
+              {/* Aux overlay traces (FMI files only) — conductivity / accel / GR. */}
+              {showTraces && availableTraces(model).length > 0 && (
+                <div className="shrink-0">
+                  <div className="sticky top-0 z-10 bg-white">
+                    <div className="text-xs font-medium text-gray-700 mb-1 text-center">Traces</div>
+                  </div>
+                  <EivTraces model={model} zoomY={zoomY} />
+                </div>
+              )}
             </div>
           </div>
         </main>
@@ -707,6 +778,98 @@ function ZoomModal({
 }
 
 /** A single choice row inside the Export popup. */
+/**
+ * Merge two LAS files (Unit10.pas) — pick a hi-res FMI button file and a lo-res
+ * auxiliary file, then either download the merged LAS or open it in the viewer.
+ */
+function MergeDialog({
+  busy, onOpen, onError,
+}: {
+  busy: boolean;
+  onOpen: (mergedText: string, name: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const [hi, setHi] = useState<File | null>(null);
+  const [lo, setLo] = useState<File | null>(null);
+  const [working, setWorking] = useState(false);
+
+  async function build(): Promise<{ text: string; name: string } | null> {
+    if (!hi || !lo) { onError("Pick both a hi-res and a lo-res file."); return null; }
+    setWorking(true);
+    try {
+      const [hiText, loText] = await Promise.all([hi.text(), lo.text()]);
+      const text = mergeLasFiles(hiText, loText);
+      const name = hi.name.replace(/\.las$/i, "") + "_merged.las";
+      return { text, name };
+    } catch (e) {
+      onError(String(e));
+      return null;
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function download() {
+    const r = await build();
+    if (!r) return;
+    const url = URL.createObjectURL(new Blob([r.text], { type: "text/plain" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = r.name; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function open() {
+    const r = await build();
+    if (r) onOpen(r.text, r.name);
+  }
+
+  const disabled = busy || working || !hi || !lo;
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-gray-400">
+        Combines a high-resolution FMI button file (TDEP + FC[A-D]r[m] + fast channels)
+        with a low-resolution auxiliary file (GR / P1AZ / DEVI / TENS …) by depth.
+      </p>
+      <FilePick label="Hi-res FMI file" file={hi} onPick={setHi} />
+      <FilePick label="Lo-res auxiliary file" file={lo} onPick={setLo} />
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={download}
+          disabled={disabled}
+          className="flex-1 px-3 h-9 text-sm rounded bg-green-700 text-white hover:bg-green-800 disabled:bg-gray-300"
+        >
+          {working ? "Merging…" : "Download merged .las"}
+        </button>
+        <button
+          onClick={open}
+          disabled={disabled}
+          className="flex-1 px-3 h-9 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300"
+        >
+          Open in viewer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A labelled file picker showing the chosen file name. */
+function FilePick({
+  label, file, onPick,
+}: { label: string; file: File | null; onPick: (f: File) => void }) {
+  return (
+    <label className="block">
+      <span className="text-[11px] text-gray-500 block mb-0.5">{label}</span>
+      <input
+        type="file"
+        accept=".las,.txt"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); }}
+        className="block w-full text-xs text-gray-600 file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+      />
+      {file && <span className="text-[11px] text-gray-400">{file.name}</span>}
+    </label>
+  );
+}
+
 function ExportChoice({ label, hint, onClick }: { label: string; hint: string; onClick: () => void }) {
   return (
     <button

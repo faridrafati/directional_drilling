@@ -64,12 +64,31 @@ function firstFloat(s: string): number {
   return m ? parseFloat(m[0]) : NaN;
 }
 
+/** FMI pad letter → 1-based pad number (old_fmi_code/Unit10.pas:382-580). */
+const FMI_PAD_LETTER: Record<string, number> = { A: 1, B: 2, C: 3, D: 4 };
+
 /**
- * Detect a `PADn[m]` curve. Accepts PAD1[0], pad12[3], "PAD 1 [ 0 ]" loosely.
- * Returns {pad, button} (pad 1-based, button as written) or null.
+ * Detect an imaging-button curve and return {pad, button} (pad 1-based, button
+ * 0-based) or null. Two naming schemes are recognised:
+ *
+ *   PADn[m]          — EIV casing-inspection logs (old_eiv_code/Unit3.pas). Pad
+ *                      n, button m as written. Accepts loose spacing.
+ *   FC{A|B|C|D}r[m]  — Schlumberger FMI borehole-image logs (e.g. FCD4[0],
+ *                      FCA1[11]). Pad letter A→1…D→4; the 4 sensor rows r=1..4
+ *                      are folded into the button axis so each pad has 48
+ *                      buttons: button = (r-1)*12 + m. (old_fmi_code/Unit10.pas:
+ *                      382-580 lists all 192 FMI channels.)
  */
 function detectPad(mnem: string): { pad: number; button: number } | null {
-  const m = mnem.toUpperCase().match(/PAD\s*(\d+)\s*\[\s*(\d+)\s*\]/);
+  const up = mnem.toUpperCase();
+  const fmi = up.match(/^FC([A-D])([1-4])\s*\[\s*(\d+)\s*\]$/);
+  if (fmi) {
+    const pad = FMI_PAD_LETTER[fmi[1]];
+    const row = parseInt(fmi[2], 10);     // 1..4
+    const idx = parseInt(fmi[3], 10);     // 0..11
+    return { pad, button: (row - 1) * 12 + idx };
+  }
+  const m = up.match(/PAD\s*(\d+)\s*\[\s*(\d+)\s*\]/);
   if (!m) return null;
   return { pad: parseInt(m[1], 10), button: parseInt(m[2], 10) };
 }
@@ -148,6 +167,21 @@ export function parseLas(text: string, fileName?: string): LasFile {
   });
   const buttonsPerPad = maxButton >= 0 ? maxButton + 1 : 0;
 
+  // Explicit (pad,button) → data-column map + aux-curve map. Built from the
+  // actual curve positions so the tensor builder needs no positional arithmetic
+  // (FMI pad columns are non-contiguous and reverse-ordered — see types.ts).
+  const padCol = new Array<number>(padCount * buttonsPerPad).fill(-1);
+  const auxCols: Record<string, number> = {};
+  curves.forEach((c, col) => {
+    if (c.pad !== null && c.button !== null) {
+      padCol[(c.pad - 1) * buttonsPerPad + c.button] = col;
+    } else if (c.mnemonic) {
+      // First occurrence wins (LAS mnemonics are unique in practice).
+      const key = c.mnemonic.toUpperCase();
+      if (!(key in auxCols)) auxCols[key] = col;
+    }
+  });
+
   // ── WRAP mode (from ~VERSION) ─────────────────────────────────────────
   // WRAP=YES → each depth record's values are spread across MULTIPLE physical
   // lines (the index is on its own line, then the curve values wrap). We must
@@ -202,6 +236,7 @@ export function parseLas(text: string, fileName?: string): LasFile {
   return {
     sections, sectionOrder, well, curves,
     padCount, buttonsPerPad, firstPadCol, lastPadCol,
+    padCol, auxCols,
     data, fileName,
   };
 }

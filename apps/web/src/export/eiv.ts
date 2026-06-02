@@ -82,14 +82,61 @@ function renderModeCanvas(
   return canvas;
 }
 
+/** One aux trace: key into model.aux, label, colour. Mirrors EivTraces.TRACE_DEFS. */
+interface ExportTrace { key: string; label: string; color: string }
+const EXPORT_TRACE_DEFS: ExportTrace[] = [
+  { key: "CONDSUM", label: "Cond", color: "#6b7280" },
+  { key: "FCAZ", label: "AZ", color: "#dc2626" },
+  { key: "FCAY", label: "AY", color: "#16a34a" },
+  { key: "FCAX", label: "AX", color: "#2563eb" },
+  { key: "GR", label: "GR", color: "#9333ea" },
+];
+
+/** The aux traces present on a model (in display order). */
+function availableExportTraces(model: EivModel): ExportTrace[] {
+  if (!model.aux) return [];
+  return EXPORT_TRACE_DEFS.filter((d) => model.aux![d.key]);
+}
+
+/** Draw the aux traces into a figure track [tx, tx+w) × [ty, ty+h). */
+function drawTraces(
+  ctx: CanvasRenderingContext2D, model: EivModel, traces: ExportTrace[],
+  tx: number, ty: number, w: number, h: number, rowStride: number, flip: boolean,
+): void {
+  const nullVal = model.params.nullValue;
+  const fullH = model.depthCount;
+  for (const t of traces) {
+    const arr = model.aux![t.key];
+    let lo = Infinity, hi = -Infinity;
+    for (const v of arr) { if (Number.isFinite(v) && v !== nullVal) { if (v < lo) lo = v; if (v > hi) hi = v; } }
+    if (!(lo <= hi)) continue;
+    const span = hi - lo || 1;
+    ctx.strokeStyle = t.color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    let started = false;
+    for (let sy = 0; sy < h; sy++) {
+      const dataRow = Math.min(fullH - 1, Math.max(0, (flip ? h - 1 - sy : sy) * rowStride));
+      const v = arr[dataRow];
+      if (!Number.isFinite(v) || v === nullVal) { started = false; continue; }
+      const x = tx + 1 + ((v - lo) / span) * (w - 2);
+      const y = ty + sy;
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+}
+
 /**
  * Render a complete, labelled figure: the visible heatmaps with a DEPTH axis
  * on the left (deeper at the bottom), pad-number headers on top, per-mode
- * titles, and a COLOUR-SCALE legend at the bottom. `rowStride` downsamples the
- * depth axis for compact output (PDF); pass 1 for a full-resolution PNG.
+ * titles, an optional aux-traces track on the right, and a COLOUR-SCALE legend
+ * at the bottom. `rowStride` downsamples the depth axis for compact output
+ * (PDF); pass 1 for a full-resolution PNG.
  */
 function renderFigure(
   model: EivModel, modes: EivImageMode[], displayPads: number[], rowStride: number,
+  withTraces = false,
 ): HTMLCanvasElement {
   const buttons = model.las.buttonsPerPad;
   const padW = buttons * displayPads.length;
@@ -98,8 +145,13 @@ function renderFigure(
   const flip = isFlipped(model);
   const depthUnit = model.las.curves[0]?.unit?.trim();
 
+  // Aux overlay traces (FMI files) — drawn in an extra track on the right.
+  const traces = withTraces ? availableExportTraces(model) : [];
+  const traceW = traces.length > 0 ? 110 : 0;
+
   const mLeft = 70, mTop = 38, mBottom = 58, mRight = 14, gap = 16;
-  const W = mLeft + modes.length * padW + (modes.length - 1) * gap + mRight;
+  const W = mLeft + modes.length * padW + (modes.length - 1) * gap
+    + (traceW > 0 ? gap + traceW : 0) + mRight;
   const H = mTop + imgH + mBottom;
   const canvas = document.createElement("canvas");
   canvas.width = W;
@@ -127,6 +179,31 @@ function renderFigure(
       ctx.fillText(String(pad), x + p * buttons + buttons / 2, mTop - 9);
     });
   });
+
+  // Aux overlay traces track (FMI only), to the right of the last heatmap.
+  if (traceW > 0) {
+    const tx = mLeft + modes.length * padW + (modes.length - 1) * gap + gap;
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tx + 0.5, mTop + 0.5, traceW, imgH);
+    ctx.fillStyle = "#374151";
+    ctx.font = "bold 12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Traces", tx + traceW / 2, 10);
+    drawTraces(ctx, model, traces, tx, mTop, traceW, imgH, rowStride, flip);
+    // Legend chips under the title.
+    ctx.font = "9px sans-serif";
+    ctx.textAlign = "left";
+    let lx = tx;
+    for (const t of traces) {
+      ctx.fillStyle = t.color;
+      ctx.fillRect(lx, mTop - 9, 8, 3);
+      ctx.fillStyle = "#6b7280";
+      ctx.fillText(t.label, lx + 10, mTop - 7);
+      lx += 12 + ctx.measureText(t.label).width + 8;
+    }
+  }
 
   // Depth axis: header + major ticks/labels (deeper at the bottom).
   ctx.fillStyle = "#374151";
@@ -229,8 +306,9 @@ const fmt = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : "—");
 /** Full-resolution labelled figure (heatmaps + depth axis + colour scale) → PNG. */
 export function exportEivPng(
   model: EivModel, show: Record<EivImageMode, boolean>, displayPads: number[],
+  withTraces = false,
 ): void {
-  const canvas = renderFigure(model, visibleModes(show), displayPads, 1);
+  const canvas = renderFigure(model, visibleModes(show), displayPads, 1, withTraces);
   downloadUrl(canvas.toDataURL("image/png"), `${baseName(model)}_eiv.png`);
 }
 
@@ -239,6 +317,7 @@ export function exportEivPng(
 /** Build a landscape-A4 analysis report and download it. */
 export async function exportEivPdf(
   model: EivModel, show: Record<EivImageMode, boolean>, displayPads: number[],
+  withTraces = false,
 ): Promise<void> {
   const [{ default: pdfMake }, fonts] = await Promise.all([
     import("pdfmake/build/pdfmake.js"),
@@ -257,7 +336,7 @@ export async function exportEivPdf(
   // One labelled figure (depth axis + colour scale), depth downsampled so it
   // stays a sane size and the axis labels stay legible in the PDF.
   const stride = Math.max(1, Math.ceil(model.depthCount / 900));
-  const figure = renderFigure(model, modes, displayPads, stride).toDataURL("image/png");
+  const figure = renderFigure(model, modes, displayPads, stride, withTraces).toDataURL("image/png");
 
   const statHeader = ["Pad", "Min", "Max", "Clip low", "Clip high", "Hist peak", "Levels (resistivity order)"];
   const statRows = displayPads

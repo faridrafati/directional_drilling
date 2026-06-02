@@ -8,3 +8,4 @@ export {
   buildTensor, buildModel, buildModelAsync, computeStats, defaultParams,
   matAt, pointForValue, colorForPoint,
 } from "./compute.js";
+export { mergeLasFiles, mergeAndParse } from "./merge.js";

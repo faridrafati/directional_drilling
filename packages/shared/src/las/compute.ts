@@ -31,10 +31,10 @@ export function matAt(m: EivModel, row: number, button: number, pad: number): nu
 /**
  * Build the averaged tensor from the parsed LAS (Unit3.datareader).
  *
- * Columns: index 0 is depth; [firstPadCol..lastPadCol] are the pad buttons,
- * laid out pad-major: buttonsPerPad columns per pad, in file order. We average
- * `rowsPerPixel` input rows into each output row, ignoring NULL/≤0 readings
- * (the Pascal divided by rowsPerPixel unconditionally, identical when
+ * Each (pad,button) cell reads its source column from `las.padCol` (an explicit
+ * lookup, so pad columns may be non-contiguous or reordered — as in FMI files).
+ * We average `rowsPerPixel` input rows into each output row, ignoring NULL/≤0
+ * readings (the Pascal divided by rowsPerPixel unconditionally, identical when
  * rowsPerPixel = 1 and no nulls fall in the window — but null-aware averaging
  * avoids -999.25 contamination at higher compression).
  */
@@ -57,7 +57,7 @@ function allocTensor(las: LasFile, params: EivParams): TensorState {
 function fillTensorRows(
   st: TensorState, las: LasFile, params: EivParams, r0: number, r1: number,
 ): void {
-  const { data, padCount, buttonsPerPad, firstPadCol } = las;
+  const { data, padCount, buttonsPerPad, padCol } = las;
   const totalRows = data.length;
   const isNull = (v: number) => !Number.isFinite(v) || v === params.nullValue;
   for (let r = r0; r < r1; r++) {
@@ -71,7 +71,13 @@ function fillTensorRows(
     st.depths[r] = dN > 0 ? dSum / dN : params.nullValue;
     for (let pad = 1; pad <= padCount; pad++) {
       for (let b = 0; b < buttonsPerPad; b++) {
-        const col = firstPadCol + (pad - 1) * buttonsPerPad + b;
+        // Explicit column lookup — robust to non-contiguous / reordered pad
+        // columns (FMI). -1 means this channel is absent → leave it null.
+        const col = padCol[(pad - 1) * buttonsPerPad + b];
+        if (col < 0) {
+          st.mat[matIndex(r, b, pad, buttonsPerPad, padCount)] = params.nullValue;
+          continue;
+        }
         let sum = 0, n = 0;
         for (let s = lo; s < hi; s++) {
           const row = data[s];
@@ -271,7 +277,9 @@ export function colorForPoint(point: number): [number, number, number] {
 export function buildModel(las: LasFile, params: EivParams): EivModel {
   const { mat, depths, depthCount } = buildTensor(las, params);
   const pads = computeStats({ mat, depthCount }, las, params);
-  return { las, params, depthCount, mat, depths, pads };
+  const rpp = Math.max(1, Math.round(params.rowsPerPixel));
+  const aux = buildAux(las, params, depthCount, rpp);
+  return { las, params, depthCount, mat, depths, pads, aux };
 }
 
 /**
@@ -307,8 +315,65 @@ export async function buildModelAsync(
     onProgress?.(0.55 + 0.45 * (pad / Math.max(1, las.padCount)), "Analysing pads…");
     await yieldToEventLoop();
   }
+  const aux = buildAux(las, params, st.depthCount, st.rpp);
   onProgress?.(1, "Done");
-  return { las, params, depthCount: st.depthCount, mat: st.mat, depths: st.depths, pads };
+  return { las, params, depthCount: st.depthCount, mat: st.mat, depths: st.depths, pads, aux };
+}
+
+/**
+ * Per-output-row auxiliary traces (old_fmi_code/Unit7.pas overlay curves).
+ *
+ * For each aux mnemonic present in the file we average its column over the same
+ * `rowsPerPixel` window the tensor uses, producing one value per output depth
+ * row. We also synthesize `CONDSUM` = mean conductivity per row: the sum of all
+ * pad-button readings / button-count / 5 (Unit7.pas:647 normalised the 192
+ * buttons by /192/5). Returns null when the file has no overlay-relevant aux
+ * curves (e.g. a plain EIV PADn[m] log).
+ */
+const AUX_TRACE_KEYS = ["FCAX", "FCAY", "FCAZ", "GR", "P1AZ"] as const;
+
+function buildAux(
+  las: LasFile, params: EivParams, depthCount: number, rpp: number,
+): Record<string, Float64Array> | undefined {
+  const present = AUX_TRACE_KEYS.filter((k) => k in las.auxCols);
+  const hasButtons = las.padCount > 0 && las.buttonsPerPad > 0;
+  if (present.length === 0 && !hasButtons) return undefined;
+
+  const { data } = las;
+  const total = data.length;
+  const isNull = (v: number) => !Number.isFinite(v) || v === params.nullValue;
+  const out: Record<string, Float64Array> = {};
+  for (const k of present) out[k] = new Float64Array(depthCount);
+  const cond = hasButtons ? new Float64Array(depthCount) : null;
+
+  for (let r = 0; r < depthCount; r++) {
+    const lo = r * rpp;
+    const hi = Math.min(total, lo + rpp);
+    // Each named aux curve: window-averaged, null-aware.
+    for (const k of present) {
+      const col = las.auxCols[k];
+      let sum = 0, n = 0;
+      for (let s = lo; s < hi; s++) {
+        const v = data[s][col];
+        if (!isNull(v)) { sum += v; n++; }
+      }
+      out[k][r] = n > 0 ? sum / n : params.nullValue;
+    }
+    // CONDSUM: mean over every present button column in the window / count / 5.
+    if (cond) {
+      let sum = 0, n = 0;
+      for (const col of las.padCol) {
+        if (col < 0) continue;
+        for (let s = lo; s < hi; s++) {
+          const v = data[s][col];
+          if (!isNull(v) && v > 0) { sum += v; n++; }
+        }
+      }
+      cond[r] = n > 0 ? sum / n / 5 : params.nullValue;
+    }
+  }
+  if (cond) out.CONDSUM = cond;
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** Default analysis params derived from a freshly parsed file. */
