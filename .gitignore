@@ -52,3 +52,21 @@ Directional Drilling.pdf
 # Legacy EIV Delphi project — porting reference only, never committed
 # (contains compiled binaries + large .las/.txt sample data)
 old_eiv_code/
+
+# Old Air & Gas Delphi project — Pascal source kept as reference, but its
+# compiled artifacts and sample MDBs are not committed (same policy as
+# old_delphi_code/ above).
+old_air_mud_code/**/*.dcu
+old_air_mud_code/**/*.exe
+old_air_mud_code/**/*.dll
+old_air_mud_code/**/*.DLL
+old_air_mud_code/**/*.identcache
+old_air_mud_code/**/*.local
+old_air_mud_code/**/*.ldb
+old_air_mud_code/**/*.res
+old_air_mud_code/**/*.mdb
+old_air_mud_code/**/*.MDB
+old_air_mud_code/**/*.ico
+
+# Legacy FMI/EMI Delphi project — not part of the current work; excluded for now.
+old_fmi_code/

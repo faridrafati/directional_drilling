@@ -25,6 +25,10 @@
     "./las": {
       "types": "./dist/las/index.d.ts",
       "import": "./dist/las/index.js"
+    },
+    "./air-mud": {
+      "types": "./dist/air-mud/index.d.ts",
+      "import": "./dist/air-mud/index.js"
     }
   },
   "scripts": {

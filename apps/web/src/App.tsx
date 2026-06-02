@@ -18,6 +18,11 @@ const FieldMapPage = lazy(() =>
 const LogAnalysisPage = lazy(() =>
   import("./pages/LogAnalysisPage.js").then((m) => ({ default: m.LogAnalysisPage }))
 );
+// Air & Gas Drilling — underbalanced hydraulics calculator. Lazy-split so its
+// recharts / pdfmake / xlsx deps stay out of the initial bundle.
+const AirGasPage = lazy(() =>
+  import("./pages/AirGasPage.js").then((m) => ({ default: m.AirGasPage }))
+);
 
 export function App() {
   return (
@@ -31,6 +36,8 @@ export function App() {
           <Route path="/fields/:id/maps" element={<FieldMapPage />} />
           {/* EIV EMI-log analyzer — standalone (no id) or per-well (?well=id). */}
           <Route path="/logs" element={<LogAnalysisPage />} />
+          {/* Air & Gas Drilling — standalone underbalanced hydraulics calculator. */}
+          <Route path="/air-gas" element={<AirGasPage />} />
           <Route
             path="/3d/:id"
             element={<PlaceholderPage title="3D Field Visualization" phase="Phase 5" />}
