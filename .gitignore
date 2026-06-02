@@ -68,5 +68,18 @@ old_air_mud_code/**/*.mdb
 old_air_mud_code/**/*.MDB
 old_air_mud_code/**/*.ico
 
-# Legacy FMI/EMI Delphi project — not part of the current work; excluded for now.
-old_fmi_code/
+# Old FMI/EMI Delphi project — Pascal source kept as reference, but its
+# compiled artifacts, editor scratch and large PSD/JPG working images are not
+# committed (same source-only policy as old_delphi_code/ and old_air_mud_code/).
+old_fmi_code/**/*.dcu
+old_fmi_code/**/*.exe
+old_fmi_code/**/*.manifest
+old_fmi_code/**/*.identcache
+old_fmi_code/**/*.local
+old_fmi_code/**/*.res
+old_fmi_code/**/*.ico
+old_fmi_code/**/*.psd
+old_fmi_code/**/*.jpg
+old_fmi_code/**/Thumbs.db
+old_fmi_code/**/Desktop.ini
+old_fmi_code/**/*.doc
