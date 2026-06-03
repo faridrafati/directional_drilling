@@ -185,7 +185,7 @@ function statsForPad(
     colourIntercept[hh] = y0 - slope * x0;
   }
 
-  return { min, max, clipLow, clipHigh, histogram, histogramPeak: peak, levels, colourSlope, colourIntercept };
+  return { count: n, min, max, clipLow, clipHigh, histogram, histogramPeak: peak, levels, colourSlope, colourIntercept };
 }
 
 /** All per-pad stats (sync). 1-based; pads[k] is physical pad k. */
@@ -206,7 +206,7 @@ export function computeStats(
 
 function makeEmptyStats(sections: number): EivPadStats {
   return {
-    min: 0, max: 1, clipLow: 0, clipHigh: 1,
+    count: 0, min: 0, max: 1, clipLow: 0, clipHigh: 1,
     histogram: [], histogramPeak: 0,
     levels: new Array<number>(sections + 1).fill(0),
     colourSlope: new Array<number>(sections).fill(0),
@@ -271,6 +271,37 @@ export function colorForPoint(point: number): [number, number, number] {
   if (point > 512 && point <= 768) return [768 - point, 0, 0];      // red→black
   if (point > 256 && point <= 512) return [255, 512 - point, 0];    // yellow→red
   return [255, 255, Math.max(0, 256 - point)];                       // white→yellow
+}
+
+/**
+ * One band-filter from the GEOMANCY "Specail Coloring" form (old_fmi_code/
+ * Unit3.dfm / Form3: Filter 1 (Blue), Filter 2 (Green), Filter 3 (Purple),
+ * each with an enable checkbox + Max/Min value). When enabled, any reading
+ * whose value lies in [min, max] is painted `color`, overriding the WYRB ramp.
+ */
+export interface ColorBand {
+  enabled: boolean;
+  min: number;
+  max: number;
+  /** Solid override colour, [r, g, b] each 0..255. */
+  color: [number, number, number];
+}
+
+/**
+ * Return the first enabled band whose inclusive [min, max] contains `value`,
+ * else null. A null result means "use the normal colour ramp" — so this is a
+ * no-op when `bands` is empty/undefined or every band is disabled, and it never
+ * recolours a NULL/non-finite reading. (old_fmi_code/Unit3.pas Form3.)
+ */
+export function bandColor(
+  value: number, bands: ColorBand[] | undefined, nullValue: number,
+): [number, number, number] | null {
+  if (!bands || bands.length === 0) return null;
+  if (value === nullValue || !Number.isFinite(value)) return null;
+  for (const b of bands) {
+    if (b.enabled && value >= b.min && value <= b.max) return b.color;
+  }
+  return null;
 }
 
 /** Convenience: assemble a full EivModel from a parsed LAS + params. */
@@ -374,6 +405,28 @@ function buildAux(
   }
   if (cond) out.CONDSUM = cond;
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Per-output-row mean resistivity across one pad's buttons (null/≤0-aware).
+ * Returns a Float64Array of length depthCount; a row with no valid reading is
+ * set to the null sentinel. This is the "Linear Average" wiggle GEOMANCY drew
+ * beside the image (old_fmi_code/Unit7.pas:576,647 — Resistivity_Sum / count).
+ */
+export function padRowAverages(m: EivModel, pad: number): Float64Array {
+  const { buttonsPerPad, padCount } = m.las;
+  const nullValue = m.params.nullValue;
+  const out = new Float64Array(m.depthCount);
+  for (let r = 0; r < m.depthCount; r++) {
+    const base = (r * buttonsPerPad) * padCount + (pad - 1);
+    let sum = 0, n = 0;
+    for (let b = 0; b < buttonsPerPad; b++) {
+      const v = m.mat[base + b * padCount];
+      if (v !== nullValue && v > 0 && Number.isFinite(v)) { sum += v; n++; }
+    }
+    out[r] = n > 0 ? sum / n : nullValue;
+  }
+  return out;
 }
 
 /** Default analysis params derived from a freshly parsed file. */

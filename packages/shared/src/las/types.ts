@@ -120,6 +120,9 @@ export interface EivParams {
 
 /** Per-pad statistics + percentile levels (maxmin / histogram / analize). */
 export interface EivPadStats {
+  /** Number of valid (non-null, >0) readings collected for this pad
+   *  ("Number of Data" in the GEOMANCY guide — old_fmi_code/Unit7.pas:344). */
+  count: number;
   /** Absolute min of valid (non-null, >0) readings. */
   min: number;
   /** Absolute max. */

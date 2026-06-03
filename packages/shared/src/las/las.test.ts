@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseLas } from "./parser.js";
 import {
   buildTensor, buildModel, computeStats, defaultParams, pointForValue, colorForPoint,
+  bandColor, padRowAverages, type ColorBand,
 } from "./compute.js";
 import { mergeLasFiles, mergeAndParse } from "./merge.js";
 
@@ -89,6 +90,14 @@ describe("EIV tensor + stats", () => {
     // pad2 values 20..31 → min 20, max 31
     expect(pads[2].min).toBe(20);
     expect(pads[2].max).toBe(31);
+  });
+
+  it("counts valid (non-null) readings per pad (No. of Data)", () => {
+    const pads = computeStats(buildTensor(las, params), las, params);
+    // pad1: 4 rows × 3 buttons = 12, minus the one NULL in row3 → 11
+    expect(pads[1].count).toBe(11);
+    // pad2: all 12 valid
+    expect(pads[2].count).toBe(12);
   });
 
   it("leveled bands are monotonic high→low", () => {
@@ -312,6 +321,88 @@ P1AZ.deg   : azimuth
     // 100.0 and 99.5 both carry the lo-res GR from the 100.0 mark (=60).
     const row100 = merged.data.find((r) => r[depthCol] === 100)!;
     expect(row100[grCol]).toBe(60);
+  });
+});
+
+describe("padRowAverages (Linear Average)", () => {
+  it("averages each pad's buttons per row, null-aware", () => {
+    const las = parseLas(SAMPLE);
+    const params = { ...defaultParams(las), rowsPerPixel: 1 };
+    const m = buildModel(las, params);
+    const a1 = padRowAverages(m, 1);
+    const a2 = padRowAverages(m, 2);
+    expect(a1[0]).toBeCloseTo((10 + 11 + 12) / 3); // 11
+    expect(a2[0]).toBeCloseTo((20 + 21 + 22) / 3); // 21
+    // row3 pad1 = [19, NULL, 21] → mean of the two valid = 20 (no -999.25)
+    expect(a1[3]).toBeCloseTo(20);
+  });
+
+  it("yields the null sentinel for a row with no valid reading", () => {
+    // Single-pad, single-button file whose only reading is NULL.
+    const las = parseLas(`~VERSION
+VERS. 2.0 : x
+WRAP. NO : x
+~WELL
+STRT.F 10 : s
+STOP.F 10 : s
+STEP.F -1 : s
+NULL. -999.25 : n
+~CURVE
+DEPT.F : d
+PAD1[0]. : b
+~A
+10 -999.25
+`);
+    const m = buildModel(las, { ...defaultParams(las), rowsPerPixel: 1 });
+    expect(padRowAverages(m, 1)[0]).toBe(m.params.nullValue);
+  });
+
+  it("works on FMI geometry", () => {
+    const las = parseLas(FMI_SAMPLE);
+    const m = buildModel(las, { ...defaultParams(las), rowsPerPixel: 1 });
+    // pad1 (A) row0 buttons present: 440,441,428,429 → mean 434.5
+    expect(padRowAverages(m, 1)[0]).toBeCloseTo((440 + 441 + 428 + 429) / 4);
+  });
+});
+
+describe("bandColor (Special Coloring)", () => {
+  const NULL = -999.25;
+  const blue: [number, number, number] = [0, 0, 255];
+  const green: [number, number, number] = [0, 170, 0];
+  const mk = (enabled: boolean, min: number, max: number, color: [number, number, number]): ColorBand =>
+    ({ enabled, min, max, color });
+
+  it("is a no-op for empty / undefined / all-disabled bands", () => {
+    expect(bandColor(50, undefined, NULL)).toBeNull();
+    expect(bandColor(50, [], NULL)).toBeNull();
+    expect(bandColor(50, [mk(false, 0, 100, blue)], NULL)).toBeNull();
+  });
+
+  it("returns the band colour when value is inside [min,max] (inclusive)", () => {
+    const bands = [mk(true, 10, 20, blue)];
+    expect(bandColor(15, bands, NULL)).toEqual(blue);
+    expect(bandColor(10, bands, NULL)).toEqual(blue); // inclusive lower
+    expect(bandColor(20, bands, NULL)).toEqual(blue); // inclusive upper
+  });
+
+  it("returns null when value is outside every enabled band", () => {
+    expect(bandColor(25, [mk(true, 10, 20, blue)], NULL)).toBeNull();
+    expect(bandColor(5, [mk(true, 10, 20, blue)], NULL)).toBeNull();
+  });
+
+  it("never recolours a NULL / non-finite reading", () => {
+    const bands = [mk(true, -1000, 1000, blue)]; // would contain NULL numerically
+    expect(bandColor(NULL, bands, NULL)).toBeNull();
+    expect(bandColor(NaN, bands, NULL)).toBeNull();
+    expect(bandColor(Infinity, bands, NULL)).toBeNull();
+  });
+
+  it("first enabled band wins when ranges overlap", () => {
+    const bands = [mk(true, 0, 100, blue), mk(true, 0, 100, green)];
+    expect(bandColor(50, bands, NULL)).toEqual(blue);
+    // a disabled earlier band is skipped
+    const bands2 = [mk(false, 0, 100, blue), mk(true, 0, 100, green)];
+    expect(bandColor(50, bands2, NULL)).toEqual(green);
   });
 });
 

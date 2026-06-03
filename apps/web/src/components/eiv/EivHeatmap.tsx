@@ -13,7 +13,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import {
-  type EivModel, type EivImageMode, matAt, pointForValue, colorForPoint,
+  type EivModel, type EivImageMode, type ColorBand,
+  matAt, pointForValue, colorForPoint, bandColor,
 } from "@dd/shared/las";
 
 export interface EivInspect {
@@ -42,12 +43,18 @@ interface Props {
    * (old_fmi_code/Unit7.pas:609-611). Omit (the default) for an unrotated image.
    */
   azimuth?: Float64Array;
+  /**
+   * Optional "Special Coloring" band filters (old_fmi_code/Unit3 Form3). Any
+   * reading inside an enabled band's [min,max] is painted that band's colour,
+   * overriding the normal ramp. No-op when omitted / all disabled.
+   */
+  bands?: ColorBand[];
   className?: string;
 }
 
 export function EivHeatmap({
   model, mode, displayPads, zoomX = 1, zoomY = 1, region,
-  onInspect, onSelectRegion, floatingTooltip = true, azimuth, className,
+  onInspect, onSelectRegion, floatingTooltip = true, azimuth, bands, className,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const buttons = model.las.buttonsPerPad;
@@ -103,14 +110,17 @@ export function EivHeatmap({
         let r = 0, g = 0, bl = 255;
         if (stats) {
           const value = matAt(model, gy, b, pad);
-          [r, g, bl] = colorForPoint(pointForValue(value, mode, stats, nullVal));
+          // Special Coloring band override (Unit3 Form3) takes precedence over
+          // the normal WYRB ramp; bandColor returns null when no band matches.
+          const band = bandColor(value, bands, nullVal);
+          [r, g, bl] = band ?? colorForPoint(pointForValue(value, mode, stats, nullVal));
         }
         const idx = (screenRow(gy) * w + (gx - x0)) * 4;
         img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = bl; img.data[idx + 3] = 255;
       }
     }
     ctx.putImageData(img, 0, 0);
-  }, [model, mode, displayPads, buttons, x0, y0, x1, y1, w, h, flip, azimuth, fullW]);
+  }, [model, mode, displayPads, buttons, x0, y0, x1, y1, w, h, flip, azimuth, fullW, bands]);
 
   /** CSS-pixel cursor → native global (gx, gy) within the rendered window. */
   function toNative(e: React.MouseEvent): { gx: number; gy: number } | null {

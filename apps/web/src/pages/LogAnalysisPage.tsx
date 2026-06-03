@@ -10,10 +10,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   parseLas, buildModelAsync, defaultParams, mergeLasFiles,
-  type EivModel, type EivParams, type EivImageMode,
+  type EivModel, type EivParams, type EivImageMode, type ColorBand,
 } from "@dd/shared/las";
 import { EivHeatmap, type EivRegion } from "../components/eiv/EivHeatmap.js";
 import { EivTraces, availableTraces } from "../components/eiv/EivTraces.js";
+import { EivLinearAverage, hasLinearAverage } from "../components/eiv/EivLinearAverage.js";
+import { EivGuide } from "../components/eiv/EivGuide.js";
 import { DetailsModal } from "../components/eiv/EivDialogs.js";
 import { exportEivPng, exportEivPdf, exportEivXlsx } from "../export/eiv.js";
 
@@ -23,9 +25,21 @@ const MODES: { id: EivImageMode; label: string; hint: string }[] = [
   { id: "leveled", label: "Leveled", hint: "Histogram-equalised colour bands" },
 ];
 
+/** Left→right heatmap-column order matching GEOMANCY: Detail (leveled),
+ *  General (corrected), then Raw. (old_fmi_code Detail View / General View.) */
+const COLUMN_ORDER: EivImageMode[] = ["leveled", "corrected", "raw"];
+
 /** Height (px) of the pad-number header above each heatmap. The depth track
  *  reserves a matching spacer so the image rows line up across columns. */
 const PAD_AXIS_H = 18;
+
+/** GEOMANCY "Specail Coloring" defaults: 3 disabled band filters (Unit3 Form3). */
+const DEFAULT_BANDS: ColorBand[] = [
+  { enabled: false, min: 0, max: 0, color: [0, 0, 255] },     // Filter 1 (Blue)
+  { enabled: false, min: 0, max: 0, color: [0, 170, 0] },     // Filter 2 (Green)
+  { enabled: false, min: 0, max: 0, color: [160, 32, 240] },  // Filter 3 (Purple)
+];
+const BAND_LABELS = ["Filter 1 (Blue)", "Filter 2 (Green)", "Filter 3 (Purple)"];
 
 export function LogAnalysisPage() {
   const [las, setLas] = useState<ReturnType<typeof parseLas> | null>(null);
@@ -49,7 +63,12 @@ export function LogAnalysisPage() {
   const [oriented, setOriented] = useState(false);
   // Show the aux side-track line plots (conductivity / accel / GR) — FMI only.
   const [showTraces, setShowTraces] = useState(true);
-  const [dialog, setDialog] = useState<null | "details" | "options" | "export" | "merge">(null);
+  // GEOMANCY guide tracks: per-pad Linear Average wiggle + Guide-of-Image scale.
+  const [showLinearAverage, setShowLinearAverage] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [dialog, setDialog] = useState<null | "details" | "options" | "export" | "merge" | "coloring">(null);
+  // Special Coloring band filters (Unit3 Form3) — live-applied to the heatmap.
+  const [bands, setBands] = useState<ColorBand[]>(DEFAULT_BANDS);
   const [zoomRegion, setZoomRegion] = useState<EivRegion | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -189,6 +208,15 @@ export function LogAnalysisPage() {
               Options
             </button>
           )}
+          {model && params && (
+            <button
+              onClick={() => setDialog("coloring")}
+              className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
+              title="Special Coloring — highlight resistivity bands (GEOMANCY Filter 1/2/3)"
+            >
+              Coloring{bands.some((b) => b.enabled) ? " ●" : ""}
+            </button>
+          )}
           {las && (
             <button
               onClick={() => setDialog("details")}
@@ -242,6 +270,26 @@ export function LogAnalysisPage() {
                   )}
                 </>
               )}
+              {/* GEOMANCY guide tracks (any multi-pad file). */}
+              <label className="flex items-center gap-2 text-sm mt-1" title="Per-pad averaged resistivity wiggle (GEOMANCY Linear Average, Unit7.pas:576)">
+                <input type="checkbox" checked={showLinearAverage} onChange={(e) => setShowLinearAverage(e.target.checked)} />
+                Linear Average
+              </label>
+              <label className="flex items-center gap-2 text-sm" title="Per-pad colour-scale guide + stats (GEOMANCY Guide of Image, Unit7.pas:427)">
+                <input type="checkbox" checked={showGuide} onChange={(e) => setShowGuide(e.target.checked)} />
+                Guide of Image
+              </label>
+              <button
+                onClick={() => {
+                  setShow({ raw: false, corrected: true, leveled: true });
+                  setShowLinearAverage(true);
+                  setShowGuide(true);
+                }}
+                className="mt-2 text-xs text-blue-600 hover:underline"
+                title="GEOMANCY 4-track layout: Detail + General + Linear Average + Guide"
+              >
+                GEOMANCY view
+              </button>
             </section>
             <hr className="border-gray-100" />
             {/* Data options — needs a redraw (Apply closes the popup). */}
@@ -292,6 +340,11 @@ export function LogAnalysisPage() {
           </div>
         </Popup>
       )}
+      {model && params && dialog === "coloring" && (
+        <Popup title="Special Coloring" onClose={() => setDialog(null)}>
+          <SpecialColoringDialog bands={bands} onChange={setBands} />
+        </Popup>
+      )}
       {dialog === "merge" && (
         <Popup title="Merge two LAS files" onClose={() => setDialog(null)}>
           <MergeDialog
@@ -317,6 +370,7 @@ export function LogAnalysisPage() {
           region={zoomRegion}
           displayPads={displayPads}
           show={show}
+          bands={bands}
           onClose={() => setZoomRegion(null)}
         />
       )}
@@ -372,7 +426,10 @@ export function LogAnalysisPage() {
           <div className="flex-1 min-h-0 overflow-auto">
             <div className="flex gap-4 items-start w-max">
               <DepthTrack model={model} zoomY={zoomY} />
-              {MODES.filter((m) => show[m.id]).map((m) => (
+              {/* Heatmap columns in GEOMANCY order: Detail (leveled) | General
+                  (corrected) | Raw. Only the ticked ones render. */}
+              {MODES.slice().sort((a, b) => COLUMN_ORDER.indexOf(a.id) - COLUMN_ORDER.indexOf(b.id))
+                .filter((m) => show[m.id]).map((m) => (
                 <div key={m.id} className="shrink-0">
                   {/* Frozen header (mode label + pad numbers) stays on top. */}
                   <div className="sticky top-0 z-10 bg-white">
@@ -388,11 +445,32 @@ export function LogAnalysisPage() {
                     zoomX={zoomX}
                     zoomY={zoomY}
                     azimuth={oriented ? azimuthCol : undefined}
+                    bands={bands}
                     onSelectRegion={setZoomRegion}
                     className="border-x border-b border-gray-300"
                   />
                 </div>
               ))}
+              {/* Linear Average — per-pad averaged wiggle (GEOMANCY). */}
+              {showLinearAverage && hasLinearAverage(model) && (
+                <div className="shrink-0">
+                  <div className="sticky top-0 z-10 bg-white">
+                    <div className="text-xs font-medium text-gray-700 mb-1 text-center">Linear Average</div>
+                    <div style={{ height: PAD_AXIS_H }} />
+                  </div>
+                  <EivLinearAverage model={model} displayPads={displayPads} zoomY={zoomY} />
+                </div>
+              )}
+              {/* Guide of Image — per-pad colour scale + stats (GEOMANCY). */}
+              {showGuide && (
+                <div className="shrink-0">
+                  <div className="sticky top-0 z-10 bg-white">
+                    <div className="text-xs font-medium text-gray-700 mb-1 text-center">Guide of Image</div>
+                    <div style={{ height: PAD_AXIS_H }} />
+                  </div>
+                  <EivGuide model={model} displayPads={displayPads} zoomY={zoomY} />
+                </div>
+              )}
               {/* Aux overlay traces (FMI files only) — conductivity / accel / GR. */}
               {showTraces && availableTraces(model).length > 0 && (
                 <div className="shrink-0">
@@ -640,6 +718,49 @@ function ColorScaleBar() {
   );
 }
 
+/**
+ * GEOMANCY "Specail Coloring" dialog (old_fmi_code/Unit3 Form3): three band
+ * filters, each = enable checkbox + Max/Min value. Any reading inside an enabled
+ * band's range is painted that band's colour, overriding the WYRB ramp. Edits
+ * apply live (the heatmap re-renders on the `bands` prop).
+ */
+function SpecialColoringDialog({
+  bands, onChange,
+}: { bands: ColorBand[]; onChange: (b: ColorBand[]) => void }) {
+  const update = (i: number, patch: Partial<ColorBand>) =>
+    onChange(bands.map((b, j) => (j === i ? { ...b, ...patch } : b)));
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-gray-400">
+        Highlight resistivity bands: any reading between Min and Max is painted the
+        filter colour, overriding the normal ramp. Overlapping bands: first enabled wins.
+      </p>
+      {bands.map((b, i) => (
+        <div key={i} className="border border-gray-200 rounded p-2 space-y-1.5">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={b.enabled} onChange={(e) => update(i, { enabled: e.target.checked })} />
+            <span
+              className="inline-block w-3 h-3 rounded-sm border border-gray-300"
+              style={{ backgroundColor: `rgb(${b.color[0]},${b.color[1]},${b.color[2]})` }}
+            />
+            {BAND_LABELS[i] ?? `Filter ${i + 1}`}
+          </label>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <NumField label="Max" value={b.max} onChange={(v) => update(i, { max: v })} step={0.1} />
+            <NumField label="Min" value={b.min} onChange={(v) => update(i, { min: v })} step={0.1} />
+          </div>
+        </div>
+      ))}
+      <button
+        onClick={() => onChange(DEFAULT_BANDS)}
+        className="text-xs text-blue-600 hover:underline"
+      >
+        Reset
+      </button>
+    </div>
+  );
+}
+
 function NumField({
   label, value, onChange, min, max, step = 1,
 }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) {
@@ -724,12 +845,13 @@ function Popup({
  * the depth range of the selection is shown in the header.
  */
 function ZoomModal({
-  model, region, displayPads, show, onClose,
+  model, region, displayPads, show, bands, onClose,
 }: {
   model: EivModel;
   region: EivRegion;
   displayPads: number[];
   show: Record<EivImageMode, boolean>;
+  bands?: ColorBand[];
   onClose: () => void;
 }) {
   const [zx, setZx] = useState(6);
@@ -766,6 +888,7 @@ function ZoomModal({
                   region={region}
                   zoomX={zx}
                   zoomY={zy}
+                  bands={bands}
                   className="border border-gray-300"
                 />
               </div>
