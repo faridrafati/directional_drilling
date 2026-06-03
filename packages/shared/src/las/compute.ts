@@ -274,7 +274,7 @@ export function colorForPoint(point: number): [number, number, number] {
 }
 
 /**
- * One band-filter from the GEOMANCY "Specail Coloring" form (old_fmi_code/
+ * One band-filter from the "Special Coloring" form (old_fmi_code/
  * Unit3.dfm / Form3: Filter 1 (Blue), Filter 2 (Green), Filter 3 (Purple),
  * each with an enable checkbox + Max/Min value). When enabled, any reading
  * whose value lies in [min, max] is painted `color`, overriding the WYRB ramp.
@@ -410,8 +410,8 @@ function buildAux(
 /**
  * Per-output-row mean resistivity across one pad's buttons (null/≤0-aware).
  * Returns a Float64Array of length depthCount; a row with no valid reading is
- * set to the null sentinel. This is the "Linear Average" wiggle GEOMANCY drew
- * beside the image (old_fmi_code/Unit7.pas:576,647 — Resistivity_Sum / count).
+ * set to the null sentinel. This is the "Linear Average" wiggle drawn beside
+ * the image (old_fmi_code/Unit7.pas:576,647 — Resistivity_Sum / count).
  */
 export function padRowAverages(m: EivModel, pad: number): Float64Array {
   const { buttonsPerPad, padCount } = m.las;

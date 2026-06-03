@@ -10,6 +10,7 @@
  */
 import { useState } from "react";
 import type { EivModel, LasFile } from "@dd/shared/las";
+import { EivGuide } from "./EivGuide.js";
 
 function ModalShell({
   title, onClose, children, wide,
@@ -182,6 +183,15 @@ function HistogramBody({ model }: { model: EivModel }) {
       <div className="flex justify-between text-[10px] text-gray-500 mt-0.5">
         <span>max ({s?.max.toFixed(0)})</span>
         <span>min ({s?.min.toFixed(0)})</span>
+      </div>
+
+      {/* Guide of Image — per-pad colour scale + stats, beside the histogram
+          (old_fmi_code/Unit7.pas:427). Compact (zoomY scales the ramp height). */}
+      <div className="mt-4 border-t border-gray-100 pt-3">
+        <h4 className="text-sm font-medium text-gray-700 mb-2">Guide of Image</h4>
+        <div className="overflow-x-auto">
+          <EivGuide model={model} displayPads={pads} zoomY={120 / Math.max(1, model.depthCount)} />
+        </div>
       </div>
     </>
   );

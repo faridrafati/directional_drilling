@@ -1,5 +1,5 @@
 /**
- * EIV "Guide of Image" track — port of GEOMANCY's per-pad colour-scale guide
+ * EIV "Guide of Image" track — port of the per-pad colour-scale guide
  * (old_fmi_code/Unit7.pas:344-351, 427-451). For each displayed pad it draws a
  * vertical white→yellow→red→black ramp annotated with that pad's resistivity
  * values, plus an inline stats box: No. of Data / Abs Min / Abs Max / Min after

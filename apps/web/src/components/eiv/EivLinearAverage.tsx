@@ -1,6 +1,6 @@
 /**
- * EIV "Linear Average" track — port of the per-pad averaged wiggle GEOMANCY drew
- * beside the borehole image (old_fmi_code/Unit7.pas:576,647). For each displayed
+ * EIV "Linear Average" track — port of the per-pad averaged wiggle drawn beside
+ * the borehole image (old_fmi_code/Unit7.pas:576,647). For each displayed
  * pad it plots that pad's per-row mean resistivity as a vertical line curve,
  * auto-scaled to its own min/max, one narrow sub-track per pad. Shares the
  * heatmap's `zoomY` and `flip` so depth rows line up with the image and ruler.
@@ -49,7 +49,7 @@ function PadWiggle({ model, pad, zoomY, width }: { model: EivModel; pad: number;
     if (!rng) return;
     const [lo, hi] = rng;
     const span = hi - lo || 1;
-    ctx.strokeStyle = "#2563eb"; // blue, like GEOMANCY's linear-average track
+    ctx.strokeStyle = "#2563eb"; // blue linear-average curve
     ctx.lineWidth = 1;
     ctx.beginPath();
     let started = false;
