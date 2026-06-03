@@ -65,7 +65,7 @@ export function LogAnalysisPage() {
   // Per-pad Linear Average wiggle track (Guide of Image now lives under the
   // Histograms tab in the Details modal).
   const [showLinearAverage, setShowLinearAverage] = useState(false);
-  const [dialog, setDialog] = useState<null | "details" | "options" | "export" | "merge" | "coloring">(null);
+  const [dialog, setDialog] = useState<null | "details" | "options" | "export" | "merge">(null);
   // Special Coloring band filters (Unit3 Form3) — live-applied to the heatmap.
   const [bands, setBands] = useState<ColorBand[]>(DEFAULT_BANDS);
   const [zoomRegion, setZoomRegion] = useState<EivRegion | null>(null);
@@ -207,15 +207,6 @@ export function LogAnalysisPage() {
               Options
             </button>
           )}
-          {model && params && (
-            <button
-              onClick={() => setDialog("coloring")}
-              className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
-              title="Special Coloring — highlight resistivity bands (Filter 1/2/3)"
-            >
-              Coloring{bands.some((b) => b.enabled) ? " ●" : ""}
-            </button>
-          )}
           {las && (
             <button
               onClick={() => setDialog("details")}
@@ -307,6 +298,14 @@ export function LogAnalysisPage() {
                 onChange={(order) => setParams({ ...params, padOrder: order })}
               />
             </section>
+            <hr className="border-gray-100" />
+            {/* Special Coloring — highlight resistivity bands (live). */}
+            <section>
+              <h4 className="font-medium text-sm mb-2">
+                Special Coloring{bands.some((b) => b.enabled) ? " (active)" : ""}
+              </h4>
+              <SpecialColoringDialog bands={bands} onChange={setBands} model={model} />
+            </section>
           </div>
         </Popup>
       )}
@@ -332,11 +331,6 @@ export function LogAnalysisPage() {
               onClick={() => { setDialog(null); void exportEivXlsx(model, displayPads); }}
             />
           </div>
-        </Popup>
-      )}
-      {model && params && dialog === "coloring" && (
-        <Popup title="Special Coloring" onClose={() => setDialog(null)}>
-          <SpecialColoringDialog bands={bands} onChange={setBands} />
         </Popup>
       )}
       {dialog === "merge" && (
@@ -408,7 +402,7 @@ export function LogAnalysisPage() {
               <span className="text-gray-500">Zoom Y</span>
               <ZoomStepper value={zoomY} onChange={setZoomY} />
             </div>
-            <ColorScaleBar />
+            <ColorScaleBar model={model} />
             <span className="text-gray-400">
               Hover for the readout · drag a box to zoom a depth × pad range.
             </span>
@@ -430,7 +424,9 @@ export function LogAnalysisPage() {
                     <div className="text-xs font-medium text-gray-700 mb-1 text-center">
                       {m.label}{oriented && azimuthCol ? " · compass" : ""}
                     </div>
-                    <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />
+                    {oriented && azimuthCol
+                      ? <CompassAxis width={model.las.buttonsPerPad * displayPads.length * zoomX} />
+                      : <PadAxis displayPads={displayPads} buttons={model.las.buttonsPerPad} zoomX={zoomX} />}
                   </div>
                   <EivHeatmap
                     model={model}
@@ -664,6 +660,47 @@ function DepthTrack({ model, zoomY }: { model: EivModel; zoomY: number }) {
   );
 }
 
+/**
+ * Depth ruler for the zoom modal — like DepthTrack but scoped to the zoomed
+ * region [region.y0, region.y1) and aligned to the zoom heatmaps (same `flip`,
+ * height = rows × zoomY). A spacer matches the modal's mode-label header so the
+ * first tick lines up with the image top.
+ */
+function ZoomDepthTrack({ model, region, zoomY }: { model: EivModel; region: EivRegion; zoomY: number }) {
+  const y0 = Math.max(0, region.y0);
+  const y1 = Math.min(model.depthCount, region.y1);
+  const rows = Math.max(1, y1 - y0);
+  const heightPx = rows * zoomY;
+  const flip = model.depthCount > 1 && model.depths[0] > model.depths[model.depthCount - 1];
+  const majorN = Math.max(2, Math.min(20, Math.round(heightPx / 70)));
+  // Data row for a fraction (0=top) of the region, honouring flip.
+  const rowAt = (frac: number) => {
+    const within = Math.round(frac * (rows - 1));
+    return flip ? y1 - 1 - within : y0 + within;
+  };
+  const marks = Array.from({ length: majorN + 1 }, (_, i) => i);
+  return (
+    <div className="shrink-0 text-right" style={{ width: 64 }}>
+      {/* Spacer to match the "mode label" row above each zoom heatmap. */}
+      <div className="text-xs font-medium text-transparent mb-1">.</div>
+      <div className="relative border-r border-gray-300" style={{ height: heightPx }}>
+        {marks.map((i) => {
+          const frac = i / majorN;
+          const r = rowAt(frac);
+          return (
+            <div key={i} className="absolute right-0" style={{ top: frac * (heightPx - 1) }}>
+              <div className="absolute right-0 -translate-y-1/2 w-2.5 border-t border-gray-400" />
+              <div className="absolute right-3.5 -translate-y-1/2 text-[10px] text-gray-500 whitespace-nowrap">
+                {model.depths[r]?.toFixed(1)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Pad-number header shown ON TOP of a heatmap (one cell per displayed pad). */
 function PadAxis({ displayPads, buttons, zoomX }: { displayPads: number[]; buttons: number; zoomX: number }) {
   return (
@@ -684,15 +721,51 @@ function PadAxis({ displayPads, buttons, zoomX }: { displayPads: number[]; butto
   );
 }
 
-/** Minimised colour-scale legend shown inline above the graph. */
-function ColorScaleBar() {
+/**
+ * Compass/azimuth header shown ON TOP of a heatmap when it is compass-oriented
+ * (the image is rotated by pad-1 azimuth, so the x-axis is now 0–360° around
+ * the borehole). Marks N / E / S / W at 0/90/180/270°.
+ */
+function CompassAxis({ width }: { width: number }) {
+  const marks = [
+    { f: 0, label: "N" }, { f: 0.25, label: "E" }, { f: 0.5, label: "S" },
+    { f: 0.75, label: "W" }, { f: 1, label: "N" },
+  ];
+  return (
+    <div className="relative border border-gray-300 bg-gray-50" style={{ width, height: PAD_AXIS_H }}>
+      {marks.map((m, i) => (
+        <div
+          key={i}
+          className="absolute text-[10px] font-medium text-gray-600 -translate-x-1/2"
+          style={{ left: m.f * width, lineHeight: `${PAD_AXIS_H}px` }}
+        >
+          {m.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Minimised colour-scale legend shown inline above the graph, annotated with
+ *  the overall data min/max. (Colour scaling is per-pad; this shows the range
+ *  spanned across all pads so the ramp has concrete numbers.) */
+function ColorScaleBar({ model }: { model: EivModel }) {
   // Mirror the white→yellow→red→black ramp.
   const grad = "linear-gradient(to right, rgb(255,255,255), rgb(255,255,0), rgb(255,0,0), rgb(0,0,0))";
+  let lo = Infinity, hi = -Infinity;
+  for (let p = 1; p <= model.las.padCount; p++) {
+    const s = model.pads[p];
+    if (!s || s.count === 0) continue;
+    if (s.min < lo) lo = s.min;
+    if (s.max > hi) hi = s.max;
+  }
+  const have = lo <= hi;
+  const f = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
   return (
     <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-      <span>Low</span>
+      <span className="tabular-nums">{have ? f(lo) : "Low"}</span>
       <div className="h-2.5 w-24 rounded border border-gray-200" style={{ background: grad }} />
-      <span>High</span>
+      <span className="tabular-nums">{have ? f(hi) : "High"}</span>
       <span
         className="inline-block w-2.5 h-2.5 rounded-sm ml-1.5"
         style={{ background: "rgb(0,0,255)" }}
@@ -703,44 +776,78 @@ function ColorScaleBar() {
 }
 
 /**
- * "Special Coloring" dialog (old_fmi_code/Unit3 Form3): three band
- * filters, each = enable checkbox + Max/Min value. Any reading inside an enabled
- * band's range is painted that band's colour, overriding the WYRB ramp. Edits
- * apply live (the heatmap re-renders on the `bands` prop).
+ * "Special Coloring" controls (old_fmi_code/Unit3 Form3): three band filters,
+ * each = enable checkbox + Min/Max value. Any reading inside an enabled band's
+ * range is painted that band's colour, overriding the WYRB ramp. Edits apply
+ * live (the heatmap re-renders on the `bands` prop).
+ *
+ * User-friendliness: the data's overall resistivity range is shown, and turning
+ * a filter ON for the first time seeds a sensible Min/Max (a third of the range)
+ * so it highlights something immediately instead of nothing (0..0).
  */
 function SpecialColoringDialog({
-  bands, onChange,
-}: { bands: ColorBand[]; onChange: (b: ColorBand[]) => void }) {
+  bands, onChange, model,
+}: { bands: ColorBand[]; onChange: (b: ColorBand[]) => void; model: EivModel }) {
+  // Overall data range across all pads (for hints + seeding defaults).
+  let dMin = Infinity, dMax = -Infinity;
+  for (let p = 1; p <= model.las.padCount; p++) {
+    const s = model.pads[p];
+    if (!s || s.count === 0) continue;
+    if (s.min < dMin) dMin = s.min;
+    if (s.max > dMax) dMax = s.max;
+  }
+  const haveRange = dMin <= dMax;
+  const round = (v: number) => Math.round(v * 10) / 10;
+
   const update = (i: number, patch: Partial<ColorBand>) =>
     onChange(bands.map((b, j) => (j === i ? { ...b, ...patch } : b)));
+
+  // Toggle a filter; on first enable with an empty (0..0) range, seed a band.
+  const toggle = (i: number, enabled: boolean) => {
+    const b = bands[i];
+    if (enabled && haveRange && b.min === 0 && b.max === 0) {
+      // Three equal thirds of the data range, one per filter.
+      const lo = dMin + ((dMax - dMin) * i) / 3;
+      const hi = dMin + ((dMax - dMin) * (i + 1)) / 3;
+      update(i, { enabled, min: round(lo), max: round(hi) });
+    } else {
+      update(i, { enabled });
+    }
+  };
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <p className="text-[11px] text-gray-400">
-        Highlight resistivity bands: any reading between Min and Max is painted the
-        filter colour, overriding the normal ramp. Overlapping bands: first enabled wins.
+        Paint readings whose value falls between Min and Max a solid colour, on top of
+        the normal image. Turn one on to highlight a resistivity band.
+        {haveRange && <> Data range: <span className="tabular-nums">{round(dMin)}–{round(dMax)}</span>.</>}
       </p>
       {bands.map((b, i) => (
-        <div key={i} className="border border-gray-200 rounded p-2 space-y-1.5">
+        <div key={i} className={`border rounded p-2 ${b.enabled ? "border-gray-300 bg-gray-50" : "border-gray-200"}`}>
           <label className="flex items-center gap-2 text-sm font-medium">
-            <input type="checkbox" checked={b.enabled} onChange={(e) => update(i, { enabled: e.target.checked })} />
+            <input type="checkbox" checked={b.enabled} onChange={(e) => toggle(i, e.target.checked)} />
             <span
               className="inline-block w-3 h-3 rounded-sm border border-gray-300"
               style={{ backgroundColor: `rgb(${b.color[0]},${b.color[1]},${b.color[2]})` }}
             />
             {BAND_LABELS[i] ?? `Filter ${i + 1}`}
           </label>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <NumField label="Max" value={b.max} onChange={(v) => update(i, { max: v })} step={0.1} />
-            <NumField label="Min" value={b.min} onChange={(v) => update(i, { min: v })} step={0.1} />
-          </div>
+          {b.enabled && (
+            <div className="grid grid-cols-2 gap-2 text-xs mt-1.5">
+              <NumField label="Min" value={b.min} onChange={(v) => update(i, { min: v })} step={0.1} />
+              <NumField label="Max" value={b.max} onChange={(v) => update(i, { max: v })} step={0.1} />
+            </div>
+          )}
         </div>
       ))}
-      <button
-        onClick={() => onChange(DEFAULT_BANDS)}
-        className="text-xs text-blue-600 hover:underline"
-      >
-        Reset
-      </button>
+      {bands.some((b) => b.enabled) && (
+        <button
+          onClick={() => onChange(DEFAULT_BANDS)}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          Clear all
+        </button>
+      )}
     </div>
   );
 }
@@ -862,6 +969,7 @@ function ZoomModal({
         </div>
         <div className="p-3 overflow-auto">
           <div className="flex gap-4 items-start">
+            <ZoomDepthTrack model={model} region={region} zoomY={zy} />
             {modes.map((m) => (
               <div key={m.id} className="shrink-0">
                 <div className="text-xs font-medium text-gray-700 mb-1 text-center">{m.label}</div>

@@ -12,7 +12,7 @@
  * Rendered only when the relevant aux curves exist on the model (model.aux),
  * i.e. for FMI files — absent for plain EIV PADn[m] logs.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EivModel } from "@dd/shared/las";
 
 /** One drawable trace: which aux key, a label, and a CSS color. */
@@ -29,7 +29,7 @@ export interface TraceGroup {
   traces: TraceDef[];
 }
 
-/** The three trace graphs, in display order (Unit7.pas:645-668). */
+/** The trace graphs, in display order (Unit7.pas:645-668). */
 export const TRACE_GROUPS: TraceGroup[] = [
   { id: "cond", title: "Avg Conductivity", traces: [{ key: "CONDSUM", label: "Cond", color: "#6b7280" }] },
   {
@@ -40,6 +40,7 @@ export const TRACE_GROUPS: TraceGroup[] = [
     ],
   },
   { id: "gr", title: "Gamma Ray", traces: [{ key: "GR", label: "GR", color: "#9333ea" }] },
+  { id: "azi", title: "Azimuth", traces: [{ key: "P1AZ", label: "Az", color: "#ea580c" }] }, // orange
 ];
 
 /** Finite min/max of an aux array, skipping the null sentinel. */
@@ -49,20 +50,6 @@ function range(arr: Float64Array, nullVal: number): [number, number] | null {
     if (!Number.isFinite(v) || v === nullVal) continue;
     if (v < lo) lo = v;
     if (v > hi) hi = v;
-  }
-  return lo <= hi ? [lo, hi] : null;
-}
-
-/** Combined finite range over every trace in a group (shared x scale). */
-function groupRange(model: EivModel, traces: TraceDef[], nullVal: number): [number, number] | null {
-  let lo = Infinity, hi = -Infinity;
-  for (const t of traces) {
-    const arr = model.aux?.[t.key];
-    if (!arr) continue;
-    const r = range(arr, nullVal);
-    if (!r) continue;
-    if (r[0] < lo) lo = r[0];
-    if (r[1] > hi) hi = r[1];
   }
   return lo <= hi ? [lo, hi] : null;
 }
@@ -82,7 +69,9 @@ export function availableTraces(model: EivModel): TraceDef[] {
 
 const fmt = (v: number) => (Number.isFinite(v) ? (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)) : "—");
 
-/** One graph: the traces of a group on a shared x scale, with min/max labels. */
+/** One graph: each trace in the group scaled to its OWN range (so curves with
+ *  very different magnitudes — e.g. accel Z ≈ 9.8 vs X/Y ≈ ±1 — all stay
+ *  visible), drawn over the depth axis, with per-trace min/max labels. */
 function TraceGraph({ model, group, zoomY, width }: {
   model: EivModel; group: TraceGroup; zoomY: number; width: number;
 }) {
@@ -90,21 +79,44 @@ function TraceGraph({ model, group, zoomY, width }: {
   const h = model.depthCount;
   const nullVal = model.params.nullValue;
   const flip = h > 1 && model.depths[0] > model.depths[h - 1];
-  const rng = groupRange(model, group.traces, nullVal);
+  // Per-trace range so each curve fills the width independently.
+  const ranges = group.traces.map((t) => {
+    const arr = model.aux?.[t.key];
+    return arr ? range(arr, nullVal) : null;
+  });
+
+  // Cursor-following readout (CSS px within the wrapper) + payload.
+  const [tip, setTip] = useState<{ x: number; y: number; depth: number; vals: { label: string; color: string; v: number }[] } | null>(null);
+
+  const handleMove = (e: React.MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas || h <= 0) { setTip(null); return; }
+    const rect = canvas.getBoundingClientRect();
+    const cy = Math.floor(((e.clientY - rect.top) / rect.height) * h);
+    if (cy < 0 || cy >= h) { setTip(null); return; }
+    const row = flip ? h - 1 - cy : cy;
+    const vals = group.traces.map((t) => ({ label: t.label, color: t.color, v: model.aux?.[t.key]?.[row] ?? NaN }));
+    setTip({ x: e.clientX - rect.left, y: e.clientY - rect.top, depth: model.depths[row], vals });
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || h <= 0 || !rng) return;
+    if (!canvas || h <= 0) return;
+    // Render at the DISPLAYED height (h*zoomY) so the curve is drawn crisp at
+    // full resolution rather than CSS-stretched from an h-pixel-tall buffer.
+    const outH = Math.max(1, Math.round(h * zoomY));
     canvas.width = width;
-    canvas.height = h;
+    canvas.height = outH;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, width, h);
-    const [lo, hi] = rng;
-    const span = hi - lo || 1;
-    for (const t of group.traces) {
+    ctx.clearRect(0, 0, width, outH);
+    const yOf = (r: number) => ((flip ? h - 1 - r : r) / Math.max(1, h - 1)) * (outH - 1);
+    group.traces.forEach((t, ti) => {
       const arr = model.aux?.[t.key];
-      if (!arr) continue;
+      const rng = ranges[ti];
+      if (!arr || !rng) return;
+      const [lo, hi] = rng;
+      const span = hi - lo || 1;
       ctx.strokeStyle = t.color;
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -113,12 +125,17 @@ function TraceGraph({ model, group, zoomY, width }: {
         const v = arr[r];
         if (!Number.isFinite(v) || v === nullVal) { started = false; continue; }
         const x = ((v - lo) / span) * (width - 2) + 1;
-        const y = flip ? h - 1 - r : r;
+        const y = yOf(r);
         if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
       }
       ctx.stroke();
-    }
-  }, [model, group, h, width, nullVal, flip, rng]);
+    });
+  }, [model, group, h, width, nullVal, flip, zoomY, ranges]);
+
+  // Overall min/max across the group's traces, for the footer labels.
+  const footLo = Math.min(...ranges.filter(Boolean).map((r) => r![0]));
+  const footHi = Math.max(...ranges.filter(Boolean).map((r) => r![1]));
+  const hasRange = ranges.some(Boolean);
 
   return (
     <div className="shrink-0">
@@ -134,15 +151,35 @@ function TraceGraph({ model, group, zoomY, width }: {
           ))}
         </div>
       )}
-      <canvas
-        ref={canvasRef}
-        style={{ width, height: h * zoomY, imageRendering: "auto", display: "block" }}
-        className="border border-gray-200 bg-white"
-      />
-      {/* X-axis value labels: min (left) … max (right). */}
+      <div className="relative" style={{ width, height: h * zoomY }}>
+        <canvas
+          ref={canvasRef}
+          onMouseMove={handleMove}
+          onMouseLeave={() => setTip(null)}
+          style={{ width, height: h * zoomY, imageRendering: "auto", display: "block" }}
+          className="border border-gray-200 bg-white"
+        />
+        {/* Cursor-following value readout (like the heatmap's point readout). */}
+        {tip && (
+          <div
+            className="absolute z-20 pointer-events-none bg-gray-900/90 text-white text-[10px] rounded px-1.5 py-1 whitespace-nowrap shadow"
+            style={{ left: tip.x + 12, top: tip.y + 12 }}
+          >
+            <div>Depth {Number.isFinite(tip.depth) ? tip.depth.toFixed(2) : "—"}</div>
+            {tip.vals.map((t) => (
+              <div key={t.label} className="flex items-center gap-1">
+                <span className="inline-block w-2 h-0.5" style={{ backgroundColor: t.color }} />
+                <span>{t.label}: {Number.isFinite(t.v) && t.v !== nullVal ? t.v.toFixed(2) : "NULL"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* X-axis value labels: overall min (left) … max (right) of the group.
+          (Each trace is auto-scaled to its own range; hover for exact values.) */}
       <div className="flex justify-between text-[9px] text-gray-500 mt-0.5" style={{ width }}>
-        <span>{rng ? fmt(rng[0]) : "—"}</span>
-        <span>{rng ? fmt(rng[1]) : "—"}</span>
+        <span>{hasRange ? fmt(footLo) : "—"}</span>
+        <span>{hasRange ? fmt(footHi) : "—"}</span>
       </div>
     </div>
   );

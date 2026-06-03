@@ -49,12 +49,14 @@ interface Props {
    * overriding the normal ramp. No-op when omitted / all disabled.
    */
   bands?: ColorBand[];
+  /** Smoothly interpolate when zoomed in (default true). false = blocky cells. */
+  smooth?: boolean;
   className?: string;
 }
 
 export function EivHeatmap({
   model, mode, displayPads, zoomX = 1, zoomY = 1, region,
-  onInspect, onSelectRegion, floatingTooltip = true, azimuth, bands, className,
+  onInspect, onSelectRegion, floatingTooltip = true, azimuth, bands, smooth = true, className,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const buttons = model.las.buttonsPerPad;
@@ -86,12 +88,16 @@ export function EivHeatmap({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || w <= 0 || h <= 0) return;
-    canvas.width = w;
-    canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const img = ctx.createImageData(w, h);
     const nullVal = model.params.nullValue;
+
+    // 1) Render one pixel PER DATA CELL into a small offscreen buffer.
+    const src = document.createElement("canvas");
+    src.width = w; src.height = h;
+    const sctx = src.getContext("2d");
+    if (!sctx) return;
+    const img = sctx.createImageData(w, h);
 
     // Per-row azimuth rotation (Unit7.pas:609-611): shift the source column by
     // a fraction of the full circumference. Wraps around the whole image width.
@@ -101,7 +107,6 @@ export function EivHeatmap({
         ? ((Math.round((azimuth![gy] / 360) * fullW) % fullW) + fullW) % fullW
         : 0;
       for (let gx = x0; gx < x1; gx++) {
-        // Screen column gx samples source column (gx+shift) mod fullW.
         const sx = oriented ? (gx + shift) % fullW : gx;
         const p = Math.floor(sx / buttons);
         const b = sx % buttons;
@@ -110,8 +115,6 @@ export function EivHeatmap({
         let r = 0, g = 0, bl = 255;
         if (stats) {
           const value = matAt(model, gy, b, pad);
-          // Special Coloring band override (Unit3 Form3) takes precedence over
-          // the normal WYRB ramp; bandColor returns null when no band matches.
           const band = bandColor(value, bands, nullVal);
           [r, g, bl] = band ?? colorForPoint(pointForValue(value, mode, stats, nullVal));
         }
@@ -119,8 +122,22 @@ export function EivHeatmap({
         img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = bl; img.data[idx + 3] = 255;
       }
     }
-    ctx.putImageData(img, 0, 0);
-  }, [model, mode, displayPads, buttons, x0, y0, x1, y1, w, h, flip, azimuth, fullW, bands]);
+    sctx.putImageData(img, 0, 0);
+
+    // 2) Scale the buffer up to the displayed (zoomed) size. With smoothing on,
+    // the browser bilinearly interpolates BETWEEN the real cell values — higher
+    // apparent resolution from the existing data, instead of blocky stretching.
+    // Band overrides and NULLs stay crisp because a single-pixel block can only
+    // blend at its edges. `smooth=false` (nearest) is used when zoom ≤ 1.
+    const outW = Math.max(1, Math.round(w * zoomX));
+    const outH = Math.max(1, Math.round(h * zoomY));
+    canvas.width = outW;
+    canvas.height = outH;
+    ctx.imageSmoothingEnabled = smooth && (zoomX > 1 || zoomY > 1);
+    ctx.imageSmoothingQuality = "high";
+    ctx.clearRect(0, 0, outW, outH);
+    ctx.drawImage(src, 0, 0, w, h, 0, 0, outW, outH);
+  }, [model, mode, displayPads, buttons, x0, y0, x1, y1, w, h, flip, azimuth, fullW, bands, zoomX, zoomY, smooth]);
 
   /** CSS-pixel cursor → native global (gx, gy) within the rendered window. */
   function toNative(e: React.MouseEvent): { gx: number; gy: number } | null {
@@ -206,7 +223,10 @@ export function EivHeatmap({
         onMouseLeave={() => { onInspect?.(null); setTip(null); if (dragging.current) { dragging.current = false; setSel(null); } }}
         style={{
           width: w * zoomX, height: h * zoomY,
-          imageRendering: "pixelated", display: "block",
+          // Canvas is rendered at the displayed resolution (w*zoomX × h*zoomY),
+          // so no CSS up-scaling: 1:1, crisp. `pixelated` only matters if the
+          // browser rescales, which it no longer does.
+          imageRendering: smooth ? "auto" : "pixelated", display: "block",
           cursor: onSelectRegion ? "crosshair" : "default",
         }}
       />
