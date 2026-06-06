@@ -5,8 +5,8 @@
 export * from "./types.js";
 export { parseLas } from "./parser.js";
 export {
-  buildTensor, buildModel, buildModelAsync, computeStats, defaultParams,
-  matAt, pointForValue, colorForPoint, bandColor, padRowAverages,
+  buildTensor, buildModel, buildModelAsync, computeStats, computeStatsForRows,
+  defaultParams, matAt, pointForValue, colorForPoint, bandColor, padRowAverages,
 } from "./compute.js";
 export type { ColorBand } from "./compute.js";
 export { mergeLasFiles, mergeAndParse } from "./merge.js";

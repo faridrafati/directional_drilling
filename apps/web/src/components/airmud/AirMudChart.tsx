@@ -175,8 +175,12 @@ export function DepthTraverseChart({
                 );
               }}
             />
+            {/* Linear (NOT monotone): the string leg's points run in descending-X
+                order (bit → surface), which d3 curveMonotoneX mis-interpolates into a
+                large overshoot — it wrongly crosses the annulus and drags the X-axis
+                domain negative. Straight segments through the dense detail stay true. */}
             <Line
-              type="monotone"
+              type="linear"
               dataKey="annDepth"
               name={annName}
               stroke="#1e40af"
@@ -187,7 +191,7 @@ export function DepthTraverseChart({
               hide={!!hidden.annDepth}
             />
             <Line
-              type="monotone"
+              type="linear"
               dataKey="strDepth"
               name={strName}
               stroke="#16a34a"

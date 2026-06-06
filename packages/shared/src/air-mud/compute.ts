@@ -398,6 +398,11 @@ function buildRows(list: GR[], _report: boolean): AirMudRow[] {
   for (let i = 0; i < list.length; i++) {
     const g = list[i];
     if (!g) continue;
+    // Skip unpopulated densification slots: when the BHA total doesn't land
+    // EXACTLY on TD (e.g. float noise from converted data), the march can leave
+    // an empty GRAPHING record (part="", press=0). Those are the spurious
+    // press=0 rows seen in the profile table/chart — never a real station.
+    if (!g.part) continue;
     rows.push({
       part: g.part,
       depth: g.depth,

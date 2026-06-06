@@ -17,12 +17,14 @@ import {
 import { AirMudForm } from "../components/airmud/AirMudForm.js";
 import { DepthTraverseChart } from "../components/airmud/AirMudChart.js";
 import { exportAirMudCsv, exportAirMudPdf, exportAirMudXlsx } from "../export/airmud.js";
+import { api } from "../api/client.js";
 import {
   type Quantity, type UnitSel, UNITS, SYSTEMS, DEFAULT_SEL, systemLabel, unitName,
   disp, toBase, dispCol, colUnit, GAS_FLOW_BASE,
 } from "../units/airmudUnits.js";
 
 type ArbResult = AirMudResult & { arbitrary?: AirMudRow };
+type AirMudSample = { id: string; label: string; input: AirMudInput };
 
 /** Which reporting view is shown — mirrors the Form44 PageControl tabs. */
 type ReportTab = "data" | "pressure" | "flow" | "energy";
@@ -40,6 +42,9 @@ export function AirGasPage() {
   // True when `input` has changed since the last calculation, so the shown
   // results may be stale (prevents mistaking old numbers for the new inputs).
   const [dirty, setDirty] = useState(false);
+  // Sample wells — loaded from the converted SQLite DBs; the imported
+  // @dd/shared presets are the offline fallback when the DBs aren't present.
+  const [presets, setPresets] = useState<AirMudSample[]>(AIR_MUD_PRESETS);
 
   // Arbitrary-point probe (Form44's "find pressure at depth" row).
   const [arbPart, setArbPart] = useState<"ANLS" | "STRG">("ANLS");
@@ -104,8 +109,24 @@ export function AirGasPage() {
   // Compute once on mount with the default preset.
   useEffect(() => { run(clone(DRYGAS_PRESET)); /* eslint-disable-line react-hooks/exhaustive-deps */ }, []);
 
+  // Pull the sample wells from the SQLite-backed API; re-load the current one
+  // from the DB once available (falls back to the shared presets on failure).
+  useEffect(() => {
+    let cancelled = false;
+    api.get<AirMudSample[]>("/airmud/samples")
+      .then((data) => {
+        if (cancelled || !data?.length) return;
+        setPresets(data);
+        const p = data.find((x) => x.id === presetId);
+        if (p && presetId !== "custom") { const next = clone(p.input); setInput(next); run(next); }
+      })
+      .catch(() => { /* keep the @dd/shared fallback */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function applyPreset(id: string) {
-    const p = AIR_MUD_PRESETS.find((x) => x.id === id);
+    const p = presets.find((x) => x.id === id);
     if (!p) return;
     setPresetId(id);
     const next = clone(p.input);
@@ -152,7 +173,7 @@ export function AirGasPage() {
                 className="h-10 border border-gray-300 rounded-md px-2 text-sm bg-white"
                 title="Load a bundled example well — replaces every input (use the form's Fluid model toggle to switch gas/aerated without reloading)"
               >
-                {AIR_MUD_PRESETS.map((p) => (
+                {presets.map((p) => (
                   <option key={p.id} value={p.id}>{p.label}</option>
                 ))}
                 <option value="custom" disabled>Custom (edited)</option>

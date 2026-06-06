@@ -947,6 +947,8 @@ function ZoomModal({
 }) {
   const [zx, setZx] = useState(6);
   const [zy, setZy] = useState(3);
+  // Re-normalise the colour scale to the data inside this window (default on).
+  const [rescale, setRescale] = useState(true);
   const modes = MODES.filter((m) => show[m.id]);
   const dTop = model.depths[region.y0]?.toFixed(2);
   const dBot = model.depths[Math.min(model.depthCount - 1, region.y1 - 1)]?.toFixed(2);
@@ -964,6 +966,18 @@ function ZoomModal({
             <span className="flex items-center gap-1">Y
               <ZoomStepper value={zy} onChange={setZy} />
             </span>
+            <label
+              className="flex items-center gap-1 cursor-pointer select-none"
+              title="Re-normalise the colour scale to the resistivity range inside this depth window"
+            >
+              <input
+                type="checkbox"
+                checked={rescale}
+                onChange={(e) => setRescale(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Rescale colors to window
+            </label>
             <button onClick={onClose} className="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200">Close</button>
           </div>
         </div>
@@ -981,6 +995,7 @@ function ZoomModal({
                   zoomX={zx}
                   zoomY={zy}
                   bands={bands}
+                  recolorToRegion={rescale}
                   className="border border-gray-300"
                 />
               </div>

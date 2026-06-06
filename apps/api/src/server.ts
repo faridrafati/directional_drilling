@@ -7,6 +7,8 @@ import { registerFieldRoutes } from "./routes/fields.js";
 import { registerWellRoutes } from "./routes/wells.js";
 import { registerCalculationRoutes } from "./routes/calculations.js";
 import { registerGridRoutes } from "./routes/grids.js";
+import { registerDdrRoutes } from "./routes/ddr.js";
+import { registerAirmudRoutes } from "./routes/airmud.js";
 
 const prisma = new PrismaClient();
 
@@ -30,6 +32,8 @@ async function main() {
   await registerWellRoutes(app, prisma);
   await registerCalculationRoutes(app, prisma);
   await registerGridRoutes(app, prisma);
+  await registerDdrRoutes(app);
+  await registerAirmudRoutes(app);
 
   const port = Number(process.env.PORT ?? 4000);
   await app.listen({ port, host: "0.0.0.0" });

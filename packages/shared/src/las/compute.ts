@@ -120,16 +120,19 @@ function yieldToEventLoop(): Promise<void> {
  *
  * Returns a 1-based array (index 0 unused) so pads[k] is physical pad k.
  */
-/** Per-pad stats: collect valid readings, sort, derive clip + quantile levels. */
+/** Per-pad stats: collect valid readings, sort, derive clip + quantile levels.
+ *  Restricted to output rows [r0, r1) — the full log by default, or a zoomed
+ *  depth window when re-normalising the colour scale to what's on screen. */
 function statsForPad(
   tensor: { mat: Float64Array; depthCount: number },
   las: LasFile, params: EivParams, pad: number,
   sections: number, errPct: number, bins: number,
+  r0 = 0, r1 = tensor.depthCount,
 ): EivPadStats {
   const { buttonsPerPad, padCount } = las;
-  // Collect every valid (non-null, >0) reading for this pad, once.
+  // Collect every valid (non-null, >0) reading for this pad in [r0, r1), once.
   const vals: number[] = [];
-  for (let r = 0; r < tensor.depthCount; r++) {
+  for (let r = r0; r < r1; r++) {
     const base = (r * buttonsPerPad) * padCount + (pad - 1);
     for (let b = 0; b < buttonsPerPad; b++) {
       const v = tensor.mat[base + b * padCount];
@@ -200,6 +203,29 @@ export function computeStats(
   out[0] = makeEmptyStats(sections);
   for (let pad = 1; pad <= las.padCount; pad++) {
     out[pad] = statsForPad(tensor, las, params, pad, sections, errPct, bins);
+  }
+  return out;
+}
+
+/**
+ * Per-pad stats restricted to output rows [r0, r1) — re-normalises the colour
+ * scale to a zoomed depth window so contrast adapts to what's on screen
+ * (Unit13/zoom recolour). Identical to computeStats() over the full log when
+ * r0 = 0 and r1 = depthCount. 1-based; pads[k] is physical pad k.
+ */
+export function computeStatsForRows(
+  tensor: { mat: Float64Array; depthCount: number },
+  las: LasFile, params: EivParams, r0: number, r1: number,
+): EivPadStats[] {
+  const sections = Math.max(1, Math.round(params.colorSections));
+  const errPct = params.errorPercent;
+  const bins = Math.max(1, Math.round(params.histogramBins));
+  const lo = Math.max(0, Math.min(tensor.depthCount, Math.floor(r0)));
+  const hi = Math.max(lo + 1, Math.min(tensor.depthCount, Math.ceil(r1)));
+  const out: EivPadStats[] = [];
+  out[0] = makeEmptyStats(sections);
+  for (let pad = 1; pad <= las.padCount; pad++) {
+    out[pad] = statsForPad(tensor, las, params, pad, sections, errPct, bins, lo, hi);
   }
   return out;
 }

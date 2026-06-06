@@ -23,6 +23,10 @@ const LogAnalysisPage = lazy(() =>
 const AirGasPage = lazy(() =>
   import("./pages/AirGasPage.js").then((m) => ({ default: m.AirGasPage }))
 );
+// DDR — Daily Drilling Report viewer (reads the legacy SQLite DBs via @dd/api).
+const DdrReportsPage = lazy(() =>
+  import("./pages/DdrReportsPage.js").then((m) => ({ default: m.DdrReportsPage }))
+);
 
 export function App() {
   return (
@@ -38,6 +42,8 @@ export function App() {
           <Route path="/logs" element={<LogAnalysisPage />} />
           {/* Air & Gas Drilling — standalone underbalanced hydraulics calculator. */}
           <Route path="/air-gas" element={<AirGasPage />} />
+          {/* Daily Drilling Reports — reads the legacy DDR SQLite databases. */}
+          <Route path="/ddr" element={<DdrReportsPage />} />
           <Route
             path="/3d/:id"
             element={<PlaceholderPage title="3D Field Visualization" phase="Phase 5" />}

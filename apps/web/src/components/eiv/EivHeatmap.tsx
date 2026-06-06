@@ -11,10 +11,10 @@
  * `region` clips rendering to a native-pixel sub-rectangle so a zoom window
  * can show just the selected depth × pad-button range at a larger scale.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type EivModel, type EivImageMode, type ColorBand,
-  matAt, pointForValue, colorForPoint, bandColor,
+  matAt, pointForValue, colorForPoint, bandColor, computeStatsForRows,
 } from "@dd/shared/las";
 
 export interface EivInspect {
@@ -51,17 +51,35 @@ interface Props {
   bands?: ColorBand[];
   /** Smoothly interpolate when zoomed in (default true). false = blocky cells. */
   smooth?: boolean;
+  /**
+   * When a `region` is set, re-normalise each pad's colour scale to just the
+   * rows inside the zoom window (so contrast adapts to the zoomed data).
+   * Default true; pass false to keep the full-log colour scale.
+   */
+  recolorToRegion?: boolean;
   className?: string;
 }
 
 export function EivHeatmap({
   model, mode, displayPads, zoomX = 1, zoomY = 1, region,
-  onInspect, onSelectRegion, floatingTooltip = true, azimuth, bands, smooth = true, className,
+  onInspect, onSelectRegion, floatingTooltip = true, azimuth, bands, smooth = true,
+  recolorToRegion = true, className,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const buttons = model.las.buttonsPerPad;
   const fullW = buttons * displayPads.length;
   const fullH = model.depthCount;
+
+  // Colour scale. When zoomed (region set) and recolouring is on, re-derive each
+  // pad's stats over just the window's rows so the leveled/corrected/raw ramps
+  // stretch to the zoomed data; otherwise use the whole-log stats (model.pads).
+  const padStats = useMemo(() => {
+    if (!region || !recolorToRegion) return model.pads;
+    return computeStatsForRows(
+      { mat: model.mat, depthCount: model.depthCount },
+      model.las, model.params, region.y0, region.y1,
+    );
+  }, [model, region, recolorToRegion]);
 
   // Render window (native px). Defaults to the whole image.
   const x0 = region ? Math.max(0, region.x0) : 0;
@@ -111,7 +129,7 @@ export function EivHeatmap({
         const p = Math.floor(sx / buttons);
         const b = sx % buttons;
         const pad = displayPads[p];
-        const stats = pad != null ? model.pads[pad] : undefined;
+        const stats = pad != null ? padStats[pad] : undefined;
         let r = 0, g = 0, bl = 255;
         if (stats) {
           const value = matAt(model, gy, b, pad);
@@ -137,7 +155,7 @@ export function EivHeatmap({
     ctx.imageSmoothingQuality = "high";
     ctx.clearRect(0, 0, outW, outH);
     ctx.drawImage(src, 0, 0, w, h, 0, 0, outW, outH);
-  }, [model, mode, displayPads, buttons, x0, y0, x1, y1, w, h, flip, azimuth, fullW, bands, zoomX, zoomY, smooth]);
+  }, [model, mode, displayPads, padStats, buttons, x0, y0, x1, y1, w, h, flip, azimuth, fullW, bands, zoomX, zoomY, smooth]);
 
   /** CSS-pixel cursor → native global (gx, gy) within the rendered window. */
   function toNative(e: React.MouseEvent): { gx: number; gy: number } | null {

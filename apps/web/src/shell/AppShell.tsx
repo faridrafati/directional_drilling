@@ -95,6 +95,7 @@ function Sidebar({
         <Nav to="/projects" label="Projects" />
         <Nav to="/logs" label="EMI Log Analysis" />
         <Nav to="/air-gas" label="Air & Gas Drilling" />
+        <Nav to="/ddr" label="Daily Drilling Reports" />
 
         <ProjectTree />
 
