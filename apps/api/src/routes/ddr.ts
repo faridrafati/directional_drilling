@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   ddrAvailable, listWells, listReports, getReport, getWell, getAnalytics,
   getFormationMatrix, getLithologyTable, getLithologyGraph, getMudProperties, type FormationMatrixFilters,
+  getMudStock, type MudStockFilters,
   readLithoPattern, listSearchGroups, searchOperations, searchOptions, type OpsSearchFilters,
   createSearchGroup, updateSearchGroup, deleteSearchGroup, renameCategory, deleteCategory,
   type SavedGroupInput,
@@ -94,6 +95,10 @@ export async function registerDdrRoutes(app: FastifyInstance) {
   app.post<{ Body: FormationMatrixFilters }>("/ddr/mud-properties", async (req, reply) => {
     if (!ddrAvailable()) return unavailable(reply);
     return getMudProperties(req.body ?? {});
+  });
+  app.post<{ Body: MudStockFilters }>("/ddr/mud-stock", async (req, reply) => {
+    if (!ddrAvailable()) return unavailable(reply);
+    return getMudStock(req.body ?? {});
   });
 
   // Lithology pattern tile (LITHO/<name>.bmp) for the stratigraphic column.

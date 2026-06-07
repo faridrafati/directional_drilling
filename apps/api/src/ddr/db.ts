@@ -29,7 +29,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 type Row = Record<string, unknown>;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DB_DIR = process.env.DDR_DB_DIR ?? join(HERE, "..", "..", "..", "..", "old_report_code");
+const DB_DIR = process.env.DDR_DB_DIR ?? join(HERE, "..", "..", "..", "..", "old", "old_report_code");
 const DATA_DB = join(DB_DIR, "new.sqlite");
 const LOOKUP_DB = join(DB_DIR, "DB.sqlite");
 /** Geological lithology pattern tiles (DDR-Delphi/LITHO/<HatchName>.bmp). */
@@ -824,6 +824,90 @@ export function getMudProperties(f: FormationMatrixFilters): Record<string, unkn
   return { rows: rows.slice(0, cap), truncated: rows.length > cap, total: rows.length };
 }
 
+export interface MudStockFilters extends FormationMatrixFilters {
+  materials?: string[]; dateFrom?: string; dateTo?: string;
+}
+
+/**
+ * Chemical-materials "mud stock" report — the multi-well port of the Delphi DDR
+ * tab 3 (Unit1.pas:4454). One row per ChemicalMaterials entry for the facet-
+ * selected wells, joined with the material name + unit (Materials / Measures)
+ * and the hole size / mud type in use that day (L04 / N01 by well+date). Columns
+ * mirror the Delphi grid: Used (Amount), Rec, Stock, OS, Req, Sent.
+ *
+ * Hole-size / mud-type / material / date filters are applied PER ROW (per day),
+ * exactly like the Delphi join-based WHERE — not reduced to a per-well set — so a
+ * stock row only matches when that day's hole/mud (and the row's material) match.
+ * serialNo resolves to the day's primary L04 report so a row can open it.
+ */
+export function getMudStock(f: MudStockFilters): Record<string, unknown> {
+  const wellSet = resolveWellSet({ fields: f.fields, wells: f.wells });
+  if (!wellSet) return { rows: [], truncated: false, total: 0, note: "Select a field or well to load mud stock." };
+  const db = data(), lk = lookups();
+  const clean = (a?: string[]) => (a ?? []).map((x) => s(x)).filter(Boolean);
+  const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
+  if (!codes.length) return { rows: [], truncated: false, total: 0 };
+
+  // Selected facet names → code sets (per-row filters, matching the Delphi joins).
+  const matNames = new Set(clean(f.materials));
+  const matCodes = matNames.size ? new Set([...lk.material].filter(([, n]) => matNames.has(n)).map(([c]) => c)) : null;
+  const holeNames = new Set(clean(f.holeSizes));
+  const holeCodes = holeNames.size ? new Set([...lk.holeSize].filter(([, n]) => holeNames.has(normHoleSize(n))).map(([c]) => c)) : null;
+  const mudNames = new Set(clean(f.mudTypes));
+  const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
+  const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
+
+  // The hole size (L04) and mud type (N01) in use per (well | date), plus the
+  // day's primary (lowest-serial) L04 report — so each stock row shows that day's
+  // hole/mud, can be filtered by it, and can open the matching daily report.
+  const holeByDay = new Map<string, string>(), mudByDay = new Map<string, string>(), serialByDay = new Map<string, number>();
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT WellCode, SerialNo, DrillingDate, HoleSizeCode FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.DrillingDate)}`;
+      if (!holeByDay.has(k)) holeByDay.set(k, s(r.HoleSizeCode));
+      const sn = Number(r.SerialNo);
+      if (Number.isFinite(sn)) { const cur = serialByDay.get(k); if (cur == null || sn < cur) serialByDay.set(k, sn); }
+    }
+    for (const r of db.prepare(`SELECT WellCode, fDate, MudCode FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.fDate)}`; if (!mudByDay.has(k)) mudByDay.set(k, s(r.MudCode));
+    }
+  }
+
+  const out: Record<string, unknown>[] = [];
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    const where = [`TRIM(WellCode) IN (${ph})`]; const params: unknown[] = [...chunk];
+    if (dateFrom) { where.push(`fDate >= ?`); params.push(dateFrom); }
+    if (dateTo) { where.push(`fDate <= ?`); params.push(dateTo); }
+    for (const r of db.prepare(
+      `SELECT WellCode, fDate, FromPoint, ToPoint, MaterialCode, Amount, MeasureCode, Rec, Stock, OS, Req, Sent FROM ChemicalMaterials WHERE ${where.join(" AND ")}`,
+    ).all(...params) as Row[]) {
+      const matCode = s(r.MaterialCode);
+      if (matCodes && !matCodes.has(matCode)) continue;
+      const wc = s(r.WellCode), date = s(r.fDate), k = `${wc}|${date}`;
+      const holeCode = holeByDay.get(k) ?? "";
+      if (holeCodes && !holeCodes.has(holeCode)) continue;
+      const mudCode = mudByDay.get(k) ?? "";
+      if (mudCodes && !mudCodes.has(mudCode)) continue;
+      out.push({
+        wellCode: wc, date: orNull(date), serialNo: serialByDay.get(k) ?? null,
+        from: val(r.FromPoint), to: val(r.ToPoint),
+        holeSize: orNull(look(lk.holeSize, holeCode)), mudType: orNull(look(lk.mud, mudCode)),
+        material: orNull(look(lk.material, matCode)), measure: orNull(look(lk.measure, r.MeasureCode)),
+        used: val(r.Amount), rec: val(r.Rec), stock: val(r.Stock),
+        os: val(r.OS), req: val(r.Req), sent: val(r.Sent),
+      });
+    }
+  }
+  out.sort((a, b) =>
+    String(a.wellCode).localeCompare(String(b.wellCode)) ||
+    String(a.date ?? "").localeCompare(String(b.date ?? "")) ||
+    String(a.material ?? "").localeCompare(String(b.material ?? "")));
+  const cap = 8000;
+  return { rows: out.slice(0, cap), truncated: out.length > cap, total: out.length };
+}
+
 /**
  * Multi-well lithology + formation GRAPH data: per well, the parsed lithology
  * intervals (component %, pattern, colour) and the formation tops (D07), plus a
@@ -1252,8 +1336,10 @@ export function searchOptions(): Record<string, unknown> {
     .sort((a, b) => (holeSizeValue(b) ?? 0) - (holeSizeValue(a) ?? 0));
   const rigs = uniq(`SELECT DISTINCT RIG FROM A01`, "RIG");
   const mudTypes = [...new Set([...lk.mud.values()].filter(Boolean))].sort();
+  // Chemical materials for the Mud Stock facet (Materials.Material names).
+  const materials = [...new Set([...lk.material.values()].filter(Boolean))].sort();
   const operations = [...lk.operation.entries()].map(([code, desc]) => ({ code, desc }))
     .sort((a, b) => a.desc.localeCompare(b.desc));
-  _opts = { fields, wells, holeSizes, mudTypes, rigs, operations };
+  _opts = { fields, wells, holeSizes, mudTypes, rigs, materials, operations };
   return _opts;
 }
