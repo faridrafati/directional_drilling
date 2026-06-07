@@ -908,6 +908,416 @@ export function getMudStock(f: MudStockFilters): Record<string, unknown> {
   return { rows: out.slice(0, cap), truncated: out.length > cap, total: out.length };
 }
 
+export interface WellPathFilters extends FormationMatrixFilters {
+  dateFrom?: string; dateTo?: string;
+}
+
+/**
+ * Directional-survey "well path" report — the multi-well port of the Delphi DDR
+ * tab 4 (Unit1.pas:4483 + drawpat). One row per M04 survey station for the facet-
+ * selected wells, joined with the hole size / mud type in use that day. Columns:
+ * MD (FromPoint), Inc (Angle), Az (Azimuth), TVD, N/S, E/W, Section HD, DLS, VS,
+ * Direction. N/S and E/W are signed numeric text in the source (e.g. "-22.15").
+ *
+ * Mirrors the Delphi WHERE: only stations that HAVE N/S AND E/W are returned (the
+ * plottable deviated stations — vertical wells have none), ordered by well, date,
+ * MD. Hole-size / mud / date filters apply per row; serialNo resolves the day's
+ * primary L04 report. drawpat plots: Vertical section (TVD↓ vs Section HD), Plan
+ * (N/S vs E/W) and Dogleg (DLS vs TVD↓) — rendered in the web Graph view.
+ */
+export function getWellPath(f: WellPathFilters): Record<string, unknown> {
+  const wellSet = resolveWellSet({ fields: f.fields, wells: f.wells });
+  if (!wellSet) return { rows: [], truncated: false, total: 0, note: "Select a field or well to load the well path." };
+  const db = data(), lk = lookups();
+  const clean = (a?: string[]) => (a ?? []).map((x) => s(x)).filter(Boolean);
+  const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
+  if (!codes.length) return { rows: [], truncated: false, total: 0 };
+
+  const holeNames = new Set(clean(f.holeSizes));
+  const holeCodes = holeNames.size ? new Set([...lk.holeSize].filter(([, n]) => holeNames.has(normHoleSize(n))).map(([c]) => c)) : null;
+  const mudNames = new Set(clean(f.mudTypes));
+  const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
+  const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
+  const num = (v: unknown): number | null => { const n = parseFloat(s(v)); return Number.isFinite(n) ? n : null; };
+
+  // hole/mud in use per (well|date) + the day's primary L04 report serial.
+  const holeByDay = new Map<string, string>(), mudByDay = new Map<string, string>(), serialByDay = new Map<string, number>();
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT WellCode, SerialNo, DrillingDate, HoleSizeCode FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.DrillingDate)}`;
+      if (!holeByDay.has(k)) holeByDay.set(k, s(r.HoleSizeCode));
+      const sn = Number(r.SerialNo);
+      if (Number.isFinite(sn)) { const cur = serialByDay.get(k); if (cur == null || sn < cur) serialByDay.set(k, sn); }
+    }
+    for (const r of db.prepare(`SELECT WellCode, fDate, MudCode FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.fDate)}`; if (!mudByDay.has(k)) mudByDay.set(k, s(r.MudCode));
+    }
+  }
+
+  const out: Record<string, unknown>[] = [];
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    const where = [`TRIM(WellCode) IN (${ph})`, `TRIM(IFNULL(N_S,'')) <> ''`, `TRIM(IFNULL(E_W,'')) <> ''`]; const params: unknown[] = [...chunk];
+    if (dateFrom) { where.push(`fDate >= ?`); params.push(dateFrom); }
+    if (dateTo) { where.push(`fDate <= ?`); params.push(dateTo); }
+    for (const r of db.prepare(
+      `SELECT WellCode, fDate, FromPoint, Angle, Azimuth, TVD, N_S, E_W, SectionHD, DLS, VS, Direction FROM M04 WHERE ${where.join(" AND ")}`,
+    ).all(...params) as Row[]) {
+      const wc = s(r.WellCode), date = s(r.fDate), k = `${wc}|${date}`;
+      const holeCode = holeByDay.get(k) ?? "";
+      if (holeCodes && !holeCodes.has(holeCode)) continue;
+      const mudCode = mudByDay.get(k) ?? "";
+      if (mudCodes && !mudCodes.has(mudCode)) continue;
+      const ns = num(r.N_S), ew = num(r.E_W);
+      if (ns == null || ew == null) continue; // plottable stations only (matches Delphi)
+      out.push({
+        wellCode: wc, date: orNull(date), serialNo: serialByDay.get(k) ?? null,
+        md: num(r.FromPoint), inc: num(r.Angle), az: num(r.Azimuth), tvd: num(r.TVD),
+        ns, ew, sectionHD: num(r.SectionHD), dls: num(r.DLS), vs: num(r.VS), direction: orNull(r.Direction),
+        holeSize: orNull(look(lk.holeSize, holeCode)), mudType: orNull(look(lk.mud, mudCode)),
+      });
+    }
+  }
+  const md = (x: Record<string, unknown>) => (typeof x.md === "number" ? x.md : 0);
+  out.sort((a, b) =>
+    String(a.wellCode).localeCompare(String(b.wellCode)) ||
+    String(a.date ?? "").localeCompare(String(b.date ?? "")) ||
+    md(a) - md(b));
+  const cap = 8000;
+  return { rows: out.slice(0, cap), truncated: out.length > cap, total: out.length };
+}
+
+export interface TimeAnalysisFilters extends FormationMatrixFilters {
+  activityTypes?: string[]; dateFrom?: string; dateTo?: string;
+}
+
+/**
+ * Time-analysis report — the multi-well port of the Delphi DDR tab 5 (Unit1.pas:
+ * 4511, + TABF('A') cross-tab + drawACT chart). One row per TimeAnalysis entry
+ * (hours on an activity for a well/day), resolved through the activity hierarchy
+ * Group → Type → Activity, joined with that day's hole size / mud type and the
+ * day's drilled interval (L04 From/To) + narrative.
+ *
+ * Hole-size / mud / activity-type / date filters apply per row; serialNo resolves
+ * the day's primary L04 report. The web tab builds three views from these rows:
+ * Rows (the grid), Pivot (day × activity-type hours with sums — the TABF table),
+ * and Chart (total hours by activity / type — drawACT).
+ */
+export function getTimeAnalysis(f: TimeAnalysisFilters): Record<string, unknown> {
+  const wellSet = resolveWellSet({ fields: f.fields, wells: f.wells });
+  if (!wellSet) return { rows: [], truncated: false, total: 0, note: "Select a field or well to load time analysis." };
+  const db = data(), lk = lookups();
+  const clean = (a?: string[]) => (a ?? []).map((x) => s(x)).filter(Boolean);
+  const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
+  if (!codes.length) return { rows: [], truncated: false, total: 0 };
+
+  const holeNames = new Set(clean(f.holeSizes));
+  const holeCodes = holeNames.size ? new Set([...lk.holeSize].filter(([, n]) => holeNames.has(normHoleSize(n))).map(([c]) => c)) : null;
+  const mudNames = new Set(clean(f.mudTypes));
+  const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
+  // activity-type filter → set of "groupCode|typeCode" composites (lk.activityType key).
+  const typeNames = new Set(clean(f.activityTypes));
+  const typeKeys = typeNames.size ? new Set([...lk.activityType].filter(([, n]) => typeNames.has(n)).map(([k]) => k)) : null;
+  const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
+  const num = (v: unknown): number | null => { const n = parseFloat(s(v)); return Number.isFinite(n) ? n : null; };
+
+  // The day's primary (lowest-serial) L04 report: hole size, drilled From/To,
+  // narrative + serial. Plus the day's mud type (N01).
+  const byDay = new Map<string, { serial: number | null; hole: string; from: unknown; to: unknown; desc: unknown }>();
+  const mudByDay = new Map<string, string>();
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT WellCode, SerialNo, DrillingDate, HoleSizeCode, FromPoint, ToPoint, Description FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.DrillingDate)}`;
+      const snN = Number(r.SerialNo), fin = Number.isFinite(snN);
+      const cur = byDay.get(k);
+      if (!cur || (fin && (cur.serial == null || snN < cur.serial))) {
+        byDay.set(k, { serial: fin ? snN : (cur?.serial ?? null), hole: s(r.HoleSizeCode), from: val(r.FromPoint), to: val(r.ToPoint), desc: orNull(r.Description) });
+      }
+    }
+    for (const r of db.prepare(`SELECT WellCode, fDate, MudCode FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.fDate)}`; if (!mudByDay.has(k)) mudByDay.set(k, s(r.MudCode));
+    }
+  }
+
+  const out: Record<string, unknown>[] = [];
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    const where = [`TRIM(WellCode) IN (${ph})`]; const params: unknown[] = [...chunk];
+    if (dateFrom) { where.push(`fDate >= ?`); params.push(dateFrom); }
+    if (dateTo) { where.push(`fDate <= ?`); params.push(dateTo); }
+    for (const r of db.prepare(
+      `SELECT WellCode, fDate, ActivityGroupCode, ActivityTypeCode, ActivityCode, Hours, Description FROM TimeAnalysis WHERE ${where.join(" AND ")}`,
+    ).all(...params) as Row[]) {
+      const gc = s(r.ActivityGroupCode), tc = s(r.ActivityTypeCode), ac = s(r.ActivityCode);
+      const typeKey = `${gc}|${tc}`;
+      if (typeKeys && !typeKeys.has(typeKey)) continue;
+      const wc = s(r.WellCode), date = s(r.fDate), k = `${wc}|${date}`;
+      const d = byDay.get(k);
+      const holeCode = d?.hole ?? "";
+      if (holeCodes && !holeCodes.has(holeCode)) continue;
+      const mudCode = mudByDay.get(k) ?? "";
+      if (mudCodes && !mudCodes.has(mudCode)) continue;
+      out.push({
+        wellCode: wc, date: orNull(date), serialNo: d?.serial ?? null,
+        holeSize: orNull(look(lk.holeSize, holeCode)), from: d?.from ?? null, to: d?.to ?? null,
+        mudType: orNull(look(lk.mud, mudCode)),
+        group: orNull(look(lk.activityGroup, gc)),
+        type: lk.activityType.get(typeKey) ?? null,
+        activity: lk.activity.get(`${gc}|${tc}|${ac}`) ?? null,
+        hours: num(r.Hours), description: orNull(r.Description), dayNarrative: d?.desc ?? null,
+      });
+    }
+  }
+  out.sort((a, b) =>
+    String(a.wellCode).localeCompare(String(b.wellCode)) ||
+    String(a.date ?? "").localeCompare(String(b.date ?? "")));
+  const cap = 9000;
+  return { rows: out.slice(0, cap), truncated: out.length > cap, total: out.length };
+}
+
+export interface ToolsFilters extends FormationMatrixFilters {
+  tool?: string; dateFrom?: string; dateTo?: string;
+}
+
+// ── Tools / equipment browser (Delphi DDR tab 6, Unit1.pas:4552) ─────────────
+// Nine equipment types, each its own table + (optional) lookup, shown with the
+// day's hole size / mud type. `get` resolves one display field from a source row.
+interface ToolField { key: string; label: string; text?: boolean; wide?: boolean; hidden?: boolean; titleKey?: string; get: (r: Row, lk: Lookups) => unknown }
+interface ToolSpec { label: string; table: string; fields: ToolField[] }
+
+// ── IADC bit dull-grade decoding (SPE/IADC 23937/23938/23939) ─────────────────
+// Dictionaries for the 8-position dull grade (I-O-D-L-B-G-O-R). Used by the Bit
+// tool to assemble + decode the grade. NOTE: in this legacy L05 schema the column
+// NAMES for positions 6 & 7 are SWAPPED vs IADC order — ODullCharacteristicCode
+// actually holds the GAUGE and GaugeWearCode holds the OTHER dull characteristic
+// (confirmed from the data: ODullCharacteristicCode = IG/UG/OG/1, GaugeWearCode =
+// WT/BT/CT…). bitDull() maps them back to the correct IADC positions.
+const IADC_DULL_CHAR: Record<string, string> = {
+  BC: "Broken cone", BF: "Bond failure", BT: "Broken teeth/cutters", BU: "Balled up", CC: "Cracked cone/cutter",
+  CD: "Cone dragged", CI: "Cone interference", CR: "Cored", CT: "Chipped teeth/cutters", ER: "Erosion",
+  FC: "Flat-crested wear", HC: "Heat checking", JD: "Junk damage", LC: "Lost cone", LN: "Lost nozzle",
+  LT: "Lost teeth/cutters", NO: "No dull characteristic", NR: "Not re-runnable", OC: "Off-center wear",
+  PB: "Pinched bit", PN: "Plugged nozzle/flow", RG: "Rounded gauge", RO: "Ring out", RR: "Re-runnable",
+  SD: "Shirttail damage", SS: "Self-sharpening wear", TR: "Tracking", WO: "Washed out", WT: "Worn teeth/cutters",
+};
+const IADC_LOC_CONE: Record<string, string> = { N: "Nose row", M: "Middle row", G: "Gauge row", A: "All rows", C: "Cone", "1": "Cone 1", "2": "Cone 2", "3": "Cone 3" };
+const IADC_LOC_PDC: Record<string, string> = { C: "Cone", N: "Nose", T: "Taper", S: "Shoulder", G: "Gauge", A: "All areas" };
+const IADC_BEARING: Record<string, string> = { E: "Seals effective", F: "Seals failed", N: "Not gradeable", X: "Fixed cutter — no bearings" };
+const IADC_REASON: Record<string, string> = {
+  BHA: "Change BHA", CM: "Condition mud", CP: "Core point", DMF: "Downhole motor failure", DP: "Drill plug",
+  DSF: "Drill-string failure", DST: "Drill-stem test", DTF: "Downhole tool failure", FM: "Formation change",
+  HP: "Hole problems", HR: "Hours on bit", LIH: "Left in hole", LOG: "Run logs", PP: "Pump pressure",
+  PR: "Penetration rate", RIG: "Rig repair", TD: "Total / casing depth", TQ: "Torque", TW: "Twist off",
+  WC: "Weather", WO: "Washout (drill string)",
+};
+const stripZeros = (v: string) => v.replace(/^0+(?=\d)/, "") || v;
+
+/** PDC vs roller-cone for a bit row: bearing 'X' ⇒ PDC; numeric/E/F/N ⇒ cone;
+ *  else inferred from the IADC class / type (M/S body ⇒ PDC, leading digit ⇒ cone). */
+function bitKind(r: Row, lk: Lookups): string | null {
+  const bear = s(r.BearingWearCode).toUpperCase();
+  if (bear === "X") return "PDC";
+  if (/^[0-8]+$|^[EFN]$/.test(stripZeros(bear))) return "Roller cone";
+  const iadc = s(look(lk.bitIADC, r.BitCode)).toUpperCase();
+  if (/^[MS]\d/.test(iadc)) return "PDC";
+  if (/^\d/.test(iadc)) return "Roller cone";
+  const ty = s(look(lk.bitType, r.BitCode)).toUpperCase();
+  if (/PDC|DIAMOND|^[MS]\d/.test(ty)) return "PDC";
+  return null;
+}
+
+/** Assemble + decode the IADC 8-position dull grade for an L05 bit row, using the
+ *  corrected column mapping (gauge ← ODullCharacteristicCode, other ← GaugeWearCode). */
+function bitDull(r: Row, lk: Lookups): { code: string | null; title: string | null } {
+  const inner = stripZeros(s(r.ICutterWearCode)), outer = stripZeros(s(r.OCutterWearCode));
+  const dchar = s(r.DullCharacteristicCode).toUpperCase();
+  const loc = s(r.WearLocationCode).toUpperCase();
+  const bear = s(r.BearingWearCode).toUpperCase();
+  const gRaw = s(r.ODullCharacteristicCode).toUpperCase();   // position 6 — GAUGE (swapped name)
+  const other = s(r.GaugeWearCode).toUpperCase();            // position 7 — OTHER dull (swapped name)
+  const reason = s(r.ReasonPulledCode).toUpperCase();
+  if (![inner, outer, dchar, loc, bear, gRaw, other, reason].some(Boolean)) return { code: null, title: null };
+  const isPDC = bear === "X";
+  // Gauge → code + text.
+  let gCode = "", gTxt = "";
+  const gn = stripZeros(gRaw);
+  if (/^I/.test(gRaw)) { gCode = "I"; gTxt = "in gauge"; }
+  else if (/^\d+$/.test(gn)) { gCode = gn; gTxt = `${gn}/16" undergauge`; }
+  else if (gRaw && gRaw !== "NO") { gCode = gRaw; gTxt = gRaw === "UG" ? "undergauge" : gRaw === "OG" ? "out of gauge" : gRaw; }
+  const bn = stripZeros(bear);
+  const bearTxt = IADC_BEARING[bear] ?? (/^[0-8]+$/.test(bn) ? `${bn}/8 bearing life used` : bear);
+  const locMap = isPDC ? IADC_LOC_PDC : IADC_LOC_CONE;
+  const code = [inner || "·", outer || "·", dchar || "·", loc || "·", bear || "·", gCode || "·", other || "·", reason || "·"].join("-");
+  const wear = (v: string) => (v ? (v === "8" ? "8/8 (gone)" : `${v}/8`) : "");
+  const t: string[] = [];
+  if (inner) t.push(`Inner ${wear(inner)}`);
+  if (outer) t.push(`Outer ${wear(outer)}`);
+  if (dchar) t.push(`${dchar} = ${IADC_DULL_CHAR[dchar] ?? dchar}`);
+  if (loc) t.push(`@ ${loc} = ${locMap[loc] ?? loc}`);
+  if (bear) t.push(`bearing ${bearTxt}`);
+  if (gCode) t.push(`gauge ${gTxt}`);
+  if (other && other !== "NO") t.push(`other ${other} = ${IADC_DULL_CHAR[other] ?? other}`);
+  if (reason) t.push(`pulled ${reason} = ${IADC_REASON[reason] ?? look(lk.reasonPulled, r.ReasonPulledCode) ?? reason}`);
+  return { code, title: t.join(" · ") };
+}
+
+const TOOL_SPECS: Record<string, ToolSpec> = {
+  jar: { label: "Jar", table: "Jar", fields: [
+    { key: "jarType", label: "Jar type", text: true, get: (r, lk) => look(lk.jarType, r.JarTypeCode) },
+    { key: "size", label: "Size", text: true, get: (r) => orNull(r.JarSize) },
+    { key: "serial", label: "Serial no", text: true, get: (r) => orNull(r.JarSerialNo) },
+    { key: "hours", label: "Hours", get: (r) => val(r.fHour) },
+  ] },
+  mwd: { label: "MWD", table: "MWD", fields: [
+    { key: "mwdType", label: "MWD type", text: true, get: (r) => orNull(r.MWDTypeCode) },
+    { key: "size", label: "Size", text: true, get: (r) => orNull(r.MWDSize) },
+    { key: "serial", label: "Serial no", text: true, get: (r) => orNull(r.MWDSerialNo) },
+    { key: "hours", label: "Hours", get: (r) => val(r.fHour) },
+  ] },
+  dhMotor: { label: "DH Motor", table: "DHMotor", fields: [
+    { key: "type", label: "Motor type", text: true, get: (r, lk) => look(lk.dhMotorType, r.DHMotorTypeCode) },
+    { key: "size", label: "Size", text: true, get: (r) => orNull(r.DHMotorSize) },
+    { key: "serial", label: "Serial no", text: true, get: (r) => orNull(r.DHMotorSerialNo) },
+    { key: "hours", label: "Hours", get: (r) => val(r.fHour) },
+  ] },
+  bha: { label: "BHA", table: "BottomHoleAssembly", fields: [
+    { key: "assemblyNo", label: "Assembly no", text: true, get: (r) => orNull(r.AssemblyNo) },
+    { key: "spec", label: "Specification", text: true, wide: true, get: (r) => orNull(r.Specification) },
+    { key: "weight", label: "Weight", get: (r) => val(r.Weight) },
+    { key: "length", label: "Length", get: (r) => val(r.Length) },
+    { key: "dragUp", label: "Drag up", get: (r) => val(r.DragUp) },
+    { key: "dragDown", label: "Drag down", get: (r) => val(r.DragDown) },
+  ] },
+  drillString: { label: "Drill string", table: "DrillString", fields: [
+    { key: "no", label: "No.", text: true, get: (r) => orNull(r.SerialNo) },
+    { key: "size", label: "Size", text: true, get: (r) => orNull(r.fSize) },
+    { key: "grade", label: "Grade", text: true, get: (r) => orNull(r.Grade) },
+  ] },
+  casing: { label: "Casing", table: "L08", fields: [
+    { key: "depth", label: "Depth (m)", get: (r) => val(r.DepthPoint) },
+    { key: "casing", label: "Casing", text: true, get: (r, lk) => look(lk.casing, r.CasingCode) },
+    { key: "joint", label: "Joint", text: true, get: (r) => orNull(r.Joint) },
+    { key: "desc", label: "Description", text: true, wide: true, get: (r) => orNull(r.Description) },
+  ] },
+  liner: { label: "Liner", table: "L06", fields: [
+    { key: "from", label: "From (m)", get: (r) => val(r.FromPoint) },
+    { key: "to", label: "To (m)", get: (r) => val(r.ToPoint) },
+    { key: "liner", label: "Liner", text: true, get: (r, lk) => look(lk.casing, r.LinerCode) },
+    { key: "joint", label: "Joint", text: true, get: (r) => orNull(r.Joint) },
+    { key: "desc", label: "Description", text: true, wide: true, get: (r) => orNull(r.Description) },
+  ] },
+  bit: { label: "Bit", table: "L05", fields: [
+    { key: "from", label: "From (m)", get: (r) => val(r.FromPoint) },
+    { key: "to", label: "To (m)", get: (r) => val(r.ToPoint) },
+    { key: "bit", label: "Bit", text: true, get: (r, lk) => look(lk.bit, r.BitCode) },
+    { key: "size", label: "Bit size", text: true, get: (r, lk) => look(lk.bitSize, r.BitCode) || orNull(r.HoleSize) },
+    { key: "type", label: "Type", text: true, get: (r, lk) => look(lk.bitType, r.BitCode) },
+    { key: "kind", label: "Kind", text: true, get: (r, lk) => bitKind(r, lk) },
+    { key: "iadc", label: "IADC class", text: true, get: (r, lk) => look(lk.bitIADC, r.BitCode) },
+    { key: "bitNo", label: "Bit no", text: true, get: (r) => orNull(r.BitNo) },
+    { key: "serial", label: "Serial no", text: true, get: (r) => orNull(r.BitSerialNo) },
+    { key: "nozzles", label: "Nozzles", text: true, get: (r) => orNull(r.NozzleSize) },
+    { key: "tfa", label: "TFA", get: (r) => val(r.TFA) },
+    { key: "bitHrs", label: "Bit hrs", get: (r) => val(r.BitHour) },
+    { key: "meters", label: "Meters", get: (r) => val(r.BitMeterTotal) },
+    // ROP (m/hr) = footage ÷ rotating hours, the per-bit performance metric.
+    { key: "rop", label: "ROP m/hr", get: (r) => {
+      const hrs = Number(s(r.BitHour)); let m = Number(s(r.BitMeterTotal));
+      if (!Number.isFinite(m) || m <= 0) { const f = Number(s(r.FromPoint)), t = Number(s(r.ToPoint)); m = (Number.isFinite(f) && Number.isFinite(t)) ? t - f : NaN; }
+      return Number.isFinite(hrs) && hrs > 0 && Number.isFinite(m) && m > 0 ? Number((m / hrs).toFixed(1)) : null;
+    } },
+    { key: "minWob", label: "WOB min", get: (r) => val(r.MinWeight) },
+    { key: "maxWob", label: "WOB max", get: (r) => val(r.MaxWeight) },
+    { key: "minRpm", label: "RPM min", get: (r) => val(r.MinRPM) },
+    { key: "maxRpm", label: "RPM max", get: (r) => val(r.MaxRPM) },
+    // IADC 8-position dull grade (I-O-D-L-B-G-O-R); hover shows the decoded meaning.
+    { key: "dull", label: "IADC dull grade", text: true, titleKey: "dullTitle", get: (r, lk) => bitDull(r, lk).code },
+    { key: "dullTitle", label: "", hidden: true, get: (r, lk) => bitDull(r, lk).title },
+    { key: "reasonPulled", label: "Reason pulled", text: true, get: (r, lk) => look(lk.reasonPulled, r.ReasonPulledCode) },
+    { key: "desc", label: "Description", text: true, wide: true, get: (r) => orNull(r.Description) },
+  ] },
+  stabilizers: { label: "Stabilizers", table: "Stabilizers", fields: [
+    { key: "spec", label: "Specification", text: true, wide: true, get: (r) => orNull(r.Specification ?? r.Description) },
+  ] },
+};
+export const TOOL_LIST = Object.entries(TOOL_SPECS).map(([key, s]) => ({ key, label: s.label }));
+
+/**
+ * Tools / equipment report — the multi-well port of the Delphi DDR tab 6
+ * (Unit1.pas:4552). One row per record of the chosen tool table (Jar / MWD /
+ * DH-Motor / BHA / Drill string / Casing(L08) / Liner(L06) / Bit(L05) /
+ * Stabilizers) for the faceted wells, joined with that day's hole size / mud type
+ * and the day's primary L04 report (so a row can open it). Columns are
+ * tool-specific (resolved through each tool's lookup). MWD / Stabilizers tables
+ * are absent in this DB → an empty note, matching the Delphi tool list.
+ */
+export function getTools(f: ToolsFilters): Record<string, unknown> {
+  const toolKey = s(f.tool) || "bit";
+  const spec = TOOL_SPECS[toolKey];
+  if (!spec) return { tool: toolKey, columns: [], rows: [], truncated: false, total: 0, note: "Unknown tool." };
+  const columns = [
+    { key: "holeSize", label: "Hole", text: true }, { key: "mudType", label: "Mud type", text: true },
+    ...spec.fields.filter((fl) => !fl.hidden).map((fl) => ({ key: fl.key, label: fl.label, text: fl.text, wide: fl.wide, titleKey: fl.titleKey })),
+  ];
+  const base = { tool: toolKey, label: spec.label, columns };
+  const wellSet = resolveWellSet({ fields: f.fields, wells: f.wells });
+  if (!wellSet) return { ...base, rows: [], truncated: false, total: 0, note: "Select a field or well to load tools." };
+  const db = data(), lk = lookups();
+  const exists = db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND lower(name)=lower(?)`).get(spec.table);
+  if (!exists) return { ...base, rows: [], truncated: false, total: 0, note: `No ${spec.label} records in this database.` };
+  const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
+  if (!codes.length) return { ...base, rows: [], truncated: false, total: 0 };
+
+  const clean = (a?: string[]) => (a ?? []).map((x) => s(x)).filter(Boolean);
+  const holeNames = new Set(clean(f.holeSizes));
+  const holeCodes = holeNames.size ? new Set([...lk.holeSize].filter(([, n]) => holeNames.has(normHoleSize(n))).map(([c]) => c)) : null;
+  const mudNames = new Set(clean(f.mudTypes));
+  const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
+  const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
+
+  // Day context: hole size + primary L04 serial (per well|date), and mud type.
+  const byDay = new Map<string, { serial: number | null; hole: string }>();
+  const mudByDay = new Map<string, string>();
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT WellCode, SerialNo, DrillingDate, HoleSizeCode FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.DrillingDate)}`;
+      const snN = Number(r.SerialNo), fin = Number.isFinite(snN), cur = byDay.get(k);
+      if (!cur || (fin && (cur.serial == null || snN < cur.serial))) byDay.set(k, { serial: fin ? snN : (cur?.serial ?? null), hole: s(r.HoleSizeCode) });
+    }
+    for (const r of db.prepare(`SELECT WellCode, fDate, MudCode FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.fDate)}`; if (!mudByDay.has(k)) mudByDay.set(k, s(r.MudCode));
+    }
+  }
+
+  const out: Record<string, unknown>[] = [];
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    const where = [`TRIM(WellCode) IN (${ph})`]; const params: unknown[] = [...chunk];
+    if (dateFrom) { where.push(`fDate >= ?`); params.push(dateFrom); }
+    if (dateTo) { where.push(`fDate <= ?`); params.push(dateTo); }
+    for (const r of db.prepare(`SELECT * FROM "${spec.table}" WHERE ${where.join(" AND ")}`).all(...params) as Row[]) {
+      const wc = s(r.WellCode), date = s(r.fDate), k = `${wc}|${date}`;
+      const d = byDay.get(k);
+      const holeCode = d?.hole ?? "";
+      if (holeCodes && !holeCodes.has(holeCode)) continue;
+      const mudCode = mudByDay.get(k) ?? "";
+      if (mudCodes && !mudCodes.has(mudCode)) continue;
+      const row: Record<string, unknown> = {
+        wellCode: wc, date: orNull(date), serialNo: d?.serial ?? null,
+        holeSize: orNull(look(lk.holeSize, holeCode)), mudType: orNull(look(lk.mud, mudCode)),
+      };
+      for (const fl of spec.fields) row[fl.key] = fl.get(r, lk);
+      out.push(row);
+    }
+  }
+  out.sort((a, b) => String(a.wellCode).localeCompare(String(b.wellCode)) || String(a.date ?? "").localeCompare(String(b.date ?? "")));
+  const cap = 8000;
+  return { ...base, rows: out.slice(0, cap), truncated: out.length > cap, total: out.length };
+}
+
 /**
  * Multi-well lithology + formation GRAPH data: per well, the parsed lithology
  * intervals (component %, pattern, colour) and the formation tops (D07), plus a
@@ -1338,8 +1748,10 @@ export function searchOptions(): Record<string, unknown> {
   const mudTypes = [...new Set([...lk.mud.values()].filter(Boolean))].sort();
   // Chemical materials for the Mud Stock facet (Materials.Material names).
   const materials = [...new Set([...lk.material.values()].filter(Boolean))].sort();
+  // Activity types for the Time Analysis facet (ActivityTypes.ActivityType names).
+  const activityTypes = [...new Set([...lk.activityType.values()].filter(Boolean))].sort();
   const operations = [...lk.operation.entries()].map(([code, desc]) => ({ code, desc }))
     .sort((a, b) => a.desc.localeCompare(b.desc));
-  _opts = { fields, wells, holeSizes, mudTypes, rigs, materials, operations };
+  _opts = { fields, wells, holeSizes, mudTypes, rigs, materials, activityTypes, operations };
   return _opts;
 }

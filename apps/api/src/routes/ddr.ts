@@ -3,6 +3,9 @@ import {
   ddrAvailable, listWells, listReports, getReport, getWell, getAnalytics,
   getFormationMatrix, getLithologyTable, getLithologyGraph, getMudProperties, type FormationMatrixFilters,
   getMudStock, type MudStockFilters,
+  getWellPath, type WellPathFilters,
+  getTimeAnalysis, type TimeAnalysisFilters,
+  getTools, type ToolsFilters,
   readLithoPattern, listSearchGroups, searchOperations, searchOptions, type OpsSearchFilters,
   createSearchGroup, updateSearchGroup, deleteSearchGroup, renameCategory, deleteCategory,
   type SavedGroupInput,
@@ -99,6 +102,18 @@ export async function registerDdrRoutes(app: FastifyInstance) {
   app.post<{ Body: MudStockFilters }>("/ddr/mud-stock", async (req, reply) => {
     if (!ddrAvailable()) return unavailable(reply);
     return getMudStock(req.body ?? {});
+  });
+  app.post<{ Body: WellPathFilters }>("/ddr/well-path", async (req, reply) => {
+    if (!ddrAvailable()) return unavailable(reply);
+    return getWellPath(req.body ?? {});
+  });
+  app.post<{ Body: TimeAnalysisFilters }>("/ddr/time-analysis", async (req, reply) => {
+    if (!ddrAvailable()) return unavailable(reply);
+    return getTimeAnalysis(req.body ?? {});
+  });
+  app.post<{ Body: ToolsFilters }>("/ddr/tools", async (req, reply) => {
+    if (!ddrAvailable()) return unavailable(reply);
+    return getTools(req.body ?? {});
   });
 
   // Lithology pattern tile (LITHO/<name>.bmp) for the stratigraphic column.
