@@ -7,14 +7,20 @@
  * Two views over the already-loaded rows (no extra fetch):
  *   • TABLE — the faceted grid; a row opens that day's full daily report (the
  *     same overlay the other tabs use) when its report serial resolved.
- *   • GRAPH — total Used / Received summed by material or by well (the Delphi
- *     DRAWMAT bar charts), as grouped bars with a metric + group-by toggle.
+ *   • GRAPH — total Used summed by material or by well (the Delphi DRAWMAT bar
+ *     chart), grouped bars with a group-by toggle.
+ *   • PLANNING — next-well forecasting from the offset wells: per-metre
+ *     consumption by hole section, an offset benchmark (mean + min–max range), a
+ *     section-length forecast calculator, and the cost breakdown (see
+ *     MudPlanning). Driven by a separate /ddr/mud-planning fetch.
  */
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
+import { MudPlanning, type PlanningFilters } from "./MudPlanning.js";
+import { useFacetOptions } from "./useFacetOptions.js";
 
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
@@ -61,14 +67,18 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
   const [data, setData] = useState<StockData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The facet set that produced `data` — snapshotted on Show so the Planning
+  // view (which fetches /ddr/mud-planning itself) stays in sync with the grid
+  // and doesn't refetch on every sidebar keystroke.
+  const [planningFilters, setPlanningFilters] = useState<PlanningFilters | null>(null);
 
-  // Local view state — never triggers a network fetch.
-  const [view, setView] = useState<"table" | "graph">("table");
-  const [metric, setMetric] = useState<"used" | "rec">("used");
+  // Local view state — table/graph use the loaded rows; planning fetches its own.
+  const [view, setView] = useState<"table" | "graph" | "planning">("table");
   const [groupBy, setGroupBy] = useState<"material" | "well">("material");
 
   const optsQ = useQuery({ queryKey: ["ddr", "search-options"], queryFn: () => api.get<SearchOptions>("/ddr/search-options") });
   const o = optsQ.data;
+  const facet = useFacetOptions(selFields, selWells, o);
 
   // One entry PER WELL CODE (codes are unique; names are not), same-named wells
   // get the code appended — identical to the Mud Properties / Formation pickers.
@@ -94,11 +104,12 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
     try {
       const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, materials: selMat, dateFrom, dateTo };
       setData(await api.post<StockData>("/ddr/mud-stock", body));
+      setPlanningFilters(body);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
   function clearAll() {
     setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setSelMat([]);
-    setDateFrom(""); setDateTo(""); setData(null);
+    setDateFrom(""); setDateTo(""); setData(null); setPlanningFilters(null);
   }
 
   return (
@@ -106,9 +117,9 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
       <div className="flex flex-col min-h-0 bg-white border border-gray-200 rounded p-3 overflow-y-auto">
         <MultiSelect title="Fields" items={(o?.fields ?? []).map((f) => ({ value: f, label: f }))} selected={selFields} onChange={setSelFields} />
         <MultiSelect title={selFields.length ? `Wells · in ${selFields.length} field(s)` : "Wells"} items={wellItems} selected={selWells} onChange={setSelWells} />
-        <MultiSelect title="Bit sizes" items={(o?.holeSizes ?? []).map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
-        <MultiSelect title="Mud types" items={(o?.mudTypes ?? []).map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
-        <MultiSelect title="Materials" items={(o?.materials ?? []).map((m) => ({ value: m, label: m }))} selected={selMat} onChange={setSelMat} />
+        <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
+        <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
+        <MultiSelect title="Materials" items={facet.materials.map((m) => ({ value: m, label: m }))} selected={selMat} onChange={setSelMat} />
         <div className="pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Date range (Jalali)</div>
           <div className="flex items-center gap-1.5">
@@ -125,14 +136,6 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
 
         {view === "graph" && data && rows.length > 0 && (
           <div className="pt-4 mt-3 border-t border-gray-100 space-y-3">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Metric</div>
-              <div className="inline-flex rounded border border-gray-300 overflow-hidden">
-                {(["used", "rec"] as const).map((m) => (
-                  <button key={m} onClick={() => setMetric(m)} className={`px-2.5 h-7 text-xs ${metric === m ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{m === "used" ? "Used" : "Received"}</button>
-                ))}
-              </div>
-            </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Group by</div>
               <div className="inline-flex rounded border border-gray-300 overflow-hidden">
@@ -154,7 +157,7 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
           </span>
           {data && rows.length > 0 && (
             <div className="inline-flex rounded border border-gray-300 overflow-hidden shrink-0">
-              {(["table", "graph"] as const).map((v) => (
+              {(["table", "graph", "planning"] as const).map((v) => (
                 <button key={v} onClick={() => setView(v)} className={`px-2.5 h-7 text-xs capitalize ${view === v ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{v}</button>
               ))}
             </div>
@@ -163,8 +166,10 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
         <div className="overflow-auto flex-1 min-h-0">
           {data && (view === "table" ? (
             <StockTable rows={rows} cols={usedCols} note={data.note} onOpenReport={onOpenReport} />
+          ) : view === "graph" ? (
+            <StockGraph rows={rows} groupBy={groupBy} note={data.note} />
           ) : (
-            <StockGraph rows={rows} metric={metric} groupBy={groupBy} note={data.note} />
+            <MudPlanning filters={planningFilters} />
           ))}
         </div>
       </div>
@@ -219,12 +224,14 @@ function StockTable({ rows, cols, note, onOpenReport }: {
   );
 }
 
-/** Total Used / Received summed by material (bars = wells) or by well (bars =
- *  materials) — the Delphi DRAWMAT bar chart. Only additive metrics (Used /
- *  Received) are charted; Stock is a daily snapshot, not a sum. */
-function StockGraph({ rows, metric, groupBy, note }: {
-  rows: StockRow[]; metric: "used" | "rec"; groupBy: "material" | "well"; note?: string;
+/** Total Used summed by material (bars = wells) or by well (bars = materials) —
+ *  the Delphi DRAWMAT bar chart. Only Used is charted (it's additive); Received
+ *  is a logistics figure and Stock is a daily snapshot, not a sum. For next-well
+ *  forecasting use the Planning view, which normalises Used per metre by section. */
+function StockGraph({ rows, groupBy, note }: {
+  rows: StockRow[]; groupBy: "material" | "well"; note?: string;
 }) {
+  const metric = "used" as const;
   const { cats, series, matrix, max, capped } = useMemo(() => {
     const catKey = (r: StockRow) => (groupBy === "material" ? (r.material ?? "—") : r.wellCode);
     const serKey = (r: StockRow) => (groupBy === "material" ? r.wellCode : (r.material ?? "—"));

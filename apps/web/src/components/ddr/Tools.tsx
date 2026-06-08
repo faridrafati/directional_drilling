@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
+import { useFacetOptions } from "./useFacetOptions.js";
 
 // Tool types (keys match the API's TOOL_SPECS). Bit first (richest / default).
 const TOOLS = [
@@ -48,6 +49,8 @@ export function Tools({ onOpenReport }: { onOpenReport?: (wellCode: string, seri
 
   const optsQ = useQuery({ queryKey: ["ddr", "search-options"], queryFn: () => api.get<SearchOptions>("/ddr/search-options") });
   const o = optsQ.data;
+  // Value facets scoped to the selected fields/wells (fall back to global lists).
+  const facet = useFacetOptions(selFields, selWells, o);
 
   const wellItems = useMemo<Item[]>(() => {
     const fset = new Set(selFields);
@@ -94,8 +97,8 @@ export function Tools({ onOpenReport }: { onOpenReport?: (wellCode: string, seri
         </div>
         <MultiSelect title="Fields" items={(o?.fields ?? []).map((f) => ({ value: f, label: f }))} selected={selFields} onChange={setSelFields} />
         <MultiSelect title={selFields.length ? `Wells · in ${selFields.length} field(s)` : "Wells"} items={wellItems} selected={selWells} onChange={setSelWells} />
-        <MultiSelect title="Bit sizes" items={(o?.holeSizes ?? []).map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
-        <MultiSelect title="Mud types" items={(o?.mudTypes ?? []).map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
+        <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
+        <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
         <div className="pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Date range (Jalali)</div>
           <div className="flex items-center gap-1.5">

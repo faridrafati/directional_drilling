@@ -526,6 +526,151 @@ export function getFormationMatrix(f: FormationMatrixFilters): Record<string, un
   return { formations, rows: visible, truncated, total: codes.length, note };
 }
 
+/**
+ * Formation-tops PROGNOSIS analytics over D07 — the next-well geology-planning
+ * view (vs getFormationMatrix's per-well cross-tab). Synthesises the offset
+ * wells' formation tops into the inputs a drilling/geology engineer prognoses
+ * the next well from:
+ *
+ *  • prognosis   — per formation (in stratigraphic / mean-depth order): the top
+ *                  depth (MD) across the offset wells — n / min / mean / median /
+ *                  max / std-dev / spread — the prognosed-tops table with its
+ *                  uncertainty band. Read off the expected top ± spread to set
+ *                  casing points.
+ *  • thickness   — per formation, the interval thickness (next top − this top,
+ *                  per well) across offsets (min/median/max) + the hole section
+ *                  the top falls in — flags casing seats and thick / variable
+ *                  intervals.
+ *  • wells       — per offset well, its ordered tops (formation → MD) — drives
+ *                  the stratigraphic correlation panel (tops connected well to
+ *                  well).
+ *  • hazards     — each formation's loss exposure: N05 loss events / volume that
+ *                  fell inside that formation's interval across the offsets, plus
+ *                  a MOBILE-salt/anhydrite flag (Gachsaran / salt / anhydrite) —
+ *                  the geology-driven risk list (which formation loses mud).
+ *
+ * Depths are MD as stored. Filtered by field / well / hole-size / mud-type.
+ */
+export interface FormationPrognosisFilters extends FormationMatrixFilters {}
+
+export function getFormationPrognosis(f: FormationPrognosisFilters): Record<string, unknown> {
+  const wellSet = resolveWellSet(f);
+  if (!wellSet) return { prognosis: [], thickness: [], wells: [], hazards: [], wellCount: 0, depthRange: null, note: "Select a field or well to prognose from offset tops." };
+  const db = data(), lk = lookups();
+  const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
+  if (!codes.length) return { prognosis: [], thickness: [], wells: [], hazards: [], wellCount: 0, depthRange: null };
+
+  // Optional hole-size filter selects wells that drilled a matching section
+  // (resolveWellSet already applied field/well/hole/mud → wellSet). Here we just
+  // need the well English names + a per-well hole-section depth map.
+  const nameMap = new Map<string, string>();
+  for (const r of db.prepare(`SELECT WellCode, EnglishName FROM A01`).all() as Row[]) nameMap.set(s(r.WellCode), s(r.EnglishName) || s(r.WellCode));
+
+  // Per-well bit-size depth segments (L04 → hole section), so each top resolves
+  // to the hole section it sits in (for the casing-seat view).
+  const bitByWell = new Map<string, DepthSeg[]>();
+  // N05 loss events per well (depth → volume), for the formation hazard cross-ref.
+  const lossByWell = new Map<string, { d: number; vol: number }[]>();
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT WellCode, FromPoint, ToPoint, HoleSizeCode FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const name = look(lk.holeSize, r.HoleSizeCode); if (!name) continue;
+      const fr = val(r.FromPoint), to = val(r.ToPoint);
+      if (typeof fr === "number" && typeof to === "number" && to > fr) {
+        const wc = s(r.WellCode); let arr = bitByWell.get(wc); if (!arr) { arr = []; bitByWell.set(wc, arr); }
+        arr.push({ from: fr, to, name: normHoleSize(name), own: true });
+      }
+    }
+    for (const r of db.prepare(`SELECT WellCode, FromPoint, TotalLossesAmount, LossesAtUnit, MinGraduallyLossesAmount, MaxGraduallyLossesAmount FROM N05 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const d = Number(s(r.FromPoint)); if (!Number.isFinite(d) || d <= 0 || d > 9000) continue;
+      const vol = Math.max(Number(s(r.TotalLossesAmount)) || 0, Number(s(r.LossesAtUnit)) || 0, Number(s(r.MinGraduallyLossesAmount)) || 0, Number(s(r.MaxGraduallyLossesAmount)) || 0);
+      if (vol <= 0) continue;
+      const wc = s(r.WellCode); let arr = lossByWell.get(wc); if (!arr) { arr = []; lossByWell.set(wc, arr); }
+      arr.push({ d, vol });
+    }
+  }
+  for (const arr of bitByWell.values()) arr.sort((a, b) => a.from - b.from);
+
+  // Per-well ordered tops (formation → MD). D07 has no WellCode index → one pass.
+  const topsByWell = new Map<string, { name: string; md: number }[]>();
+  const keep = new Set(codes);
+  for (const r of db.prepare(`SELECT WellCode, FormCode, DepthPoint FROM D07 WHERE DepthPoint IS NOT NULL`).all() as Row[]) {
+    const wc = s(r.WellCode); if (!keep.has(wc)) continue;
+    const name = look(lk.formation, r.FormCode); if (!name) continue;
+    const md = val(r.DepthPoint); if (typeof md !== "number" || md < 1 || md > 9000) continue;
+    let arr = topsByWell.get(wc); if (!arr) { arr = []; topsByWell.set(wc, arr); }
+    // Keep the first (shallowest) top per formation per well (matches the matrix).
+    if (!arr.some((t) => t.name === name)) arr.push({ name, md });
+  }
+  for (const arr of topsByWell.values()) arr.sort((a, b) => a.md - b.md);
+
+  // ── per-formation depth stats + thickness + loss exposure ───────────────────
+  const depthByForm = new Map<string, number[]>();
+  const thickByForm = new Map<string, number[]>();
+  const sectionByForm = new Map<string, Map<string, number>>();   // form → section → count
+  const lossByForm = new Map<string, { events: number; vol: number }>();
+
+  for (const [wc, tops] of topsByWell) {
+    const losses = lossByWell.get(wc) ?? [];
+    for (let i = 0; i < tops.length; i++) {
+      const { name, md } = tops[i];
+      (depthByForm.get(name) ?? depthByForm.set(name, []).get(name)!).push(md);
+      const base = i + 1 < tops.length ? tops[i + 1].md : null;
+      if (base != null) { const th = base - md; if (th > 0 && th < 3000) (thickByForm.get(name) ?? thickByForm.set(name, []).get(name)!).push(th); }
+      // Hole section the top sits in.
+      const sec = segAt(bitByWell.get(wc), md);
+      if (sec) { let m = sectionByForm.get(name); if (!m) { m = new Map(); sectionByForm.set(name, m); } m.set(sec, (m.get(sec) ?? 0) + 1); }
+      // Losses that fell inside this formation's interval [md, base).
+      if (losses.length) {
+        const hi = base ?? Infinity;
+        let ev = 0, vol = 0;
+        for (const l of losses) if (l.d >= md && l.d < hi) { ev++; vol += l.vol; }
+        if (ev) { const e = lossByForm.get(name) ?? { events: 0, vol: 0 }; e.events += ev; e.vol += vol; lossByForm.set(name, e); }
+      }
+    }
+  }
+
+  const sortNum = (a: number[]) => a.slice().sort((m, n) => m - n);
+  const pct = (sorted: number[], p: number) => { if (!sorted.length) return 0; const idx = (sorted.length - 1) * p; const lo = Math.floor(idx), hi = Math.ceil(idx); return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo); };
+  const mean = (a: number[]) => a.reduce((p, q) => p + q, 0) / a.length;
+  const std = (a: number[]) => { if (a.length < 2) return 0; const m = mean(a); return Math.sqrt(a.reduce((p, q) => p + (q - m) ** 2, 0) / (a.length - 1)); };
+  const r0 = (v: number) => Math.round(v);
+
+  const MOBILE = /gachsaran|salt|anhyd|halit|gypsum/i;   // mobile / loss-prone evaporite formations
+
+  const prognosis = [...depthByForm.entries()].map(([name, ds]) => {
+    const s2 = sortNum(ds);
+    return {
+      formation: name, n: ds.length, min: r0(s2[0]), mean: r0(mean(ds)), median: r0(pct(s2, 0.5)),
+      max: r0(s2[s2.length - 1]), std: r0(std(ds)), spread: r0(s2[s2.length - 1] - s2[0]),
+    };
+  }).sort((a, b) => a.mean - b.mean);   // stratigraphic order = shallow → deep by mean top
+
+  const meanDepthOf = new Map(prognosis.map((p) => [p.formation, p.mean]));
+  const thickness = [...thickByForm.entries()].map(([name, ts]) => {
+    const s2 = sortNum(ts);
+    const secMap = sectionByForm.get(name);
+    const topSec = secMap ? [...secMap.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? null : null;
+    return { formation: name, n: ts.length, min: r0(s2[0]), median: r0(pct(s2, 0.5)), max: r0(s2[s2.length - 1]), section: topSec };
+  }).sort((a, b) => (meanDepthOf.get(a.formation) ?? 0) - (meanDepthOf.get(b.formation) ?? 0));
+
+  const hazards = [...new Set([...depthByForm.keys()])].map((name) => {
+    const e = lossByForm.get(name);
+    return { formation: name, meanDepth: meanDepthOf.get(name) ?? null, lossEvents: e?.events ?? 0, lossVol: e ? r0(e.vol) : 0, mobile: MOBILE.test(name) };
+  }).filter((h) => h.lossEvents > 0 || h.mobile)
+    .sort((a, b) => b.lossVol - a.lossVol || (a.meanDepth ?? 0) - (b.meanDepth ?? 0));
+
+  // Wells for the correlation panel (cap at 12 — drawn side by side), ordered by code.
+  const wellList = [...topsByWell.keys()].sort((a, b) => a.localeCompare(b)).slice(0, 12);
+  const wells = wellList.map((wc) => ({ wellCode: wc, name: nameMap.get(wc) || wc, tops: topsByWell.get(wc)! }));
+
+  let dmin = Infinity, dmax = -Infinity;
+  for (const ds of depthByForm.values()) for (const d of ds) { dmin = Math.min(dmin, d); dmax = Math.max(dmax, d); }
+  const depthRange = Number.isFinite(dmin) ? { min: Math.floor(dmin / 100) * 100, max: Math.ceil(dmax / 100) * 100 } : null;
+
+  return { prognosis, thickness, wells, hazards, wellCount: topsByWell.size, depthRange, truncatedWells: wellList.length < topsByWell.size };
+}
+
 // ── Lithology component parser: free-text Description → {name, pct} list ──────
 // The DailyLitologyDecription.Description packs up to several lithologies, each
 // "<abbr>: <details> <NN>%". We pull the leading abbreviation per %-segment and
@@ -824,6 +969,187 @@ export function getMudProperties(f: FormationMatrixFilters): Record<string, unkn
   return { rows: rows.slice(0, cap), truncated: rows.length > cap, total: rows.length };
 }
 
+/**
+ * Mud-program PLANNING analytics over N01/N05 — the next-well design view (vs
+ * getMudProperties' per-well browser). Synthesises the offset wells into the
+ * inputs a mud engineer designs the next well's mud program from:
+ *
+ *  • weightByDepth  — the empirical MUD-WEIGHT WINDOW: per depth bin, the p10 /
+ *                     median / p90 / min / max of MaxWeight (pcf) across the
+ *                     offset wells. Read off the planning weight at each depth.
+ *  • losses         — the LOSS-RISK MAP: N05 loss (and gain/kick) events binned
+ *                     by depth, with event count, total volume and a severity
+ *                     split (seepage / partial / severe / total), plus the hole
+ *                     section — flags the loss-prone zones to plan LCM for.
+ *  • rheologyBySection — per hole section, the min/median/max of the rheology &
+ *                     solids properties offset wells ran (weight, visc, PV, YP,
+ *                     gels, solids%, filtrate) — the next well's mud spec.
+ *  • mudBySection   — which mud systems were used in each section, with the row
+ *                     count and typical (median) weight — the program skeleton.
+ *
+ * Weight is kept in pcf (as stored); the UI offers pcf/ppg/SG. Depth bins are a
+ * fixed 250 m. Filtered by field / well / hole-size / mud-type like the browser.
+ */
+export interface MudProgramFilters extends FormationMatrixFilters {}
+
+export function getMudProgram(f: MudProgramFilters): Record<string, unknown> {
+  const wellSet = resolveWellSet(f);
+  if (!wellSet) return { weightByDepth: [], losses: [], rheologyBySection: [], mudBySection: [], wellCount: 0, depthRange: null, note: "Select a field or well to design from offset mud data." };
+  const db = data(), lk = lookups();
+  const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
+  if (!codes.length) return { weightByDepth: [], losses: [], rheologyBySection: [], mudBySection: [], wellCount: 0, depthRange: null };
+
+  // Optional mud-type filter (per row), matching the browser facet.
+  const clean = (a?: string[]) => (a ?? []).map((x) => s(x)).filter(Boolean);
+  const mudNames = new Set(clean(f.mudTypes));
+  const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
+  const holeNames = new Set(clean(f.holeSizes));
+  const holeFilter = holeNames.size ? holeNames : null;   // compared against normalised section label
+
+  // Per-well bit-size depth segments (L04 drilled interval → hole size), so each
+  // N01/N05 depth resolves to its hole section (same approach as getMudProperties).
+  const bitByWell = new Map<string, DepthSeg[]>();
+  const seenWells = new Set<string>();
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT WellCode, FromPoint, ToPoint, HoleSizeCode FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const name = look(lk.holeSize, r.HoleSizeCode); if (!name) continue;
+      const fr = val(r.FromPoint), to = val(r.ToPoint);
+      if (typeof fr === "number" && typeof to === "number" && to > fr) {
+        const wc = s(r.WellCode); let arr = bitByWell.get(wc); if (!arr) { arr = []; bitByWell.set(wc, arr); }
+        arr.push({ from: fr, to, name: normHoleSize(name), own: true });
+      }
+    }
+  }
+  for (const arr of bitByWell.values()) arr.sort((a, b) => a.from - b.from);
+  const sectionAt = (wc: string, depth: number): string | null => segAt(bitByWell.get(wc), depth);
+
+  const BIN = 250;
+  const binOf = (d: number) => Math.floor(d / BIN) * BIN;
+
+  // Accumulators.
+  const weightBins = new Map<number, number[]>();          // depthBin → MaxWeight[]
+  interface LossBucket { seepage: number; partial: number; severe: number; total: number; vol: number; gains: number; gainVol: number; sections: Map<string, number> }
+  const lossAcc = new Map<number, LossBucket>();           // depthBin → loss/gain tallies
+  // Rheology & solids per section: each prop → values[].
+  const RHEO: { key: string; col: string }[] = [
+    { key: "maxWeight", col: "MaxWeight" }, { key: "visc", col: "Viscosity" },
+    { key: "solids", col: "SoildPercent" }, { key: "waterLoss", col: "WaterLoss" },
+  ];
+  const sectionStats = new Map<string, { rheo: Map<string, number[]>; pv: number[]; yp: number[]; gel: number[] }>();
+  const sectionMud = new Map<string, Map<string, { n: number; wt: number[] }>>();  // section → mudName → {count, weights}
+  const getSec = (sec: string) => { let s2 = sectionStats.get(sec); if (!s2) { s2 = { rheo: new Map(), pv: [], yp: [], gel: [] }; sectionStats.set(sec, s2); } return s2; };
+
+  let dmin = Infinity, dmax = -Infinity;
+
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(
+      `SELECT WellCode, FromPoint, MudCode, MaxWeight, Viscosity, Fan600, Fan300, InitialGel, SoildPercent, WaterLoss FROM N01 WHERE TRIM(WellCode) IN (${ph})`,
+    ).all(...chunk) as Row[]) {
+      const wc = s(r.WellCode);
+      const depth = Number(s(r.FromPoint));
+      if (!Number.isFinite(depth) || depth < 0 || depth > 9000) continue;
+      const sec = sectionAt(wc, depth);
+      if (holeFilter && (!sec || !holeFilter.has(sec))) continue;
+      const mudCode = s(r.MudCode);
+      if (mudCodes && !mudCodes.has(mudCode)) continue;
+      seenWells.add(wc);
+
+      const mw = Number(s(r.MaxWeight));
+      const mwOk = Number.isFinite(mw) && mw >= 30 && mw <= 200;
+      if (mwOk) {
+        const b = binOf(depth); let arr = weightBins.get(b); if (!arr) { arr = []; weightBins.set(b, arr); } arr.push(mw);
+        dmin = Math.min(dmin, depth); dmax = Math.max(dmax, depth);
+      }
+      if (sec) {
+        const ss = getSec(sec);
+        for (const rh of RHEO) { const v = Number(s(r[rh.col])); if (Number.isFinite(v) && v > 0) { let a = ss.rheo.get(rh.key); if (!a) { a = []; ss.rheo.set(rh.key, a); } a.push(v); } }
+        // PV = θ600−θ300, YP = 2·θ300−θ600. A valid Fann reading has θ600 ≥ θ300 ≥ 0
+        // AND θ300 ≥ PV (so YP ≥ 0). Drop physically-impossible pairs (data-entry
+        // slips that otherwise produce negative / absurd PV/YP and skew the spec).
+        const f600 = Number(s(r.Fan600)), f300 = Number(s(r.Fan300));
+        if (Number.isFinite(f600) && Number.isFinite(f300) && f600 >= f300 && f300 >= 0 && f600 > 0 && f600 <= 400 && 2 * f300 - f600 >= 0) {
+          ss.pv.push(f600 - f300); ss.yp.push(2 * f300 - f600);
+        }
+        const gel = Number(s(r.InitialGel)); if (Number.isFinite(gel) && gel > 0) ss.gel.push(gel);
+        // Mud-type program per section.
+        const mudName = look(lk.mud, mudCode);
+        if (mudName) { let mm = sectionMud.get(sec); if (!mm) { mm = new Map(); sectionMud.set(sec, mm); } let e = mm.get(mudName); if (!e) { e = { n: 0, wt: [] }; mm.set(mudName, e); } e.n++; if (mwOk) e.wt.push(mw); }
+      }
+    }
+
+    // Losses & gains (N05) by depth.
+    for (const r of db.prepare(
+      `SELECT WellCode, FromPoint, TotalLossesAmount, LossesAtUnit, MinGraduallyLossesAmount, MaxGraduallyLossesAmount, TotalGainAmount FROM N05 WHERE TRIM(WellCode) IN (${ph})`,
+    ).all(...chunk) as Row[]) {
+      const wc = s(r.WellCode);
+      const depth = Number(s(r.FromPoint));
+      if (!Number.isFinite(depth) || depth < 0 || depth > 9000) continue;
+      const sec = sectionAt(wc, depth);
+      if (holeFilter && (!sec || !holeFilter.has(sec))) continue;
+      const total = Number(s(r.TotalLossesAmount)) || 0, unit = Number(s(r.LossesAtUnit)) || 0;
+      const grad = Math.max(Number(s(r.MinGraduallyLossesAmount)) || 0, Number(s(r.MaxGraduallyLossesAmount)) || 0);
+      const lossVol = Math.max(total, unit, grad);
+      const gain = Number(s(r.TotalGainAmount)) || 0;
+      if (lossVol <= 0 && gain <= 0) continue;
+      const b = binOf(depth);
+      let bucket = lossAcc.get(b); if (!bucket) { bucket = { seepage: 0, partial: 0, severe: 0, total: 0, vol: 0, gains: 0, gainVol: 0, sections: new Map() }; lossAcc.set(b, bucket); }
+      if (lossVol > 0) {
+        // Severity bands (bbl): seepage <10, partial 10–50, severe 50–100, total >100.
+        if (lossVol < 10) bucket.seepage++; else if (lossVol < 50) bucket.partial++; else if (lossVol < 100) bucket.severe++; else bucket.total++;
+        bucket.vol += lossVol;
+        if (sec) bucket.sections.set(sec, (bucket.sections.get(sec) ?? 0) + 1);
+      }
+      if (gain > 0) { bucket.gains++; bucket.gainVol += gain; }
+    }
+  }
+
+  // ── assemble ──────────────────────────────────────────────────────────────
+  const sortNum = (a: number[]) => a.slice().sort((m, n) => m - n);
+  const pct = (sorted: number[], p: number) => { if (!sorted.length) return 0; const idx = (sorted.length - 1) * p; const lo = Math.floor(idx), hi = Math.ceil(idx); return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo); };
+  const r1 = (v: number) => Number(v.toFixed(1));
+
+  const weightByDepth = [...weightBins.entries()].sort((a, b) => a[0] - b[0]).map(([depth, vals]) => {
+    const s2 = sortNum(vals);
+    return { depth, n: vals.length, min: r1(s2[0]), p10: r1(pct(s2, 0.1)), median: r1(pct(s2, 0.5)), p90: r1(pct(s2, 0.9)), max: r1(s2[s2.length - 1]) };
+  });
+
+  const losses = [...lossAcc.entries()].sort((a, b) => a[0] - b[0]).map(([depth, b]) => {
+    const topSec = [...b.sections.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? null;
+    return {
+      depth, events: b.seepage + b.partial + b.severe + b.total, vol: Math.round(b.vol),
+      seepage: b.seepage, partial: b.partial, severe: b.severe, total: b.total,
+      gains: b.gains, gainVol: Math.round(b.gainVol), section: topSec,
+    };
+  }).filter((x) => x.events > 0 || x.gains > 0);
+
+  // Section ordering widest → narrowest.
+  const allSections = new Set<string>([...sectionStats.keys(), ...sectionMud.keys()]);
+  const sectionOrder = [...allSections].sort((a, b) => (holeSizeValue(b) ?? -1) - (holeSizeValue(a) ?? -1) || a.localeCompare(b));
+
+  const stat = (vals: number[]) => { const s2 = sortNum(vals.filter((v) => Number.isFinite(v))); return s2.length ? { n: s2.length, min: r1(s2[0]), median: r1(pct(s2, 0.5)), max: r1(s2[s2.length - 1]) } : null; };
+  const rheologyBySection = sectionOrder.filter((sec) => sectionStats.has(sec)).map((sec) => {
+    const ss = sectionStats.get(sec)!;
+    return {
+      section: sec,
+      maxWeight: stat(ss.rheo.get("maxWeight") ?? []), visc: stat(ss.rheo.get("visc") ?? []),
+      pv: stat(ss.pv), yp: stat(ss.yp), gel: stat(ss.gel),
+      solids: stat(ss.rheo.get("solids") ?? []), waterLoss: stat(ss.rheo.get("waterLoss") ?? []),
+    };
+  });
+
+  const mudBySection = sectionOrder.filter((sec) => sectionMud.has(sec)).map((sec) => {
+    const mm = sectionMud.get(sec)!;
+    const muds = [...mm.entries()].map(([mud, e]) => ({ mud, n: e.n, medianWeight: e.wt.length ? r1(pct(sortNum(e.wt), 0.5)) : null }))
+      .sort((a, b) => b.n - a.n);
+    return { section: sec, muds };
+  });
+
+  const depthRange = Number.isFinite(dmin) ? { min: Math.floor(dmin / BIN) * BIN, max: Math.ceil(dmax / BIN) * BIN } : null;
+  return { weightByDepth, losses, rheologyBySection, mudBySection, wellCount: seenWells.size, depthRange, bin: BIN };
+}
+
 export interface MudStockFilters extends FormationMatrixFilters {
   materials?: string[]; dateFrom?: string; dateTo?: string;
 }
@@ -908,6 +1234,153 @@ export function getMudStock(f: MudStockFilters): Record<string, unknown> {
   return { rows: out.slice(0, cap), truncated: out.length > cap, total: out.length };
 }
 
+/**
+ * Mud-material PLANNING analytics over ChemicalMaterials — the next-well
+ * forecasting view (vs getMudStock's per-day accounting grid). For the faceted
+ * wells it returns, per (material × hole section): total consumed, the section
+ * metres drilled per contributing well, and the per-well per-metre rates — the
+ * basis for benchmarking the next well. The driver is that material need scales
+ * with the metres drilled IN a section (26"/17½"/12¼"/8½"…), so every figure is
+ * normalised by L04's drilled interval for that (well, hole size), NOT by the
+ * consumption row's own depth (early "0–0" spud days drill no metres).
+ *
+ * Returns (one fetch powers all planning views):
+ *  • sections        — the hole sizes present, widest→narrowest, with total metres.
+ *  • materials        — per material: unit, total used, total cost (Rial/Dollar),
+ *                       and per-section { used, metres, wells, perM stats
+ *                       (mean / p50 / min / max over the per-well rates), cost }.
+ * Per-row hole size is the day's L04 section; mud/material/date facets apply per
+ * row exactly as getMudStock does.
+ */
+export interface MudPlanningFilters extends MudStockFilters {}
+
+export function getMudPlanning(f: MudPlanningFilters): Record<string, unknown> {
+  const wellSet = resolveWellSet({ fields: f.fields, wells: f.wells });
+  if (!wellSet) return { sections: [], materials: [], wellCount: 0, note: "Select a field or well to plan from offset consumption." };
+  const db = data(), lk = lookups();
+  const clean = (a?: string[]) => (a ?? []).map((x) => s(x)).filter(Boolean);
+  const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
+  if (!codes.length) return { sections: [], materials: [], wellCount: 0 };
+
+  const matNames = new Set(clean(f.materials));
+  const matCodes = matNames.size ? new Set([...lk.material].filter(([, n]) => matNames.has(n)).map(([c]) => c)) : null;
+  const holeNames = new Set(clean(f.holeSizes));
+  const holeCodes = holeNames.size ? new Set([...lk.holeSize].filter(([, n]) => holeNames.has(normHoleSize(n))).map(([c]) => c)) : null;
+  const mudNames = new Set(clean(f.mudTypes));
+  const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
+  const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
+
+  // Section metres drilled per (well | hole-size code): max(ToPoint)−min(FromPoint)
+  // over that well's L04 days in the section. Also the day→(hole, mud) maps.
+  const holeByDay = new Map<string, string>(), mudByDay = new Map<string, string>();
+  const secKey = (wc: string, hsc: string) => `${wc}|${hsc}`;
+  const secSpan = new Map<string, { f: number; t: number }>();
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT WellCode, DrillingDate, HoleSizeCode, FromPoint, ToPoint FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const wc = s(r.WellCode), hsc = s(r.HoleSizeCode);
+      holeByDay.set(`${wc}|${s(r.DrillingDate)}`, hsc);
+      const fp = Number(s(r.FromPoint)), tp = Number(s(r.ToPoint));
+      if (Number.isFinite(fp) && Number.isFinite(tp) && tp > fp && hsc) {
+        const k = secKey(wc, hsc), cur = secSpan.get(k);
+        if (!cur) secSpan.set(k, { f: fp, t: tp }); else { cur.f = Math.min(cur.f, fp); cur.t = Math.max(cur.t, tp); }
+      }
+    }
+    for (const r of db.prepare(`SELECT WellCode, fDate, MudCode FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.fDate)}`; if (!mudByDay.has(k)) mudByDay.set(k, s(r.MudCode));
+    }
+  }
+  const secMetres = (wc: string, hsc: string) => { const v = secSpan.get(secKey(wc, hsc)); return v ? v.t - v.f : 0; };
+  // Canonical SECTION key = the normalised hole-size label, so the several raw
+  // hole-size codes that mean the same diameter (e.g. an unmapped "26" alongside
+  // the real 26" code) collapse to ONE section. Metres for a (well, section) sum
+  // every contributing code's drilled span.
+  const sec = (hsc: string): string => normHoleSize(look(lk.holeSize, hsc));
+  const wellSectionMetres = (wc: string, section: string): number => {
+    let m = 0;
+    for (const k of secSpan.keys()) { const [w, hsc] = k.split("|"); if (w === wc && sec(hsc) === section) m += secMetres(wc, hsc); }
+    return m;
+  };
+
+  // Per (material | section): consumed + cost, and per-well consumed (→ per-metre).
+  interface Cell { used: number; costR: number; costD: number; perWell: Map<string, number> }
+  const cells = new Map<string, Cell>();                 // key: matCode|section
+  const unitOf = new Map<string, string>();              // matCode → unit label
+  const matTotal = new Map<string, { used: number; costR: number; costD: number }>();
+  const sectionWells = new Map<string, Set<string>>();   // section → wells that drilled it
+  const cell = (mk: string, section: string) => { const k = `${mk}|${section}`; let c = cells.get(k); if (!c) { c = { used: 0, costR: 0, costD: 0, perWell: new Map() }; cells.set(k, c); } return c; };
+
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    const where = [`TRIM(WellCode) IN (${ph})`, `CAST(Amount AS REAL) > 0`]; const params: unknown[] = [...chunk];
+    if (dateFrom) { where.push(`fDate >= ?`); params.push(dateFrom); }
+    if (dateTo) { where.push(`fDate <= ?`); params.push(dateTo); }
+    for (const r of db.prepare(
+      `SELECT WellCode, fDate, MaterialCode, Amount, MeasureCode, CostRial, CostDollar FROM ChemicalMaterials WHERE ${where.join(" AND ")}`,
+    ).all(...params) as Row[]) {
+      const matCode = s(r.MaterialCode);
+      if (matCodes && !matCodes.has(matCode)) continue;
+      const wc = s(r.WellCode), date = s(r.fDate), dk = `${wc}|${date}`;
+      const hsc = holeByDay.get(dk) ?? "";
+      if (holeCodes && !holeCodes.has(hsc)) continue;
+      const mudCode = mudByDay.get(dk) ?? "";
+      if (mudCodes && !mudCodes.has(mudCode)) continue;
+      if (!hsc) continue;                                 // no section → can't normalise
+      const section = sec(hsc); if (!section) continue;
+      const amt = Number(s(r.Amount)); if (!Number.isFinite(amt) || amt <= 0) continue;
+      const costR = Number(s(r.CostRial)) || 0, costD = Number(s(r.CostDollar)) || 0;
+
+      const c = cell(matCode, section);
+      c.used += amt; c.costR += costR; c.costD += costD;
+      c.perWell.set(wc, (c.perWell.get(wc) ?? 0) + amt);
+      if (!unitOf.has(matCode)) unitOf.set(matCode, s(look(lk.measure, r.MeasureCode)) || "");
+      const mt = matTotal.get(matCode) ?? { used: 0, costR: 0, costD: 0 };
+      mt.used += amt; mt.costR += costR; mt.costD += costD; matTotal.set(matCode, mt);
+      let sw = sectionWells.get(section); if (!sw) { sw = new Set(); sectionWells.set(section, sw); }
+      sw.add(wc);
+    }
+  }
+
+  // Sections present (widest→narrowest), with total metres summed per canonical
+  // size. Sections where no well actually drilled metres are dropped (they can't
+  // anchor a per-metre rate — e.g. a stray unmapped hole-size code on a 0-m day).
+  const secMetresTotal = new Map<string, number>();
+  for (const k of secSpan.keys()) { const [wc, hsc] = k.split("|"); const section = sec(hsc); if (sectionWells.has(section)) secMetresTotal.set(section, (secMetresTotal.get(section) ?? 0) + secMetres(wc, hsc)); }
+  const sections = [...sectionWells.keys()]
+    .map((section) => ({ code: section, size: section, wells: sectionWells.get(section)!.size, metres: Math.round(secMetresTotal.get(section) ?? 0) }))
+    .filter((s2) => s2.metres > 0)
+    .sort((a, b) => (holeSizeValue(b.size) ?? -1) - (holeSizeValue(a.size) ?? -1) || a.size.localeCompare(b.size));
+
+  const median = (xs: number[]) => { if (!xs.length) return 0; const a = xs.slice().sort((m, n) => m - n); const i = a.length >> 1; return a.length % 2 ? a[i] : (a[i - 1] + a[i]) / 2; };
+
+  // Assemble per-material rows with per-section per-metre stats.
+  const materials = [...matTotal.entries()].map(([mk, tot]) => {
+    const bySection = sections.map((secn) => {
+      const c = cells.get(`${mk}|${secn.code}`);
+      if (!c) return { code: secn.code, size: secn.size, used: 0, metres: 0, wells: 0, perMmean: 0, perMmedian: 0, perMmin: 0, perMmax: 0, costR: 0, costD: 0 };
+      // Per-well per-metre rate (only wells with >0 metres drilled in this section).
+      const rates: number[] = []; let metresSum = 0;
+      for (const [wc, used] of c.perWell) { const m = wellSectionMetres(wc, secn.code); if (m > 0) { rates.push(used / m); metresSum += m; } }
+      return {
+        code: secn.code, size: secn.size, used: Math.round(c.used), metres: Math.round(metresSum), wells: c.perWell.size,
+        perMmean: rates.length ? Number((rates.reduce((p, q) => p + q, 0) / rates.length).toFixed(3)) : 0,
+        perMmedian: Number(median(rates).toFixed(3)),
+        perMmin: rates.length ? Number(Math.min(...rates).toFixed(3)) : 0,
+        perMmax: rates.length ? Number(Math.max(...rates).toFixed(3)) : 0,
+        costR: Math.round(c.costR), costD: Math.round(c.costD),
+      };
+    }).filter((x) => x.used > 0);
+    return {
+      material: look(lk.material, mk) || mk, unit: unitOf.get(mk) || "",
+      totalUsed: Math.round(tot.used), totalCostR: Math.round(tot.costR), totalCostD: Math.round(tot.costD),
+      bySection,
+    };
+  }).filter((m) => m.bySection.length > 0)
+    .sort((a, b) => b.totalUsed - a.totalUsed);
+
+  return { sections, materials, wellCount: sectionWells.size ? new Set([...sectionWells.values()].flatMap((s) => [...s])).size : 0 };
+}
+
 export interface WellPathFilters extends FormationMatrixFilters {
   dateFrom?: string; dateTo?: string;
 }
@@ -986,6 +1459,37 @@ export function getWellPath(f: WellPathFilters): Record<string, unknown> {
     md(a) - md(b));
   const cap = 8000;
   return { rows: out.slice(0, cap), truncated: out.length > cap, total: out.length };
+}
+
+/**
+ * Well-Path facet options — only the fields and wells that actually have
+ * directional-survey data (M04 stations with N/S·E/W coordinates), so the Well
+ * Path sidebar doesn't list vertical wells / wells with no path to plot. Returns
+ * the same { fields, wells } shape the global search-options uses, restricted to
+ * surveyed wells; cached (the underlying M04/A01 data is static).
+ */
+let _wellPathOpts: Record<string, unknown> | null = null;
+export function getWellPathOptions(): Record<string, unknown> {
+  if (_wellPathOpts) return _wellPathOpts;
+  const db = data(), lk = lookups();
+  // Wells with at least one M04 station carrying N/S or E/W (i.e. a real path).
+  const surveyed = new Set<string>();
+  for (const r of db.prepare(
+    `SELECT DISTINCT TRIM(WellCode) wc FROM M04 WHERE TRIM(IFNULL(N_S,'')) <> '' OR TRIM(IFNULL(E_W,'')) <> ''`,
+  ).all() as Row[]) { const wc = s(r.wc); if (/[A-Za-z0-9]/.test(wc)) surveyed.add(wc); }
+
+  const fieldSet = new Set<string>();
+  const wells: { code: string; name: string; field: string | null }[] = [];
+  for (const r of db.prepare(`SELECT WellCode, EnglishName, FieldCode FROM A01 ORDER BY EnglishName, WellCode`).all() as Row[]) {
+    const code = s(r.WellCode);
+    if (!surveyed.has(code)) continue;
+    const field = look(lk.field, r.FieldCode);
+    wells.push({ code, name: s(r.EnglishName) || code, field });
+    if (field) fieldSet.add(field);
+  }
+  const fields = [...fieldSet].sort();
+  _wellPathOpts = { fields, wells };
+  return _wellPathOpts;
 }
 
 export interface TimeAnalysisFilters extends FormationMatrixFilters {
@@ -1316,6 +1820,112 @@ export function getTools(f: ToolsFilters): Record<string, unknown> {
   out.sort((a, b) => String(a.wellCode).localeCompare(String(b.wellCode)) || String(a.date ?? "").localeCompare(String(b.date ?? "")));
   const cap = 8000;
   return { ...base, rows: out.slice(0, cap), truncated: out.length > cap, total: out.length };
+}
+
+export interface RopOptimizationFilters extends FormationMatrixFilters {
+  dateFrom?: string; dateTo?: string;
+}
+
+/**
+ * ROP-optimization scatter from the bit table (L05) for the faceted wells. One
+ * point per bit record with a usable operating point: WOB and RPM are the
+ * MIDPOINTS of the recorded min–max ranges (MinWeight/MaxWeight, MinRPM/MaxRPM),
+ * and ROP is footage ÷ rotating-hours (BitMeterTotal, else ToPoint−FromPoint,
+ * over BitHour) — the same per-bit metric the Tools tab shows. Points carry the
+ * well, field, date, the day's primary L04 serial (so a point can open that
+ * day's report) and the bit size (lk.bitSize ← BitCode, else the day's hole),
+ * for client-side WOB×RPM→ROP binning (the contour) and the supporting scatters
+ * / per-bit-size comparison. Filtered by field / well / day hole-size / mud-type
+ * / Jalali date, mirroring the other DDR tabs.
+ */
+export function getRopOptimization(f: RopOptimizationFilters): Record<string, unknown> {
+  const wellSet = resolveWellSet(f);
+  if (!wellSet) return { points: [], bitSizes: [], truncated: false, total: 0, note: "Select a field or well to load bit performance." };
+  const db = data(), lk = lookups();
+  const exists = db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND lower(name)='l05'`).get();
+  if (!exists) return { points: [], bitSizes: [], truncated: false, total: 0, note: "No bit records in this database." };
+  const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
+  if (!codes.length) return { points: [], bitSizes: [], truncated: false, total: 0 };
+
+  const clean = (a?: string[]) => (a ?? []).map((x) => s(x)).filter(Boolean);
+  const holeNames = new Set(clean(f.holeSizes));
+  const holeCodes = holeNames.size ? new Set([...lk.holeSize].filter(([, n]) => holeNames.has(normHoleSize(n))).map(([c]) => c)) : null;
+  const mudNames = new Set(clean(f.mudTypes));
+  const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
+  const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
+
+  // Field + English name per well (A01), for labelling / field colour-split.
+  const nameMap = new Map<string, string>(), fieldMap = new Map<string, string | null>();
+  for (const r of db.prepare(`SELECT WellCode, EnglishName, FieldCode FROM A01`).all() as Row[]) {
+    const wc = s(r.WellCode); nameMap.set(wc, s(r.EnglishName) || wc); fieldMap.set(wc, look(lk.field, r.FieldCode));
+  }
+
+  // Day context: hole size + the day's primary (lowest-serial) L04 report, and
+  // the day's mud type — keyed by well|date, exactly as getTools resolves it.
+  const byDay = new Map<string, { serial: number | null; hole: string }>();
+  const mudByDay = new Map<string, string>();
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT WellCode, SerialNo, DrillingDate, HoleSizeCode FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.DrillingDate)}`;
+      const snN = Number(r.SerialNo), fin = Number.isFinite(snN), cur = byDay.get(k);
+      if (!cur || (fin && (cur.serial == null || snN < cur.serial))) byDay.set(k, { serial: fin ? snN : (cur?.serial ?? null), hole: s(r.HoleSizeCode) });
+    }
+    for (const r of db.prepare(`SELECT WellCode, fDate, MudCode FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.fDate)}`; if (!mudByDay.has(k)) mudByDay.set(k, s(r.MudCode));
+    }
+  }
+
+  // Midpoint of a recorded min–max range (one usable end ⇒ that end).
+  const mid = (a: unknown, b: unknown): number | null => {
+    const x = Number(s(a)), y = Number(s(b));
+    const xs = Number.isFinite(x) && x > 0, ys = Number.isFinite(y) && y > 0;
+    if (xs && ys) return (x + y) / 2;
+    if (xs) return x; if (ys) return y;
+    return null;
+  };
+
+  const points: Record<string, unknown>[] = [];
+  const bitSizeSet = new Set<string>();
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    const where = [`TRIM(WellCode) IN (${ph})`]; const params: unknown[] = [...chunk];
+    if (dateFrom) { where.push(`fDate >= ?`); params.push(dateFrom); }
+    if (dateTo) { where.push(`fDate <= ?`); params.push(dateTo); }
+    for (const r of db.prepare(`SELECT * FROM L05 WHERE ${where.join(" AND ")}`).all(...params) as Row[]) {
+      const wc = s(r.WellCode), date = s(r.fDate), k = `${wc}|${date}`;
+      const d = byDay.get(k), holeCode = d?.hole ?? "";
+      if (holeCodes && !holeCodes.has(holeCode)) continue;
+      const mudCode = mudByDay.get(k) ?? "";
+      if (mudCodes && !mudCodes.has(mudCode)) continue;
+
+      const wob = mid(r.MinWeight, r.MaxWeight);
+      const rpm = mid(r.MinRPM, r.MaxRPM);
+      // ROP (m/hr) = footage ÷ rotating hours (BitMeterTotal, else interval).
+      const hrs = Number(s(r.BitHour)); let m = Number(s(r.BitMeterTotal));
+      if (!Number.isFinite(m) || m <= 0) { const fp = Number(s(r.FromPoint)), tp = Number(s(r.ToPoint)); m = (Number.isFinite(fp) && Number.isFinite(tp)) ? tp - fp : NaN; }
+      const rop = Number.isFinite(hrs) && hrs > 0 && Number.isFinite(m) && m > 0 ? Number((m / hrs).toFixed(2)) : null;
+      // A contour point needs all three axes; drop incomplete / out-of-range rows.
+      if (wob == null || rpm == null || rop == null) continue;
+      if (wob > 200 || rpm > 600 || rop > 500) continue; // guard against unit-typo outliers
+
+      const bitSize = s(look(lk.bitSize, r.BitCode)) || s(orNull(r.HoleSize)) || look(lk.holeSize, holeCode) || "—";
+      bitSizeSet.add(bitSize);
+      points.push({
+        wob: Number(wob.toFixed(1)), rpm: Number(rpm.toFixed(0)), rop,
+        bitSize, wellCode: wc, name: nameMap.get(wc) || wc, field: fieldMap.get(wc) ?? null,
+        date: orNull(date), serialNo: d?.serial ?? null,
+      });
+    }
+  }
+
+  points.sort((a, b) => String(a.wellCode).localeCompare(String(b.wellCode)) || String(a.date ?? "").localeCompare(String(b.date ?? "")));
+  const cap = 20000;
+  return {
+    points: points.slice(0, cap),
+    bitSizes: [...bitSizeSet].sort((a, b) => (holeSizeValue(b) ?? -1) - (holeSizeValue(a) ?? -1) || a.localeCompare(b)),
+    truncated: points.length > cap, total: points.length,
+  };
 }
 
 /**
@@ -1754,4 +2364,40 @@ export function searchOptions(): Record<string, unknown> {
     .sort((a, b) => a.desc.localeCompare(b.desc));
   _opts = { fields, wells, holeSizes, mudTypes, rigs, materials, activityTypes, operations };
   return _opts;
+}
+
+/**
+ * Facet value lists SCOPED to the selected wells/fields — the bit sizes, mud
+ * types, materials and activity types that actually occur in those wells. The
+ * sidebar facets call this whenever the field/well selection changes so each
+ * dropdown only offers values present in the chosen wells (the Wells facet
+ * already narrows by Fields the same way). With no field/well selected this
+ * returns null lists; the UI then falls back to the global searchOptions lists.
+ * Scoped by fields + wells only (NOT by the value facets themselves) — one
+ * well-set drives all four lists.
+ */
+export function getFacetOptions(f: { fields?: string[]; wells?: string[] }): Record<string, unknown> {
+  const wellSet = resolveWellSet({ fields: f.fields, wells: f.wells });
+  if (!wellSet) return { holeSizes: null, mudTypes: null, materials: null, activityTypes: null };
+  const db = data(), lk = lookups();
+  const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
+  if (!codes.length) return { holeSizes: [], mudTypes: [], materials: [], activityTypes: [] };
+
+  const holeCodes = new Set<string>(), mudCodes = new Set<string>(), matCodes = new Set<string>(), actKeys = new Set<string>();
+  for (let i = 0; i < codes.length; i += 800) {
+    const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT DISTINCT HoleSizeCode c FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) { const c = s(r.c); if (c) holeCodes.add(c); }
+    for (const r of db.prepare(`SELECT DISTINCT MudCode c FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) { const c = s(r.c); if (c) mudCodes.add(c); }
+    for (const r of db.prepare(`SELECT DISTINCT MaterialCode c FROM ChemicalMaterials WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) { const c = s(r.c); if (c) matCodes.add(c); }
+    for (const r of db.prepare(`SELECT DISTINCT ActivityGroupCode g, ActivityTypeCode t FROM TimeAnalysis WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) { const k = `${s(r.g)}|${s(r.t)}`; if (k !== "|") actKeys.add(k); }
+  }
+
+  // Codes → display names, deduped + sorted exactly as searchOptions does, so the
+  // scoped list is a strict subset of (and matches) the global facet values.
+  const holeSizes = [...new Set([...holeCodes].map((c) => look(lk.holeSize, c)).filter((v): v is string => !!v).map((n) => normHoleSize(n)))]
+    .sort((a, b) => (holeSizeValue(b) ?? 0) - (holeSizeValue(a) ?? 0));
+  const mudTypes = [...new Set([...mudCodes].map((c) => look(lk.mud, c)).filter((v): v is string => !!v))].sort();
+  const materials = [...new Set([...matCodes].map((c) => look(lk.material, c)).filter((v): v is string => !!v))].sort();
+  const activityTypes = [...new Set([...actKeys].map((k) => lk.activityType.get(k)).filter((v): v is string => !!v))].sort();
+  return { holeSizes, mudTypes, materials, activityTypes };
 }

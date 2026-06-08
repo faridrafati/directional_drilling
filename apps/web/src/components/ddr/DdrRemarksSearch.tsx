@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
+import { useFacetOptions } from "./useFacetOptions.js";
 
 interface GroupEditor { originalName: string | null; name: string; category: string; and: string; or: string; not: string }
 
@@ -102,6 +103,7 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
   const groupsQ = useQuery({ queryKey: ["ddr", "search-groups"], queryFn: () => api.get<SearchGroup[]>("/ddr/search-groups") });
   const optsQ = useQuery({ queryKey: ["ddr", "search-options"], queryFn: () => api.get<SearchOptions>("/ddr/search-options") });
   const o = optsQ.data;
+  const facet = useFacetOptions(selFields, selWells, o);
 
   const groupsByCat = useMemo(() => {
     const q = groupFilter.trim().toLowerCase();
@@ -256,8 +258,8 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
       <div className="flex flex-col min-h-0 bg-white border border-gray-200 rounded p-3 overflow-y-auto">
         <MultiSelect title="Fields" items={(o?.fields ?? []).map((f) => ({ value: f, label: f, keywords: [...(fieldKeywords.get(f) ?? [])].join(" ") }))} selected={selFields} onChange={setSelFields} />
         <MultiSelect title={selFields.length ? `Wells · in ${selFields.length} field(s)` : "Wells"} items={wellItems} selected={selWells} onChange={setSelWells} />
-        <MultiSelect title="Bit sizes" items={(o?.holeSizes ?? []).map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
-        <MultiSelect title="Mud types" items={(o?.mudTypes ?? []).map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
+        <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
+        <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
         <MultiSelect title="Rigs" items={(o?.rigs ?? []).map((r) => ({ value: r, label: r }))} selected={selRigs} onChange={setSelRigs} />
         <MultiSelect title="Operations" items={(o?.operations ?? []).map((op) => ({ value: op.code, label: opLabel(op.code), hint: op.desc }))} selected={selOps} onChange={setSelOps} />
 

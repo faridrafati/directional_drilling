@@ -13,7 +13,9 @@ import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
+import { useFacetOptions } from "./useFacetOptions.js";
 import { LithologyGraph, type GraphWell } from "./LithologyGraph.js";
+import { FormationPrognosis, type PrognosisFilters } from "./FormationPrognosis.js";
 
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
@@ -40,7 +42,7 @@ function LSwatch({ color, pattern, size = 11 }: { color: string; pattern?: strin
 }
 
 export function FormationMatrix() {
-  const [show, setShow] = useState<"tables" | "graphs">("tables");
+  const [show, setShow] = useState<"tables" | "graphs" | "prognosis">("tables");
   const [mode, setMode] = useState<"form" | "litho">("form");
   const [selFields, setSelFields] = useState<string[]>([]);
   const [selWells, setSelWells] = useState<string[]>([]);
@@ -51,11 +53,15 @@ export function FormationMatrix() {
   const [form, setForm] = useState<Matrix | null>(null);
   const [litho, setLitho] = useState<LithoData | null>(null);
   const [graph, setGraph] = useState<GraphData | null>(null);
+  // The facet set that produced a Show, snapshotted — drives the Prognosis
+  // (next-well design) view, which fetches /ddr/formation-prognosis itself.
+  const [prognosisFilters, setPrognosisFilters] = useState<PrognosisFilters | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const optsQ = useQuery({ queryKey: ["ddr", "search-options"], queryFn: () => api.get<SearchOptions>("/ddr/search-options") });
   const o = optsQ.data;
+  const facet = useFacetOptions(selFields, selWells, o);
 
   // One entry PER WELL CODE (codes are unique; names are not — e.g. DA-008 and
   // DA-009 are both "DANAN-008"). Selecting by code keeps duplicates distinct.
@@ -75,18 +81,19 @@ export function FormationMatrix() {
   const lithoTypes = (show === "graphs" ? graph?.lithoTypes : litho?.lithoTypes) ?? [];
   const showLithoFacet = show === "graphs" || (show === "tables" && mode === "litho");
 
-  async function run(s: "tables" | "graphs" = show, m: "form" | "litho" = mode) {
+  async function run(s: "tables" | "graphs" | "prognosis" = show, m: "form" | "litho" = mode) {
     setLoading(true);
     setError(null);
     try {
       // selWells already holds unique well codes (the picker is keyed by code).
       const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud };
-      if (s === "graphs") { const r = await api.post<GraphData>("/ddr/lithology-graph", body); setGraph(r); setSelLitho(r.lithoTypes ?? []); }
+      if (s === "prognosis") { setPrognosisFilters(body); }
+      else if (s === "graphs") { const r = await api.post<GraphData>("/ddr/lithology-graph", body); setGraph(r); setSelLitho(r.lithoTypes ?? []); }
       else if (m === "form") setForm(await api.post<Matrix>("/ddr/formation-matrix", body));
       else { const r = await api.post<LithoData>("/ddr/lithology-table", body); setLitho(r); setSelLitho(r.lithoTypes ?? []); }
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
-  function clearAll() { setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setForm(null); setLitho(null); setGraph(null); }
+  function clearAll() { setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setForm(null); setLitho(null); setGraph(null); setPrognosisFilters(null); }
 
   const selLithoSet = useMemo(() => new Set(selLitho), [selLitho]);
   const lithoRows = useMemo(() => {
@@ -99,8 +106,8 @@ export function FormationMatrix() {
       <div className="flex flex-col min-h-0 bg-white border border-gray-200 rounded p-3 overflow-y-auto">
         <MultiSelect title="Fields" items={(o?.fields ?? []).map((f) => ({ value: f, label: f }))} selected={selFields} onChange={setSelFields} />
         <MultiSelect title={selFields.length ? `Wells · in ${selFields.length} field(s)` : "Wells"} items={wellItems} selected={selWells} onChange={setSelWells} />
-        <MultiSelect title="Bit sizes" items={(o?.holeSizes ?? []).map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
-        <MultiSelect title="Mud types" items={(o?.mudTypes ?? []).map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
+        <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
+        <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
         {showLithoFacet && lithoTypes.length > 0 && (
           <MultiSelect title="Lithology" items={lithoTypes.map((t) => ({ value: t, label: t }))} selected={selLitho} onChange={setSelLitho} />
         )}
@@ -111,7 +118,7 @@ export function FormationMatrix() {
           </label>
         )}
         <div className="flex gap-2 pt-3">
-          <button onClick={() => run()} disabled={loading} className="h-9 px-4 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300">{loading ? "Loading…" : show === "graphs" ? "Show graphs" : mode === "form" ? "Show tops" : "Show lithology"}</button>
+          <button onClick={() => run()} disabled={loading} className="h-9 px-4 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300">{loading ? "Loading…" : show === "prognosis" ? "Show prognosis" : show === "graphs" ? "Show graphs" : mode === "form" ? "Show tops" : "Show lithology"}</button>
           <button onClick={clearAll} className="h-9 px-3 text-sm rounded border border-gray-300 hover:bg-gray-50">Clear</button>
         </div>
         {error && <div className="text-xs text-red-600 pt-2">{error}</div>}
@@ -120,11 +127,13 @@ export function FormationMatrix() {
       <div className="bg-white border border-gray-200 rounded flex flex-col min-h-0 overflow-hidden">
         <div className="px-3 py-2 border-b border-gray-100 shrink-0 flex items-center justify-between gap-2">
           <span className="text-sm text-gray-600 min-w-0 truncate">
-            {show === "graphs"
-              ? (graph ? <>Graph · <b>{graph.wells.length}</b> well(s){graph.note ? ` — ${graph.note}` : ""}</> : "Pick a field / well, then Show graphs.")
-              : mode === "form"
-                ? (form ? (form.note ? form.note : <>Formation tops · <b>{form.rows.length}</b> wells × {form.formations.length} formations{form.truncated ? ` (capped — ${form.total})` : ""}</>) : "Pick facets, then Show tops.")
-                : (litho ? <>Lithology · <b>{lithoRows.length}</b> intervals{litho.truncated ? ` (capped — ${litho.total})` : ""}{litho.note ? ` — ${litho.note}` : ""}</> : "Pick a field / well, then Show lithology.")}
+            {show === "prognosis"
+              ? (prognosisFilters ? <>Next-well prognosis from offset formation tops.</> : "Pick a field / well, then Show prognosis.")
+              : show === "graphs"
+                ? (graph ? <>Graph · <b>{graph.wells.length}</b> well(s){graph.note ? ` — ${graph.note}` : ""}</> : "Pick a field / well, then Show graphs.")
+                : mode === "form"
+                  ? (form ? (form.note ? form.note : <>Formation tops · <b>{form.rows.length}</b> wells × {form.formations.length} formations{form.truncated ? ` (capped — ${form.total})` : ""}</>) : "Pick facets, then Show tops.")
+                  : (litho ? <>Lithology · <b>{lithoRows.length}</b> intervals{litho.truncated ? ` (capped — ${litho.total})` : ""}{litho.note ? ` — ${litho.note}` : ""}</> : "Pick a field / well, then Show lithology.")}
           </span>
           <div className="flex items-center gap-1.5 shrink-0">
             {show === "tables" && (
@@ -135,16 +144,17 @@ export function FormationMatrix() {
               </div>
             )}
             <div className="inline-flex rounded border border-gray-300 overflow-hidden">
-              {(["tables", "graphs"] as const).map((sv) => (
+              {(["tables", "graphs", "prognosis"] as const).map((sv) => (
                 <button key={sv} onClick={() => setShow(sv)} className={`px-2.5 h-7 text-xs capitalize ${show === sv ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{sv}</button>
               ))}
             </div>
           </div>
         </div>
         <div className="overflow-auto flex-1 min-h-0">
-          {show === "graphs" ? (graph && <LithologyGraph wells={graph.wells} depthRange={graph.depthRange} selLitho={selLithoSet} opacity={1 - transparency / 100} />)
-            : mode === "form" ? (form && <MatrixTable m={form} />)
-              : (litho && <LithoTable rows={lithoRows} />)}
+          {show === "prognosis" ? <FormationPrognosis filters={prognosisFilters} />
+            : show === "graphs" ? (graph && <LithologyGraph wells={graph.wells} depthRange={graph.depthRange} selLitho={selLithoSet} opacity={1 - transparency / 100} />)
+              : mode === "form" ? (form && <MatrixTable m={form} />)
+                : (litho && <LithoTable rows={lithoRows} />)}
         </div>
       </div>
     </div>

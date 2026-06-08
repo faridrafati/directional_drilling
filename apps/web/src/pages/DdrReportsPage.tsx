@@ -23,6 +23,7 @@ import { MudStock } from "../components/ddr/MudStock.js";
 import { WellPath } from "../components/ddr/WellPath.js";
 import { TimeAnalysis } from "../components/ddr/TimeAnalysis.js";
 import { Tools } from "../components/ddr/Tools.js";
+import { RopOptimization } from "../components/ddr/RopOptimization.js";
 
 type Row = Record<string, unknown>;
 
@@ -68,7 +69,7 @@ const fmt = (v: unknown): string => {
 export function DdrReportsPage() {
   const [report, setReport] = useState<ReportRef | null>(null);
   const [view, setView] = useState<ModalView>("form");
-  const [tab, setTab] = useState<"search" | "litho" | "mud" | "stock" | "path" | "time" | "tools">("search");
+  const [tab, setTab] = useState<"search" | "litho" | "mud" | "stock" | "path" | "time" | "tools" | "rop">("search");
 
   const statusQ = useQuery({
     queryKey: ["ddr", "status"],
@@ -107,7 +108,7 @@ export function DdrReportsPage() {
         )}
 
         <div className="flex gap-1 border-b border-gray-200 mb-3 shrink-0">
-          {([["search", "Reports & Search"], ["litho", "Formation & Lithology"], ["mud", "Mud Properties"], ["stock", "Mud Stock"], ["path", "Well Path"], ["time", "Time Analysis"], ["tools", "Tools"]] as const).map(([id, label]) => (
+          {([["search", "Reports & Search"], ["litho", "Formation & Lithology"], ["mud", "Mud Properties"], ["stock", "Mud Stock"], ["path", "Well Path"], ["time", "Time Analysis"], ["tools", "Tools"], ["rop", "ROP Optimization"]] as const).map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)}
               className={`px-3 py-2 text-sm -mb-px border-b-2 ${tab === id ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
               {label}
@@ -137,8 +138,12 @@ export function DdrReportsPage() {
           <TimeAnalysis
             onOpenReport={(wellCode, serialNo, date) => { setReport({ wellCode, serialNo, date }); setView("form"); }}
           />
-        ) : (
+        ) : tab === "tools" ? (
           <Tools
+            onOpenReport={(wellCode, serialNo, date) => { setReport({ wellCode, serialNo, date }); setView("form"); }}
+          />
+        ) : (
+          <RopOptimization
             onOpenReport={(wellCode, serialNo, date) => { setReport({ wellCode, serialNo, date }); setView("form"); }}
           />
         )}

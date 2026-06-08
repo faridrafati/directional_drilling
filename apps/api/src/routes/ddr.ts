@@ -2,11 +2,15 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   ddrAvailable, listWells, listReports, getReport, getWell, getAnalytics,
   getFormationMatrix, getLithologyTable, getLithologyGraph, getMudProperties, type FormationMatrixFilters,
+  getFormationPrognosis, type FormationPrognosisFilters,
   getMudStock, type MudStockFilters,
-  getWellPath, type WellPathFilters,
+  getMudPlanning, type MudPlanningFilters,
+  getMudProgram, type MudProgramFilters,
+  getWellPath, getWellPathOptions, type WellPathFilters,
   getTimeAnalysis, type TimeAnalysisFilters,
   getTools, type ToolsFilters,
-  readLithoPattern, listSearchGroups, searchOperations, searchOptions, type OpsSearchFilters,
+  getRopOptimization, type RopOptimizationFilters,
+  readLithoPattern, listSearchGroups, searchOperations, searchOptions, getFacetOptions, type OpsSearchFilters,
   createSearchGroup, updateSearchGroup, deleteSearchGroup, renameCategory, deleteCategory,
   type SavedGroupInput,
 } from "../ddr/db.js";
@@ -56,6 +60,14 @@ export async function registerDdrRoutes(app: FastifyInstance) {
     return searchOptions();
   });
 
+  // Facet value lists scoped to the selected fields/wells (bit sizes, mud types,
+  // materials, activity types). Null lists when nothing is selected → UI falls
+  // back to the global search-options lists.
+  app.post<{ Body: { fields?: string[]; wells?: string[] } }>("/ddr/facet-options", async (req, reply) => {
+    if (!ddrAvailable()) return unavailable(reply);
+    return getFacetOptions(req.body ?? {});
+  });
+
   app.post<{ Body: OpsSearchFilters }>("/ddr/operations/search", async (req, reply) => {
     if (!ddrAvailable()) return unavailable(reply);
     return searchOperations(req.body ?? {});
@@ -95,6 +107,10 @@ export async function registerDdrRoutes(app: FastifyInstance) {
     if (!ddrAvailable()) return unavailable(reply);
     return getLithologyGraph(req.body ?? {});
   });
+  app.post<{ Body: FormationPrognosisFilters }>("/ddr/formation-prognosis", async (req, reply) => {
+    if (!ddrAvailable()) return unavailable(reply);
+    return getFormationPrognosis(req.body ?? {});
+  });
   app.post<{ Body: FormationMatrixFilters }>("/ddr/mud-properties", async (req, reply) => {
     if (!ddrAvailable()) return unavailable(reply);
     return getMudProperties(req.body ?? {});
@@ -103,9 +119,21 @@ export async function registerDdrRoutes(app: FastifyInstance) {
     if (!ddrAvailable()) return unavailable(reply);
     return getMudStock(req.body ?? {});
   });
+  app.post<{ Body: MudPlanningFilters }>("/ddr/mud-planning", async (req, reply) => {
+    if (!ddrAvailable()) return unavailable(reply);
+    return getMudPlanning(req.body ?? {});
+  });
+  app.post<{ Body: MudProgramFilters }>("/ddr/mud-program", async (req, reply) => {
+    if (!ddrAvailable()) return unavailable(reply);
+    return getMudProgram(req.body ?? {});
+  });
   app.post<{ Body: WellPathFilters }>("/ddr/well-path", async (req, reply) => {
     if (!ddrAvailable()) return unavailable(reply);
     return getWellPath(req.body ?? {});
+  });
+  app.get("/ddr/well-path-options", async (_req, reply) => {
+    if (!ddrAvailable()) return unavailable(reply);
+    return getWellPathOptions();
   });
   app.post<{ Body: TimeAnalysisFilters }>("/ddr/time-analysis", async (req, reply) => {
     if (!ddrAvailable()) return unavailable(reply);
@@ -114,6 +142,10 @@ export async function registerDdrRoutes(app: FastifyInstance) {
   app.post<{ Body: ToolsFilters }>("/ddr/tools", async (req, reply) => {
     if (!ddrAvailable()) return unavailable(reply);
     return getTools(req.body ?? {});
+  });
+  app.post<{ Body: RopOptimizationFilters }>("/ddr/rop-optimization", async (req, reply) => {
+    if (!ddrAvailable()) return unavailable(reply);
+    return getRopOptimization(req.body ?? {});
   });
 
   // Lithology pattern tile (LITHO/<name>.bmp) for the stratigraphic column.

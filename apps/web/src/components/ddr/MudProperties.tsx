@@ -19,8 +19,10 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
+import { useFacetOptions } from "./useFacetOptions.js";
 import { MudLogGraph, type MudTrack } from "./MudLogGraph.js";
 import type { GraphWell } from "./LithologyGraph.js";
+import { MudProgram, type ProgramFilters } from "./MudProgram.js";
 
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
@@ -128,15 +130,19 @@ export function MudProperties({ onOpenReport }: { onOpenReport?: (wellCode: stri
   const [data, setData] = useState<MudData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The facet set that produced `data`, snapshotted on Show — drives the Program
+  // (next-well design) view, which fetches /ddr/mud-program itself.
+  const [programFilters, setProgramFilters] = useState<ProgramFilters | null>(null);
 
   // Local view state — never triggers a network fetch.
-  const [view, setView] = useState<"table" | "graph">("table");
+  const [view, setView] = useState<"table" | "graph" | "program">("table");
   const [xAxis, setXAxis] = useState<"depth" | "date">("depth");
   const [series, setSeries] = useState<Set<keyof MudRow>>(() => new Set(DEFAULT_SERIES));
   const [merged, setMerged] = useState<Set<string>>(new Set());
 
   const optsQ = useQuery({ queryKey: ["ddr", "search-options"], queryFn: () => api.get<SearchOptions>("/ddr/search-options") });
   const o = optsQ.data;
+  const facet = useFacetOptions(selFields, selWells, o);
 
   // One entry PER WELL CODE (codes are unique; names are not — e.g. DA-008 and
   // DA-009 are both "DANAN-008"). Selecting by code keeps duplicates distinct.
@@ -189,11 +195,12 @@ export function MudProperties({ onOpenReport }: { onOpenReport?: (wellCode: stri
       const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud };
       const d = await api.post<MudData>("/ddr/mud-properties", body);
       setData(d);
+      setProgramFilters(body);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
   function clearAll() {
     setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]);
-    setData(null);
+    setData(null); setProgramFilters(null);
   }
 
   const toggleSeries = (key: keyof MudRow) =>
@@ -206,8 +213,8 @@ export function MudProperties({ onOpenReport }: { onOpenReport?: (wellCode: stri
       <div className="flex flex-col min-h-0 bg-white border border-gray-200 rounded p-3 overflow-y-auto">
         <MultiSelect title="Fields" items={(o?.fields ?? []).map((f) => ({ value: f, label: f }))} selected={selFields} onChange={setSelFields} />
         <MultiSelect title={selFields.length ? `Wells · in ${selFields.length} field(s)` : "Wells"} items={wellItems} selected={selWells} onChange={setSelWells} />
-        <MultiSelect title="Bit sizes" items={(o?.holeSizes ?? []).map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
-        <MultiSelect title="Mud types" items={(o?.mudTypes ?? []).map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
+        <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
+        <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
         <div className="flex gap-2 pt-3">
           <button onClick={() => run()} disabled={loading} className="h-9 px-4 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300">{loading ? "Loading…" : "Show"}</button>
           <button onClick={clearAll} className="h-9 px-3 text-sm rounded border border-gray-300 hover:bg-gray-50">Clear</button>
@@ -270,7 +277,7 @@ export function MudProperties({ onOpenReport }: { onOpenReport?: (wellCode: stri
           </span>
           {data && rows.length > 0 && (
             <div className="inline-flex rounded border border-gray-300 overflow-hidden shrink-0">
-              {(["table", "graph"] as const).map((v) => (
+              {(["table", "graph", "program"] as const).map((v) => (
                 <button key={v} onClick={() => setView(v)} className={`px-2.5 h-7 text-xs capitalize ${view === v ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{v}</button>
               ))}
             </div>
@@ -279,8 +286,10 @@ export function MudProperties({ onOpenReport }: { onOpenReport?: (wellCode: stri
         <div className="overflow-auto flex-1 min-h-0">
           {data && (view === "table" ? (
             <MudTable rows={rows} cols={usedCols} note={data.note} onOpenReport={onOpenReport} />
-          ) : (
+          ) : view === "graph" ? (
             <MudLogGraph rows={rows} xAxis={xAxis} tracks={tracks} litho={litho} note={data.note} wellNames={wellNames} />
+          ) : (
+            <MudProgram filters={programFilters} />
           ))}
         </div>
       </div>
