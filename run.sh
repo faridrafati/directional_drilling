@@ -32,7 +32,7 @@ npm run db:generate
 npm --workspace apps/api exec -- prisma migrate deploy
 
 # --- 3b. Legacy DDR data DB presence check -----------------
-if [ ! -f old_report_code/new.sqlite ]; then
+if [ ! -f old/old_report_code/new.sqlite ]; then
   echo "[warn]  old_report_code/new.sqlite not found - DDR tabs (incl. Mud Properties) will be empty on this PC."
   echo "        Copy new.sqlite + DB.sqlite into old_report_code/ to enable them."
 fi
