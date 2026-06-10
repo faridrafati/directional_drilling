@@ -352,7 +352,7 @@ interface Lattice {
 const ptDepth = (p: RopPoint): number | null =>
   p.from != null && p.to != null ? (p.from + p.to) / 2 : (p.to ?? p.from ?? null);
 
-function buildLattice(pts: RopPoint[]): Lattice | null {
+function buildLattice(pts: RopPoint[], granularity: number = 1): Lattice | null {
   const withDepth = pts.filter((p) => ptDepth(p) != null);
   if (withDepth.length < 2) return null;
   let wlo = Infinity, whi = -Infinity, rlo = Infinity, rhi = -Infinity, dlo = Infinity, dhi = -Infinity;
@@ -363,7 +363,7 @@ function buildLattice(pts: RopPoint[]): Lattice | null {
     dlo = Math.min(dlo, d); dhi = Math.max(dhi, d);
   }
   if (whi <= wlo || rhi <= rlo || dhi <= dlo) return null;
-  const wobStep = niceStep(whi - wlo, 8), rpmStep = niceStep(rhi - rlo, 7), depStep = niceStep(dhi - dlo, 8);
+  const wobStep = niceStep(whi - wlo, 8) / granularity, rpmStep = niceStep(rhi - rlo, 7) / granularity, depStep = niceStep(dhi - dlo, 8) / granularity;
   const wobMin = Math.floor(wlo / wobStep) * wobStep;
   const rpmMin = Math.floor(rlo / rpmStep) * rpmStep;
   const depMin = Math.floor(dlo / depStep) * depStep;
@@ -393,8 +393,9 @@ function buildLattice(pts: RopPoint[]): Lattice | null {
 
 function Voxel3DView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
   const [sizeFilter, setSizeFilter] = useState<string>("");
+  const [granularity, setGranularity] = useState(1);
   const pts = useMemo(() => (sizeFilter ? points.filter((p) => p.bitSize === sizeFilter) : points), [points, sizeFilter]);
-  const lattice = useMemo(() => buildLattice(pts), [pts]);
+  const lattice = useMemo(() => buildLattice(pts, granularity), [pts, granularity]);
   const withDepth = pts.filter((p) => ptDepth(p) != null).length;
 
   return (
@@ -406,6 +407,17 @@ function Voxel3DView({ points, bitSizes }: { points: RopPoint[]; bitSizes: strin
             <option value="">All ({points.length})</option>
             {bitSizes.map((b) => <option key={b} value={b}>{b}</option>)}
           </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-gray-600">
+          Cell size
+          <div className="inline-flex rounded border border-gray-300 gap-0.5 bg-white p-0.5">
+            {[1, 2, 4, 8].map((g) => (
+              <button key={g} onClick={() => setGranularity(g)}
+                className={`px-2 py-1 text-[11px] rounded ${granularity === g ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}>
+                ÷{g}
+              </button>
+            ))}
+          </div>
         </label>
         <span className="text-gray-400">
           X = WOB (klb) · Y = RPM · Z = depth (m). Cube colour = mean ROP. Drag to orbit, scroll to zoom.
