@@ -274,6 +274,7 @@ function PerWellPaths({ rows, note }: { rows: PathRow[]; note?: string }) {
 /** One drawpat 2D plot (plan / vertical section / DLS) for a SINGLE well. */
 function SinglePlot({ rows, plot, color }: { rows: PathRow[]; plot: PlotKey; color: string }) {
   const cfg = PLOTS[plot];
+  const [hover, setHover] = useState<{ x: number; y: number; html: string } | null>(null);
   const { pts, dom } = useMemo(() => {
     const pts: { x: number; y: number; r: PathRow }[] = [];
     for (const r of rows) {
@@ -316,6 +317,18 @@ function SinglePlot({ rows, plot, color }: { rows: PathRow[]; plot: PlotKey; col
     const xticks = ticksFor(xlo, xhi, 4), yticks = ticksFor(ylo, yhi, 4);
     const drawDots = pts.length <= 400;
 
+    // Screen positions of every station — for the nearest-point hover (works for
+    // any station count, including the >400 case where the dot markers are off).
+    const screen = pts.map((p) => ({ sx: xOf(p.x), sy: yOf(p.y), r: p.r }));
+    const onMove = (e: React.MouseEvent<SVGRectElement>) => {
+      const mx = e.nativeEvent.offsetX, my = e.nativeEvent.offsetY;
+      let best = -1, bd = Infinity;
+      for (let j = 0; j < screen.length; j++) { const dx = screen[j].sx - mx, dy = screen[j].sy - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = j; } }
+      if (best < 0) return setHover(null);
+      const r = screen[best].r;
+      setHover({ x: screen[best].sx, y: screen[best].sy, html: `MD ${fmtNum(r.md)} m · Inc ${fmtNum(r.inc)}° · Az ${fmtNum(r.az)}°<br/>TVD ${fmtNum(r.tvd)} · N/S ${fmtNum(r.ns)} · E/W ${fmtNum(r.ew)} · DLS ${fmtNum(r.dls)}` });
+    };
+
     body = (
       <svg width={W} height={H} className="block bg-white">
         {xticks.map((t, i) => { const x = xOf(t); if (x < padL - 0.5 || x > W - padR + 0.5) return null; return (
@@ -333,10 +346,12 @@ function SinglePlot({ rows, plot, color }: { rows: PathRow[]; plot: PlotKey; col
         <text x={11} y={padT + plotH / 2} textAnchor="middle" fontSize={8.5} fill="#475569" transform={`rotate(-90 11 ${padT + plotH / 2})`}>{cfg.yLabel}</text>
         <polyline fill="none" stroke={color} strokeWidth={1.5} points={pts.map((p) => `${xOf(p.x).toFixed(1)},${yOf(p.y).toFixed(1)}`).join(" ")} />
         {drawDots && pts.map((p, j) => (
-          <circle key={j} cx={xOf(p.x)} cy={yOf(p.y)} r={1.5} fill={color}>
-            <title>{`MD ${fmtNum(p.r.md)}  Inc ${fmtNum(p.r.inc)}°  Az ${fmtNum(p.r.az)}°  TVD ${fmtNum(p.r.tvd)}\nN/S ${fmtNum(p.r.ns)}  E/W ${fmtNum(p.r.ew)}  DLS ${fmtNum(p.r.dls)}`}</title>
-          </circle>
+          <circle key={j} cx={xOf(p.x)} cy={yOf(p.y)} r={1.5} fill={color} />
         ))}
+        {hover && <circle cx={hover.x} cy={hover.y} r={3.5} fill="none" stroke="#111827" strokeWidth={1.2} />}
+        {/* Transparent capture layer → nearest-station tooltip (covers the >400-station case too). */}
+        <rect x={padL} y={padT} width={plotW} height={plotH} fill="transparent"
+          onMouseMove={onMove} onMouseLeave={() => setHover(null)} />
       </svg>
     );
   }
@@ -344,7 +359,14 @@ function SinglePlot({ rows, plot, color }: { rows: PathRow[]; plot: PlotKey; col
   return (
     <div className="flex flex-col">
       <div className="text-[11px] text-gray-500 mb-1 px-1">{cfg.label}{cfg.equal ? " · N up" : cfg.yDown ? " · depth ↓" : ""}</div>
-      <div className="border border-gray-200 rounded overflow-hidden">{body}</div>
+      <div className="border border-gray-200 rounded overflow-hidden relative">
+        {body}
+        {hover && (
+          <div className="absolute z-20 pointer-events-none px-2 py-1 rounded bg-gray-900 text-white text-[10px] leading-tight shadow-lg"
+            style={{ left: Math.min(hover.x + 10, 170), top: Math.max(hover.y - 4, 2), maxWidth: 200 }}
+            dangerouslySetInnerHTML={{ __html: hover.html }} />
+        )}
+      </div>
     </div>
   );
 }

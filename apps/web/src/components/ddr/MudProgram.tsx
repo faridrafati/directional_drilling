@@ -151,6 +151,7 @@ function WeightWindow({ data, u }: { data: ProgramData; u: typeof UNITS[number] 
           {bins.map((b, i) => {
             const yy = y(i);
             const x10 = x(b.p10), x90 = x(b.p90), xmed = x(b.median), xmin = x(b.min), xmax = x(b.max);
+            const tip = `${b.depth} m — median ${fmt(b.median)} ${u.label} (p10 ${fmt(b.p10)} – p90 ${fmt(b.p90)}, range ${fmt(b.min)}–${fmt(b.max)}, n=${b.n})`;
             return (
               <g key={b.depth}>
                 <text x={PAD.l - 6} y={yy + 3} textAnchor="end" fontSize={9} fill="#475569">{b.depth}</text>
@@ -161,9 +162,11 @@ function WeightWindow({ data, u }: { data: ProgramData; u: typeof UNITS[number] 
                 {/* p10–p90 band */}
                 <rect x={Math.min(x10, x90)} y={yy - 6} width={Math.abs(x90 - x10)} height={12} fill="#3b82f6" fillOpacity={0.25} rx={2} />
                 {/* median */}
-                <line x1={xmed} x2={xmed} y1={yy - 7} y2={yy + 7} stroke="#1e40af" strokeWidth={2}>
-                  <title>{`${b.depth} m — median ${fmt(b.median)} ${u.label} (p10 ${fmt(b.p10)} – p90 ${fmt(b.p90)}, range ${fmt(b.min)}–${fmt(b.max)}, n=${b.n})`}</title>
-                </line>
+                <line x1={xmed} x2={xmed} y1={yy - 7} y2={yy + 7} stroke="#1e40af" strokeWidth={2} />
+                {/* full-row transparent hover target so band / whiskers / anywhere on the row shows the value */}
+                <rect x={PAD.l} y={yy - 8} width={W - PAD.l - PAD.r} height={16} fill="transparent">
+                  <title>{tip}</title>
+                </rect>
               </g>
             );
           })}

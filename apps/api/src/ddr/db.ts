@@ -1527,17 +1527,24 @@ export function getTimeAnalysis(f: TimeAnalysisFilters): Record<string, unknown>
   const num = (v: unknown): number | null => { const n = parseFloat(s(v)); return Number.isFinite(n) ? n : null; };
 
   // The day's primary (lowest-serial) L04 report: hole size, drilled From/To,
-  // narrative + serial. Plus the day's mud type (N01).
-  const byDay = new Map<string, { serial: number | null; hole: string; from: unknown; to: unknown; desc: unknown }>();
+  // narrative + serial. Plus the day's mud type (N01) and the day's deepest hole
+  // depth (max ToPoint / MorningDepth across that day's reports) — the cumulative
+  // MD the next-well depth-vs-days learning curve is plotted against.
+  const byDay = new Map<string, { serial: number | null; hole: string; from: unknown; to: unknown; desc: unknown; depth: number | null }>();
   const mudByDay = new Map<string, string>();
+  const depthOf = (...vs: unknown[]) => { let d = -Infinity; for (const v of vs) { const x = Number(s(v)); if (Number.isFinite(x) && x > d) d = x; } return d > 0 ? d : null; };
   for (let i = 0; i < codes.length; i += 800) {
     const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
-    for (const r of db.prepare(`SELECT WellCode, SerialNo, DrillingDate, HoleSizeCode, FromPoint, ToPoint, Description FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+    for (const r of db.prepare(`SELECT WellCode, SerialNo, DrillingDate, HoleSizeCode, FromPoint, ToPoint, MorningDepth, Description FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
       const k = `${s(r.WellCode)}|${s(r.DrillingDate)}`;
       const snN = Number(r.SerialNo), fin = Number.isFinite(snN);
       const cur = byDay.get(k);
+      const dDepth = depthOf(r.ToPoint, r.MorningDepth);
+      const depth = dDepth != null && (cur?.depth == null || dDepth > cur.depth) ? dDepth : (cur?.depth ?? null);
       if (!cur || (fin && (cur.serial == null || snN < cur.serial))) {
-        byDay.set(k, { serial: fin ? snN : (cur?.serial ?? null), hole: s(r.HoleSizeCode), from: val(r.FromPoint), to: val(r.ToPoint), desc: orNull(r.Description) });
+        byDay.set(k, { serial: fin ? snN : (cur?.serial ?? null), hole: s(r.HoleSizeCode), from: val(r.FromPoint), to: val(r.ToPoint), desc: orNull(r.Description), depth });
+      } else if (depth != null) {
+        cur.depth = depth; // keep the deepest depth seen even when the primary serial doesn't change
       }
     }
     for (const r of db.prepare(`SELECT WellCode, fDate, MudCode FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
@@ -1566,6 +1573,7 @@ export function getTimeAnalysis(f: TimeAnalysisFilters): Record<string, unknown>
       out.push({
         wellCode: wc, date: orNull(date), serialNo: d?.serial ?? null,
         holeSize: orNull(look(lk.holeSize, holeCode)), from: d?.from ?? null, to: d?.to ?? null,
+        depth: d?.depth ?? null,
         mudType: orNull(look(lk.mud, mudCode)),
         group: orNull(look(lk.activityGroup, gc)),
         type: lk.activityType.get(typeKey) ?? null,
@@ -1577,8 +1585,16 @@ export function getTimeAnalysis(f: TimeAnalysisFilters): Record<string, unknown>
   out.sort((a, b) =>
     String(a.wellCode).localeCompare(String(b.wellCode)) ||
     String(a.date ?? "").localeCompare(String(b.date ?? "")));
+  // Well code → English display name (for charts that label by well).
+  const wellNames: Record<string, string> = {};
+  const seen = new Set(out.map((r) => String(r.wellCode)));
+  if (seen.size) {
+    for (const r of db.prepare(`SELECT WellCode, EnglishName FROM A01`).all() as Row[]) {
+      const wc = s(r.WellCode); if (seen.has(wc)) wellNames[wc] = s(r.EnglishName) || wc;
+    }
+  }
   const cap = 9000;
-  return { rows: out.slice(0, cap), truncated: out.length > cap, total: out.length };
+  return { rows: out.slice(0, cap), truncated: out.length > cap, total: out.length, wellNames };
 }
 
 export interface ToolsFilters extends FormationMatrixFilters {
@@ -1903,7 +1919,8 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
       const rpm = mid(r.MinRPM, r.MaxRPM);
       // ROP (m/hr) = footage ÷ rotating hours (BitMeterTotal, else interval).
       const hrs = Number(s(r.BitHour)); let m = Number(s(r.BitMeterTotal));
-      if (!Number.isFinite(m) || m <= 0) { const fp = Number(s(r.FromPoint)), tp = Number(s(r.ToPoint)); m = (Number.isFinite(fp) && Number.isFinite(tp)) ? tp - fp : NaN; }
+      const fp = Number(s(r.FromPoint)), tp = Number(s(r.ToPoint));
+      if (!Number.isFinite(m) || m <= 0) { m = (Number.isFinite(fp) && Number.isFinite(tp)) ? tp - fp : NaN; }
       const rop = Number.isFinite(hrs) && hrs > 0 && Number.isFinite(m) && m > 0 ? Number((m / hrs).toFixed(2)) : null;
       // A contour point needs all three axes; drop incomplete / out-of-range rows.
       if (wob == null || rpm == null || rop == null) continue;
@@ -1915,6 +1932,10 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
         wob: Number(wob.toFixed(1)), rpm: Number(rpm.toFixed(0)), rop,
         bitSize, wellCode: wc, name: nameMap.get(wc) || wc, field: fieldMap.get(wc) ?? null,
         date: orNull(date), serialNo: d?.serial ?? null,
+        // Depth + footage for the progress charts (cumulative-depth & ROP-vs-depth).
+        from: Number.isFinite(fp) && fp > 0 ? Number(fp.toFixed(1)) : null,
+        to: Number.isFinite(tp) && tp > 0 ? Number(tp.toFixed(1)) : null,
+        meters: Number.isFinite(m) && m > 0 ? Number(m.toFixed(1)) : null,
       });
     }
   }

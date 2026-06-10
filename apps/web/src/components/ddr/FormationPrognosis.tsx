@@ -207,9 +207,11 @@ function Correlation({ data }: { data: PrognosisData }) {
           ))}
           <text transform={`translate(12 ${PAD.t + plotH / 2}) rotate(-90)`} textAnchor="middle" fontSize={10} fill="#475569" fontWeight={600}>Depth MD (m)</text>
 
-          {/* correlation lines (behind the columns) */}
+          {/* correlation lines (behind the columns) — hover names the formation + its depths across wells */}
           {[...pos.entries()].map(([name, pts]) => (
-            <polyline key={name} points={pts.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={formColor(name)} strokeWidth={1.5} strokeOpacity={0.5} />
+            <polyline key={name} points={pts.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={formColor(name)} strokeWidth={1.5} strokeOpacity={0.5}>
+              <title>{`${name} — correlated across ${pts.length} well${pts.length === 1 ? "" : "s"}`}</title>
+            </polyline>
           ))}
 
           {/* well columns */}
@@ -217,16 +219,17 @@ function Correlation({ data }: { data: PrognosisData }) {
             const x = colX(i);
             return (
               <g key={w.wellCode}>
-                <rect x={x} y={PAD.t} width={trackW} height={plotH} fill="#fafafa" stroke="#e5e7eb" />
+                <rect x={x} y={PAD.t} width={trackW} height={plotH} fill="#fafafa" stroke="#e5e7eb">
+                  <title>{`${w.wellCode} — ${w.tops.length} formation top${w.tops.length === 1 ? "" : "s"}`}</title>
+                </rect>
                 <text x={x + trackW / 2} y={PAD.t - 14} textAnchor="middle" fontSize={9} fill="#334155" fontWeight={600}>{w.wellCode}</text>
                 <text x={x + trackW / 2} y={PAD.t - 4} textAnchor="middle" fontSize={8} fill="#94a3b8">{w.tops.length} tops</text>
                 {w.tops.map((t) => {
                   const yy = y(t.md), shown = (formCount.get(t.name) ?? 0) >= 2;
                   return (
-                    <g key={t.name}>
-                      <line x1={x} y1={yy} x2={x + trackW} y2={yy} stroke={formColor(t.name)} strokeWidth={shown ? 2 : 1} strokeOpacity={shown ? 0.9 : 0.4} />
+                    <line key={t.name} x1={x} y1={yy} x2={x + trackW} y2={yy} stroke={formColor(t.name)} strokeWidth={shown ? 2 : 1} strokeOpacity={shown ? 0.9 : 0.4}>
                       <title>{`${w.wellCode} — ${t.name} @ ${t.md} m`}</title>
-                    </g>
+                    </line>
                   );
                 })}
               </g>
