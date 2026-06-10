@@ -414,7 +414,7 @@ function Voxel3DView({ points, bitSizes }: { points: RopPoint[]; bitSizes: strin
       </div>
       {lattice
         ? <>
-            <div className="border border-gray-200 rounded overflow-hidden" style={{ height: 460 }}>
+            <div className="border border-gray-200 rounded overflow-hidden" style={{ height: 700 }}>
               <VoxelScene lattice={lattice} />
             </div>
             <Colorbar ropMin={lattice.ropMin} ropMax={lattice.ropMax} />
