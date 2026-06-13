@@ -29,6 +29,10 @@
     "./air-mud": {
       "types": "./dist/air-mud/index.d.ts",
       "import": "./dist/air-mud/index.js"
+    },
+    "./drilling": {
+      "types": "./dist/drilling/index.d.ts",
+      "import": "./dist/drilling/index.js"
     }
   },
   "scripts": {

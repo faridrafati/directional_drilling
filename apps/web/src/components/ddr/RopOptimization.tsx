@@ -21,6 +21,11 @@ import {
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, GizmoHelper, GizmoViewport, Text } from "@react-three/drei";
 import * as THREE from "three";
+import {
+  powerLawFit, linearFit, spearman, mean, median, founderAtConstantRpm,
+  tripHours, costPerMeter, tripAdjustedRop, rigUsdPerHr, psiToMPa,
+  iqrFence, klbToTonnes, type IqrFence,
+} from "@dd/shared/drilling";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
@@ -35,15 +40,27 @@ interface RopPoint {
   wellCode: string; name: string; field: string | null;
   date: string | null; serialNo: number | null;
   from: number | null; to: number | null; meters: number | null;
+  // Drilling-engineering metrics (added by the backend) for the MSE / Hydraulics
+  // / Economics / Advisor views. Any of these may be null when the source row
+  // lacks the inputs (e.g. no torque, no hydraulics, unparseable bit size).
+  iadc: string | null; bitClass: "PDC" | "roller"; make: string | null; diaIn: number | null;
+  mse: number | null; mseEstimated: boolean;
+  hsi: number | null; hsiSource: "reported" | "computed" | null;
+  tfa: number | null; flow: number | null; spp: number | null; mudWeight: number | null;
+  dullInner: number | null; dullOuter: number | null; bitHour: number | null;
 }
 interface RopData {
   points: RopPoint[]; bitSizes: string[]; truncated?: boolean; total?: number; note?: string;
 }
 
-type View = "contour" | "voxel" | "scatter" | "size" | "progress" | "table";
+type View = "contour" | "voxel" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
 const VIEWS: { key: View; label: string }[] = [
   { key: "contour", label: "Contour" },
   { key: "voxel", label: "3D ROP" },
+  { key: "mse", label: "MSE" },
+  { key: "hydraulics", label: "Hydraulics" },
+  { key: "economics", label: "Economics" },
+  { key: "advisor", label: "Bit advisor" },
   { key: "scatter", label: "Scatters" },
   { key: "size", label: "By bit size" },
   { key: "progress", label: "Progress" },
@@ -55,6 +72,28 @@ const SIZE_COLORS = ["#1e40af", "#0d9488", "#7c3aed", "#db2777", "#d97706", "#65
 const colorForSize = (sizes: string[], size: string) => SIZE_COLORS[Math.max(0, sizes.indexOf(size)) % SIZE_COLORS.length];
 
 const fmt1 = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+/** "35–40 klb (15.9–18.1 t)" — klb range with its metric-tonne equivalent. */
+const wobRange = (loKlb: number, hiKlb: number) =>
+  `${fmt1(loKlb)}–${fmt1(hiKlb)} klb (${klbToTonnes(loKlb).toFixed(1)}–${klbToTonnes(hiKlb).toFixed(1)} t)`;
+
+/**
+ * The study's statistical screening (§5): Tukey IQR fence (1.5×) on ROP, WOB,
+ * RPM and MSE — mark-don't-delete, so the raw set is kept and screening is a
+ * toggle. A point is screened out when ANY of the four metrics falls outside
+ * its fence (MSE only judged where it exists).
+ */
+function screenOutliers(points: RopPoint[]): { kept: RopPoint[]; removed: number } {
+  if (points.length < 8) return { kept: points, removed: 0 };
+  const fr = iqrFence(points.map((p) => p.rop));
+  const fw = iqrFence(points.map((p) => p.wob));
+  const fp = iqrFence(points.map((p) => p.rpm));
+  const mseVals = points.filter((p) => p.mse != null).map((p) => p.mse as number);
+  const fm = mseVals.length >= 8 ? iqrFence(mseVals) : null;
+  const inside = (v: number, f: IqrFence | null) => !f || (v >= f.lo && v <= f.hi);
+  const kept = points.filter((p) =>
+    inside(p.rop, fr) && inside(p.wob, fw) && inside(p.rpm, fp) && (p.mse == null || inside(p.mse, fm)));
+  return { kept, removed: points.length - kept.length };
+}
 
 export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void } = {}) {
   const [selFields, setSelFields] = useState<string[]>([]);
@@ -67,6 +106,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>("contour");
+  const [includeOutliers, setIncludeOutliers] = useState(false); // screening ON by default (spec §5)
 
   const optsQ = useQuery({ queryKey: ["ddr", "search-options"], queryFn: () => api.get<SearchOptions>("/ddr/search-options") });
   const o = optsQ.data;
@@ -96,7 +136,10 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
     setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setDateFrom(""); setDateTo(""); setData(null);
   }
 
-  const points = data?.points ?? [];
+  const { kept: points, removed } = useMemo(() => {
+    const raw = data?.points ?? [];
+    return includeOutliers ? { kept: raw, removed: 0 } : screenOutliers(raw);
+  }, [data, includeOutliers]);
   const bitSizes = data?.bitSizes ?? [];
 
   return (
@@ -114,6 +157,10 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
             <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="To" />
           </div>
         </div>
+        <label className="flex items-center gap-1.5 pt-2 text-[11px] text-gray-600 cursor-pointer" title="Statistical screening: Tukey IQR fence (1.5×) on ROP / WOB / RPM / MSE — outliers are hidden, not deleted.">
+          <input type="checkbox" checked={includeOutliers} onChange={(e) => setIncludeOutliers(e.target.checked)} />
+          Include outliers (skip IQR screening)
+        </label>
         <div className="flex gap-2 pt-3">
           <button onClick={() => void run()} disabled={loading} className="h-9 px-4 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300">{loading ? "Loading…" : "Show"}</button>
           <button onClick={clearAll} className="h-9 px-3 text-sm rounded border border-gray-300 hover:bg-gray-50">Clear</button>
@@ -121,6 +168,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
         {error && <div className="text-xs text-red-600 pt-2">{error}</div>}
         <p className="text-[11px] text-gray-400 pt-3 leading-snug">
           WOB &amp; RPM are the midpoints of each bit record's recorded min–max range. ROP = drilled metres ÷ rotating hours.
+          Statistical outliers (IQR ×1.5 on ROP / WOB / RPM / MSE) are screened out unless included above.
         </p>
       </div>
 
@@ -128,7 +176,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
         <div className="px-3 py-2 border-b border-gray-100 shrink-0 flex items-center justify-between gap-2 flex-wrap">
           <span className="text-sm text-gray-600 min-w-0 truncate">
             {data
-              ? (data.note ? data.note : <><b>{points.length}</b> bit records{data.truncated ? ` (capped — ${data.total})` : ""} · {bitSizes.length} bit size{bitSizes.length === 1 ? "" : "s"}</>)
+              ? (data.note ? data.note : <><b>{points.length}</b> bit records{removed > 0 ? <> · <span title="Tukey IQR ×1.5 on ROP / WOB / RPM / MSE">{removed} outliers screened</span></> : ""}{data.truncated ? ` (capped — ${data.total})` : ""} · {bitSizes.length} bit size{bitSizes.length === 1 ? "" : "s"}</>)
               : "Pick a field / well, then Show."}
           </span>
           {!!points.length && (
@@ -147,6 +195,10 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
             : !points.length ? <Empty>{data.note ?? "No bit records with usable WOB / RPM / ROP for this selection."}</Empty>
             : view === "contour" ? <ContourView points={points} bitSizes={bitSizes} />
             : view === "voxel" ? <Voxel3DView points={points} bitSizes={bitSizes} />
+            : view === "mse" ? <MseView points={points} bitSizes={bitSizes} />
+            : view === "hydraulics" ? <HydraulicsView points={points} bitSizes={bitSizes} />
+            : view === "economics" ? <EconomicsView points={points} bitSizes={bitSizes} />
+            : view === "advisor" ? <AdvisorView points={points} bitSizes={bitSizes} />
             : view === "scatter" ? <ScatterView points={points} bitSizes={bitSizes} />
             : view === "size" ? <BySizeView points={points} bitSizes={bitSizes} />
             : view === "progress" ? <ProgressView points={points} />
@@ -194,6 +246,7 @@ function ContourView({ points, bitSizes }: { points: RopPoint[]; bitSizes: strin
   const pts = useMemo(() => (sizeFilter ? points.filter((p) => p.bitSize === sizeFilter) : points), [points, sizeFilter]);
 
   const grid = useMemo(() => buildGrid(pts), [pts]);
+  const best = useMemo(() => (grid ? bestCell(grid) : null), [grid]);
 
   return (
     <div className="space-y-3">
@@ -213,7 +266,12 @@ function ContourView({ points, bitSizes }: { points: RopPoint[]; bitSizes: strin
           {grid ? <> Scale {grid.ropMin.toFixed(1)}–{grid.ropMax.toFixed(1)} m/hr{sizeFilter ? ` · ${sizeFilter}" (${pts.length})` : ""}.</> : null}
         </span>
       </div>
-      {grid ? <Heatmap grid={grid} points={overlay ? pts : []} /> : <Empty>Not enough points to bin.</Empty>}
+      {best && (
+        <div className="text-xs rounded bg-amber-50 border border-amber-200 text-amber-900 px-2 py-1">
+          <b>Optimal window</b> (gold outline): best mean ROP <b>{best.mean.toFixed(1)} m/hr</b> at WOB {wobRange(best.wobLo, best.wobHi)} · RPM {Math.round(best.rpmLo)}–{Math.round(best.rpmHi)} ({best.n} record{best.n === 1 ? "" : "s"}).
+        </div>
+      )}
+      {grid ? <Heatmap grid={grid} points={overlay ? pts : []} best={best} /> : <Empty>Not enough points to bin.</Empty>}
     </div>
   );
 }
@@ -253,7 +311,27 @@ function buildGrid(pts: RopPoint[]): Grid | null {
   return { wobMin, wobStep, nx, rpmMin, rpmStep, ny, cells, ropMin: plo, ropMax: phi };
 }
 
-function Heatmap({ grid, points }: { grid: Grid; points: RopPoint[] }) {
+interface BestCell { ix: number; iy: number; mean: number; n: number; wobLo: number; wobHi: number; rpmLo: number; rpmHi: number; }
+/** The WOB×RPM cell with the highest mean ROP — the recommended operating window.
+ *  Requires ≥ minN records to avoid chasing single-point noise; relaxes to 1 only
+ *  if no cell qualifies. */
+function bestCell(grid: Grid, minN = 2): BestCell | null {
+  let best: BestCell | null = null;
+  for (let i = 0; i < grid.cells.length; i++) {
+    const c = grid.cells[i]; if (c.n < minN) continue;
+    const mean = c.sum / c.n;
+    if (!best || mean > best.mean) {
+      const ix = i % grid.nx, iy = Math.floor(i / grid.nx);
+      best = { ix, iy, mean, n: c.n,
+        wobLo: grid.wobMin + ix * grid.wobStep, wobHi: grid.wobMin + (ix + 1) * grid.wobStep,
+        rpmLo: grid.rpmMin + iy * grid.rpmStep, rpmHi: grid.rpmMin + (iy + 1) * grid.rpmStep };
+    }
+  }
+  if (!best && minN > 1) return bestCell(grid, 1);
+  return best;
+}
+
+function Heatmap({ grid, points, best }: { grid: Grid; points: RopPoint[]; best?: BestCell | null }) {
   const [hover, setHover] = useState<{ x: number; y: number; html: string } | null>(null);
   const PAD = { l: 64, r: 24, t: 12, b: 48 };
   const CW = 46, CH = 30;                                  // px per cell
@@ -287,6 +365,11 @@ function Heatmap({ grid, points }: { grid: Grid; points: RopPoint[] }) {
         {points.map((p, i) => (
           <circle key={i} cx={sx(p.wob)} cy={sy(p.rpm)} r={2.2} fill="#111827" fillOpacity={0.45} stroke="#fff" strokeWidth={0.4} pointerEvents="none" />
         ))}
+        {/* optimal-window highlight: the highest-mean-ROP cell */}
+        {best && (
+          <rect x={PAD.l + best.ix * CW} y={PAD.t + plotH - (best.iy + 1) * CH} width={CW} height={CH}
+            fill="none" stroke="#b45309" strokeWidth={3} pointerEvents="none" />
+        )}
         {/* axes frame */}
         <rect x={PAD.l} y={PAD.t} width={plotW} height={plotH} fill="none" stroke="#cbd5e1" />
         {/* X ticks (WOB) */}
@@ -832,4 +915,613 @@ function TableView({ points, onOpenReport }: {
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className="p-8 text-center text-sm text-gray-400">{children}</div>;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DrillBit-AI engineering analytics — MSE, hydraulics (HSI), economics, advisor.
+// Each operating point carries the extra metrics the backend computes from the
+// bit table (L05); these views fit / rank / interpret them with @dd/shared.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Mid-depth of a bit run (interval midpoint, else whichever end is recorded). */
+const runDepth = (p: RopPoint): number | null =>
+  p.from != null && p.to != null ? (p.from + p.to) / 2 : (p.to ?? p.from ?? null);
+
+// Distinct hues per IADC code, stable across the economics & advisor charts.
+const IADC_COLORS = ["#1e40af", "#dc2626", "#0d9488", "#d97706", "#7c3aed", "#65a30d", "#db2777", "#0891b2", "#ea580c", "#4f46e5", "#16a34a", "#9f1239", "#0369a1", "#a16207"];
+const colorForIadc = (codes: string[], code: string) => IADC_COLORS[Math.max(0, codes.indexOf(code)) % IADC_COLORS.length];
+
+/** A reusable labelled numeric input for the economics / advisor controls. */
+function NumInput({ label, value, onChange, step = 1, suffix, width = "w-24" }: {
+  label: string; value: number; onChange: (v: number) => void; step?: number; suffix?: string; width?: string;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-gray-600">
+      {label}
+      <input type="number" value={value} step={step} min={0}
+        onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
+        className={`h-7 ${width} border border-gray-300 rounded px-1.5 bg-white text-right tabular-nums`} />
+      {suffix && <span className="text-gray-400">{suffix}</span>}
+    </label>
+  );
+}
+
+/** Evenly-spaced down-sample to at most `max` items, so the scatter charts stay
+ *  responsive on large selections. Fits / correlations still use the full set. */
+function sample<T>(arr: T[], max: number): T[] {
+  if (arr.length <= max) return arr;
+  const step = arr.length / max, out: T[] = [];
+  for (let i = 0; i < max; i++) out.push(arr[Math.floor(i * step)]);
+  return out;
+}
+
+/** Min–max normalise to [0,1]; higherBetter=false inverts (so 1 = best). */
+function normalize(vals: number[], higherBetter: boolean): number[] {
+  const finite = vals.filter((v) => Number.isFinite(v));
+  if (!finite.length) return vals.map(() => 0.5);
+  const lo = Math.min(...finite), hi = Math.max(...finite);
+  if (hi <= lo) return vals.map(() => 0.5);
+  return vals.map((v) => { const t = (v - lo) / (hi - lo); return higherBetter ? t : 1 - t; });
+}
+
+interface IadcGroup {
+  iadc: string; bitClass: "PDC" | "roller"; bitSize: string; n: number; pts: RopPoint[];
+  avgRop: number; avgMeters: number; avgHours: number; avgDepth: number; medMse: number | null;
+  avgDia: number | null;
+}
+/** Aggregate operating points by IADC code (the bit "type"), for the economics
+ *  cost/m ranking and the selection advisor. */
+function groupByIadc(points: RopPoint[]): IadcGroup[] {
+  const m = new Map<string, RopPoint[]>();
+  for (const p of points) { if (!p.iadc) continue; const a = m.get(p.iadc); if (a) a.push(p); else m.set(p.iadc, [p]); }
+  const pick = <T,>(xs: (T | null)[]): T[] => xs.filter((x): x is T => x != null);
+  const groups: IadcGroup[] = [];
+  for (const [iadc, ps] of m) {
+    const meters = pick(ps.map((p) => (p.meters != null && p.meters > 0 ? p.meters : null)));
+    const hours = pick(ps.map((p) => (p.bitHour != null && p.bitHour > 0 ? p.bitHour : null)));
+    const depths = pick(ps.map(runDepth)).filter((d) => d > 0);
+    const mses = pick(ps.map((p) => (p.mse != null && p.mse > 0 ? p.mse : null)));
+    const pdc = ps.filter((p) => p.bitClass === "PDC").length;
+    const sizeCount = new Map<string, number>();
+    for (const p of ps) sizeCount.set(p.bitSize, (sizeCount.get(p.bitSize) ?? 0) + 1);
+    const bitSize = [...sizeCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
+    groups.push({
+      iadc, bitClass: pdc > ps.length / 2 ? "PDC" : "roller", bitSize, n: ps.length, pts: ps,
+      avgRop: mean(ps.map((p) => p.rop)) ?? 0,
+      avgMeters: mean(meters) ?? 0, avgHours: mean(hours) ?? 0,
+      avgDepth: mean(depths) ?? 0, medMse: median(mses),
+      avgDia: mean(pick(ps.map((p) => p.diaIn))),
+    });
+  }
+  return groups;
+}
+
+/** Plain-language interpretation block (the study shipped a diagnosis with each chart). */
+function Interp({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-xs rounded bg-blue-50 border border-blue-200 text-blue-900 px-3 py-2 leading-relaxed">
+      <span className="font-semibold">Interpretation. </span>{children}
+    </div>
+  );
+}
+
+function CoverageNote({ have, total, extra }: { have: number; total: number; extra?: string }) {
+  return (
+    <span className="text-gray-400">
+      {have} of {total} record{total === 1 ? "" : "s"} usable{extra ? ` · ${extra}` : ""}.
+    </span>
+  );
+}
+
+function SizeFilter({ value, onChange, bitSizes, total }: {
+  value: string; onChange: (v: string) => void; bitSizes: string[]; total: number;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-gray-600">
+      Bit size
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="h-7 border border-gray-300 rounded px-1.5 bg-white">
+        <option value="">All ({total})</option>
+        {bitSizes.map((b) => <option key={b} value={b}>{b}</option>)}
+      </select>
+    </label>
+  );
+}
+
+const renderNoDot = () => <g />;   // hide markers on the fitted-curve overlay
+
+// ── MSE: ROP–MSE power-law fit + founder drill-off + MSE distribution ────────
+
+function MseView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
+  const [sizeFilter, setSizeFilter] = useState("");
+  const [clsFilter, setClsFilter] = useState<"" | "PDC" | "roller">("");
+  // Mechanical efficiency factor Em (spec §6.6): MSE_adj = MSE / Em, toggleable.
+  const [emOn, setEmOn] = useState(false);
+  const [em, setEm] = useState(0.35);
+  const adj = emOn && em > 0 ? 1 / em : 1;
+
+  const pts = useMemo(() => points.filter((p) =>
+    (!sizeFilter || p.bitSize === sizeFilter) && (!clsFilter || p.bitClass === clsFilter)),
+    [points, sizeFilter, clsFilter]);
+  const withMse = useMemo(() => pts.filter((p) => p.mse != null && p.mse > 0), [pts]);
+  const measured = withMse.filter((p) => !p.mseEstimated).length;
+
+  const fit = useMemo(() => powerLawFit(withMse.map((p) => (p.mse as number) * adj), withMse.map((p) => p.rop)), [withMse, adj]);
+  const fitCurve = useMemo(() => {
+    if (!fit) return [];
+    const xs = withMse.map((p) => (p.mse as number) * adj);
+    const lo = Math.min(...xs), hi = Math.max(...xs);
+    return Array.from({ length: 40 }, (_, i) => {
+      const x = lo * Math.pow(hi / lo, i / 39);
+      return { mse: x, rop: fit.a * Math.pow(x, -fit.b) };
+    });
+  }, [fit, withMse, adj]);
+  // Drill-off at ~constant RPM (spec §6.7): densest RPM band, then ROP-vs-WOB.
+  const fr = useMemo(() => founderAtConstantRpm(pts.map((p) => p.wob), pts.map((p) => p.rpm), pts.map((p) => p.rop)), [pts]);
+  const founder = fr?.founder ?? null;
+
+  // Down-sample only the *rendered* markers; the fit above uses every point.
+  const shown = useMemo(() => sample(withMse, 2500), [withMse]);
+  const measuredPts = useMemo(() => shown.filter((p) => !p.mseEstimated).map((p) => ({ ...p, mse: (p.mse as number) * adj })), [shown, adj]);
+  const estimatedPts = useMemo(() => shown.filter((p) => p.mseEstimated).map((p) => ({ ...p, mse: (p.mse as number) * adj })), [shown, adj]);
+
+  // MSE distribution (median psi + MPa) per bit size.
+  const dist = useMemo(() => {
+    const m = new Map<string, number[]>();
+    for (const p of withMse) { const a = m.get(p.bitSize); if (a) a.push((p.mse as number) * adj); else m.set(p.bitSize, [(p.mse as number) * adj]); }
+    return bitSizes.filter((b) => m.has(b)).map((b) => {
+      const arr = m.get(b)!; const med = median(arr) ?? 0;
+      return { size: b, n: arr.length, medPsi: Math.round(med), medMPa: psiToMPa(med) };
+    });
+  }, [withMse, bitSizes, adj]);
+
+  if (!withMse.length) return <Empty>No bit records with a computable MSE for this selection. MSE needs WOB, RPM, ROP and a recognised bit diameter.</Empty>;
+  const mseLabel = emOn ? "MSE/Em" : "MSE";
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 flex-wrap text-xs">
+        <SizeFilter value={sizeFilter} onChange={setSizeFilter} bitSizes={bitSizes} total={points.length} />
+        <label className="flex items-center gap-1.5 text-gray-600">
+          Bit class
+          <select value={clsFilter} onChange={(e) => setClsFilter(e.target.value as "" | "PDC" | "roller")} className="h-7 border border-gray-300 rounded px-1.5 bg-white">
+            <option value="">All</option>
+            <option value="roller">roller cone</option>
+            <option value="PDC">PDC</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-gray-600 cursor-pointer" title="Mechanical efficiency factor: report MSE ÷ Em (Teale's adjusted MSE).">
+          <input type="checkbox" checked={emOn} onChange={(e) => setEmOn(e.target.checked)} /> ÷ Em
+        </label>
+        {emOn && <NumInput label="Em" value={em} onChange={(v) => setEm(Math.min(1, v))} step={0.05} width="w-16" />}
+        <CoverageNote have={withMse.length} total={pts.length} extra={`torque measured ${measured}, estimated ${withMse.length - measured}`} />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="border border-gray-200 rounded p-2">
+          <div className="text-sm font-medium text-gray-700 mb-1">ROP vs MSE — power-law fit</div>
+          <ResponsiveContainer width="100%" height={320}>
+            <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+              <XAxis type="number" dataKey="mse" name="MSE" scale="log" domain={["auto", "auto"]} tick={{ fontSize: 10 }}
+                tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(Math.round(v)))}
+                label={{ value: `${mseLabel} (psi, log scale)`, position: "insideBottom", offset: -14, fontSize: 11 }} />
+              <YAxis type="number" dataKey="rop" name="ROP" tick={{ fontSize: 11 }}
+                label={{ value: "ROP (m/hr)", angle: -90, position: "insideLeft", fontSize: 11 }} />
+              <ZAxis range={[26, 26]} />
+              <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<MseTip />} />
+              <Scatter name="measured torque" data={measuredPts} fill="#1e40af" fillOpacity={0.5} />
+              {!!estimatedPts.length && <Scatter name="estimated torque" data={estimatedPts} fill="#94a3b8" fillOpacity={0.35} />}
+              {!!fitCurve.length && <Scatter name="fit" data={fitCurve} fill="none" line={{ stroke: "#dc2626", strokeWidth: 2 }} shape={renderNoDot} legendType="none" />}
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+            </ScatterChart>
+          </ResponsiveContainer>
+          <div className="text-[11px] text-gray-500 px-1">
+            {fit ? <>Fit ROP = {fit.a.toFixed(2)} · MSE<sup>−{fit.b.toFixed(3)}</sup> · R² {fit.r2.toFixed(2)} · n {fit.n}</> : "Not enough spread to fit."}
+            {withMse.length > shown.length ? ` · showing ${shown.length} of ${withMse.length} points` : ""}
+          </div>
+        </div>
+
+        <div className="border border-gray-200 rounded p-2">
+          <div className="text-sm font-medium text-gray-700 mb-1">
+            Founder / drill-off — ROP vs WOB
+            {fr && <span className="font-normal text-gray-400"> · at ~constant RPM {Math.round(fr.rpmLo)}–{Math.round(fr.rpmHi)} ({fr.nBand} records)</span>}
+          </div>
+          {founder && founder.curve.length >= 2 ? (
+            <>
+              <ResponsiveContainer width="100%" height={320}>
+                <LineChart data={founder.curve} margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+                  <XAxis type="number" dataKey="wob" tick={{ fontSize: 11 }} domain={["dataMin", "dataMax"]}
+                    label={{ value: "WOB (klb)", position: "insideBottom", offset: -14, fontSize: 11 }} tickFormatter={fmt1} />
+                  <YAxis type="number" tick={{ fontSize: 11 }} label={{ value: "mean ROP (m/hr)", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                  <Tooltip content={<FounderTip />} />
+                  <Line type="monotone" dataKey="rop" stroke="#0d9488" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="text-[11px] text-gray-600 px-1">
+                {founder.founderWob != null
+                  ? <>Founder onset ≈ <b>WOB {fmt1(founder.founderWob)} klb ({klbToTonnes(founder.founderWob).toFixed(1)} t)</b> — beyond it more weight stops adding ROP. Recommended WOB ≈ <b>{fmt1(founder.optimalWob ?? founder.founderWob)} klb ({klbToTonnes(founder.optimalWob ?? founder.founderWob).toFixed(1)} t)</b>, just below founder.</>
+                  : <>No founder detected — ROP keeps responding to WOB across the recorded range (consider testing higher weight).</>}
+              </div>
+            </>
+          ) : <Empty>Not enough WOB spread to build a drill-off response.</Empty>}
+        </div>
+      </div>
+
+      <Interp>
+        {mseInterpretation(fit ? fit.b : null)} MSE measures the energy spent per unit volume of rock removed — efficient drilling keeps it close to the rock strength, while spikes flag balling, vibration or founder. Reference field exponents by section: 0.49 (17½″), 0.92 (12¼″), 0.48 (8½″).
+      </Interp>
+
+      {dist.length > 1 && (
+        <div className="border border-gray-200 rounded p-2">
+          <div className="text-sm font-medium text-gray-700 mb-1">Median MSE by bit size</div>
+          <table className="text-[11px] tabular-nums border-collapse">
+            <thead><tr className="bg-gray-100">
+              {["Bit size", "Records", "Median MSE (psi)", "Median MSE (MPa)"].map((h, i) => (
+                <th key={h} className={`border border-gray-300 px-2 py-1 font-medium text-gray-700 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {dist.map((r, i) => (
+                <tr key={r.size} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
+                  <td className="border border-gray-300 px-2 py-0.5 text-left font-medium">{r.size}"</td>
+                  <td className="border border-gray-300 px-2 py-0.5 text-right">{r.n}</td>
+                  <td className="border border-gray-300 px-2 py-0.5 text-right">{r.medPsi.toLocaleString()}</td>
+                  <td className="border border-gray-300 px-2 py-0.5 text-right">{r.medMPa.toFixed(0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function mseInterpretation(b: number | null): string {
+  if (b == null) return "Not enough spread in MSE/ROP to fit a power law for this selection.";
+  if (b >= 0.8) return `Power-law exponent b ≈ ${b.toFixed(2)} (close to 1): drilling energy is efficiently converted to rock destruction.`;
+  if (b >= 0.4) return `Power-law exponent b ≈ ${b.toFixed(2)} (moderate): a meaningful share of energy is lost to regrind, heat or bit wear rather than breaking rock.`;
+  return `Power-law exponent b ≈ ${b.toFixed(2)} (low): much of the drilling energy is lost to regrind, vibration or bit damage instead of destroying rock.`;
+}
+
+function MseTip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload as RopPoint & { mse?: number };
+  if (p.wellCode == null) return null; // the fitted curve carries no record
+  return (
+    <div className="px-2 py-1 rounded bg-gray-900 text-white text-[11px] leading-tight shadow-lg">
+      <div className="font-semibold">{p.name} · {p.bitSize}"{p.iadc ? ` · IADC ${p.iadc}` : ""}</div>
+      <div>MSE {Math.round(p.mse as number).toLocaleString()} psi ({psiToMPa(p.mse as number).toFixed(0)} MPa){p.mseEstimated ? " · est. torque" : ""}</div>
+      <div>ROP {p.rop} m/hr · WOB {fmt1(p.wob)} · RPM {Math.round(p.rpm)}</div>
+    </div>
+  );
+}
+function FounderTip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload as { wob: number; rop: number; n: number };
+  return (
+    <div className="px-2 py-1 rounded bg-gray-900 text-white text-[11px] leading-tight shadow-lg">
+      <div>WOB ≈ {fmt1(p.wob)} klb</div><div>mean ROP {p.rop.toFixed(1)} m/hr · {p.n} record{p.n === 1 ? "" : "s"}</div>
+    </div>
+  );
+}
+
+// ── Hydraulics: ROP vs HSI trend + cleaning diagnosis ────────────────────────
+
+function HydraulicsView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
+  const [sizeFilter, setSizeFilter] = useState("");
+  const pts = useMemo(() => (sizeFilter ? points.filter((p) => p.bitSize === sizeFilter) : points), [points, sizeFilter]);
+  const withHsi = useMemo(() => pts.filter((p) => p.hsi != null && p.hsi > 0), [pts]);
+  const reported = withHsi.filter((p) => p.hsiSource === "reported").length;
+
+  const fit = useMemo(() => linearFit(withHsi.map((p) => p.hsi as number), withHsi.map((p) => p.rop)), [withHsi]);
+  const rho = useMemo(() => spearman(withHsi.map((p) => p.hsi as number), withHsi.map((p) => p.rop)), [withHsi]);
+  const trendLine = useMemo(() => {
+    if (!fit) return [];
+    const xs = withHsi.map((p) => p.hsi as number);
+    const lo = Math.min(...xs), hi = Math.max(...xs);
+    return [{ hsi: lo, rop: fit.slope * lo + fit.intercept }, { hsi: hi, rop: fit.slope * hi + fit.intercept }];
+  }, [fit, withHsi]);
+  const shownHsi = useMemo(() => sample(withHsi, 2500), [withHsi]); // rendered markers only
+
+  if (!withHsi.length) return <Empty>No bit records with HSI for this selection. HSI needs a reported value, or nozzle sizes + flow rate + mud weight to compute it.</Empty>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 flex-wrap text-xs">
+        <SizeFilter value={sizeFilter} onChange={setSizeFilter} bitSizes={bitSizes} total={points.length} />
+        <CoverageNote have={withHsi.length} total={pts.length} extra={`reported ${reported}, computed ${withHsi.length - reported}${withHsi.length > shownHsi.length ? `, plotting ${shownHsi.length}` : ""}`} />
+      </div>
+
+      <div className="border border-gray-200 rounded p-2">
+        <div className="text-sm font-medium text-gray-700 mb-1">ROP vs HSI (hydraulic horsepower per in²)</div>
+        <ResponsiveContainer width="100%" height={360}>
+          <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+            <XAxis type="number" dataKey="hsi" name="HSI" tick={{ fontSize: 11 }}
+              label={{ value: "HSI (hp/in²)", position: "insideBottom", offset: -14, fontSize: 11 }} />
+            <YAxis type="number" dataKey="rop" name="ROP" tick={{ fontSize: 11 }}
+              label={{ value: "ROP (m/hr)", angle: -90, position: "insideLeft", fontSize: 11 }} />
+            <ZAxis range={[26, 26]} />
+            <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<HsiTip />} />
+            <Scatter name="bit records" data={shownHsi} fill="#0891b2" fillOpacity={0.5} />
+            {!!trendLine.length && <Scatter name="trend" data={trendLine} fill="none" line={{ stroke: "#dc2626", strokeWidth: 2 }} shape={renderNoDot} legendType="none" />}
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+          </ScatterChart>
+        </ResponsiveContainer>
+      </div>
+
+      <Interp>{hsiInterpretation(rho, fit ? fit.slope : 0)} HSI gauges how well the bit face is cleaned of cuttings; it only lifts ROP when cuttings removal — not formation strength — is the limiter.</Interp>
+    </div>
+  );
+}
+
+function hsiInterpretation(rho: number | null, slope: number): string {
+  void slope;
+  if (rho == null) return "Not enough HSI/ROP pairs to assess the hydraulics–ROP relationship for this selection.";
+  if (rho > 0.3) return `ROP rises with HSI (Spearman ρ = ${rho.toFixed(2)}): drilling is cleaning-limited — more hydraulic energy improves penetration, as in the reference 12¼″ section.`;
+  if (rho < -0.3) return `ROP falls as HSI rises (Spearman ρ = ${rho.toFixed(2)}): hydraulics are not the limiter; formation strength or other factors dominate.`;
+  return `ROP is roughly flat against HSI (Spearman ρ = ${rho.toFixed(2)}): cleaning is adequate or another factor (formation, WOB/RPM) limits ROP — as in the reference 17½″ and 8½″ sections.`;
+}
+function HsiTip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload as RopPoint;
+  if (p.wellCode == null) return null;
+  return (
+    <div className="px-2 py-1 rounded bg-gray-900 text-white text-[11px] leading-tight shadow-lg">
+      <div className="font-semibold">{p.name} · {p.bitSize}"{p.iadc ? ` · IADC ${p.iadc}` : ""}</div>
+      <div>HSI {p.hsi} hp/in² ({p.hsiSource})</div>
+      <div>ROP {p.rop} m/hr{p.flow != null ? ` · flow ${p.flow} gpm` : ""}{p.tfa != null ? ` · TFA ${p.tfa}″²` : ""}</div>
+    </div>
+  );
+}
+
+// ── Economics: cost-per-metre by IADC type (live with rig rate / bit price) ──
+
+// Reference price tiers (spec §7.5): 17½″-class bits cost markedly more than
+// 12¼″/8½″ ones — 17½″ roller $11,200 / PDC $70,000; smaller roller $8,000 /
+// PDC $50,000. Tier split at 14″.
+const LARGE_BIT_IN = 14;
+const PRICE_DEFAULTS = { rollerLg: 11200, pdcLg: 70000, rollerSm: 8000, pdcSm: 50000 };
+type BitPrices = typeof PRICE_DEFAULTS;
+function priceFor(cls: "PDC" | "roller", diaIn: number | null, p: BitPrices): number {
+  const large = (diaIn ?? 0) >= LARGE_BIT_IN;
+  return cls === "PDC" ? (large ? p.pdcLg : p.pdcSm) : (large ? p.rollerLg : p.rollerSm);
+}
+
+/** The four tiered bit-price inputs shared by Economics and the Advisor. */
+function PriceInputs({ prices, onChange }: { prices: BitPrices; onChange: (p: BitPrices) => void }) {
+  return (
+    <>
+      <NumInput label={`Roller ≥${LARGE_BIT_IN}″ $`} value={prices.rollerLg} onChange={(v) => onChange({ ...prices, rollerLg: v })} step={1000} />
+      <NumInput label={`PDC ≥${LARGE_BIT_IN}″ $`} value={prices.pdcLg} onChange={(v) => onChange({ ...prices, pdcLg: v })} step={1000} />
+      <NumInput label={`Roller <${LARGE_BIT_IN}″ $`} value={prices.rollerSm} onChange={(v) => onChange({ ...prices, rollerSm: v })} step={1000} />
+      <NumInput label={`PDC <${LARGE_BIT_IN}″ $`} value={prices.pdcSm} onChange={(v) => onChange({ ...prices, pdcSm: v })} step={1000} />
+    </>
+  );
+}
+
+function EconomicsView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
+  const [sizeFilter, setSizeFilter] = useState("");
+  const [rigDay, setRigDay] = useState(30000);
+  const [tripSpeed, setTripSpeed] = useState(300);
+  const [handling, setHandling] = useState(2);
+  const [prices, setPrices] = useState<BitPrices>(PRICE_DEFAULTS);
+  const [withTrip, setWithTrip] = useState(true);
+
+  const pts = useMemo(() => (sizeFilter ? points.filter((p) => p.bitSize === sizeFilter) : points), [points, sizeFilter]);
+
+  const rows = useMemo(() => {
+    const rigHr = rigUsdPerHr(rigDay);
+    return groupByIadc(pts)
+      .filter((g) => g.avgMeters > 0 && g.avgHours > 0)
+      .map((g) => {
+        const bitUsd = priceFor(g.bitClass, g.avgDia, prices);
+        const tripHr = withTrip ? tripHours({ depthM: g.avgDepth, tripSpeedMHr: tripSpeed, handlingHr: handling }) : 0;
+        const costM = costPerMeter({ bitUsd, rigUsdPerHr: rigHr, drillHr: g.avgHours, tripHr, meterageM: g.avgMeters });
+        const tripRop = tripAdjustedRop({ meterageM: g.avgMeters, drillHr: g.avgHours, tripHr });
+        return { ...g, bitUsd, tripHr, costM: costM ?? Infinity, tripRop: tripRop ?? 0 };
+      })
+      .filter((r) => Number.isFinite(r.costM))
+      .sort((a, b) => a.costM - b.costM);
+  }, [pts, rigDay, tripSpeed, handling, prices, withTrip]);
+
+  const codes = rows.map((r) => r.iadc);
+
+  if (!rows.length) return <Empty>No IADC-coded bit runs with footage and drilling hours for this selection — cost/m needs both to compute.</Empty>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 flex-wrap text-xs">
+        <SizeFilter value={sizeFilter} onChange={setSizeFilter} bitSizes={bitSizes} total={points.length} />
+        <NumInput label="Rig rate" value={rigDay} onChange={setRigDay} step={1000} suffix="USD/day" />
+        <PriceInputs prices={prices} onChange={setPrices} />
+        <NumInput label="Trip speed" value={tripSpeed} onChange={setTripSpeed} step={50} suffix="m/hr" width="w-20" />
+        <NumInput label="Handling" value={handling} onChange={setHandling} step={1} suffix="hr/trip" width="w-16" />
+        <label className="flex items-center gap-1.5 text-gray-600 cursor-pointer">
+          <input type="checkbox" checked={withTrip} onChange={(e) => setWithTrip(e.target.checked)} /> include trip time
+        </label>
+      </div>
+
+      <div className="border border-gray-200 rounded p-2">
+        <div className="text-sm font-medium text-gray-700 mb-1">Cost per metre vs ROP, by IADC type{withTrip ? " (with trip)" : " (drilling only)"}</div>
+        <ResponsiveContainer width="100%" height={Math.max(260, rows.length * 30)}>
+          <BarChart data={rows} margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+            <XAxis dataKey="iadc" tick={{ fontSize: 11 }} label={{ value: "IADC type", position: "insideBottom", offset: -14, fontSize: 11 }} />
+            <YAxis yAxisId="cost" tick={{ fontSize: 11 }} label={{ value: "USD/m", angle: -90, position: "insideLeft", fontSize: 11 }} />
+            <YAxis yAxisId="rop" orientation="right" tick={{ fontSize: 11 }} label={{ value: "ROP m/hr", angle: 90, position: "insideRight", fontSize: 11 }} />
+            <Tooltip content={<EconTip />} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar yAxisId="cost" dataKey="costM" name="cost/m (USD)" radius={[3, 3, 0, 0]}>
+              {rows.map((r) => <Cell key={r.iadc} fill={colorForIadc(codes, r.iadc)} />)}
+            </Bar>
+            <Bar yAxisId="rop" dataKey="avgRop" name="avg ROP (m/hr)" fill="#9ca3af" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="border border-gray-200 rounded overflow-auto">
+        <table className="text-[11px] tabular-nums border-collapse w-full">
+          <thead><tr className="bg-gray-100">
+            {["IADC", "Class", "Bit size", "Runs", "Avg ROP", "Trip-adj ROP", "Avg m/bit", "Avg hr", "Cost/m (USD)"].map((h, i) => (
+              <th key={h} className={`border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${i < 3 ? "text-left" : "text-right"}`}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.iadc} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
+                <td className="border border-gray-300 px-2 py-0.5 text-left font-semibold" style={{ color: colorForIadc(codes, r.iadc) }}>{r.iadc}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-left">{r.bitClass}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-left">{r.bitSize}"</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.n}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.avgRop.toFixed(2)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.tripRop.toFixed(2)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.avgMeters.toFixed(0)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.avgHours.toFixed(0)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right font-medium">{r.costM.toFixed(0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <Interp>
+        Cost/m = (bit price + rig rate × (drilling + trip hours)) ÷ metres drilled. A bit with a high instantaneous ROP but low footage forces more round trips, which can make it more expensive per metre than a slower bit that drills the whole section — toggle “include trip time” to see the effect. Lowest cost/m here: <b>IADC {rows[0].iadc}</b> at {rows[0].costM.toFixed(0)} USD/m. Bit prices (size-tiered at {LARGE_BIT_IN}″ — reference defaults: 17½″ roller $11,200 / PDC $70,000, smaller $8,000 / $50,000) and rig rate are your inputs; no bit cost is stored in the database.
+      </Interp>
+    </div>
+  );
+}
+function EconTip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const r = payload[0].payload as { iadc: string; bitClass: string; costM: number; avgRop: number; tripRop: number; avgMeters: number; n: number };
+  return (
+    <div className="px-2 py-1 rounded bg-gray-900 text-white text-[11px] leading-tight shadow-lg">
+      <div className="font-semibold">IADC {r.iadc} · {r.bitClass}</div>
+      <div>cost/m {r.costM.toFixed(0)} USD · ROP {r.avgRop.toFixed(2)} m/hr</div>
+      <div>trip-adj ROP {r.tripRop.toFixed(2)} · {r.avgMeters.toFixed(0)} m/bit · {r.n} runs</div>
+    </div>
+  );
+}
+
+// ── Bit advisor: transparent weighted ranking of IADC types ──────────────────
+
+function AdvisorView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
+  const [sizeFilter, setSizeFilter] = useState("");
+  const [rigDay, setRigDay] = useState(30000);
+  const [tripSpeed, setTripSpeed] = useState(300);
+  const [prices, setPrices] = useState<BitPrices>(PRICE_DEFAULTS);
+  const [sectionLen, setSectionLen] = useState(1000);
+  // composite weights (percent) — cost/m, trip-adj ROP, ROP, meterage, MSE efficiency
+  const [w, setW] = useState({ cost: 40, trip: 25, rop: 15, meter: 15, mse: 5 });
+
+  const pts = useMemo(() => (sizeFilter ? points.filter((p) => p.bitSize === sizeFilter) : points), [points, sizeFilter]);
+
+  const ranked = useMemo(() => {
+    const rigHr = rigUsdPerHr(rigDay);
+    const cand = groupByIadc(pts)
+      .filter((g) => g.avgMeters > 0 && g.avgHours > 0)
+      .map((g) => {
+        const bitUsd = priceFor(g.bitClass, g.avgDia, prices);
+        const tripHr = tripHours({ depthM: g.avgDepth, tripSpeedMHr: tripSpeed });
+        const costM = costPerMeter({ bitUsd, rigUsdPerHr: rigHr, drillHr: g.avgHours, tripHr, meterageM: g.avgMeters }) ?? Infinity;
+        const tripRop = tripAdjustedRop({ meterageM: g.avgMeters, drillHr: g.avgHours, tripHr }) ?? 0;
+        const grid = buildGrid(g.pts); const win = grid ? bestCell(grid) : null;
+        return { ...g, bitUsd, tripHr, costM, tripRop, win };
+      })
+      .filter((r) => Number.isFinite(r.costM));
+    if (!cand.length) return [];
+    const maxMse = Math.max(...cand.map((c) => c.medMse ?? 0), 1);
+    const nCost = normalize(cand.map((c) => c.costM), false);
+    const nTrip = normalize(cand.map((c) => c.tripRop), true);
+    const nRop = normalize(cand.map((c) => c.avgRop), true);
+    const nMeter = normalize(cand.map((c) => c.avgMeters), true);
+    const nMse = normalize(cand.map((c) => c.medMse ?? maxMse), false);
+    const wsum = w.cost + w.trip + w.rop + w.meter + w.mse || 1;
+    return cand.map((c, i) => {
+      const bits = Math.max(1, Math.ceil(sectionLen / c.avgMeters));
+      return {
+        ...c,
+        score: (w.cost * nCost[i] + w.trip * nTrip[i] + w.rop * nRop[i] + w.meter * nMeter[i] + w.mse * nMse[i]) / wsum,
+        bits,
+        // Expected section time: each bit drills its average hours then trips.
+        days: (bits * (c.avgHours + c.tripHr)) / 24,
+        sectionCost: c.costM * sectionLen,
+      };
+    }).sort((a, b) => b.score - a.score);
+  }, [pts, rigDay, tripSpeed, prices, sectionLen, w]);
+
+  const codes = ranked.map((r) => r.iadc);
+  const top = ranked[0];
+
+  if (!ranked.length) return <Empty>No IADC-coded bit runs with footage and drilling hours for this selection to rank.</Empty>;
+
+  const Weight = ({ k, label }: { k: keyof typeof w; label: string }) => (
+    <label className="flex items-center gap-1.5 text-gray-600 whitespace-nowrap">
+      {label}
+      <input type="range" min={0} max={100} value={w[k]} onChange={(e) => setW({ ...w, [k]: Number(e.target.value) })} className="w-20" />
+      <span className="tabular-nums w-7 text-right">{w[k]}%</span>
+    </label>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 flex-wrap text-xs">
+        <SizeFilter value={sizeFilter} onChange={setSizeFilter} bitSizes={bitSizes} total={points.length} />
+        <NumInput label="Rig rate" value={rigDay} onChange={setRigDay} step={1000} suffix="USD/day" />
+        <NumInput label="Trip speed" value={tripSpeed} onChange={setTripSpeed} step={50} suffix="m/hr" width="w-20" />
+        <PriceInputs prices={prices} onChange={setPrices} />
+        <NumInput label="Section length" value={sectionLen} onChange={setSectionLen} step={100} suffix="m" />
+      </div>
+      <div className="flex items-center gap-4 flex-wrap text-xs bg-gray-50 border border-gray-200 rounded px-3 py-2">
+        <span className="font-semibold text-gray-600">Weights</span>
+        <Weight k="cost" label="Cost/m" /><Weight k="trip" label="Trip-adj ROP" /><Weight k="rop" label="ROP" />
+        <Weight k="meter" label="Meterage" /><Weight k="mse" label="MSE eff." />
+      </div>
+
+      <div className="border border-gray-200 rounded overflow-auto">
+        <table className="text-[11px] tabular-nums border-collapse w-full">
+          <thead><tr className="bg-gray-100">
+            {["#", "IADC", "Class", "Score", "Cost/m", "Trip-adj ROP", "ROP", "m/bit", "Med MSE", "Op. window (WOB / RPM)", `Bits / ${sectionLen}m`, "Days", "Section cost"].map((h, i) => (
+              <th key={h} className={`border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${i === 1 || i === 2 || i === 9 ? "text-left" : "text-right"}`}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {ranked.map((r, i) => (
+              <tr key={r.iadc} className={i === 0 ? "bg-amber-50" : i % 2 ? "bg-teal-50/40" : "bg-white"}>
+                <td className="border border-gray-300 px-2 py-0.5 text-right text-gray-500">{i + 1}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-left font-semibold" style={{ color: colorForIadc(codes, r.iadc) }}>{r.iadc}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-left">{r.bitClass}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right font-semibold">{(r.score * 100).toFixed(0)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.costM.toFixed(0)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.tripRop.toFixed(2)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.avgRop.toFixed(2)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.avgMeters.toFixed(0)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.medMse != null ? Math.round(r.medMse).toLocaleString() : "—"}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-left">{r.win ? `${fmt1(r.win.wobLo)}–${fmt1(r.win.wobHi)} klb / ${Math.round(r.win.rpmLo)}–${Math.round(r.win.rpmHi)}` : "—"}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.bits}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{r.days.toFixed(1)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{(r.sectionCost / 1000).toFixed(0)}k</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <Interp>
+        Each IADC type is scored 0–100 from a transparent weighted blend of cost/m, trip-adjusted ROP, instantaneous ROP, meterage per bit, and MSE efficiency (move the sliders to reweight). Recommended bit for this selection: <b>IADC {top.iadc}</b> ({top.bitClass}) — operating window {top.win ? <>WOB {wobRange(top.win.wobLo, top.win.wobHi)}, RPM {Math.round(top.win.rpmLo)}–{Math.round(top.win.rpmHi)}</> : "n/a"}; ≈ {top.bits} bit{top.bits === 1 ? "" : "s"}, ≈ {top.days.toFixed(1)} days and ≈ {(top.sectionCost / 1000).toFixed(0)}k USD to drill {sectionLen} m. Rankings reflect this dataset and your economic inputs, not a guarantee for a new well.
+      </Interp>
+
+      <details className="text-xs border border-gray-200 rounded px-3 py-2 text-gray-600">
+        <summary className="cursor-pointer font-semibold text-gray-700">What the reference study found (Khangiran KG-52…62) — reference field results, not your data</summary>
+        <ul className="list-disc ml-5 mt-1.5 space-y-0.5 leading-relaxed">
+          <li><b>17½″</b>: 11X most economic ($293/m), then 13X ($554/m). Optimal windows — 11X: WOB 15–20 t / RPM 90–110; PDC: WOB 5–15 t / RPM 130–180.</li>
+          <li><b>12¼″</b>: 32X / 51X / M323 cluster (~$318–333/m); M323 had the best trip-adjusted ROP (1.51 m/hr). PDC window: WOB 20–25 t / RPM 60–80.</li>
+          <li><b>8½″</b>: M323 ($792/m), then 51X ($815/m). PDC window: WOB 10–15 or 20–25 t / RPM 120–160.</li>
+          <li>ROP–MSE power-law exponents by section: 0.493 (17½″), 0.917 (12¼″), 0.476 (8½″) — b near 1 ⇒ energy efficiently converted to rock destruction.</li>
+        </ul>
+      </details>
+    </div>
+  );
 }

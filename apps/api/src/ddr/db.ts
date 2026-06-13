@@ -25,6 +25,10 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import {
+  mseTeale, estimateTorque, MU_DEFAULT, hsiFromHydraulics,
+  tfaFromNozzles, parseBitSizeInches, bitClass, type BitClass,
+} from "@dd/shared/drilling";
 
 type Row = Record<string, unknown>;
 
@@ -74,7 +78,7 @@ const range = (a: unknown, b: unknown): string | null => {
 
 // ── lookups (code → display name), loaded once, trimmed ─────────────────────
 interface Lookups {
-  bit: Map<string, string>; bitSize: Map<string, string>; bitType: Map<string, string>; bitIADC: Map<string, string>;
+  bit: Map<string, string>; bitSize: Map<string, string>; bitType: Map<string, string>; bitIADC: Map<string, string>; bitMake: Map<string, string>;
   mud: Map<string, string>; formation: Map<string, string>;
   operation: Map<string, string>; field: Map<string, string>; casing: Map<string, string>;
   reasonPulled: Map<string, string>; holeSize: Map<string, string>; contractor: Map<string, string>;
@@ -112,6 +116,7 @@ function lookups(): Lookups {
     bitSize: buildMap("Bit", "BitCode", (r) => s(r.Size)),
     bitType: buildMap("Bit", "BitCode", (r) => s(r.Type)),
     bitIADC: buildMap("Bit", "BitCode", (r) => s(r.IADC)),
+    bitMake: buildMap("Bit", "BitCode", (r) => s(r.Make)),
     mud: buildMap("MudType", "MudCode", (r) => s(r.MudName)),
     formation: buildMap("Formation", "FormCode", (r) => s(r.FormLat) || s(r.FormAbri)),
     operation: buildMap("Operations", "OperationCode", (r) => s(r.OperationDesc)),
@@ -1853,6 +1858,14 @@ export interface RopOptimizationFilters extends FormationMatrixFilters {
  * for client-side WOB×RPM→ROP binning (the contour) and the supporting scatters
  * / per-bit-size comparison. Filtered by field / well / day hole-size / mud-type
  * / Jalali date, mirroring the other DDR tabs.
+ *
+ * Each point also carries the drilling-engineering metrics behind the MSE,
+ * Hydraulics, Economics and Bit-Advisor views: the IADC code + bit class
+ * (roller/PDC) + make + diameter (in), Mechanical Specific Energy (Teale, psi —
+ * with measured TorqueOnBottom when present, else estimated from WOB, flagged
+ * via `mseEstimated`), HSI (`hsiSource` = reported BitHSI / computed from
+ * nozzles+flow+mud / null), and the raw TFA / flow / SPP / mud-weight (ppg) /
+ * dull grades / drilling-hours used by the economics and advisory analytics.
  */
 export function getRopOptimization(f: RopOptimizationFilters): Record<string, unknown> {
   const wellSet = resolveWellSet(f);
@@ -1870,6 +1883,31 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
   const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
   const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
 
+  // Mud weight → ppg (for HSI). Reports mostly store pcf (≈60–140); a few use
+  // ppg (≈8–20) or SG (≈1.0–2.5). Pick the unit from the magnitude.
+  const mudWeightPpg = (v: unknown): number | null => {
+    const x = Number(s(v));
+    if (!Number.isFinite(x) || x <= 0) return null;
+    if (x >= 30) return x / 7.4805;   // pcf → ppg
+    if (x >= 5) return x;             // already ppg
+    if (x >= 0.8) return x * 8.345;   // SG → ppg
+    return null;
+  };
+  // Parse a free-text nozzle string ("3x14", "14-14-14", "16,16,16+12") into a
+  // list of 1/32" jet sizes for the TFA calculation.
+  const parseNozzleSizes = (raw: unknown): number[] => {
+    const str = s(raw).toLowerCase(); if (!str) return [];
+    const out: number[] = [];
+    for (const tk of str.split(/[,;+\s/]+/).filter(Boolean)) {
+      const mx = tk.match(/^(\d+)\s*[x*]\s*(\d+(?:\.\d+)?)$/);   // "3x14" = 3 jets of 14
+      if (mx) { const cnt = Number(mx[1]); for (let i = 0; i < cnt && i < 12; i++) out.push(Number(mx[2])); continue; }
+      for (const part of tk.split("-").filter(Boolean)) {       // "14-14-14"
+        const n = Number(part); if (Number.isFinite(n) && n > 0 && n < 40) out.push(n);
+      }
+    }
+    return out;
+  };
+
   // Field + English name per well (A01), for labelling / field colour-split.
   const nameMap = new Map<string, string>(), fieldMap = new Map<string, string | null>();
   for (const r of db.prepare(`SELECT WellCode, EnglishName, FieldCode FROM A01`).all() as Row[]) {
@@ -1880,6 +1918,7 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
   // the day's mud type — keyed by well|date, exactly as getTools resolves it.
   const byDay = new Map<string, { serial: number | null; hole: string }>();
   const mudByDay = new Map<string, string>();
+  const mudWtByDay = new Map<string, number>();   // mud weight (ppg) per well|date
   for (let i = 0; i < codes.length; i += 800) {
     const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
     for (const r of db.prepare(`SELECT WellCode, SerialNo, DrillingDate, HoleSizeCode FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
@@ -1887,8 +1926,10 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
       const snN = Number(r.SerialNo), fin = Number.isFinite(snN), cur = byDay.get(k);
       if (!cur || (fin && (cur.serial == null || snN < cur.serial))) byDay.set(k, { serial: fin ? snN : (cur?.serial ?? null), hole: s(r.HoleSizeCode) });
     }
-    for (const r of db.prepare(`SELECT WellCode, fDate, MudCode FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
-      const k = `${s(r.WellCode)}|${s(r.fDate)}`; if (!mudByDay.has(k)) mudByDay.set(k, s(r.MudCode));
+    for (const r of db.prepare(`SELECT WellCode, fDate, MudCode, MinWeight FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) {
+      const k = `${s(r.WellCode)}|${s(r.fDate)}`;
+      if (!mudByDay.has(k)) mudByDay.set(k, s(r.MudCode));
+      if (!mudWtByDay.has(k)) { const w = mudWeightPpg(r.MinWeight); if (w != null) mudWtByDay.set(k, w); }
     }
   }
 
@@ -1928,6 +1969,42 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
 
       const bitSize = s(look(lk.bitSize, r.BitCode)) || s(orNull(r.HoleSize)) || look(lk.holeSize, holeCode) || "—";
       bitSizeSet.add(bitSize);
+
+      // ── derived engineering metrics: bit identity, MSE (Teale), HSI ───────
+      const iadc = look(lk.bitIADC, r.BitCode);
+      const cls: BitClass = bitClass({ iadc, type: look(lk.bitType, r.BitCode) });
+      const make = look(lk.bitMake, r.BitCode);
+      const diaIn = parseBitSizeInches(bitSize);
+      const wobLbf = wob * 1000;               // recorded WOB is in klbf → lbf
+      const ropFtHr = rop * 3.280839895;       // m/hr → ft/hr
+
+      // MSE: measured TorqueOnBottom (ft·lbf) when present, else estimated from WOB.
+      const tqMeasured = Number(s(r.TorqueOnBottom));
+      const hasTq = Number.isFinite(tqMeasured) && tqMeasured > 0;
+      let mse: number | null = null, mseEstimated = false;
+      if (diaIn != null) {
+        const torque = hasTq ? tqMeasured : estimateTorque({ mu: MU_DEFAULT[cls], dIn: diaIn, wobLbf });
+        mseEstimated = !hasTq;
+        const v = mseTeale({ wobLbf, rpm, torqueFtLbf: torque, ropFtHr, dIn: diaIn });
+        mse = v != null ? Math.round(v) : null;
+      }
+
+      // HSI: reported BitHSI when present, else computed from nozzles + flow + mud.
+      const flow = Number(s(r.PumpOutput1));   // gpm
+      const spp = Number(s(r.PumpPressure1));  // psi
+      const mudWeight = mudWtByDay.get(k) ?? null;
+      const reportedHsi = Number(s(r.BitHSI));
+      let tfa = Number(s(r.TFA));              // in² (reported), else from nozzles
+      if (!(Number.isFinite(tfa) && tfa > 0)) { const ns = parseNozzleSizes(r.NozzleSize); tfa = ns.length ? tfaFromNozzles(ns) : NaN; }
+      let hsiVal: number | null = null, hsiSource: "reported" | "computed" | null = null;
+      if (Number.isFinite(reportedHsi) && reportedHsi > 0) { hsiVal = reportedHsi; hsiSource = "reported"; }
+      else if (diaIn != null && tfa > 0 && flow > 0 && mudWeight != null) {
+        const h = hsiFromHydraulics({ tfaIn2: tfa, qGpm: flow, rhoPpg: mudWeight, dIn: diaIn });
+        if (h != null) { hsiVal = h; hsiSource = "computed"; }
+      }
+
+      const dull = (v: unknown): number | null => { const x = Number(s(v)); return Number.isFinite(x) && x >= 0 && x <= 8 ? x : null; };
+
       points.push({
         wob: Number(wob.toFixed(1)), rpm: Number(rpm.toFixed(0)), rop,
         bitSize, wellCode: wc, name: nameMap.get(wc) || wc, field: fieldMap.get(wc) ?? null,
@@ -1936,6 +2013,16 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
         from: Number.isFinite(fp) && fp > 0 ? Number(fp.toFixed(1)) : null,
         to: Number.isFinite(tp) && tp > 0 ? Number(tp.toFixed(1)) : null,
         meters: Number.isFinite(m) && m > 0 ? Number(m.toFixed(1)) : null,
+        // Engineering metrics (MSE / HSI / economics) + bit identity.
+        iadc, bitClass: cls, make, diaIn: diaIn != null ? Number(diaIn.toFixed(3)) : null,
+        mse, mseEstimated,
+        hsi: hsiVal != null ? Number(hsiVal.toFixed(2)) : null, hsiSource,
+        tfa: Number.isFinite(tfa) && tfa > 0 ? Number(tfa.toFixed(3)) : null,
+        flow: flow > 0 ? Number(flow.toFixed(0)) : null,
+        spp: spp > 0 ? Number(spp.toFixed(0)) : null,
+        mudWeight: mudWeight != null ? Number(mudWeight.toFixed(2)) : null,
+        dullInner: dull(r.ICutterWearCode), dullOuter: dull(r.OCutterWearCode),
+        bitHour: Number.isFinite(hrs) && hrs > 0 ? Number(hrs.toFixed(1)) : null,
       });
     }
   }
