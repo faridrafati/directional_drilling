@@ -384,7 +384,7 @@ function MaximizedChart({ wellCode, rows, plot, color, stations3d, onOpenReport,
   // view drops it entirely (the layers are the core itself).
   const showColumn = showLitho && depthOriented && plot !== null;
   // Section/3D draw the geology overlay in-chart → show the opacity slider there.
-  const hasOverlay = plot === "section" || plot === null;
+  const hasOverlay = plot === "section" || plot === "dls" || plot === null;
   const chartH = Math.min(760, window.innerHeight - 170);
   const chartW = Math.min(820, window.innerWidth - (showColumn ? 300 : 120));
 
@@ -431,7 +431,8 @@ function MaximizedChart({ wellCode, rows, plot, color, stations3d, onOpenReport,
   // bands sit on the chart's shared TVD axis. Each band is its interval's dominant
   // (highest-%) component colour.
   const geologySection = useMemo(() => {
-    if (plot !== "section" || !showLitho || !well || !sharesTvd) return null;
+    // Section AND DLS both plot TVD on Y, so both get the lithology backdrop.
+    if (!showLitho || !well || !sharesTvd) return null;
     const lithoBands = well.lithology
       .map((iv) => {
         const to = typeof iv.to === "number" && iv.to > iv.from ? iv.to : null;

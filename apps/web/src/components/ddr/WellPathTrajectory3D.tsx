@@ -89,7 +89,7 @@ export function WellPathTrajectory3D({ stations, lithoColumn = [], formations = 
     const labels = formations
       .filter((f) => Number.isFinite(f.tvd) && f.tvd >= coreMin - 1 && f.tvd <= coreMax + 1)
       .map((f) => ({ name: f.name, hue: f.hue, y: yOfTvd(f.tvd) }));
-    return { pts, valid, surface, core, labels, endY: pts[pts.length - 1], k };
+    return { pts, valid, surface, core, labels, endY: pts[pts.length - 1], k, center };
   }, [stations, lithoColumn, formations]);
 
   // Invisible thick tube along the path → a generous hover/click pick target.
@@ -122,28 +122,44 @@ export function WellPathTrajectory3D({ stations, lithoColumn = [], formations = 
   // real metres via k (world = metres × k).
   const scale = useMemo(() => {
     if (!geom) return null;
-    const { core, k } = geom;
+    const { core, k, center } = geom;
     const half = core.radius, floorY = core.cy - core.h / 2, yTop = core.yTop;
     const latMajor = niceStep((2 * half) / k / 4);            // metres per major lateral cell
     const latMajorDiv = Math.max(2, Math.round((2 * half) / (latMajor * k)));
     const latMinorDiv = Math.max(2, latMajorDiv * 5);
-    const tvdMajor = niceStep((core.coreMax - core.coreMin) / 4);
-    const tvdMinor = tvdMajor / 5;
+    const pos: number[] = [];
+
+    // Y axis = TVD depth ruler on the front-left vertical edge (major + minor ticks).
+    const tvdMajor = niceStep((core.coreMax - core.coreMin) / 4), tvdMinor = tvdMajor / 5;
     const yAt = (tvd: number) => yTop - (tvd - core.coreMin) * k;
-    const cx = -half, cz = half;                              // front-left vertical edge
-    const pos: number[] = [cx, yTop, cz, cx, floorY, cz];     // the depth axis line
+    const cxY = -half, czY = half;
+    pos.push(cxY, yTop, czY, cxY, floorY, czY);
+    const yLabels: { y: number; v: number }[] = [];
     for (let d = Math.ceil(core.coreMin / tvdMinor) * tvdMinor; d <= core.coreMax + 1e-6; d += tvdMinor) {
       const isMaj = Math.abs(d / tvdMajor - Math.round(d / tvdMajor)) < 1e-6;
       const y = yAt(d), len = isMaj ? 0.55 : 0.28;
-      pos.push(cx, y, cz, cx - len, y, cz);
+      pos.push(cxY, y, czY, cxY - len, y, czY);
+      if (isMaj) yLabels.push({ y, v: Math.round(d) });
     }
-    const depthGeom = new THREE.BufferGeometry();
-    depthGeom.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    const depthLabels: { y: number; tvd: number }[] = [];
-    for (let d = Math.ceil(core.coreMin / tvdMajor) * tvdMajor; d <= core.coreMax + 1e-6; d += tvdMajor) depthLabels.push({ y: yAt(d), tvd: Math.round(d) });
-    return { half, floorY, latMajor, latMajorDiv, latMinorDiv, depthGeom, depthLabels };
+    // X axis = E/W along the front-bottom edge (z = +half). World x → metres via centre.
+    pos.push(-half, floorY, half, half, floorY, half);
+    const ewLo = center.x - half / k, ewHi = center.x + half / k, ewStep = niceStep((ewHi - ewLo) / 3);
+    const xLabels: { x: number; v: number }[] = [];
+    for (let e = Math.ceil(ewLo / ewStep) * ewStep; e <= ewHi + 1e-6; e += ewStep) {
+      const wx = (e - center.x) * k; pos.push(wx, floorY, half, wx, floorY, half + 0.4); xLabels.push({ x: wx, v: Math.round(e) });
+    }
+    // Z axis = N/S along the right-bottom edge (x = +half).
+    pos.push(half, floorY, -half, half, floorY, half);
+    const nsLo = center.z - half / k, nsHi = center.z + half / k, nsStep = niceStep((nsHi - nsLo) / 3);
+    const zLabels: { z: number; v: number }[] = [];
+    for (let n = Math.ceil(nsLo / nsStep) * nsStep; n <= nsHi + 1e-6; n += nsStep) {
+      const wz = (n - center.z) * k; pos.push(half, floorY, wz, half + 0.4, floorY, wz); zLabels.push({ z: wz, v: Math.round(n) });
+    }
+    const axisGeom = new THREE.BufferGeometry();
+    axisGeom.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    return { half, floorY, yTop, latMajorDiv, latMinorDiv, axisGeom, yLabels, xLabels, zLabels };
   }, [geom]);
-  useEffect(() => () => scale?.depthGeom.dispose(), [scale]);
+  useEffect(() => () => scale?.axisGeom.dispose(), [scale]);
 
   if (!geom) {
     return <div className="h-full grid place-items-center text-[10px] text-gray-400">Not enough 3D stations.</div>;
@@ -177,17 +193,22 @@ export function WellPathTrajectory3D({ stations, lithoColumn = [], formations = 
         <ambientLight intensity={0.9} />
         <directionalLight position={[10, 20, 10]} intensity={0.5} />
 
-        {/* Major + minor scales: lateral floor grid + TVD depth ruler with ticks. */}
+        {/* Major + minor scales: lateral floor grid (minor + major) + X/Y/Z axes
+            with tick marks, scale-value labels and axis names. */}
         {scale && (
           <>
             <gridHelper args={[2 * scale.half, scale.latMinorDiv, "#dbe2ea", "#eef2f7"]} position={[0, scale.floorY, 0]} />
             <gridHelper args={[2 * scale.half, scale.latMajorDiv, "#94a3b8", "#b8c2cd"]} position={[0, scale.floorY + 0.01, 0]} />
-            <lineSegments geometry={scale.depthGeom}><lineBasicMaterial color="#94a3b8" /></lineSegments>
-            {scale.depthLabels.map((d, i) => (
-              <Html key={`d${i}`} position={[-scale.half - 0.75, d.y, scale.half]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-                <div style={{ fontSize: 9, color: "#475569", background: "rgba(255,255,255,0.78)", padding: "0 3px", borderRadius: 2, whiteSpace: "nowrap" }}>{d.tvd}</div>
-              </Html>
-            ))}
+            <lineSegments geometry={scale.axisGeom}><lineBasicMaterial color="#94a3b8" /></lineSegments>
+            {/* Y = TVD value labels + axis name */}
+            {scale.yLabels.map((d, i) => <AxisLabel key={`y${i}`} pos={[-scale.half - 0.75, d.y, scale.half]} text={String(d.v)} />)}
+            <AxisLabel pos={[-scale.half - 1.0, scale.yTop + 0.7, scale.half]} text="TVD (m)" name />
+            {/* X = E/W value labels + axis name */}
+            {scale.xLabels.map((d, i) => <AxisLabel key={`x${i}`} pos={[d.x, scale.floorY - 0.05, scale.half + 0.8]} text={String(d.v)} />)}
+            <AxisLabel pos={[0, scale.floorY - 0.05, scale.half + 1.5]} text="E/W (m)" name />
+            {/* Z = N/S value labels + axis name */}
+            {scale.zLabels.map((d, i) => <AxisLabel key={`z${i}`} pos={[scale.half + 0.8, scale.floorY - 0.05, d.z]} text={String(d.v)} />)}
+            <AxisLabel pos={[scale.half + 1.5, scale.floorY - 0.05, 0]} text="N/S (m)" name />
           </>
         )}
 
@@ -273,11 +294,20 @@ export function WellPathTrajectory3D({ stations, lithoColumn = [], formations = 
           <GizmoViewport axisColors={["#dc2626", "#16a34a", "#2563eb"]} labelColor="white" />
         </GizmoHelper>
       </Canvas>
-      {scale && (
-        <div className="absolute bottom-1 left-1 pointer-events-none text-[9px] text-gray-500 bg-white/70 rounded px-1.5 py-0.5">
-          grid {fmt(scale.latMajor)} m · depth TVD (m)
-        </div>
-      )}
     </div>
+  );
+}
+
+/** A floating scale label in 3D space: small grey value chips, or a bolder axis
+ *  name when `name`. pointer-events off so it never blocks orbit. */
+function AxisLabel({ pos, text, name = false }: { pos: [number, number, number]; text: string; name?: boolean }) {
+  return (
+    <Html position={pos} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+      <div style={{
+        fontSize: name ? 10 : 8.5, fontWeight: name ? 700 : 500,
+        color: name ? "#334155" : "#64748b", background: "rgba(255,255,255,0.8)",
+        padding: "0 3px", borderRadius: 2, whiteSpace: "nowrap",
+      }}>{text}</div>
+    </Html>
   );
 }
