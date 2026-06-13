@@ -28,6 +28,7 @@ export interface LithoBand3D { fromTvd: number; toTvd: number; color: string; pa
 export interface Formation3D { name: string | null; tvd: number; hue: number }
 
 const fmt = (v: unknown) => v == null || v === "" ? "—" : typeof v === "number" ? (Number.isInteger(v) ? String(v) : v.toFixed(1)) : String(v);
+const niceStep = (rough: number): number => { if (!(rough > 0)) return 1; const p = Math.pow(10, Math.floor(Math.log10(rough))), m = rough / p; return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p; };
 
 /** Bake the lithology column (intervals in TVD) into a tall canvas: per interval,
  *  rock colour then its pattern tile multiply-blended on top — the same recipe the
@@ -88,8 +89,7 @@ export function WellPathTrajectory3D({ stations, lithoColumn = [], formations = 
     const labels = formations
       .filter((f) => Number.isFinite(f.tvd) && f.tvd >= coreMin - 1 && f.tvd <= coreMax + 1)
       .map((f) => ({ name: f.name, hue: f.hue, y: yOfTvd(f.tvd) }));
-    // Shallowest / deepest lithology colour → the ground / bottom cap tints.
-    return { pts, valid, surface, core, labels, endY: pts[pts.length - 1] };
+    return { pts, valid, surface, core, labels, endY: pts[pts.length - 1], k };
   }, [stations, lithoColumn, formations]);
 
   // Invisible thick tube along the path → a generous hover/click pick target.
@@ -116,6 +116,34 @@ export function WellPathTrajectory3D({ stations, lithoColumn = [], formations = 
     return tex;
   }, [geom, lithoColumn, patternImages]);
   useEffect(() => () => { wallTex?.dispose(); }, [wallTex]);
+
+  // Major + minor SCALES: a lateral floor grid (round-metre cells, major every 5th
+  // line) and a TVD depth ruler (major + minor ticks) with depth labels. Sized to
+  // real metres via k (world = metres × k).
+  const scale = useMemo(() => {
+    if (!geom) return null;
+    const { core, k } = geom;
+    const half = core.radius, floorY = core.cy - core.h / 2, yTop = core.yTop;
+    const latMajor = niceStep((2 * half) / k / 4);            // metres per major lateral cell
+    const latMajorDiv = Math.max(2, Math.round((2 * half) / (latMajor * k)));
+    const latMinorDiv = Math.max(2, latMajorDiv * 5);
+    const tvdMajor = niceStep((core.coreMax - core.coreMin) / 4);
+    const tvdMinor = tvdMajor / 5;
+    const yAt = (tvd: number) => yTop - (tvd - core.coreMin) * k;
+    const cx = -half, cz = half;                              // front-left vertical edge
+    const pos: number[] = [cx, yTop, cz, cx, floorY, cz];     // the depth axis line
+    for (let d = Math.ceil(core.coreMin / tvdMinor) * tvdMinor; d <= core.coreMax + 1e-6; d += tvdMinor) {
+      const isMaj = Math.abs(d / tvdMajor - Math.round(d / tvdMajor)) < 1e-6;
+      const y = yAt(d), len = isMaj ? 0.55 : 0.28;
+      pos.push(cx, y, cz, cx - len, y, cz);
+    }
+    const depthGeom = new THREE.BufferGeometry();
+    depthGeom.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    const depthLabels: { y: number; tvd: number }[] = [];
+    for (let d = Math.ceil(core.coreMin / tvdMajor) * tvdMajor; d <= core.coreMax + 1e-6; d += tvdMajor) depthLabels.push({ y: yAt(d), tvd: Math.round(d) });
+    return { half, floorY, latMajor, latMajorDiv, latMinorDiv, depthGeom, depthLabels };
+  }, [geom]);
+  useEffect(() => () => scale?.depthGeom.dispose(), [scale]);
 
   if (!geom) {
     return <div className="h-full grid place-items-center text-[10px] text-gray-400">Not enough 3D stations.</div>;
@@ -148,6 +176,20 @@ export function WellPathTrajectory3D({ stations, lithoColumn = [], formations = 
       <Canvas camera={{ position: [26, 19, 26], fov: 40, near: 0.1, far: 1000 }} dpr={[1, 1.5]} className="bg-gray-50">
         <ambientLight intensity={0.9} />
         <directionalLight position={[10, 20, 10]} intensity={0.5} />
+
+        {/* Major + minor scales: lateral floor grid + TVD depth ruler with ticks. */}
+        {scale && (
+          <>
+            <gridHelper args={[2 * scale.half, scale.latMinorDiv, "#dbe2ea", "#eef2f7"]} position={[0, scale.floorY, 0]} />
+            <gridHelper args={[2 * scale.half, scale.latMajorDiv, "#94a3b8", "#b8c2cd"]} position={[0, scale.floorY + 0.01, 0]} />
+            <lineSegments geometry={scale.depthGeom}><lineBasicMaterial color="#94a3b8" /></lineSegments>
+            {scale.depthLabels.map((d, i) => (
+              <Html key={`d${i}`} position={[-scale.half - 0.75, d.y, scale.half]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+                <div style={{ fontSize: 9, color: "#475569", background: "rgba(255,255,255,0.78)", padding: "0 3px", borderRadius: 2, whiteSpace: "nowrap" }}>{d.tvd}</div>
+              </Html>
+            ))}
+          </>
+        )}
 
         {wallTex && (
           <>
@@ -231,6 +273,11 @@ export function WellPathTrajectory3D({ stations, lithoColumn = [], formations = 
           <GizmoViewport axisColors={["#dc2626", "#16a34a", "#2563eb"]} labelColor="white" />
         </GizmoHelper>
       </Canvas>
+      {scale && (
+        <div className="absolute bottom-1 left-1 pointer-events-none text-[9px] text-gray-500 bg-white/70 rounded px-1.5 py-0.5">
+          grid {fmt(scale.latMajor)} m · depth TVD (m)
+        </div>
+      )}
     </div>
   );
 }

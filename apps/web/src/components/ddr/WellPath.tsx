@@ -225,11 +225,18 @@ const niceStep = (rough: number): number => {
   const p = Math.pow(10, Math.floor(Math.log10(rough))), m = rough / p;
   return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
 };
-const ticksFor = (min: number, max: number, count = 5): number[] => {
+// Major + minor scale ticks for one axis: majors are the labelled "nice" steps,
+// minors subdivide each major by `minorPer` (unlabelled fine gridlines).
+const scaleTicks = (min: number, max: number, count = 4, minorPer = 5): { majors: number[]; minors: number[] } => {
   const step = niceStep((max - min) / count) || 1;
-  const out: number[] = [];
-  for (let t = Math.floor(min / step) * step; t <= max + step * 1e-6; t += step) out.push(Number(t.toFixed(6)));
-  return out;
+  const start = Math.floor(min / step) * step;
+  const majors: number[] = [];
+  for (let t = start; t <= max + step * 1e-6; t += step) majors.push(Number(t.toFixed(6)));
+  const mstep = step / minorPer, minors: number[] = [];
+  for (let t = start; t <= max + mstep * 1e-6; t += mstep) {
+    const r = t / step; if (Math.abs(r - Math.round(r)) > 1e-6) minors.push(Number(t.toFixed(6)));
+  }
+  return { majors, minors };
 };
 
 /**
@@ -655,7 +662,7 @@ function SinglePlot({ rows, plot, color, onOpenReport, onMaximize, size, yDomain
         ? padT + ((y - ylo) / yRange) * plotH         // depth increases downward
         : padT + ((yhi - y) / yRange) * plotH;
     }
-    const xticks = ticksFor(xlo, xhi, 4), yticks = ticksFor(ylo, yhi, 4);
+    const xs = scaleTicks(xlo, xhi, size ? 6 : 4), ys = scaleTicks(ylo, yhi, size ? 6 : 4);
     const dotR = size ? 2.5 : 1.5, lineW = size ? 2 : 1.5, fs = size ? 11 : 8, fsLbl = size ? 12 : 8.5;
     const drawDots = pts.length <= (size ? 1200 : 400);
 
@@ -741,15 +748,29 @@ function SinglePlot({ rows, plot, color, onOpenReport, onMaximize, size, yDomain
             })}
           </g>
         )}
-        {xticks.map((t, i) => { const x = xOf(t); if (x < padL - 0.5 || x > W - padR + 0.5) return null; return (
-          <g key={`x${i}`}>
-            <line x1={x} x2={x} y1={padT} y2={padT + plotH} stroke="#f1f5f9" />
-            <text x={x} y={padT + plotH + 12} textAnchor="middle" fontSize={fs} fill="#94a3b8">{fmtNum(t)}</text>
+        {/* MINOR scale: faint gridlines + short axis ticks (no labels). */}
+        {xs.minors.map((t, i) => { const x = xOf(t); if (x < padL - 0.5 || x > W - padR + 0.5) return null; return (
+          <g key={`xm${i}`}>
+            <line x1={x} x2={x} y1={padT} y2={padT + plotH} stroke="#f6f8fb" />
+            <line x1={x} x2={x} y1={padT + plotH} y2={padT + plotH + 2} stroke="#cbd5e1" />
           </g>); })}
-        {yticks.map((t, i) => { const y = yOf(t); if (y < padT - 0.5 || y > padT + plotH + 0.5) return null; return (
+        {ys.minors.map((t, i) => { const y = yOf(t); if (y < padT - 0.5 || y > padT + plotH + 0.5) return null; return (
+          <g key={`ym${i}`}>
+            <line x1={padL} x2={padL + plotW} y1={y} y2={y} stroke="#f6f8fb" />
+            <line x1={padL - 2} x2={padL} y1={y} y2={y} stroke="#cbd5e1" />
+          </g>); })}
+        {/* MAJOR scale: gridlines + longer axis ticks + value labels. */}
+        {xs.majors.map((t, i) => { const x = xOf(t); if (x < padL - 0.5 || x > W - padR + 0.5) return null; return (
+          <g key={`x${i}`}>
+            <line x1={x} x2={x} y1={padT} y2={padT + plotH} stroke="#e2e8f0" />
+            <line x1={x} x2={x} y1={padT + plotH} y2={padT + plotH + 4} stroke="#94a3b8" />
+            <text x={x} y={padT + plotH + 13} textAnchor="middle" fontSize={fs} fill="#94a3b8">{fmtNum(t)}</text>
+          </g>); })}
+        {ys.majors.map((t, i) => { const y = yOf(t); if (y < padT - 0.5 || y > padT + plotH + 0.5) return null; return (
           <g key={`y${i}`}>
-            <line x1={padL} x2={padL + plotW} y1={y} y2={y} stroke="#f1f5f9" />
-            <text x={padL - 4} y={y + 3} textAnchor="end" fontSize={fs} fill="#94a3b8">{fmtNum(t)}</text>
+            <line x1={padL} x2={padL + plotW} y1={y} y2={y} stroke="#e2e8f0" />
+            <line x1={padL - 4} x2={padL} y1={y} y2={y} stroke="#94a3b8" />
+            <text x={padL - 6} y={y + 3} textAnchor="end" fontSize={fs} fill="#94a3b8">{fmtNum(t)}</text>
           </g>); })}
         <rect x={padL} y={padT} width={plotW} height={plotH} fill="none" stroke="#cbd5e1" />
         <text x={padL + plotW / 2} y={H - 4} textAnchor="middle" fontSize={fsLbl} fill="#475569">{cfg.xLabel}</text>
