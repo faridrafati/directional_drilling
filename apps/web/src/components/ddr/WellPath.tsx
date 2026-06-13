@@ -12,14 +12,14 @@
  *       · Plan view        — N/S vs E/W (equal aspect, North up)
  *       · Dogleg           — DLS vs TVD (down)
  */
-import React, { useMemo, useState } from "react";
+import React, { useId, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { useFacetOptions } from "./useFacetOptions.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
 import { WellPathTrajectory3D } from "./WellPathTrajectory3D.js";
-import { WellTrack, DepthTrack, usePatternImages, DEPTH_W, type GraphWell } from "./LithologyGraph.js";
+import { WellTrack, DepthTrack, usePatternImages, DEPTH_W, formHue, type GraphWell } from "./LithologyGraph.js";
 
 // Per-well lithology + formation graph payload (the /ddr/lithology-graph shape).
 interface LithoGraphData { wells: GraphWell[]; depthRange: { min: number; max: number } | null; lithoTypes: string[]; note?: string }
@@ -217,6 +217,8 @@ function PathTable({ rows, cols, note, onOpenReport }: {
 // ticks). Shared so the lithology track can inset to the same plot band and line
 // up its TVD axis with the chart pixel-for-pixel.
 const SINGLE_PAD_T = 22, SINGLE_PAD_B = 34;
+// Tile size (px, user-space) for the SVG lithology pattern fills on the section.
+const LITHO_TILE = 22;
 
 const niceStep = (rough: number): number => {
   if (!(rough > 0)) return 1;
@@ -266,9 +268,14 @@ function PerWellPaths({ rows, note, onOpenReport }: {
 }) {
   // The chart currently expanded into the full-screen popup (null = none). Either
   // a 2D drawpat plot (plan/section/DLS) or the 3D trajectory.
+  type Station3DRow = {
+    ns: number; ew: number; tvd: number; md: number | null;
+    inc: number | null; az: number | null; dls: number | null;
+    date: string | null; serialNo: number | null; wellCode: string;
+  };
   type Maxed = {
     wellCode: string; rows: PathRow[]; color: string;
-    stations3d: { ns: number; ew: number; tvd: number; md: number | null }[];
+    stations3d: Station3DRow[];
   } & ({ kind: "plot"; plot: PlotKey } | { kind: "3d" });
   const [maxed, setMaxed] = useState<Maxed | null>(null);
   // Group by sidetrack BASE so a well and its legs (AB-011 + AB-011Leg1 + …) draw
@@ -297,7 +304,8 @@ function PerWellPaths({ rows, note, onOpenReport }: {
         const color = WELL_PALETTE[i % WELL_PALETTE.length];
         const stations3d = wr
           .filter((r) => typeof r.ns === "number" && typeof r.ew === "number" && typeof r.tvd === "number")
-          .map((r) => ({ ns: r.ns as number, ew: r.ew as number, tvd: r.tvd as number, md: r.md }));
+          .map((r) => ({ ns: r.ns as number, ew: r.ew as number, tvd: r.tvd as number, md: r.md,
+            inc: r.inc, az: r.az, dls: r.dls, date: r.date, serialNo: r.serialNo, wellCode: r.wellCode }));
         return (
           <div key={wellCode} className="border border-gray-200 rounded">
             <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2">
@@ -349,19 +357,29 @@ function PerWellPaths({ rows, note, onOpenReport }: {
  */
 function MaximizedChart({ wellCode, rows, plot, color, stations3d, onOpenReport, onClose }: {
   wellCode: string; rows: PathRow[]; plot: PlotKey | null; color: string;   // plot === null ⇒ 3D trajectory
-  stations3d: { ns: number; ew: number; tvd: number; md: number | null }[];
+  stations3d: { ns: number; ew: number; tvd: number; md: number | null; inc: number | null; az: number | null; dls: number | null; date: string | null; serialNo: number | null; wellCode: string }[];
   onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void;
   onClose: () => void;
 }) {
   const [showLitho, setShowLitho] = useState(false);
+  // User-adjustable transparency for the geology overlay (section bands + 3D
+  // layer slabs). Defaults to 15 % so the wellbore stays the focus; the slider
+  // drives both the lithology and the formation slabs together.
+  const [lithoOpacity, setLithoOpacity] = useState(0.15);
   // The depth-oriented charts (vertical section, DLS, 3D) can carry a depth track;
   // the plan view is map-space (N/S vs E/W), so a depth column wouldn't align.
   const depthOriented = plot !== "plan";
   // Section & DLS plot TVD on Y, so the lithology track can SHARE that exact TVD
   // axis (the litho's MD depths get remapped to TVD). The 3D view has no 2D Y.
   const sharesTvd = plot === "section" || plot === "dls";
+  // The geology lives IN the chart for the section (bands) and 3D (layer slabs),
+  // so the side lithology column is only useful for the 2D depth charts — the 3D
+  // view drops it entirely (the layers are the core itself).
+  const showColumn = showLitho && depthOriented && plot !== null;
+  // Section/3D draw the geology overlay in-chart → show the opacity slider there.
+  const hasOverlay = plot === "section" || plot === null;
   const chartH = Math.min(760, window.innerHeight - 170);
-  const chartW = Math.min(820, window.innerWidth - (showLitho && depthOriented ? 300 : 120));
+  const chartW = Math.min(820, window.innerWidth - (showColumn ? 300 : 120));
 
   // Fetch this single well's lithology graph the first time the toggle is used.
   const lithoQ = useQuery({
@@ -400,6 +418,54 @@ function MaximizedChart({ wellCode, rows, plot, color, stations3d, onOpenReport,
     };
   }, [rawWell, rows, sharesTvd]);
 
+  // Vertical-section backdrop: lithology as full-width colour bands + formation
+  // tops as dashed boundary lines — the layered earth the trajectory cuts through
+  // (the textbook section figure). `well` is already remapped MD→TVD here, so the
+  // bands sit on the chart's shared TVD axis. Each band is its interval's dominant
+  // (highest-%) component colour.
+  const geologySection = useMemo(() => {
+    if (plot !== "section" || !showLitho || !well || !sharesTvd) return null;
+    const lithoBands = well.lithology
+      .map((iv) => {
+        const to = typeof iv.to === "number" && iv.to > iv.from ? iv.to : null;
+        if (to == null || !iv.comps.length) return null;
+        const dom = iv.comps.reduce((a, b) => (b.pct > a.pct ? b : a), iv.comps[0]);
+        return { from: iv.from, to, color: dom.color, pattern: dom.pattern };
+      })
+      .filter((b): b is { from: number; to: number; color: string; pattern: string } => !!b);
+    const formationTops = well.formations.map((t, idx) => ({ name: t.name, tvd: t.md, hue: formHue(t.name, idx) }));
+    return { lithoBands, formationTops };
+  }, [plot, showLitho, well, sharesTvd]);
+
+  // 3D core geology: EVERY lithology interval remapped MD→TVD with its own
+  // dominant rock colour + pattern — baked into the core wall so each lithology
+  // shows its real colour/pattern (not one dominant per formation).
+  const litho3d = useMemo(() => {
+    if (plot !== null || !showLitho || !rawWell) return [];
+    const toTvd = mdToTvdFn(rows);
+    return rawWell.lithology.map((iv) => {
+      const to = typeof iv.to === "number" && iv.to > iv.from ? iv.to : null;
+      if (to == null || !iv.comps.length) return null;
+      const dom = iv.comps.reduce((a, b) => (b.pct > a.pct ? b : a), iv.comps[0]);
+      const fromTvd = toTvd(iv.from), toTvdV = toTvd(to);
+      if (!(toTvdV > fromTvd)) return null;
+      const comps = iv.comps.map((c) => ({ name: c.name, pct: c.pct, color: c.color }));
+      return { fromTvd, toTvd: toTvdV, color: dom.color, pattern: dom.pattern, comps };
+    }).filter((b): b is { fromTvd: number; toTvd: number; color: string; pattern: string; comps: { name: string; pct: number; color: string }[] } => !!b);
+  }, [plot, showLitho, rawWell, rows]);
+
+  // Formation tops (MD→TVD) → labelled chips on the 3D core's rim.
+  const formation3d = useMemo(() => {
+    if (plot !== null || !showLitho || !rawWell) return [];
+    const toTvd = mdToTvdFn(rows);
+    return rawWell.formations
+      .map((t, idx) => ({ name: t.name, tvd: toTvd(t.md), hue: formHue(t.name, idx) }))
+      .filter((l) => Number.isFinite(l.tvd)).sort((a, b) => a.tvd - b.tvd);
+  }, [plot, showLitho, rawWell, rows]);
+
+  // Preload all lithology BMP tiles the 3D core wall needs.
+  const litho3dImages = usePatternImages(useMemo(() => [...new Set(litho3d.map((b) => b.pattern).filter(Boolean))], [litho3d]));
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onClose}>
       <div className="bg-white rounded-lg shadow-xl max-w-[95vw] max-h-[95vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -413,10 +479,18 @@ function MaximizedChart({ wellCode, rows, plot, color, stations3d, onOpenReport,
               Lithology &amp; formation
             </label>
           )}
+          {showLitho && hasOverlay && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 select-none" title="Layer transparency">
+              <span className="text-gray-500">Opacity</span>
+              <input type="range" min={0.1} max={1} step={0.05} value={lithoOpacity}
+                onChange={(e) => setLithoOpacity(Number(e.target.value))} className="w-24 accent-blue-600" />
+              <span className="tabular-nums w-8 text-right">{Math.round(lithoOpacity * 100)}%</span>
+            </label>
+          )}
           <button onClick={onClose} className="ml-auto h-7 w-7 grid place-items-center rounded hover:bg-gray-100 text-gray-500" title="Close">✕</button>
         </div>
         <div className="p-3 overflow-auto flex items-start gap-3">
-          {showLitho && depthOriented && (
+          {showColumn && (
             <PopupLithoTrack well={well} loading={lithoQ.isFetching} error={lithoQ.error ? String(lithoQ.error) : null}
               lithoTypes={lithoQ.data?.lithoTypes ?? []} heightPx={chartH}
               forceWin={tvdDomain ? { min: tvdDomain[0], max: tvdDomain[1] } : null}
@@ -427,10 +501,10 @@ function MaximizedChart({ wellCode, rows, plot, color, stations3d, onOpenReport,
           )}
           {plot === null ? (
             <div className="border border-gray-200 rounded overflow-hidden" style={{ width: chartW, height: chartH }}>
-              <WellPathTrajectory3D stations={stations3d} />
+              <WellPathTrajectory3D stations={stations3d} lithoColumn={litho3d} formations={formation3d} patternImages={litho3dImages} opacity={lithoOpacity} onOpenReport={onOpenReport} />
             </div>
           ) : (
-            <SinglePlot rows={rows} plot={plot} color={color} onOpenReport={onOpenReport} size={{ w: chartW, h: chartH }} yDomain={tvdDomain} />
+            <SinglePlot rows={rows} plot={plot} color={color} onOpenReport={onOpenReport} size={{ w: chartW, h: chartH }} yDomain={tvdDomain} geology={geologySection} bandOpacity={lithoOpacity} />
           )}
         </div>
       </div>
@@ -510,7 +584,7 @@ function PopupLithoTrack({ well, loading, error, lithoTypes, heightPx, forceWin,
  * the plot into a full-screen popup; pass `size` to render at popup dimensions
  * (which also hides the maximize button, since it's already maximized).
  */
-function SinglePlot({ rows, plot, color, onOpenReport, onMaximize, size, yDomain }: {
+function SinglePlot({ rows, plot, color, onOpenReport, onMaximize, size, yDomain, geology, bandOpacity = 1 }: {
   rows: PathRow[]; plot: PlotKey; color: string;
   onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void;
   onMaximize?: () => void;
@@ -519,9 +593,27 @@ function SinglePlot({ rows, plot, color, onOpenReport, onMaximize, size, yDomain
   // the exact TVD axis of the lithology track beside it. Only honoured for the
   // depth-down, non-equal-aspect plots (section / DLS).
   yDomain?: readonly [number, number];
+  // Geology backdrop drawn behind the trajectory on the (depth-down) section plot:
+  // lithology as full-width bands by TVD (rock colour + the pattern tile multiply-
+  // blended over it, as in the column) + formation tops as dashed lines.
+  geology?: {
+    lithoBands: { from: number; to: number; color: string; pattern: string }[];
+    formationTops: { name: string | null; tvd: number; hue: number }[];
+  } | null;
+  // Transparency (0–1) of the geology bands, so the trajectory reads through them.
+  bandOpacity?: number;
 }) {
   const cfg = PLOTS[plot];
   const [hover, setHover] = useState<{ x: number; y: number; html: string } | null>(null);
+  // Distinct lithology patterns in the geology backdrop → stable, instance-unique
+  // <pattern> ids (useId keeps two open plots from colliding on the same fragment).
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const patDefs = useMemo(() => {
+    const names = [...new Set((geology?.lithoBands ?? []).map((b) => b.pattern).filter(Boolean))];
+    const id = new Map<string, string>();
+    names.forEach((n, i) => id.set(n, `${uid}p${i}`));
+    return { names, id };
+  }, [geology, uid]);
   const { pts, dom } = useMemo(() => {
     const pts: { x: number; y: number; r: PathRow }[] = [];
     for (const r of rows) {
@@ -593,6 +685,62 @@ function SinglePlot({ rows, plot, color, onOpenReport, onMaximize, size, yDomain
 
     body = (
       <svg width={W} height={H} className="block bg-white">
+        {/* Geology backdrop (section only): full-width lithology colour bands by
+            TVD, then formation tops as dashed boundary lines + labels — the
+            layered earth the trajectory cuts through. Drawn first, behind all. */}
+        {geology && cfg.yDown && !cfg.equal && (
+          <g>
+            <defs>
+              {patDefs.names.map((n) => (
+                <pattern key={n} id={patDefs.id.get(n)} patternUnits="userSpaceOnUse" width={LITHO_TILE} height={LITHO_TILE}>
+                  <image href={`/api/ddr/litho-pattern/${encodeURIComponent(n)}`} width={LITHO_TILE} height={LITHO_TILE} preserveAspectRatio="none" />
+                </pattern>
+              ))}
+            </defs>
+            {/* Rock colour + pattern tile (multiply), the whole band at the
+                user's opacity so the trajectory reads through it. */}
+            {geology.lithoBands.map((b, i) => {
+              const ya = yOf(b.from), yb = yOf(b.to);
+              const top = Math.max(padT, Math.min(ya, yb)), bot = Math.min(padT + plotH, Math.max(ya, yb));
+              if (bot - top < 0.3) return null;
+              const pid = b.pattern ? patDefs.id.get(b.pattern) : null;
+              return (
+                <g key={`lb${i}`} opacity={bandOpacity}>
+                  <rect x={padL} y={top} width={plotW} height={bot - top} fill={b.color} />
+                  {pid && <rect x={padL} y={top} width={plotW} height={bot - top} fill={`url(#${pid})`} style={{ mixBlendMode: "multiply" }} />}
+                </g>
+              );
+            })}
+            {/* Formation tops: a bold dashed boundary + a high-contrast label drawn
+                at FULL opacity (above the bands) so they stay legible over the
+                textured layers regardless of the band transparency. */}
+            {geology.formationTops.map((f, i) => {
+              const y = yOf(f.tvd);
+              if (y < padT - 0.5 || y > padT + plotH + 0.5) return null;
+              const fz = (size ? 12.5 : 9);
+              // Solid label chip (white box + formation-colour tab + border) so the
+              // name reads clearly over the textured bands; sits just below the top
+              // line, clamped to stay inside the plot.
+              const chipH = fz + 6;
+              const chipW = f.name ? Math.min(plotW - 8, f.name.length * fz * 0.6 + 16) : 0;
+              const chipX = padL + 4;
+              const chipY = Math.min(padT + plotH - chipH - 1, y + 2);
+              return (
+                <g key={`ft${i}`}>
+                  <line x1={padL} x2={padL + plotW} y1={y} y2={y} stroke="#ffffff" strokeWidth={3.5} opacity={0.9} />
+                  <line x1={padL} x2={padL + plotW} y1={y} y2={y} stroke="#b91c1c" strokeWidth={2} strokeDasharray="7 4" />
+                  {f.name && (
+                    <g>
+                      <rect x={chipX} y={chipY} width={chipW} height={chipH} rx={2.5} fill="#ffffff" opacity={0.95} stroke="#64748b" strokeWidth={0.9} />
+                      <rect x={chipX} y={chipY} width={4} height={chipH} rx={1} fill={`hsl(${f.hue} 55% 55%)`} />
+                      <text x={chipX + 9} y={chipY + chipH / 2} fontSize={fz} fontWeight="bold" fill="#0f172a" dominantBaseline="middle">{f.name}</text>
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
         {xticks.map((t, i) => { const x = xOf(t); if (x < padL - 0.5 || x > W - padR + 0.5) return null; return (
           <g key={`x${i}`}>
             <line x1={x} x2={x} y1={padT} y2={padT + plotH} stroke="#f1f5f9" />

@@ -14,7 +14,7 @@
  *     section-length forecast calculator, and the cost breakdown (see
  *     MudPlanning). Driven by a separate /ddr/mud-planning fetch.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
@@ -75,6 +75,14 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
   // Local view state — table/graph use the loaded rows; planning fetches its own.
   const [view, setView] = useState<"table" | "graph" | "planning">("table");
   const [groupBy, setGroupBy] = useState<"material" | "well">("material");
+  // Graph metric: total amount used, or that amount normalised per 100 m drilled
+  // (used ÷ the well's drilled depth × 100) so wells of different TDs compare.
+  const [metric, setMetric] = useState<"used" | "per100">("used");
+  // Graph unit-of-use scope. Materials are measured in different units (sacks /
+  // drums / tons / litres) and some materials even span several, so summing
+  // across units is meaningless. "" = all units; pick one (e.g. SX) to chart only
+  // that unit's rows so the bars are a like-for-like comparison.
+  const [graphUnit, setGraphUnit] = useState<string>("");
 
   const optsQ = useQuery({ queryKey: ["ddr", "search-options"], queryFn: () => api.get<SearchOptions>("/ddr/search-options") });
   const o = optsQ.data;
@@ -94,9 +102,35 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
     });
   }, [o?.wells, selFields]);
 
+  // Keep the sidebar selections in sync with the field/well scope. As the scope
+  // narrows the facet lists — Wells by Fields, and bit sizes / mud types /
+  // materials by the chosen wells — drop any selected value that's no longer
+  // offered, so a pick made under one field/well doesn't linger as a stale chip
+  // after switching. Mirrors the Wells-by-Fields pruning in the Reports & Search
+  // sidebar. Pruning only ever removes; the length guard avoids needless renders.
+  useEffect(() => {
+    if (!selFields.length || !o?.wells) return;
+    const allowed = new Set(o.wells.filter((w) => w.field != null && selFields.includes(w.field)).map((w) => w.code));
+    setSelWells((prev) => { const next = prev.filter((c) => allowed.has(c)); return next.length === prev.length ? prev : next; });
+  }, [selFields, o?.wells]);
+
+  useEffect(() => {
+    const prune = (allowed: string[], setSel: Dispatch<SetStateAction<string[]>>) => {
+      const set = new Set(allowed);
+      setSel((prev) => { const next = prev.filter((v) => set.has(v)); return next.length === prev.length ? prev : next; });
+    };
+    prune(facet.holeSizes, setSelHole);
+    prune(facet.mudTypes, setSelMud);
+    prune(facet.materials, setSelMat);
+  }, [facet.holeSizes, facet.mudTypes, facet.materials]);
+
   const rows = data?.rows ?? [];
   // Hide columns that are entirely empty for the current rows.
   const usedCols = useMemo(() => COLS.filter((c) => rows.some((r) => r[c.key] != null && r[c.key] !== "")), [rows]);
+  // Units of use present in the loaded rows (for the graph's unit selector).
+  const unitsPresent = useMemo(() => [...new Set(rows.map((r) => r.measure).filter((u): u is string => !!u))].sort(), [rows]);
+  // Reset the graph unit if a new result set no longer has it.
+  useEffect(() => { if (graphUnit && !unitsPresent.includes(graphUnit)) setGraphUnit(""); }, [unitsPresent, graphUnit]);
 
   async function run() {
     setLoading(true);
@@ -144,6 +178,28 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
                 ))}
               </div>
             </div>
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Metric</div>
+              <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+                {([["used", "Total used"], ["per100", "Per 100 m"]] as const).map(([m, label]) => (
+                  <button key={m} onClick={() => setMetric(m)} className={`px-2.5 h-7 text-xs ${metric === m ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{label}</button>
+                ))}
+              </div>
+            </div>
+            {unitsPresent.length > 1 && (
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Unit of use</div>
+                <select
+                  value={graphUnit}
+                  onChange={(e) => setGraphUnit(e.target.value)}
+                  className="h-7 w-full border border-gray-300 rounded px-1.5 bg-white text-xs"
+                  title="Chart only materials measured in this unit, so the bars compare like-for-like (units aren't additive)."
+                >
+                  <option value="">All units (mixed)</option>
+                  {unitsPresent.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -167,7 +223,7 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
           {data && (view === "table" ? (
             <StockTable rows={rows} cols={usedCols} note={data.note} onOpenReport={onOpenReport} />
           ) : view === "graph" ? (
-            <StockGraph rows={rows} groupBy={groupBy} note={data.note} />
+            <StockGraph rows={rows} groupBy={groupBy} metric={metric} unit={graphUnit} note={data.note} />
           ) : (
             <MudPlanning filters={planningFilters} />
           ))}
@@ -224,21 +280,51 @@ function StockTable({ rows, cols, note, onOpenReport }: {
   );
 }
 
-/** Total Used summed by material (bars = wells) or by well (bars = materials) —
- *  the Delphi DRAWMAT bar chart. Only Used is charted (it's additive); Received
- *  is a logistics figure and Stock is a daily snapshot, not a sum. For next-well
- *  forecasting use the Planning view, which normalises Used per metre by section. */
-function StockGraph({ rows, groupBy, note }: {
-  rows: StockRow[]; groupBy: "material" | "well"; note?: string;
+/** Used summed by material (bars = wells) or by well (bars = materials) — the
+ *  Delphi DRAWMAT bar chart. Only Used is charted (it's additive); Received is a
+ *  logistics figure and Stock is a daily snapshot, not a sum. The metric toggle
+ *  switches the value to consumption PER 100 m drilled — Used ÷ the well's drilled
+ *  depth × 100 — so wells of different TDs compare on a like-for-like basis. The
+ *  well's drilled depth is its From/To span (max To − min From over the rows),
+ *  matching how the Planning view's section metres are measured; the Planning view
+ *  remains the place for per-section per-metre forecasting.
+ *
+ *  `unit` scopes the chart to one unit of use (sacks / drums / tons / litres). The
+ *  units aren't additive — and some materials are even recorded in more than one —
+ *  so picking a unit keeps every bar a like-for-like comparison. */
+function StockGraph({ rows, groupBy, metric, unit, note }: {
+  rows: StockRow[]; groupBy: "material" | "well"; metric: "used" | "per100"; unit: string; note?: string;
 }) {
-  const metric = "used" as const;
-  const { cats, series, matrix, max, capped } = useMemo(() => {
+  // Restrict the charted rows to the selected unit of use (units aren't additive).
+  // Footage stays measured over ALL rows below — a well's drilled depth doesn't
+  // depend on which unit a material was ordered in.
+  const scoped = useMemo(() => (unit ? rows.filter((r) => r.measure === unit) : rows), [rows, unit]);
+  const distinctUnits = useMemo(() => [...new Set(rows.map((r) => r.measure).filter((u): u is string => !!u))], [rows]);
+  // Drilled depth per well = max(To) − min(From) over its rows that carry a depth
+  // interval. A span (not a sum of daily progress) so repeated/overlapping daily
+  // intervals don't inflate it; mirrors the backend's section-metres definition.
+  const footage = useMemo(() => {
+    const span = new Map<string, { f: number; t: number }>();
+    for (const r of rows) {
+      if (typeof r.from !== "number" || typeof r.to !== "number" || r.to <= r.from) continue;
+      const cur = span.get(r.wellCode);
+      if (!cur) span.set(r.wellCode, { f: r.from, t: r.to });
+      else { if (r.from < cur.f) cur.f = r.from; if (r.to > cur.t) cur.t = r.to; }
+    }
+    const m = new Map<string, number>();
+    for (const [w, v] of span) if (v.t > v.f) m.set(w, v.t - v.f);
+    return m;
+  }, [rows]);
+
+  const { cats, series, matrix, max, capped, noFootage } = useMemo(() => {
     const catKey = (r: StockRow) => (groupBy === "material" ? (r.material ?? "—") : r.wellCode);
     const serKey = (r: StockRow) => (groupBy === "material" ? r.wellCode : (r.material ?? "—"));
+    // Whichever axis is the well — that's the per-100 m denominator.
+    const wellOf = (c: string, sName: string) => (groupBy === "material" ? sName : c);
     const sums = new Map<string, Map<string, number>>();
     const catTotal = new Map<string, number>(), serTotal = new Map<string, number>();
-    for (const r of rows) {
-      const v = r[metric];
+    for (const r of scoped) {
+      const v = r.used;
       if (typeof v !== "number" || v === 0) continue;
       const c = catKey(r), sName = serKey(r);
       let m = sums.get(c); if (!m) { m = new Map(); sums.set(c, m); }
@@ -246,17 +332,28 @@ function StockGraph({ rows, groupBy, note }: {
       catTotal.set(c, (catTotal.get(c) ?? 0) + v);
       serTotal.set(sName, (serTotal.get(sName) ?? 0) + v);
     }
+    // Rank by total used (so the busiest materials/wells show in either metric).
     const CATS_MAX = 18, SER_MAX = 10;
     const cats = [...catTotal.entries()].sort((a, b) => b[1] - a[1]).slice(0, CATS_MAX).map((x) => x[0]);
     const series = [...serTotal.entries()].sort((a, b) => b[1] - a[1]).slice(0, SER_MAX).map((x) => x[0]);
     const capped = catTotal.size > cats.length || serTotal.size > series.length;
-    let max = 0;
-    const matrix = cats.map((c) => series.map((sName) => { const v = sums.get(c)?.get(sName) ?? 0; if (v > max) max = v; return v; }));
-    return { cats, series, matrix, max, capped };
-  }, [rows, metric, groupBy]);
+    let max = 0; const noFootage = new Set<string>();
+    const matrix = cats.map((c) => series.map((sName) => {
+      const used = sums.get(c)?.get(sName) ?? 0;
+      let v = used;
+      if (metric === "per100" && used > 0) {
+        const ft = footage.get(wellOf(c, sName)) ?? 0;
+        if (ft > 0) v = (used / ft) * 100; else { noFootage.add(wellOf(c, sName)); v = 0; }
+      }
+      if (v > max) max = v;
+      return v;
+    }));
+    return { cats, series, matrix, max, capped, noFootage };
+  }, [scoped, metric, groupBy, footage]);
 
   if (note) return <div className="p-8 text-center text-sm text-gray-400">{note}</div>;
-  if (!cats.length) return <div className="p-8 text-center text-sm text-gray-400">No {metric === "used" ? "usage" : "receipts"} recorded to chart for these rows.</div>;
+  if (!cats.length) return <div className="p-8 text-center text-sm text-gray-400">No usage recorded to chart for these rows.</div>;
+  if (metric === "per100" && max <= 0) return <div className="p-8 text-center text-sm text-gray-400">No From/To depth on these rows to normalise per 100 m — switch to Total used, or load rows with a depth interval.</div>;
 
   const colorOf = (i: number) => PALETTE[i % PALETTE.length];
   const barW = 14, padCat = 18, axisW = 50, top = 12, plotH = 300, labelH = 110;
@@ -265,12 +362,21 @@ function StockGraph({ rows, groupBy, note }: {
   const baseY = top + plotH;
   const yOf = (v: number) => baseY - (max > 0 ? (v / max) * plotH : 0);
   const ticks = 4;
+  // Per-100 m rates are small, so keep a decimal when the scale is < 10.
+  const fmtTick = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : max < 10 ? v.toFixed(1) : v.toFixed(0);
+  // Value suffix: append the unit when the chart is scoped to one (e.g. "SX",
+  // "SX/100 m"); a mixed all-units chart has no single unit to show.
+  const valSuffix = unit ? ` ${unit}${metric === "per100" ? "/100 m" : ""}` : (metric === "per100" ? " /100 m" : "");
+  const fmtVal = (v: number) => (metric === "per100" ? (v < 10 ? v.toFixed(2) : v.toFixed(1)) : v.toFixed(1)) + valSuffix;
 
   return (
     <div className="p-3">
       <div className="text-[11px] text-gray-500 mb-2">
-        Total <b>{metric === "used" ? "used" : "received"}</b> by {groupBy}{groupBy === "material" ? " — bars are wells" : " — bars are materials"}.
+        {metric === "per100" ? <>Consumption <b>per 100 m drilled</b></> : <>Total <b>used</b></>} by {groupBy}{groupBy === "material" ? " — bars are wells" : " — bars are materials"}
+        {unit ? <> · in <b>{unit}</b></> : null}.
         {capped && <span className="text-amber-600"> Showing the top {cats.length} {groupBy === "material" ? "materials" : "wells"} × {series.length} series.</span>}
+        {metric === "per100" && noFootage.size > 0 && <span className="text-amber-600"> {noFootage.size} well{noFootage.size === 1 ? "" : "s"} omitted — no From/To depth to normalise.</span>}
+        {!unit && distinctUnits.length > 1 && <span className="text-amber-600"> Mixing {distinctUnits.length} units ({distinctUnits.join(", ")}) — pick a Unit of use to compare like-for-like.</span>}
       </div>
       <div className="overflow-x-auto">
         <svg width={chartW} height={baseY + labelH} className="block">
@@ -279,7 +385,7 @@ function StockGraph({ rows, groupBy, note }: {
             return (
               <g key={i}>
                 <line x1={axisW} x2={chartW - 16} y1={y} y2={y} stroke="#eef2f7" />
-                <text x={axisW - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#94a3b8">{v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0)}</text>
+                <text x={axisW - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#94a3b8">{fmtTick(v)}</text>
               </g>
             );
           })}
@@ -291,7 +397,7 @@ function StockGraph({ rows, groupBy, note }: {
                 {series.map((sName, si) => {
                   const v = matrix[ci][si]; if (v <= 0) return null;
                   const x = x0 + si * barW, y = yOf(v);
-                  return <rect key={sName} x={x} y={y} width={barW - 1} height={baseY - y} fill={colorOf(si)}><title>{`${c} · ${sName}: ${v.toFixed(1)}`}</title></rect>;
+                  return <rect key={sName} x={x} y={y} width={barW - 1} height={baseY - y} fill={colorOf(si)}><title>{`${c} · ${sName}: ${fmtVal(v)}`}</title></rect>;
                 })}
                 <text x={mid} y={baseY + 12} textAnchor="end" fontSize={9} fill="#475569" transform={`rotate(-40 ${mid} ${baseY + 12})`}>{c.length > 18 ? c.slice(0, 17) + "…" : c}</text>
               </g>

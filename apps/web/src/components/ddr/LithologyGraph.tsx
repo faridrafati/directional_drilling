@@ -82,8 +82,10 @@ export const heightFor = (span: number, zoomY: number) => Math.max(120, Math.rou
  *  band colours stay consistent across renders / wells. */
 const hueOf = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h % 360; };
 /** GraphWell.formations only carry {name, md}; derive the stable hue from the
- *  name, falling back to a spread per-index hue when the name is null. */
-const formHue = (name: string | null, idx: number) => name ? hueOf(name) : (idx * 47) % 360;
+ *  name, falling back to a spread per-index hue when the name is null. Exported so
+ *  the Well-Path overlays (section bands + 3D layer slabs) tint each formation the
+ *  same way the lithology column does. */
+export const formHue = (name: string | null, idx: number) => name ? hueOf(name) : (idx * 47) % 360;
 /** Opaque chip / label tint at full strength (used for the bold label chip). */
 const formColorSolid = (name: string | null, idx: number) => `hsl(${formHue(name, idx)} 48% 80%)`;
 /** Translucent band tint, drawn BEHIND lithology so composition stays visible. */
