@@ -19,6 +19,10 @@ import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { useFacetOptions } from "./useFacetOptions.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
 import { WellPathTrajectory3D } from "./WellPathTrajectory3D.js";
+import { WellTrack, DepthTrack, usePatternImages, DEPTH_W, type GraphWell } from "./LithologyGraph.js";
+
+// Per-well lithology + formation graph payload (the /ddr/lithology-graph shape).
+interface LithoGraphData { wells: GraphWell[]; depthRange: { min: number; max: number } | null; lithoTypes: string[]; note?: string }
 
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
@@ -37,6 +41,10 @@ interface PathData { rows: PathRow[]; truncated?: boolean; total?: number; note?
 
 const fmtNum = (v: unknown): string =>
   v == null || v === "" ? "" : typeof v === "number" ? (Number.isInteger(v) ? String(v) : v.toFixed(2)) : String(v);
+
+// Strip a trailing run of Leg<N>/ST<N> to the sidetrack base (mirrors the API's
+// sidetrackBase), so a leg's pooled lithology well is found under the base code.
+const sidetrackBaseClient = (code: string): string => code.replace(/(?:(?:leg|st)\d+)+$/i, "") || code;
 
 const COLS: { key: keyof PathRow; label: string; text?: boolean }[] = [
   { key: "md", label: "MD (m)" }, { key: "inc", label: "Inc (°)" }, { key: "az", label: "Az (°)" },
@@ -150,7 +158,7 @@ export function WellPath({ onOpenReport }: { onOpenReport?: (wellCode: string, s
           {data && (view === "table" ? (
             <PathTable rows={rows} cols={usedCols} note={data.note} onOpenReport={onOpenReport} />
           ) : (
-            <PerWellPaths rows={rows} note={data.note} />
+            <PerWellPaths rows={rows} note={data.note} onOpenReport={onOpenReport} />
           ))}
         </div>
       </div>
@@ -205,6 +213,11 @@ function PathTable({ rows, cols, note, onOpenReport }: {
   );
 }
 
+// Top / bottom padding inside the SinglePlot SVG (room for the x-axis title +
+// ticks). Shared so the lithology track can inset to the same plot band and line
+// up its TVD axis with the chart pixel-for-pixel.
+const SINGLE_PAD_T = 22, SINGLE_PAD_B = 34;
+
 const niceStep = (rough: number): number => {
   if (!(rough > 0)) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(rough))), m = rough / p;
@@ -218,20 +231,61 @@ const ticksFor = (min: number, max: number, count = 5): number[] => {
 };
 
 /**
+ * Build a monotone MD→TVD converter from the survey stations, so the lithology
+ * track (logged in MD) can be drawn on the vertical section's TVD axis. Linearly
+ * interpolates between the nearest stations and extrapolates flat beyond the ends
+ * (returns identity if there aren't ≥2 usable MD/TVD pairs — better than nothing).
+ */
+function mdToTvdFn(rows: PathRow[]): (md: number) => number {
+  const pairs = rows
+    .filter((r): r is PathRow & { md: number; tvd: number } => typeof r.md === "number" && typeof r.tvd === "number")
+    .map((r) => ({ md: r.md, tvd: r.tvd }))
+    .sort((a, b) => a.md - b.md);
+  // Drop duplicate MDs (keep first) so the lookup stays strictly increasing.
+  const xs: number[] = [], ys: number[] = [];
+  for (const p of pairs) { if (!xs.length || p.md > xs[xs.length - 1]) { xs.push(p.md); ys.push(p.tvd); } }
+  if (xs.length < 2) return (md) => md;
+  return (md) => {
+    if (md <= xs[0]) return ys[0] + (md - xs[0]);                       // flat-ish extrapolation
+    if (md >= xs[xs.length - 1]) return ys[ys.length - 1] + (md - xs[xs.length - 1]);
+    let lo = 0, hi = xs.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (xs[mid] <= md) lo = mid; else hi = mid; }
+    const t = (md - xs[lo]) / (xs[hi] - xs[lo] || 1);
+    return ys[lo] + t * (ys[hi] - ys[lo]);
+  };
+}
+
+/**
  * Per-well trajectory groups: one row per well, each showing its plan view,
  * vertical section, 3D trajectory, and DLS together (the four drawpat plots
  * grouped, plus the WebGL 3D). Wells are stacked vertically.
  */
-function PerWellPaths({ rows, note }: { rows: PathRow[]; note?: string }) {
+function PerWellPaths({ rows, note, onOpenReport }: {
+  rows: PathRow[]; note?: string;
+  onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void;
+}) {
+  // The chart currently expanded into the full-screen popup (null = none). Either
+  // a 2D drawpat plot (plan/section/DLS) or the 3D trajectory.
+  type Maxed = {
+    wellCode: string; rows: PathRow[]; color: string;
+    stations3d: { ns: number; ew: number; tvd: number; md: number | null }[];
+  } & ({ kind: "plot"; plot: PlotKey } | { kind: "3d" });
+  const [maxed, setMaxed] = useState<Maxed | null>(null);
+  // Group by sidetrack BASE so a well and its legs (AB-011 + AB-011Leg1 + …) draw
+  // as ONE trajectory, then order each merged group by MD for a continuous path.
   const wells = useMemo(() => {
     const order: string[] = [];
     const byWell = new Map<string, PathRow[]>();
     for (const r of rows) {
-      let arr = byWell.get(r.wellCode);
-      if (!arr) { arr = []; byWell.set(r.wellCode, arr); order.push(r.wellCode); }
+      const key = sidetrackBaseClient(r.wellCode);
+      let arr = byWell.get(key);
+      if (!arr) { arr = []; byWell.set(key, arr); order.push(key); }
       arr.push(r);
     }
-    return order.map((wc) => ({ wellCode: wc, rows: byWell.get(wc)! }));
+    return order.map((wc) => ({
+      wellCode: wc,
+      rows: byWell.get(wc)!.slice().sort((a, b) => (a.md ?? Infinity) - (b.md ?? Infinity)),
+    }));
   }, [rows]);
 
   if (note) return <div className="p-8 text-center text-sm text-gray-400">{note}</div>;
@@ -252,27 +306,220 @@ function PerWellPaths({ rows, note }: { rows: PathRow[]; note?: string }) {
               <span className="text-[11px] text-gray-400">· {wr.length} stations</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 p-2">
-              <SinglePlot rows={wr} plot="plan" color={color} />
-              <SinglePlot rows={wr} plot="section" color={color} />
+              <SinglePlot rows={wr} plot="plan" color={color} onOpenReport={onOpenReport}
+                onMaximize={() => setMaxed({ kind: "plot", wellCode, rows: wr, plot: "plan", color, stations3d })} />
+              <SinglePlot rows={wr} plot="section" color={color} onOpenReport={onOpenReport}
+                onMaximize={() => setMaxed({ kind: "plot", wellCode, rows: wr, plot: "section", color, stations3d })} />
               <div className="flex flex-col">
-                <div className="text-[11px] text-gray-500 mb-1 px-1">3D trajectory</div>
+                <div className="text-[11px] text-gray-500 mb-1 px-1 flex items-center gap-1">
+                  <span>3D trajectory</span>
+                  {stations3d.length >= 2 && (
+                    <button onClick={() => setMaxed({ kind: "3d", wellCode, rows: wr, color, stations3d })} title="Maximize"
+                      className="ml-auto h-5 w-5 grid place-items-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700">⤢</button>
+                  )}
+                </div>
                 <div className="flex-1 min-h-[260px] border border-gray-200 rounded overflow-hidden">
                   {stations3d.length >= 2
                     ? <WellPathTrajectory3D stations={stations3d} />
                     : <div className="h-full grid place-items-center text-[10px] text-gray-400">Not enough 3D stations.</div>}
                 </div>
               </div>
-              <SinglePlot rows={wr} plot="dls" color={color} />
+              <SinglePlot rows={wr} plot="dls" color={color} onOpenReport={onOpenReport}
+                onMaximize={() => setMaxed({ kind: "plot", wellCode, rows: wr, plot: "dls", color, stations3d })} />
             </div>
           </div>
         );
       })}
+
+      {maxed && (
+        <MaximizedChart wellCode={maxed.wellCode} rows={maxed.rows}
+          plot={maxed.kind === "plot" ? maxed.plot : null} color={maxed.color}
+          stations3d={maxed.stations3d} onOpenReport={onOpenReport} onClose={() => setMaxed(null)} />
+      )}
     </div>
   );
 }
 
-/** One drawpat 2D plot (plan / vertical section / DLS) for a SINGLE well. */
-function SinglePlot({ rows, plot, color }: { rows: PathRow[]; plot: PlotKey; color: string }) {
+/**
+ * Full-screen popup for one Well-Path chart. Adds a "Lithology" toggle that
+ * fetches this well's lithology + formation column on demand and shows it as a
+ * depth track to the LEFT of the chart (sharing the same pixel height). Available
+ * for the depth-oriented charts (vertical section, DLS, 3D) — the plan view is
+ * map-space, so a depth track wouldn't align there.
+ */
+function MaximizedChart({ wellCode, rows, plot, color, stations3d, onOpenReport, onClose }: {
+  wellCode: string; rows: PathRow[]; plot: PlotKey | null; color: string;   // plot === null ⇒ 3D trajectory
+  stations3d: { ns: number; ew: number; tvd: number; md: number | null }[];
+  onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void;
+  onClose: () => void;
+}) {
+  const [showLitho, setShowLitho] = useState(false);
+  // The depth-oriented charts (vertical section, DLS, 3D) can carry a depth track;
+  // the plan view is map-space (N/S vs E/W), so a depth column wouldn't align.
+  const depthOriented = plot !== "plan";
+  // Section & DLS plot TVD on Y, so the lithology track can SHARE that exact TVD
+  // axis (the litho's MD depths get remapped to TVD). The 3D view has no 2D Y.
+  const sharesTvd = plot === "section" || plot === "dls";
+  const chartH = Math.min(760, window.innerHeight - 170);
+  const chartW = Math.min(820, window.innerWidth - (showLitho && depthOriented ? 300 : 120));
+
+  // Fetch this single well's lithology graph the first time the toggle is used.
+  const lithoQ = useQuery({
+    queryKey: ["ddr", "lithology-graph", "wellpath", wellCode],
+    queryFn: () => api.post<LithoGraphData>("/ddr/lithology-graph", { wells: [wellCode] }),
+    enabled: showLitho && depthOriented,
+    staleTime: 5 * 60_000,
+  });
+  // The endpoint pools sidetrack legs into one well keyed by the BASE code, so a
+  // popup opened on AB-011Leg1 finds the merged well under AB-011.
+  const rawWell = lithoQ.data?.wells.find((w) => w.wellCode === wellCode)
+    ?? lithoQ.data?.wells.find((w) => sidetrackBaseClient(w.wellCode) === sidetrackBaseClient(wellCode))
+    ?? lithoQ.data?.wells[0] ?? null;
+  const title = plot ? PLOTS[plot].label : "3D trajectory";
+
+  // Shared TVD axis: the section/DLS chart's TVD range, padded the same 5 % the
+  // plot uses, becomes the window for BOTH the chart Y and the lithology track.
+  const tvdDomain = useMemo<readonly [number, number] | undefined>(() => {
+    if (!sharesTvd) return undefined;
+    let lo = Infinity, hi = -Infinity;
+    for (const r of rows) if (typeof r.tvd === "number") { if (r.tvd < lo) lo = r.tvd; if (r.tvd > hi) hi = r.tvd; }
+    if (!Number.isFinite(lo) || hi <= lo) return undefined;
+    const d = (hi - lo) * 0.05;
+    return [lo - d, hi + d] as const;
+  }, [rows, sharesTvd]);
+
+  // Remap the lithology well's MD depths to TVD so it draws on the shared axis.
+  const well = useMemo<GraphWell | null>(() => {
+    if (!rawWell) return null;
+    if (!sharesTvd) return rawWell;                         // 3D: keep MD column as-is
+    const toTvd = mdToTvdFn(rows);
+    return {
+      ...rawWell,
+      lithology: rawWell.lithology.map((iv) => ({ ...iv, from: toTvd(iv.from), to: iv.to == null ? null : toTvd(iv.to) })),
+      formations: rawWell.formations.map((t) => ({ ...t, md: toTvd(t.md) })),
+    };
+  }, [rawWell, rows, sharesTvd]);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl max-w-[95vw] max-h-[95vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-2 shrink-0">
+          <span className="inline-block w-3 h-0.5" style={{ background: color }} />
+          <span className="text-sm font-semibold text-gray-800">{wellCode}</span>
+          <span className="text-sm text-gray-500">· {title}</span>
+          {depthOriented && (
+            <label className="ml-3 flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
+              <input type="checkbox" checked={showLitho} onChange={(e) => setShowLitho(e.target.checked)} />
+              Lithology &amp; formation
+            </label>
+          )}
+          <button onClick={onClose} className="ml-auto h-7 w-7 grid place-items-center rounded hover:bg-gray-100 text-gray-500" title="Close">✕</button>
+        </div>
+        <div className="p-3 overflow-auto flex items-start gap-3">
+          {showLitho && depthOriented && (
+            <PopupLithoTrack well={well} loading={lithoQ.isFetching} error={lithoQ.error ? String(lithoQ.error) : null}
+              lithoTypes={lithoQ.data?.lithoTypes ?? []} heightPx={chartH}
+              forceWin={tvdDomain ? { min: tvdDomain[0], max: tvdDomain[1] } : null}
+              depthLabel={sharesTvd ? "TVD (m)" : "MD (m)"}
+              // When sharing the chart's TVD axis, inset the track to the SinglePlot's
+              // plot band (padT top, padB bottom) so the depths line up pixel-for-pixel.
+              inset={sharesTvd ? { top: SINGLE_PAD_T, bottom: SINGLE_PAD_B } : undefined} />
+          )}
+          {plot === null ? (
+            <div className="border border-gray-200 rounded overflow-hidden" style={{ width: chartW, height: chartH }}>
+              <WellPathTrajectory3D stations={stations3d} />
+            </div>
+          ) : (
+            <SinglePlot rows={rows} plot={plot} color={color} onOpenReport={onOpenReport} size={{ w: chartW, h: chartH }} yDomain={tvdDomain} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The lithology + formation depth column shown beside a maximized chart. Reuses
+ * the Formation tab's WellTrack renderer (composition bands + formation bands)
+ * with its own MD depth axis (DepthTrack), so it reads as a parallel depth column.
+ */
+function PopupLithoTrack({ well, loading, error, lithoTypes, heightPx, forceWin, depthLabel, inset }: {
+  well: GraphWell | null; loading: boolean; error: string | null; lithoTypes: string[]; heightPx: number;
+  // When set, the track uses this exact depth window (the chart's shared TVD axis,
+  // with the well already remapped MD→TVD) instead of its own data extent.
+  forceWin?: { min: number; max: number } | null;
+  depthLabel: string;
+  // Vertical inset so the track's plot band matches the SinglePlot's (which reserves
+  // padT/padB for its axis title) — keeps the shared TVD axis aligned to the pixel.
+  inset?: { top: number; bottom: number };
+}) {
+  // Patterns to preload = the lithology pattern names present in this well's comps.
+  const patternNames = useMemo(() => {
+    const s = new Set<string>();
+    for (const iv of well?.lithology ?? []) for (const c of iv.comps) if (c.pattern) s.add(c.pattern);
+    return [...s];
+  }, [well]);
+  const images = usePatternImages(patternNames);
+  const selLitho = useMemo(() => new Set(lithoTypes), [lithoTypes]);
+
+  // Depth window: the shared chart axis when given, else the well's own extent.
+  const win = useMemo(() => {
+    if (forceWin && forceWin.max > forceWin.min) return forceWin;
+    let lo = Infinity, hi = -Infinity;
+    for (const iv of well?.lithology ?? []) { if (iv.from < lo) lo = iv.from; const to = (typeof iv.to === "number" ? iv.to : iv.from); if (to > hi) hi = to; }
+    for (const t of well?.formations ?? []) { if (t.md < lo) lo = t.md; if (t.md > hi) hi = t.md; }
+    return Number.isFinite(lo) && hi > lo ? { min: lo, max: hi } : null;
+  }, [well, forceWin]);
+
+  const TRACK_W = 150, colW = DEPTH_W + TRACK_W;
+  return (
+    <div className="shrink-0 flex flex-col" style={{ width: colW }}>
+      <div className="text-[11px] text-gray-500 mb-1 px-1">Lithology &amp; formation · {depthLabel}</div>
+      {loading ? (
+        <div className="grid place-items-center text-[11px] text-gray-400 border border-gray-200 rounded" style={{ height: heightPx, width: colW }}>Loading…</div>
+      ) : error ? (
+        <div className="grid place-items-center text-[11px] text-red-500 border border-gray-200 rounded p-2 text-center" style={{ height: heightPx, width: colW }}>{error}</div>
+      ) : !well || !win ? (
+        <div className="grid place-items-center text-[11px] text-gray-400 border border-gray-200 rounded p-2 text-center" style={{ height: heightPx, width: colW }}>No lithology / formation data for this well.</div>
+      ) : (() => {
+        // headerH={0}: no per-well header here (the popup title bar already names
+        // the well). When sharing the chart's TVD axis, inset the track to the
+        // chart's plot band (top spacer + reduced height) so the depth axes align
+        // pixel-for-pixel; otherwise fill the full height.
+        const top = inset?.top ?? 0, bottom = inset?.bottom ?? 0;
+        const innerH = Math.max(40, heightPx - top - bottom);
+        return (
+          <div className="border border-gray-200 rounded overflow-hidden" style={{ height: heightPx }}>
+            <div style={{ height: top }} />
+            <div className="flex" style={{ height: innerH }}>
+              <DepthTrack win={win} heightPx={innerH} headerH={0} fmt={(d) => String(Math.round(d))} />
+              <WellTrack well={well} win={win} images={images} selLitho={selLitho} opacity={1} width={TRACK_W} heightPx={innerH} headerH={0} />
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+/**
+ * One drawpat 2D plot (plan / vertical section / DLS) for a SINGLE well.
+ *
+ * Clicking anywhere snaps to the nearest survey station and opens that day's
+ * daily drilling report (when its report serial resolved). A ⤢ button maximizes
+ * the plot into a full-screen popup; pass `size` to render at popup dimensions
+ * (which also hides the maximize button, since it's already maximized).
+ */
+function SinglePlot({ rows, plot, color, onOpenReport, onMaximize, size, yDomain }: {
+  rows: PathRow[]; plot: PlotKey; color: string;
+  onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void;
+  onMaximize?: () => void;
+  size?: { w: number; h: number };
+  // Forced Y (depth) window — used so the maximized vertical-section plot shares
+  // the exact TVD axis of the lithology track beside it. Only honoured for the
+  // depth-down, non-equal-aspect plots (section / DLS).
+  yDomain?: readonly [number, number];
+}) {
   const cfg = PLOTS[plot];
   const [hover, setHover] = useState<{ x: number; y: number; html: string } | null>(null);
   const { pts, dom } = useMemo(() => {
@@ -289,7 +536,7 @@ function SinglePlot({ rows, plot, color }: { rows: PathRow[]; plot: PlotKey; col
     return { pts, dom: { xmin, xmax, ymin, ymax } };
   }, [rows, cfg.x, cfg.y]);
 
-  const W = 300, H = 280, padL = 44, padR = 10, padT = 22, padB = 34;
+  const W = size?.w ?? 300, H = size?.h ?? 280, padL = 44, padR = 10, padT = SINGLE_PAD_T, padB = SINGLE_PAD_B;
   const plotW = W - padL - padR, plotH = H - padT - padB;
 
   let body: React.ReactNode;
@@ -298,7 +545,9 @@ function SinglePlot({ rows, plot, color }: { rows: PathRow[]; plot: PlotKey; col
   } else {
     const padDom = (lo: number, hi: number) => { const d = (hi - lo) || Math.abs(hi) || 1; return [lo - d * 0.05, hi + d * 0.05] as const; };
     const [xlo, xhi] = padDom(dom.xmin, dom.xmax);
-    const [ylo, yhi] = padDom(dom.ymin, dom.ymax);
+    // Honour a forced depth window (shared with the lithology track) for the
+    // depth-down plots; otherwise pad the data range as usual.
+    const [ylo, yhi] = (yDomain && cfg.yDown && !cfg.equal) ? yDomain : padDom(dom.ymin, dom.ymax);
     const xRange = xhi - xlo || 1, yRange = yhi - ylo || 1;
 
     let xOf: (x: number) => number, yOf: (y: number) => number;
@@ -315,55 +564,74 @@ function SinglePlot({ rows, plot, color }: { rows: PathRow[]; plot: PlotKey; col
         : padT + ((yhi - y) / yRange) * plotH;
     }
     const xticks = ticksFor(xlo, xhi, 4), yticks = ticksFor(ylo, yhi, 4);
-    const drawDots = pts.length <= 400;
+    const dotR = size ? 2.5 : 1.5, lineW = size ? 2 : 1.5, fs = size ? 11 : 8, fsLbl = size ? 12 : 8.5;
+    const drawDots = pts.length <= (size ? 1200 : 400);
 
     // Screen positions of every station — for the nearest-point hover (works for
-    // any station count, including the >400 case where the dot markers are off).
+    // any station count, including the >400 case where the dot markers are off)
+    // and for the click → daily-report navigation.
     const screen = pts.map((p) => ({ sx: xOf(p.x), sy: yOf(p.y), r: p.r }));
-    const onMove = (e: React.MouseEvent<SVGRectElement>) => {
-      const mx = e.nativeEvent.offsetX, my = e.nativeEvent.offsetY;
+    const nearest = (mx: number, my: number) => {
       let best = -1, bd = Infinity;
       for (let j = 0; j < screen.length; j++) { const dx = screen[j].sx - mx, dy = screen[j].sy - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = j; } }
+      return best;
+    };
+    const onMove = (e: React.MouseEvent<SVGRectElement>) => {
+      const best = nearest(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
       if (best < 0) return setHover(null);
       const r = screen[best].r;
-      setHover({ x: screen[best].sx, y: screen[best].sy, html: `MD ${fmtNum(r.md)} m · Inc ${fmtNum(r.inc)}° · Az ${fmtNum(r.az)}°<br/>TVD ${fmtNum(r.tvd)} · N/S ${fmtNum(r.ns)} · E/W ${fmtNum(r.ew)} · DLS ${fmtNum(r.dls)}` });
+      setHover({ x: screen[best].sx, y: screen[best].sy, html: `${r.date ?? ""}${onOpenReport && r.serialNo != null ? " · click to open report" : ""}<br/>MD ${fmtNum(r.md)} m · Inc ${fmtNum(r.inc)}° · Az ${fmtNum(r.az)}°<br/>TVD ${fmtNum(r.tvd)} · N/S ${fmtNum(r.ns)} · E/W ${fmtNum(r.ew)} · DLS ${fmtNum(r.dls)}` });
     };
+    const onClick = (e: React.MouseEvent<SVGRectElement>) => {
+      if (!onOpenReport) return;
+      const best = nearest(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+      if (best < 0) return;
+      const r = screen[best].r;
+      if (r.serialNo != null) onOpenReport(r.wellCode, r.serialNo, r.date);
+    };
+    const captureClickable = !!onOpenReport;
 
     body = (
       <svg width={W} height={H} className="block bg-white">
         {xticks.map((t, i) => { const x = xOf(t); if (x < padL - 0.5 || x > W - padR + 0.5) return null; return (
           <g key={`x${i}`}>
             <line x1={x} x2={x} y1={padT} y2={padT + plotH} stroke="#f1f5f9" />
-            <text x={x} y={padT + plotH + 12} textAnchor="middle" fontSize={8} fill="#94a3b8">{fmtNum(t)}</text>
+            <text x={x} y={padT + plotH + 12} textAnchor="middle" fontSize={fs} fill="#94a3b8">{fmtNum(t)}</text>
           </g>); })}
         {yticks.map((t, i) => { const y = yOf(t); if (y < padT - 0.5 || y > padT + plotH + 0.5) return null; return (
           <g key={`y${i}`}>
             <line x1={padL} x2={padL + plotW} y1={y} y2={y} stroke="#f1f5f9" />
-            <text x={padL - 4} y={y + 3} textAnchor="end" fontSize={8} fill="#94a3b8">{fmtNum(t)}</text>
+            <text x={padL - 4} y={y + 3} textAnchor="end" fontSize={fs} fill="#94a3b8">{fmtNum(t)}</text>
           </g>); })}
         <rect x={padL} y={padT} width={plotW} height={plotH} fill="none" stroke="#cbd5e1" />
-        <text x={padL + plotW / 2} y={H - 4} textAnchor="middle" fontSize={8.5} fill="#475569">{cfg.xLabel}</text>
-        <text x={11} y={padT + plotH / 2} textAnchor="middle" fontSize={8.5} fill="#475569" transform={`rotate(-90 11 ${padT + plotH / 2})`}>{cfg.yLabel}</text>
-        <polyline fill="none" stroke={color} strokeWidth={1.5} points={pts.map((p) => `${xOf(p.x).toFixed(1)},${yOf(p.y).toFixed(1)}`).join(" ")} />
+        <text x={padL + plotW / 2} y={H - 4} textAnchor="middle" fontSize={fsLbl} fill="#475569">{cfg.xLabel}</text>
+        <text x={11} y={padT + plotH / 2} textAnchor="middle" fontSize={fsLbl} fill="#475569" transform={`rotate(-90 11 ${padT + plotH / 2})`}>{cfg.yLabel}</text>
+        <polyline fill="none" stroke={color} strokeWidth={lineW} points={pts.map((p) => `${xOf(p.x).toFixed(1)},${yOf(p.y).toFixed(1)}`).join(" ")} />
         {drawDots && pts.map((p, j) => (
-          <circle key={j} cx={xOf(p.x)} cy={yOf(p.y)} r={1.5} fill={color} />
+          <circle key={j} cx={xOf(p.x)} cy={yOf(p.y)} r={dotR} fill={color} />
         ))}
-        {hover && <circle cx={hover.x} cy={hover.y} r={3.5} fill="none" stroke="#111827" strokeWidth={1.2} />}
-        {/* Transparent capture layer → nearest-station tooltip (covers the >400-station case too). */}
-        <rect x={padL} y={padT} width={plotW} height={plotH} fill="transparent"
-          onMouseMove={onMove} onMouseLeave={() => setHover(null)} />
+        {hover && <circle cx={hover.x} cy={hover.y} r={size ? 5 : 3.5} fill="none" stroke="#111827" strokeWidth={1.2} />}
+        {/* Transparent capture layer → nearest-station tooltip + click-to-open-report. */}
+        <rect x={padL} y={padT} width={plotW} height={plotH} fill="transparent" className={captureClickable ? "cursor-pointer" : undefined}
+          onMouseMove={onMove} onMouseLeave={() => setHover(null)} onClick={onClick} />
       </svg>
     );
   }
 
   return (
     <div className="flex flex-col">
-      <div className="text-[11px] text-gray-500 mb-1 px-1">{cfg.label}{cfg.equal ? " · N up" : cfg.yDown ? " · depth ↓" : ""}</div>
+      <div className="text-[11px] text-gray-500 mb-1 px-1 flex items-center gap-1">
+        <span>{cfg.label}{cfg.equal ? " · N up" : cfg.yDown ? " · depth ↓" : ""}</span>
+        {onMaximize && (
+          <button onClick={onMaximize} title="Maximize"
+            className="ml-auto h-5 w-5 grid place-items-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700">⤢</button>
+        )}
+      </div>
       <div className="border border-gray-200 rounded overflow-hidden relative">
         {body}
         {hover && (
           <div className="absolute z-20 pointer-events-none px-2 py-1 rounded bg-gray-900 text-white text-[10px] leading-tight shadow-lg"
-            style={{ left: Math.min(hover.x + 10, 170), top: Math.max(hover.y - 4, 2), maxWidth: 200 }}
+            style={{ left: Math.min(hover.x + 10, W - 130), top: Math.max(hover.y - 4, 2), maxWidth: 200 }}
             dangerouslySetInnerHTML={{ __html: hover.html }} />
         )}
       </div>

@@ -10,6 +10,11 @@ describe("parseBitSizeInches", () => {
     expect(parseBitSizeInches("5.875")).toBeCloseTo(5.875, 9);
     expect(parseBitSizeInches("3/4")).toBeCloseTo(0.75, 9);
   });
+  it("parses the canonical dash + inch-mark label", () => {
+    expect(parseBitSizeInches('12-1/4"')).toBeCloseTo(12.25, 9);
+    expect(parseBitSizeInches('17-1/2"')).toBeCloseTo(17.5, 9);
+    expect(parseBitSizeInches('26"')).toBe(26);
+  });
   it("rejects blanks, junk and out-of-range values", () => {
     expect(parseBitSizeInches("")).toBeNull();
     expect(parseBitSizeInches(null)).toBeNull();

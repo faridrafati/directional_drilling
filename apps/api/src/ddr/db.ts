@@ -442,7 +442,10 @@ function resolveWellSet(f: FormationMatrixFilters): Set<string> | null {
   const db = data(), lk = lookups(), c = ctx();
   const clean = (a?: string[]) => (a ?? []).map((x) => s(x)).filter(Boolean);
   const fields = clean(f.fields), rigs = clean(f.rigs), wells = clean(f.wells), holeSizes = clean(f.holeSizes), mudTypes = clean(f.mudTypes);
-  let wellSet: Set<string> | null = wells.length ? new Set(wells) : null;
+  // A picked well pulls in its sidetrack legs (AB-011 ↔ AB-011Leg1 ↔ AB-011ST1):
+  // they're one physical well whose data is split across the leg codes, so the
+  // query must span the whole family. Field/rig/size filters still narrow it.
+  let wellSet: Set<string> | null = wells.length ? expandSidetracks(wells) : null;
   const intersect = (m: Set<string>) => { wellSet = wellSet ? new Set([...wellSet].filter((w) => m.has(w))) : m; };
   if (fields.length) { const fset = new Set(fields), m = new Set<string>(); for (const [wc, fc] of c.field) { const fn = look(lk.field, fc); if (fn && fset.has(fn)) m.add(wc); } intersect(m); }
   if (rigs.length) { const rset = new Set(rigs), m = new Set<string>(); for (const [wc, rg] of c.rig) if (rg && rset.has(rg)) m.add(wc); intersect(m); }
@@ -1868,7 +1871,11 @@ export interface RopOptimizationFilters extends FormationMatrixFilters {
  * dull grades / drilling-hours used by the economics and advisory analytics.
  */
 export function getRopOptimization(f: RopOptimizationFilters): Record<string, unknown> {
-  const wellSet = resolveWellSet(f);
+  // Resolve wells by field/well/mud only — NOT hole size. The "Bit sizes" facet
+  // is applied per bit record below (on each point's own size), so letting the
+  // section-based well pre-filter run here would wrongly drop wells whose bit of
+  // the chosen size was logged under a differently-coded L04 section.
+  const wellSet = resolveWellSet({ ...f, holeSizes: [] });
   if (!wellSet) return { points: [], bitSizes: [], truncated: false, total: 0, note: "Select a field or well to load bit performance." };
   const db = data(), lk = lookups();
   const exists = db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND lower(name)='l05'`).get();
@@ -1877,8 +1884,11 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
   if (!codes.length) return { points: [], bitSizes: [], truncated: false, total: 0 };
 
   const clean = (a?: string[]) => (a ?? []).map((x) => s(x)).filter(Boolean);
-  const holeNames = new Set(clean(f.holeSizes));
-  const holeCodes = holeNames.size ? new Set([...lk.holeSize].filter(([, n]) => holeNames.has(normHoleSize(n))).map(([c]) => c)) : null;
+  // The "Bit sizes" facet sends normalized hole-size strings (e.g. 12-1/2"). We
+  // match them against each point's *own* bitSize (derived below), not the day's
+  // L04 section — so the selection and the displayed size always agree (a bit run
+  // off-section no longer leaks in under the wrong size). Stored normalized.
+  const sizeNames = new Set(clean(f.holeSizes).map((x) => normHoleSize(x)));
   const mudNames = new Set(clean(f.mudTypes));
   const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
   const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
@@ -1952,7 +1962,6 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
     for (const r of db.prepare(`SELECT * FROM L05 WHERE ${where.join(" AND ")}`).all(...params) as Row[]) {
       const wc = s(r.WellCode), date = s(r.fDate), k = `${wc}|${date}`;
       const d = byDay.get(k), holeCode = d?.hole ?? "";
-      if (holeCodes && !holeCodes.has(holeCode)) continue;
       const mudCode = mudByDay.get(k) ?? "";
       if (mudCodes && !mudCodes.has(mudCode)) continue;
 
@@ -1967,7 +1976,14 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
       if (wob == null || rpm == null || rop == null) continue;
       if (wob > 200 || rpm > 600 || rop > 500) continue; // guard against unit-typo outliers
 
-      const bitSize = s(look(lk.bitSize, r.BitCode)) || s(orNull(r.HoleSize)) || look(lk.holeSize, holeCode) || "—";
+      const rawSize = s(look(lk.bitSize, r.BitCode)) || s(orNull(r.HoleSize)) || look(lk.holeSize, holeCode) || "";
+      // Normalize to the canonical 12-1/2" form so the label, the per-size charts
+      // and the "Bit sizes" facet all key on the same string (no "12 1/4" vs
+      // "12-1/4"" splits). Falls back to the raw text when it isn't a parsable size.
+      const bitSize = rawSize ? (normHoleSize(rawSize) || rawSize) : "—";
+      // Filter on the point's own size, so a 12-1/2" selection shows only 12-1/2"
+      // bits — never 17-1/2" leakage from the day's L04 section.
+      if (sizeNames.size && !sizeNames.has(bitSize)) continue;
       bitSizeSet.add(bitSize);
 
       // ── derived engineering metrics: bit identity, MSE (Teale), HSI ───────
@@ -1994,8 +2010,9 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
       const spp = Number(s(r.PumpPressure1));  // psi
       const mudWeight = mudWtByDay.get(k) ?? null;
       const reportedHsi = Number(s(r.BitHSI));
+      const nozzles = parseNozzleSizes(r.NozzleSize);   // jet sizes in 32nds″, for the HSI tooltip
       let tfa = Number(s(r.TFA));              // in² (reported), else from nozzles
-      if (!(Number.isFinite(tfa) && tfa > 0)) { const ns = parseNozzleSizes(r.NozzleSize); tfa = ns.length ? tfaFromNozzles(ns) : NaN; }
+      if (!(Number.isFinite(tfa) && tfa > 0)) { tfa = nozzles.length ? tfaFromNozzles(nozzles) : NaN; }
       let hsiVal: number | null = null, hsiSource: "reported" | "computed" | null = null;
       if (Number.isFinite(reportedHsi) && reportedHsi > 0) { hsiVal = reportedHsi; hsiSource = "reported"; }
       else if (diaIn != null && tfa > 0 && flow > 0 && mudWeight != null) {
@@ -2018,6 +2035,7 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
         mse, mseEstimated,
         hsi: hsiVal != null ? Number(hsiVal.toFixed(2)) : null, hsiSource,
         tfa: Number.isFinite(tfa) && tfa > 0 ? Number(tfa.toFixed(3)) : null,
+        nozzles: nozzles.length ? nozzles : null,
         flow: flow > 0 ? Number(flow.toFixed(0)) : null,
         spp: spp > 0 ? Number(spp.toFixed(0)) : null,
         mudWeight: mudWeight != null ? Number(mudWeight.toFixed(2)) : null,
@@ -2072,16 +2090,35 @@ export function getLithologyGraph(f: FormationMatrixFilters): Record<string, unk
   const nameMap = new Map<string, string>();
   for (const r of db.prepare(`SELECT WellCode, EnglishName FROM A01`).all() as Row[]) nameMap.set(s(r.WellCode), s(r.EnglishName));
 
-  // Only wells that actually have data, capped at 8 (rendered side by side).
-  const withData = allCodes.filter((wc) => lithoByWell.has(wc) || formByWell.has(wc)).sort((a, b) => a.localeCompare(b)).slice(0, 8);
+  // Pool sidetrack legs into one well (AB-011 + AB-011Leg1 + AB-011ST1 → one
+  // column), merging their lithology + formation depth lists — the base's tops
+  // and a leg's lithology belong to the same physical well. Keyed by base code.
+  const baseOf = (wc: string) => sidetrackBase(wc) || wc;
+  const lithoByBase = new Map<string, { from: number; to: number | null; comps: LithoComp[] }[]>();
+  const formByBase = new Map<string, { name: string | null; md: number }[]>();
+  for (const wc of allCodes) {
+    const b = baseOf(wc);
+    if (lithoByWell.has(wc)) { const a = lithoByBase.get(b) ?? []; a.push(...lithoByWell.get(wc)!); lithoByBase.set(b, a); }
+    if (formByWell.has(wc)) { const a = formByBase.get(b) ?? []; a.push(...formByWell.get(wc)!); formByBase.set(b, a); }
+  }
+  // Dedup pooled formation tops by name (keep shallowest md) and depth-sort both
+  // lists, so overlapping leg/base records don't double-draw.
+  const dedupTops = (tops: { name: string | null; md: number }[]) => {
+    const best = new Map<string, { name: string | null; md: number }>();
+    for (const t of tops) { const k = s(t.name); const cur = best.get(k); if (!cur || t.md < cur.md) best.set(k, t); }
+    return [...best.values()].sort((a, b) => a.md - b.md);
+  };
+
+  // Only bases that actually have data, capped at 8 (rendered side by side).
+  const bases = [...new Set(allCodes.map(baseOf))].filter((b) => lithoByBase.has(b) || formByBase.has(b)).sort((a, b) => a.localeCompare(b)).slice(0, 8);
   const typeSet = new Set<string>();
   let dmin = Infinity, dmax = -Infinity;
-  const wells = withData.map((wc) => {
-    const lithology = lithoByWell.get(wc) ?? [];
-    const formations = formByWell.get(wc) ?? [];
+  const wells = bases.map((b) => {
+    const lithology = (lithoByBase.get(b) ?? []).slice().sort((x, y) => x.from - y.from);
+    const formations = dedupTops(formByBase.get(b) ?? []);
     for (const l of lithology) { dmin = Math.min(dmin, l.from); dmax = Math.max(dmax, typeof l.to === "number" ? l.to : l.from); for (const cc of l.comps) typeSet.add(cc.name); }
     for (const fo of formations) dmax = Math.max(dmax, fo.md);
-    return { wellCode: wc, name: nameMap.get(wc) || wc, lithology, formations };
+    return { wellCode: b, name: nameMap.get(b) || b, lithology, formations };
   });
   const depthRange = Number.isFinite(dmin) ? { min: Math.floor(dmin / 100) * 100, max: Math.ceil(dmax / 100) * 100 } : null;
   return { wells, depthRange, lithoTypes: [...typeSet].sort() };
@@ -2251,6 +2288,39 @@ function ctx() {
   }
   _ctx = { hole, mud, rig, field };
   return _ctx;
+}
+
+/**
+ * Sidetrack family map: a well and its legs / sidetracks are the SAME physical
+ * well, so their daily-report data lives under different codes (e.g. base
+ * "AB-011" carries the formation tops while "AB-011Leg1" carries the survey, and
+ * "AB-011ST1" a couple more runs). We pool them by stripping a trailing run of
+ * `Leg<N>` / `ST<N>` segments to a base code, then grouping every A01 code by
+ * that base. Only Leg/ST count — CTU / WO / other suffixes stay distinct.
+ *
+ * Returns code → the full set of codes sharing its base (always includes itself).
+ */
+let _wellFam: Map<string, Set<string>> | null = null;
+const sidetrackBase = (code: string): string => s(code).replace(/(?:(?:leg|st)\d+)+$/i, "");
+function wellFamilies(): Map<string, Set<string>> {
+  if (_wellFam) return _wellFam;
+  const byBase = new Map<string, Set<string>>();
+  for (const r of data().prepare(`SELECT WellCode FROM A01`).all() as Row[]) {
+    const wc = s(r.WellCode); if (!wc) continue;
+    const base = sidetrackBase(wc) || wc;
+    let set = byBase.get(base); if (!set) { set = new Set(); byBase.set(base, set); }
+    set.add(wc);
+  }
+  const m = new Map<string, Set<string>>();
+  for (const set of byBase.values()) for (const wc of set) m.set(wc, set);
+  _wellFam = m;
+  return m;
+}
+/** Expand each requested code into its full sidetrack family (base + Leg/ST). */
+function expandSidetracks(codes: Iterable<string>): Set<string> {
+  const fam = wellFamilies(), out = new Set<string>();
+  for (const c of codes) { const wc = s(c); out.add(wc); const sibs = fam.get(wc); if (sibs) for (const x of sibs) out.add(x); }
+  return out;
 }
 
 // Hole/bit-size normalisation — collapse the many spellings of one size

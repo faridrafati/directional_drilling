@@ -46,7 +46,7 @@ interface RopPoint {
   iadc: string | null; bitClass: "PDC" | "roller"; make: string | null; diaIn: number | null;
   mse: number | null; mseEstimated: boolean;
   hsi: number | null; hsiSource: "reported" | "computed" | null;
-  tfa: number | null; flow: number | null; spp: number | null; mudWeight: number | null;
+  tfa: number | null; nozzles: number[] | null; flow: number | null; spp: number | null; mudWeight: number | null;
   dullInner: number | null; dullOuter: number | null; bitHour: number | null;
 }
 interface RopData {
@@ -72,9 +72,76 @@ const SIZE_COLORS = ["#1e40af", "#0d9488", "#7c3aed", "#db2777", "#d97706", "#65
 const colorForSize = (sizes: string[], size: string) => SIZE_COLORS[Math.max(0, sizes.indexOf(size)) % SIZE_COLORS.length];
 
 const fmt1 = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+
+// Bit/hole size string → inches, and inches → the canonical "12-1/2"" label —
+// mirrors the backend's holeSizeValue / normHoleSize so the "Bit sizes" dropdown
+// values round-trip exactly through the API's size filter.
+function holeSizeInches(raw: string): number | null {
+  const t = raw.replace(/[^0-9./ -]/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) return null;
+  let m = t.match(/^(\d+)[\s-]+(\d+)\s*\/\s*(\d+)$/); if (m) return +m[1] + +m[2] / +m[3];
+  m = t.match(/^(\d+)\s*\/\s*(\d+)$/); if (m) return +m[1] / +m[2];
+  m = t.match(/^(\d+(?:\.\d+)?)$/); if (m) return +m[1];
+  return null;
+}
+function normHoleSizeStr(raw: string): string {
+  const v = holeSizeInches(raw);
+  if (v == null) return raw;
+  const whole = Math.floor(v + 1e-9);
+  let num = Math.round((v - whole) * 32);
+  if (num >= 32) return `${whole + 1}"`;
+  if (num === 0) return `${whole}"`;
+  let den = 32;
+  const g = (a: number, b: number): number => (b ? g(b, a % b) : a);
+  const k = g(num, den); num /= k; den /= k;
+  return `${whole}-${num}/${den}"`;
+}
+
+/** Round `v` outward (down for the low bound, up for the high) to a 1/2/5·10ⁿ
+ *  grid step sized to the value, so padded axis bounds land on tidy numbers. */
+function snapOut(v: number, dir: -1 | 1): number {
+  if (!Number.isFinite(v) || v === 0) return 0;
+  const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(v))));
+  const norm = Math.abs(v) / mag;
+  const step = (norm <= 2 ? 0.5 : norm <= 5 ? 1 : 2) * mag;
+  return (dir < 0 ? Math.floor(v / step) : Math.ceil(v / step)) * step;
+}
+
+/**
+ * Data-driven axis domain so each chart fills its plot area and re-scales when a
+ * facet/filter narrows the visible set — instead of Recharts' default of pinning
+ * numeric axes to 0. Passed as the function form of `domain`, so Recharts calls
+ * each bound with the live data min/max; we pad ~`pad` and snap to round numbers.
+ * Non-negative data never gets a negative lower bound (e.g. ROP can't go below 0).
+ */
+const niceDomain = (pad = 0.06): [(min: number) => number, (max: number) => number] => [
+  (min: number) => {
+    const lo = snapOut(min - Math.abs(min) * pad, -1);
+    return min >= 0 ? Math.max(0, lo) : lo;
+  },
+  (max: number) => snapOut(max + Math.abs(max) * pad, 1),
+];
+
+// Legends sit at the TOP so they never collide with the x-axis title, which
+// lives in the bottom margin (insideBottom). Spread onto every <Legend> paired
+// with a bottom axis label. `height` reserves the strip so the plot shifts down.
+const LEGEND_TOP = { verticalAlign: "top", align: "center", height: 26, wrapperStyle: { fontSize: 11, paddingBottom: 4 } } as const;
+// Charts carrying LEGEND_TOP need extra headroom so the plot clears the legend.
+const CHART_MARGIN = { top: 30, right: 24, bottom: 34, left: 8 };
 /** "35–40 klb (15.9–18.1 t)" — klb range with its metric-tonne equivalent. */
 const wobRange = (loKlb: number, hiKlb: number) =>
   `${fmt1(loKlb)}–${fmt1(hiKlb)} klb (${klbToTonnes(loKlb).toFixed(1)}–${klbToTonnes(hiKlb).toFixed(1)} t)`;
+
+/**
+ * Leading IADC digit of a bit run — the cutter "series" used to sub-group bits
+ * within a class. Roller-cone codes are purely numeric ("537" → "5"); PDC codes
+ * are letter-prefixed ("M323" → first digit after the letter, "3"). Returns null
+ * when the code carries no usable digit.
+ */
+function iadcSeries(iadc: string | null): string | null {
+  const m = (iadc ?? "").match(/\d/);
+  return m ? m[0] : null;
+}
 
 /**
  * The study's statistical screening (§5): Tukey IQR fence (1.5×) on ROP, WOB,
@@ -107,6 +174,12 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>("contour");
   const [includeOutliers, setIncludeOutliers] = useState(false); // screening ON by default (spec §5)
+  // Bit-type / IADC-series facet — purely client-side over the loaded points.
+  // "" = all classes; selPdcSeries / selConeSeries hold the picked leading IADC
+  // digits within each class (empty = all series of that class).
+  const [selClass, setSelClass] = useState<"" | "PDC" | "roller">("");
+  const [selPdcSeries, setSelPdcSeries] = useState<string[]>([]);
+  const [selConeSeries, setSelConeSeries] = useState<string[]>([]);
 
   const optsQ = useQuery({ queryKey: ["ddr", "search-options"], queryFn: () => api.get<SearchOptions>("/ddr/search-options") });
   const o = optsQ.data;
@@ -134,20 +207,65 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
   }
   function clearAll() {
     setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setDateFrom(""); setDateTo(""); setData(null);
+    setSelClass(""); setSelPdcSeries([]); setSelConeSeries([]);
   }
 
-  const { kept: points, removed } = useMemo(() => {
+  // IADC-series options per class, derived from the loaded set (before any
+  // class/series filtering), so each list shows the series actually present.
+  const seriesOpts = useMemo(() => {
+    const pdc = new Set<string>(), cone = new Set<string>();
+    for (const p of data?.points ?? []) {
+      const sNum = iadcSeries(p.iadc);
+      if (sNum == null) continue;
+      (p.bitClass === "PDC" ? pdc : cone).add(sNum);
+    }
+    const sort = (s: Set<string>) => [...s].sort((a, b) => Number(a) - Number(b));
+    return { pdc: sort(pdc), cone: sort(cone) };
+  }, [data]);
+
+  // Bit-class + IADC-series gate, applied before outlier screening so all views
+  // (contour, scatters, by-size, table…) and the IQR fences see the same subset.
+  const classFiltered = useMemo(() => {
     const raw = data?.points ?? [];
-    return includeOutliers ? { kept: raw, removed: 0 } : screenOutliers(raw);
-  }, [data, includeOutliers]);
-  const bitSizes = data?.bitSizes ?? [];
+    if (!selClass) return raw;
+    const series = new Set(selClass === "PDC" ? selPdcSeries : selConeSeries);
+    return raw.filter((p) => p.bitClass === selClass && (!series.size || (() => {
+      const sNum = iadcSeries(p.iadc); return sNum != null && series.has(sNum);
+    })()));
+  }, [data, selClass, selPdcSeries, selConeSeries]);
+
+  const { kept: points, removed } = useMemo(() => {
+    return includeOutliers ? { kept: classFiltered, removed: 0 } : screenOutliers(classFiltered);
+  }, [classFiltered, includeOutliers]);
+  // Bit sizes present in the (class-filtered) set, so per-size views / dropdowns
+  // stay in sync with the active bit-type selection. Falls back to the full list.
+  const bitSizes = useMemo(() => {
+    if (!selClass) return data?.bitSizes ?? [];
+    const present = new Set(points.map((p) => p.bitSize));
+    return (data?.bitSizes ?? []).filter((b) => present.has(b));
+  }, [data, selClass, points]);
+
+  // The "Bit sizes" dropdown lists the bit sizes ACTUALLY PRESENT (normalized to
+  // the 12-1/2" form the backend filters on), so the choices match the points
+  // that come back — never a phantom L04 section size with no matching bit. Falls
+  // back to the shared section facet before the first load populates data.
+  const sizeOptions = useMemo(() => {
+    const src = data?.bitSizes?.length ? data.bitSizes.map(normHoleSizeStr) : facet.holeSizes;
+    return [...new Set(src)].sort((a, b) => (holeSizeInches(b) ?? 0) - (holeSizeInches(a) ?? 0));
+  }, [data, facet.holeSizes]);
 
   return (
     <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4 overflow-hidden">
       <div className="flex flex-col min-h-0 bg-white border border-gray-200 rounded p-3 overflow-y-auto">
         <MultiSelect title="Fields" items={(o?.fields ?? []).map((f) => ({ value: f, label: f }))} selected={selFields} onChange={setSelFields} />
         <MultiSelect title={selFields.length ? `Wells · in ${selFields.length} field(s)` : "Wells"} items={wellItems} selected={selWells} onChange={setSelWells} />
-        <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
+        <MultiSelect title="Bit sizes" items={sizeOptions.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
+        <BitTypeFilter
+          selClass={selClass} onClass={setSelClass}
+          pdcSeries={seriesOpts.pdc} coneSeries={seriesOpts.cone}
+          selPdcSeries={selPdcSeries} onPdcSeries={setSelPdcSeries}
+          selConeSeries={selConeSeries} onConeSeries={setSelConeSeries}
+        />
         <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
         <div className="pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Date range (Jalali)</div>
@@ -205,6 +323,77 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
             : <TableView points={points} onOpenReport={onOpenReport} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Bit-type facet: cone vs PDC, then IADC series (leading digit) within each ──
+// Sidebar filter sitting under "Bit sizes". Picking a class reveals that class's
+// IADC-series chips (the leading IADC digit — cutter series). Filtering is
+// client-side over the already-loaded points, so it applies instantly.
+
+function BitTypeFilter({
+  selClass, onClass, pdcSeries, coneSeries,
+  selPdcSeries, onPdcSeries, selConeSeries, onConeSeries,
+}: {
+  selClass: "" | "PDC" | "roller";
+  onClass: (c: "" | "PDC" | "roller") => void;
+  pdcSeries: string[]; coneSeries: string[];
+  selPdcSeries: string[]; onPdcSeries: (s: string[]) => void;
+  selConeSeries: string[]; onConeSeries: (s: string[]) => void;
+}) {
+  // Nothing to offer until a fetch has populated the class options.
+  if (!pdcSeries.length && !coneSeries.length) return null;
+
+  const series = selClass === "PDC" ? pdcSeries : selClass === "roller" ? coneSeries : [];
+  const sel = selClass === "PDC" ? selPdcSeries : selConeSeries;
+  const setSel = selClass === "PDC" ? onPdcSeries : onConeSeries;
+  const toggle = (v: string) => setSel(sel.includes(v) ? sel.filter((x) => x !== v) : [...sel, v]);
+
+  const TABS: { key: "" | "roller" | "PDC"; label: string }[] = [
+    { key: "", label: "All" },
+    { key: "roller", label: "Cone" },
+    { key: "PDC", label: "PDC" },
+  ];
+
+  return (
+    <div className="pt-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Bit type</div>
+      <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+        {TABS.map((t) => (
+          <button key={t.key} onClick={() => onClass(t.key)}
+            className={`px-2.5 h-7 text-xs ${selClass === t.key ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {selClass && (
+        <div className="mt-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] uppercase tracking-wide text-gray-500" title="Leading IADC digit — the cutter series.">
+              IADC series {selClass === "PDC" ? "(after the letter)" : ""}
+            </span>
+            {!!sel.length && (
+              <button onClick={() => setSel([])} className="text-[10px] text-blue-600 hover:underline">clear</button>
+            )}
+          </div>
+          {series.length ? (
+            <div className="flex flex-wrap gap-1">
+              {series.map((d) => {
+                const on = sel.includes(d);
+                return (
+                  <button key={d} onClick={() => toggle(d)}
+                    className={`px-2 h-6 text-xs rounded border ${on ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-[11px] text-gray-400">No {selClass === "PDC" ? "PDC" : "cone"} bits with an IADC code in this selection.</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -606,15 +795,15 @@ function ScatterPanel({ title, xKey, xLabel, series, bitSizes }: {
     <div className="border border-gray-200 rounded p-2">
       <div className="text-sm font-medium text-gray-700 mb-1">{title}</div>
       <ResponsiveContainer width="100%" height={340}>
-        <ScatterChart margin={{ top: 8, right: 12, bottom: 28, left: 8 }}>
+        <ScatterChart margin={{ ...CHART_MARGIN, right: 12 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-          <XAxis type="number" dataKey={xKey} name={xLabel} tick={{ fontSize: 11 }}
-            label={{ value: xLabel, position: "insideBottom", offset: -14, fontSize: 11 }} />
-          <YAxis type="number" dataKey="rop" name="ROP" tick={{ fontSize: 11 }}
+          <XAxis type="number" dataKey={xKey} name={xLabel} tick={{ fontSize: 11 }} domain={niceDomain()} allowDataOverflow
+            label={{ value: xLabel, position: "insideBottom", offset: -18, fontSize: 11 }} />
+          <YAxis type="number" dataKey="rop" name="ROP" tick={{ fontSize: 11 }} domain={niceDomain()} allowDataOverflow
             label={{ value: "ROP (m/hr)", angle: -90, position: "insideLeft", fontSize: 11 }} />
           <ZAxis range={[28, 28]} />
           <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<ScatterTip xKey={xKey} xLabel={xLabel} />} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Legend {...LEGEND_TOP} />
           {series.map((s) => (
             <Scatter key={s.size} name={s.size} data={s.data} fill={colorForSize(bitSizes, s.size)} fillOpacity={0.6} />
           ))}
@@ -780,14 +969,14 @@ function DepthDaysChart({ wells, colorOf }: { wells: WellRuns[]; colorOf: (i: nu
   if (!series.some((s) => s.data.length >= 2)) return <Empty>Not enough dated bit runs to draw a learning curve.</Empty>;
   return (
     <ResponsiveContainer width="100%" height={460}>
-      <LineChart margin={{ top: 8, right: 24, bottom: 28, left: 8 }}>
+      <LineChart margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-        <XAxis type="number" dataKey="day" tick={{ fontSize: 11 }} allowDuplicatedCategory={false}
-          label={{ value: "Days from first bit run", position: "insideBottom", offset: -14, fontSize: 11 }} />
-        <YAxis type="number" reversed dataKey="depth" tick={{ fontSize: 11 }}
+        <XAxis type="number" dataKey="day" tick={{ fontSize: 11 }} allowDuplicatedCategory={false} domain={niceDomain()} allowDataOverflow
+          label={{ value: "Days from first bit run", position: "insideBottom", offset: -18, fontSize: 11 }} />
+        <YAxis type="number" reversed dataKey="depth" tick={{ fontSize: 11 }} domain={niceDomain()} allowDataOverflow
           label={{ value: "Bit depth (m)", angle: -90, position: "insideLeft", fontSize: 11 }} />
         <Tooltip content={<ProgressTip kind="depthDays" />} />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <Legend {...LEGEND_TOP} />
         {series.map((s, i) => (
           <Line key={s.code} type="monotone" dataKey="depth" data={s.data} name={s.name} stroke={colorOf(i)}
             strokeWidth={1.8} dot={{ r: 2 }} activeDot={{ r: 4 }} isAnimationActive={false} connectNulls />
@@ -812,14 +1001,14 @@ function FootageRunChart({ wells, colorOf }: { wells: WellRuns[]; colorOf: (i: n
   if (!series.some((s) => s.data.length >= 1)) return <Empty>No footage to accumulate.</Empty>;
   return (
     <ResponsiveContainer width="100%" height={460}>
-      <LineChart margin={{ top: 8, right: 24, bottom: 28, left: 8 }}>
+      <LineChart margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
         <XAxis type="number" dataKey="run" tick={{ fontSize: 11 }} allowDecimals={false}
-          label={{ value: "Bit run #", position: "insideBottom", offset: -14, fontSize: 11 }} />
-        <YAxis type="number" dataKey="cum" tick={{ fontSize: 11 }}
+          label={{ value: "Bit run #", position: "insideBottom", offset: -18, fontSize: 11 }} />
+        <YAxis type="number" dataKey="cum" tick={{ fontSize: 11 }} domain={niceDomain()} allowDataOverflow
           label={{ value: "Cumulative metres", angle: -90, position: "insideLeft", fontSize: 11 }} />
         <Tooltip content={<ProgressTip kind="footageRun" />} />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <Legend {...LEGEND_TOP} />
         {series.map((s, i) => (
           <Line key={s.code} type="stepAfter" dataKey="cum" data={s.data} name={s.name} stroke={colorOf(i)}
             strokeWidth={1.8} dot={{ r: 2 }} activeDot={{ r: 4 }} isAnimationActive={false} />
@@ -842,15 +1031,15 @@ function RopDepthChart({ wells, colorOf }: { wells: WellRuns[]; colorOf: (i: num
   if (!series.some((s) => s.data.length >= 1)) return <Empty>No depth to plot ROP against.</Empty>;
   return (
     <ResponsiveContainer width="100%" height={460}>
-      <ScatterChart margin={{ top: 8, right: 24, bottom: 28, left: 8 }}>
+      <ScatterChart margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-        <XAxis type="number" dataKey="depth" tick={{ fontSize: 11 }} name="Depth"
-          label={{ value: "Depth (m)", position: "insideBottom", offset: -14, fontSize: 11 }} />
-        <YAxis type="number" dataKey="rop" tick={{ fontSize: 11 }} name="ROP"
+        <XAxis type="number" dataKey="depth" tick={{ fontSize: 11 }} name="Depth" domain={niceDomain()} allowDataOverflow
+          label={{ value: "Depth (m)", position: "insideBottom", offset: -18, fontSize: 11 }} />
+        <YAxis type="number" dataKey="rop" tick={{ fontSize: 11 }} name="ROP" domain={niceDomain()} allowDataOverflow
           label={{ value: "ROP (m/hr)", angle: -90, position: "insideLeft", fontSize: 11 }} />
         <ZAxis range={[30, 30]} />
         <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<ProgressTip kind="ropDepth" />} />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <Legend {...LEGEND_TOP} />
         {series.map((s, i) => (
           <Scatter key={s.code} name={s.name} data={s.data} fill={colorOf(i)} fillOpacity={0.65} line={{ stroke: colorOf(i), strokeWidth: 1 }} lineType="joint" />
         ))}
@@ -876,6 +1065,29 @@ function ProgressTip({ active, payload, kind }: any) {
 
 // ── Table: the underlying bit records, a row opens that day's report ─────────
 
+// Every bit-record field surfaced by the TABLE view, in display order. `align`
+// drives header + cell justification; `get` renders one point (null → "—").
+// Keeping headers and cells in one list stops the columns drifting out of sync.
+const TABLE_COLS: { key: string; label: string; align: "left" | "right"; get: (p: RopPoint) => React.ReactNode }[] = [
+  { key: "date", label: "Date", align: "left", get: (p) => p.date ?? "—" },
+  { key: "field", label: "Field", align: "left", get: (p) => p.field ?? "—" },
+  { key: "bitSize", label: "Bit size", align: "right", get: (p) => p.bitSize },
+  { key: "iadc", label: "IADC", align: "left", get: (p) => p.iadc ?? "—" },
+  { key: "bitClass", label: "Class", align: "left", get: (p) => p.bitClass },
+  { key: "make", label: "Make", align: "left", get: (p) => p.make ?? "—" },
+  { key: "from", label: "From (m)", align: "right", get: (p) => (p.from != null ? Math.round(p.from) : "—") },
+  { key: "to", label: "To (m)", align: "right", get: (p) => (p.to != null ? Math.round(p.to) : "—") },
+  { key: "meters", label: "Meters", align: "right", get: (p) => (p.meters != null ? fmt1(p.meters) : "—") },
+  { key: "bitHour", label: "Bit hrs", align: "right", get: (p) => (p.bitHour != null ? fmt1(p.bitHour) : "—") },
+  { key: "wob", label: "WOB (klb)", align: "right", get: (p) => fmt1(p.wob) },
+  { key: "rpm", label: "RPM", align: "right", get: (p) => Math.round(p.rpm) },
+  { key: "mse", label: "MSE (psi)", align: "right", get: (p) => (p.mse != null ? Math.round(p.mse).toLocaleString() : "—") },
+  { key: "hsi", label: "HSI", align: "right", get: (p) => (p.hsi != null ? fmt1(p.hsi) : "—") },
+  { key: "flow", label: "Flow (gpm)", align: "right", get: (p) => (p.flow != null ? Math.round(p.flow) : "—") },
+  { key: "spp", label: "SPP (psi)", align: "right", get: (p) => (p.spp != null ? Math.round(p.spp) : "—") },
+  { key: "dull", label: "Dull I/O", align: "right", get: (p) => (p.dullInner != null || p.dullOuter != null ? `${p.dullInner ?? "–"}/${p.dullOuter ?? "–"}` : "—") },
+];
+
 function TableView({ points, onOpenReport }: {
   points: RopPoint[]; onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void;
 }) {
@@ -885,9 +1097,10 @@ function TableView({ points, onOpenReport }: {
       <thead className="sticky top-0 z-20">
         <tr className="bg-gray-100">
           <th className="sticky left-0 z-30 bg-gray-100 border border-gray-300 px-2 py-1 text-left font-semibold text-gray-700 whitespace-nowrap">Well</th>
-          {["Date", "Bit size", "WOB (klb)", "RPM", "ROP (m/hr)"].map((h, i) => (
-            <th key={h} className={`bg-gray-100 border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
+          {TABLE_COLS.map((c) => (
+            <th key={c.key} className={`bg-gray-100 border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap text-${c.align}`}>{c.label}</th>
           ))}
+          <th className="bg-gray-100 border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap text-right">ROP (m/hr)</th>
         </tr>
       </thead>
       <tbody>
@@ -900,10 +1113,9 @@ function TableView({ points, onOpenReport }: {
               className={`${zebra} ${clickable ? "cursor-pointer hover:bg-blue-50" : ""}`}
               title={clickable ? "Open this day's daily drilling report" : undefined}>
               <th className="sticky left-0 z-10 bg-inherit border border-gray-300 px-2 py-0.5 text-left font-semibold text-gray-800 whitespace-nowrap">{p.name || p.wellCode}</th>
-              <td className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">{p.date ?? ""}</td>
-              <td className="border border-gray-300 px-2 py-0.5 text-right whitespace-nowrap">{p.bitSize}</td>
-              <td className="border border-gray-300 px-2 py-0.5 text-right whitespace-nowrap">{fmt1(p.wob)}</td>
-              <td className="border border-gray-300 px-2 py-0.5 text-right whitespace-nowrap">{Math.round(p.rpm)}</td>
+              {TABLE_COLS.map((c) => (
+                <td key={c.key} className={`border border-gray-300 px-2 py-0.5 whitespace-nowrap text-${c.align}`}>{c.get(p)}</td>
+              ))}
               <td className="border border-gray-300 px-2 py-0.5 text-right whitespace-nowrap font-medium">{p.rop}</td>
             </tr>
           );
@@ -1100,19 +1312,19 @@ function MseView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] 
         <div className="border border-gray-200 rounded p-2">
           <div className="text-sm font-medium text-gray-700 mb-1">ROP vs MSE — power-law fit</div>
           <ResponsiveContainer width="100%" height={320}>
-            <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
+            <ScatterChart margin={{ ...CHART_MARGIN, right: 16 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
               <XAxis type="number" dataKey="mse" name="MSE" scale="log" domain={["auto", "auto"]} tick={{ fontSize: 10 }}
                 tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(Math.round(v)))}
-                label={{ value: `${mseLabel} (psi, log scale)`, position: "insideBottom", offset: -14, fontSize: 11 }} />
-              <YAxis type="number" dataKey="rop" name="ROP" tick={{ fontSize: 11 }}
+                label={{ value: `${mseLabel} (psi, log scale)`, position: "insideBottom", offset: -18, fontSize: 11 }} />
+              <YAxis type="number" dataKey="rop" name="ROP" tick={{ fontSize: 11 }} domain={niceDomain()} allowDataOverflow
                 label={{ value: "ROP (m/hr)", angle: -90, position: "insideLeft", fontSize: 11 }} />
               <ZAxis range={[26, 26]} />
               <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<MseTip />} />
               <Scatter name="measured torque" data={measuredPts} fill="#1e40af" fillOpacity={0.5} />
               {!!estimatedPts.length && <Scatter name="estimated torque" data={estimatedPts} fill="#94a3b8" fillOpacity={0.35} />}
               {!!fitCurve.length && <Scatter name="fit" data={fitCurve} fill="none" line={{ stroke: "#dc2626", strokeWidth: 2 }} shape={renderNoDot} legendType="none" />}
-              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Legend {...LEGEND_TOP} />
             </ScatterChart>
           </ResponsiveContainer>
           <div className="text-[11px] text-gray-500 px-1">
@@ -1237,17 +1449,17 @@ function HydraulicsView({ points, bitSizes }: { points: RopPoint[]; bitSizes: st
       <div className="border border-gray-200 rounded p-2">
         <div className="text-sm font-medium text-gray-700 mb-1">ROP vs HSI (hydraulic horsepower per in²)</div>
         <ResponsiveContainer width="100%" height={360}>
-          <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
+          <ScatterChart margin={{ ...CHART_MARGIN, right: 16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-            <XAxis type="number" dataKey="hsi" name="HSI" tick={{ fontSize: 11 }}
-              label={{ value: "HSI (hp/in²)", position: "insideBottom", offset: -14, fontSize: 11 }} />
-            <YAxis type="number" dataKey="rop" name="ROP" tick={{ fontSize: 11 }}
+            <XAxis type="number" dataKey="hsi" name="HSI" tick={{ fontSize: 11 }} domain={niceDomain()} allowDataOverflow
+              label={{ value: "HSI (hp/in²)", position: "insideBottom", offset: -18, fontSize: 11 }} />
+            <YAxis type="number" dataKey="rop" name="ROP" tick={{ fontSize: 11 }} domain={niceDomain()} allowDataOverflow
               label={{ value: "ROP (m/hr)", angle: -90, position: "insideLeft", fontSize: 11 }} />
             <ZAxis range={[26, 26]} />
             <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<HsiTip />} />
             <Scatter name="bit records" data={shownHsi} fill="#0891b2" fillOpacity={0.5} />
             {!!trendLine.length && <Scatter name="trend" data={trendLine} fill="none" line={{ stroke: "#dc2626", strokeWidth: 2 }} shape={renderNoDot} legendType="none" />}
-            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Legend {...LEGEND_TOP} />
           </ScatterChart>
         </ResponsiveContainer>
       </div>
@@ -1264,6 +1476,14 @@ function hsiInterpretation(rho: number | null, slope: number): string {
   if (rho < -0.3) return `ROP falls as HSI rises (Spearman ρ = ${rho.toFixed(2)}): hydraulics are not the limiter; formation strength or other factors dominate.`;
   return `ROP is roughly flat against HSI (Spearman ρ = ${rho.toFixed(2)}): cleaning is adequate or another factor (formation, WOB/RPM) limits ROP — as in the reference 17½″ and 8½″ sections.`;
 }
+/** Nozzle sizes (32nds″) → "6 × 14 + 1 × 12 (7 jets)", collapsing repeats. */
+function fmtNozzles(nz: number[]): string {
+  const counts = new Map<number, number>();
+  for (const n of nz) counts.set(n, (counts.get(n) ?? 0) + 1);
+  const groups = [...counts.entries()].sort((a, b) => b[0] - a[0]).map(([size, c]) => `${c} × ${size}`);
+  return `${groups.join(" + ")} (${nz.length} jet${nz.length === 1 ? "" : "s"})`;
+}
+
 function HsiTip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload as RopPoint;
@@ -1273,6 +1493,7 @@ function HsiTip({ active, payload }: any) {
       <div className="font-semibold">{p.name} · {p.bitSize}"{p.iadc ? ` · IADC ${p.iadc}` : ""}</div>
       <div>HSI {p.hsi} hp/in² ({p.hsiSource})</div>
       <div>ROP {p.rop} m/hr{p.flow != null ? ` · flow ${p.flow} gpm` : ""}{p.tfa != null ? ` · TFA ${p.tfa}″²` : ""}</div>
+      {p.nozzles?.length ? <div className="text-gray-300">Nozzles (1/32″): {fmtNozzles(p.nozzles)}</div> : null}
     </div>
   );
 }
@@ -1347,13 +1568,13 @@ function EconomicsView({ points, bitSizes }: { points: RopPoint[]; bitSizes: str
       <div className="border border-gray-200 rounded p-2">
         <div className="text-sm font-medium text-gray-700 mb-1">Cost per metre vs ROP, by IADC type{withTrip ? " (with trip)" : " (drilling only)"}</div>
         <ResponsiveContainer width="100%" height={Math.max(260, rows.length * 30)}>
-          <BarChart data={rows} margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
+          <BarChart data={rows} margin={{ ...CHART_MARGIN, right: 16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-            <XAxis dataKey="iadc" tick={{ fontSize: 11 }} label={{ value: "IADC type", position: "insideBottom", offset: -14, fontSize: 11 }} />
+            <XAxis dataKey="iadc" tick={{ fontSize: 11 }} label={{ value: "IADC type", position: "insideBottom", offset: -18, fontSize: 11 }} />
             <YAxis yAxisId="cost" tick={{ fontSize: 11 }} label={{ value: "USD/m", angle: -90, position: "insideLeft", fontSize: 11 }} />
             <YAxis yAxisId="rop" orientation="right" tick={{ fontSize: 11 }} label={{ value: "ROP m/hr", angle: 90, position: "insideRight", fontSize: 11 }} />
             <Tooltip content={<EconTip />} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Legend {...LEGEND_TOP} />
             <Bar yAxisId="cost" dataKey="costM" name="cost/m (USD)" radius={[3, 3, 0, 0]}>
               {rows.map((r) => <Cell key={r.iadc} fill={colorForIadc(codes, r.iadc)} />)}
             </Bar>

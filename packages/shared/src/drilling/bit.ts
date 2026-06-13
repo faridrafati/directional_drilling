@@ -5,16 +5,17 @@
 
 /**
  * Parse a bit / hole size label into inches.
- * Handles mixed fractions ("12 1/4" → 12.25), bare fractions ("3/4" → 0.75),
- * and decimals ("5.875", "26"). Returns `null` for anything unparseable or
- * outside a sane (0, 60) inch range.
+ * Handles mixed fractions ("12 1/4" or canonical "12-1/4"" → 12.25), bare
+ * fractions ("3/4" → 0.75), and decimals ("5.875", "26"). Returns `null` for
+ * anything unparseable or outside a sane (0, 60) inch range.
  */
 export function parseBitSizeInches(label: string | null | undefined): number | null {
   if (label == null) return null;
-  const t = String(label).trim();
+  // Drop a trailing inch mark so the canonical "12-1/2"" label parses too.
+  const t = String(label).replace(/["'″]/g, "").trim();
   if (!t) return null;
   let inches: number | null = null;
-  let m = t.match(/^(\d+(?:\.\d+)?)\s+(\d+)\/(\d+)$/); // "12 1/4"
+  let m = t.match(/^(\d+(?:\.\d+)?)[\s-]+(\d+)\/(\d+)$/); // "12 1/4" | "12-1/4"
   if (m) inches = Number(m[1]) + Number(m[2]) / Number(m[3]);
   else if ((m = t.match(/^(\d+)\/(\d+)$/))) inches = Number(m[1]) / Number(m[2]); // "3/4"
   else if (/^\d+(?:\.\d+)?$/.test(t)) inches = Number(t); // "5.875" / "26"
