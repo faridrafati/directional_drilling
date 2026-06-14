@@ -53,8 +53,9 @@ interface RopData {
   points: RopPoint[]; bitSizes: string[]; truncated?: boolean; total?: number; note?: string;
 }
 
-type View = "contour" | "voxel" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
+type View = "summary" | "contour" | "voxel" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
 const VIEWS: { key: View; label: string }[] = [
+  { key: "summary", label: "Summary" },
   { key: "contour", label: "Contour" },
   { key: "voxel", label: "3D ROP" },
   { key: "mse", label: "MSE" },
@@ -172,7 +173,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
   const [data, setData] = useState<RopData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<View>("contour");
+  const [view, setView] = useState<View>("summary");
   const [includeOutliers, setIncludeOutliers] = useState(false); // screening ON by default (spec §5)
   // Bit-type / IADC-series facet — purely client-side over the loaded points.
   // "" = all classes; selPdcSeries / selConeSeries hold the picked leading IADC
@@ -311,6 +312,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
         <div className="overflow-auto flex-1 min-h-0 p-3">
           {!data ? <Empty>Pick a field or well in the sidebar, then press Show.</Empty>
             : !points.length ? <Empty>{data.note ?? "No bit records with usable WOB / RPM / ROP for this selection."}</Empty>
+            : view === "summary" ? <SummaryView points={points} bitSizes={bitSizes} onOpenReport={onOpenReport} onView={setView} />
             : view === "contour" ? <ContourView points={points} bitSizes={bitSizes} />
             : view === "voxel" ? <Voxel3DView points={points} bitSizes={bitSizes} />
             : view === "mse" ? <MseView points={points} bitSizes={bitSizes} />
@@ -1127,6 +1129,376 @@ function TableView({ points, onOpenReport }: {
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className="p-8 text-center text-sm text-gray-400">{children}</div>;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Summary — the DEFAULT KPI-dashboard view (matches the Time-Analysis pattern):
+// small KPI cards over the loaded bit runs, a bit-performance ranking table with
+// inline bars, and two complementary hand-rolled SVG charts the other views
+// don't already cover — ROP & MSE binned by depth across hole sections, and a
+// per-section performance summary. Everything computed client-side; nothing here
+// duplicates the existing scatter / contour / economics views.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Floating HTML tooltip for the hand-rolled SVG charts (same helper as the
+ *  Time-Analysis tab). */
+function useSvgHover() {
+  const [hover, setHover] = useState<{ x: number; y: number; html: string } | null>(null);
+  const enter = (html: string) => (e: React.MouseEvent) => setHover({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY, html });
+  const leave = () => setHover(null);
+  const node = hover ? (
+    <div className="absolute z-20 pointer-events-none px-2 py-1 rounded bg-gray-900 text-white text-[11px] leading-tight shadow-lg"
+      style={{ left: hover.x + 12, top: hover.y + 12, maxWidth: 260 }} dangerouslySetInnerHTML={{ __html: hover.html }} />
+  ) : null;
+  return { enter, leave, node };
+}
+
+/** Mid-depth of a bit run (interval midpoint, else whichever end is recorded). */
+const midDepth = (p: RopPoint): number | null =>
+  p.from != null && p.to != null ? (p.from + p.to) / 2 : (p.to ?? p.from ?? null);
+
+/** "1,234" with thousands separators; em-dash for null. */
+const intc = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? "—" : Math.round(v).toLocaleString());
+
+/** Numeric value of a bit-size label (12-1/4" → 12.25) for widest→narrowest order. */
+const sizeVal = (s: string): number => holeSizeInches(s) ?? -1;
+
+/** One KPI card — bold value + small caption, optional sub-line and accent bar. */
+function KpiCard({ label, value, unit, sub, accent = "#1e40af" }: {
+  label: string; value: string; unit?: string; sub?: React.ReactNode; accent?: string;
+}) {
+  return (
+    <div className="relative rounded border border-gray-200 bg-white px-3 py-2 overflow-hidden">
+      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent }} />
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 truncate">{label}</div>
+      <div className="text-xl font-semibold text-gray-800 tabular-nums leading-tight">
+        {value}{unit ? <span className="text-xs font-normal text-gray-400 ml-1">{unit}</span> : null}
+      </div>
+      {sub ? <div className="text-[11px] text-gray-500 truncate">{sub}</div> : null}
+    </div>
+  );
+}
+
+/** A right-aligned cell with an inline horizontal % bar behind the number — the
+ *  Time-Analysis ranking-table idiom. `frac` ∈ [0,1] sizes the bar. */
+function BarCell({ text, frac, color = "#1e40af", align = "right" }: {
+  text: React.ReactNode; frac: number; color?: string; align?: "left" | "right";
+}) {
+  const pct = Math.max(0, Math.min(100, frac * 100));
+  return (
+    <td className="border border-gray-300 px-0 py-0 relative">
+      <div className="absolute inset-y-0 left-0 opacity-20" style={{ width: `${pct}%`, background: color }} />
+      <div className={`relative px-2 py-0.5 ${align === "right" ? "text-right" : "text-left"} tabular-nums`}>{text}</div>
+    </td>
+  );
+}
+
+interface SizeAgg {
+  size: string; n: number; meters: number; hours: number;
+  meanRop: number; bestRop: number; medMse: number | null; avgDull: number | null;
+}
+/** Per-bit-size rollup for the section-performance table. */
+function aggregateBySize(points: RopPoint[], bitSizes: string[]): SizeAgg[] {
+  const m = new Map<string, RopPoint[]>();
+  for (const p of points) { const a = m.get(p.bitSize); if (a) a.push(p); else m.set(p.bitSize, [p]); }
+  const order = bitSizes.length ? bitSizes : [...m.keys()].sort((a, b) => sizeVal(b) - sizeVal(a));
+  return order.filter((b) => m.has(b)).map((b) => {
+    const ps = m.get(b)!;
+    const meters = ps.reduce((a, p) => a + (p.meters ?? 0), 0);
+    const hours = ps.reduce((a, p) => a + (p.bitHour ?? 0), 0);
+    const mses = ps.map((p) => p.mse).filter((v): v is number => v != null && v > 0);
+    const dulls = ps.map((p) => (p.dullInner != null && p.dullOuter != null ? (p.dullInner + p.dullOuter) / 2 : null)).filter((v): v is number => v != null);
+    return {
+      size: b, n: ps.length, meters, hours,
+      meanRop: mean(ps.map((p) => p.rop)) ?? 0,
+      bestRop: Math.max(...ps.map((p) => p.rop)),
+      medMse: median(mses),
+      avgDull: dulls.length ? mean(dulls)! : null,
+    };
+  });
+}
+
+function SummaryView({ points, bitSizes, onOpenReport, onView }: {
+  points: RopPoint[]; bitSizes: string[];
+  onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void;
+  onView?: (v: View) => void;
+}) {
+  // ── headline KPIs over the loaded (screened) runs ──────────────────────────
+  const kpi = useMemo(() => {
+    const n = points.length;
+    const rops = points.map((p) => p.rop);
+    const meanRop = mean(rops) ?? 0;
+    const medRop = median(rops) ?? 0;
+    let best = points[0], worst = points[0];
+    for (const p of points) { if (p.rop > best.rop) best = p; if (p.rop < worst.rop) worst = p; }
+    const totalM = points.reduce((a, p) => a + (p.meters ?? 0), 0);
+    const totalHr = points.reduce((a, p) => a + (p.bitHour ?? 0), 0);
+    const mses = points.map((p) => p.mse).filter((v): v is number => v != null && v > 0);
+    const wells = new Set(points.map((p) => p.wellCode)).size;
+    const pdc = points.filter((p) => p.bitClass === "PDC").length;
+    // Overall realised pace = total metres ÷ total rotating hours (footage-weighted,
+    // not the simple per-run mean — what a manager actually cares about).
+    const overallRop = totalHr > 0 ? totalM / totalHr : meanRop;
+    return { n, meanRop, medRop, best, worst, totalM, totalHr, medMse: median(mses), wells, pdc, overallRop };
+  }, [points]);
+
+  const sizeAgg = useMemo(() => aggregateBySize(points, bitSizes), [points, bitSizes]);
+
+  // Top bit runs by ROP for the leaderboard (footage-weighted columns get bars).
+  const topRuns = useMemo(() => {
+    const maxM = Math.max(1, ...points.map((p) => p.meters ?? 0));
+    const maxRop = Math.max(1, ...points.map((p) => p.rop));
+    return points.slice().sort((a, b) => b.rop - a.rop).slice(0, 15).map((p) => ({ p, maxM, maxRop }));
+  }, [points]);
+
+  const maxSizeM = Math.max(1, ...sizeAgg.map((s) => s.meters));
+  const maxSizeRop = Math.max(1, ...sizeAgg.map((s) => s.bestRop));
+
+  return (
+    <div className="space-y-4">
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+        <KpiCard label="Overall ROP" value={kpi.overallRop.toFixed(1)} unit="m/hr" accent="#1e40af"
+          sub={<>footage-weighted · mean {kpi.meanRop.toFixed(1)} · median {kpi.medRop.toFixed(1)}</>} />
+        <KpiCard label="Best run ROP" value={fmt1(kpi.best.rop)} unit="m/hr" accent="#16a34a"
+          sub={<>{kpi.best.name} · {kpi.best.bitSize}{kpi.best.iadc ? ` · ${kpi.best.iadc}` : ""}</>} />
+        <KpiCard label="Slowest run ROP" value={fmt1(kpi.worst.rop)} unit="m/hr" accent="#dc2626"
+          sub={<>{kpi.worst.name} · {kpi.worst.bitSize}</>} />
+        <KpiCard label="Total footage" value={intc(kpi.totalM)} unit="m" accent="#0d9488"
+          sub={<>across {kpi.wells} well{kpi.wells === 1 ? "" : "s"}</>} />
+        <KpiCard label="Bit runs" value={intc(kpi.n)} accent="#7c3aed"
+          sub={<>{kpi.pdc} PDC · {kpi.n - kpi.pdc} roller</>} />
+        <KpiCard label="Rotating hours" value={intc(kpi.totalHr)} unit="hr" accent="#d97706"
+          sub={<>{(kpi.totalHr / 24).toFixed(0)} rig-days on bottom</>} />
+        <KpiCard label="Median MSE" value={kpi.medMse != null ? intc(kpi.medMse) : "—"} unit={kpi.medMse != null ? "psi" : undefined} accent="#0891b2"
+          sub={kpi.medMse != null ? <>{psiToMPa(kpi.medMse).toFixed(0)} MPa</> : "no MSE inputs"} />
+        <KpiCard label="Bit sizes" value={intc(sizeAgg.length)} accent="#65a30d"
+          sub={sizeAgg.map((s) => s.size).join(" · ")} />
+      </div>
+
+      {/* Section / bit-size performance table with inline bars */}
+      <div className="border border-gray-200 rounded overflow-hidden">
+        <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-700">Performance by hole section (bit size)</span>
+          {onView && <button onClick={() => onView("size")} className="text-[11px] text-blue-600 hover:underline">mean-ROP chart →</button>}
+        </div>
+        <div className="overflow-auto">
+          <table className="text-[11px] tabular-nums border-collapse w-full">
+            <thead><tr className="bg-gray-100">
+              {["Section", "Runs", "Footage (m)", "Hours", "Mean ROP", "Best ROP", "Median MSE", "Avg dull"].map((h, i) => (
+                <th key={h} className={`border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {sizeAgg.map((s, i) => (
+                <tr key={s.size} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
+                  <td className="border border-gray-300 px-2 py-0.5 text-left font-semibold" style={{ color: colorForSize(bitSizes, s.size) }}>{s.size}</td>
+                  <td className="border border-gray-300 px-2 py-0.5 text-right">{s.n}</td>
+                  <BarCell text={intc(s.meters)} frac={s.meters / maxSizeM} color={colorForSize(bitSizes, s.size)} />
+                  <td className="border border-gray-300 px-2 py-0.5 text-right">{intc(s.hours)}</td>
+                  <BarCell text={s.meanRop.toFixed(1)} frac={s.meanRop / maxSizeRop} color="#1e40af" />
+                  <td className="border border-gray-300 px-2 py-0.5 text-right">{fmt1(s.bestRop)}</td>
+                  <td className="border border-gray-300 px-2 py-0.5 text-right">{s.medMse != null ? intc(s.medMse) : "—"}</td>
+                  <td className="border border-gray-300 px-2 py-0.5 text-right">{s.avgDull != null ? s.avgDull.toFixed(1) : "—"}</td>
+                </tr>
+              ))}
+              <tr className="bg-amber-50 font-semibold text-gray-800">
+                <td className="border border-gray-300 px-2 py-0.5 text-left">All</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{kpi.n}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{intc(kpi.totalM)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{intc(kpi.totalHr)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{kpi.overallRop.toFixed(1)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{fmt1(kpi.best.rop)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{kpi.medMse != null ? intc(kpi.medMse) : "—"}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="px-3 py-1 text-[11px] text-gray-400">Mean ROP = simple average per run; the “All” row uses footage-weighted overall ROP (total m ÷ total hr). Avg dull = (inner + outer) ÷ 2 on the IADC dull-grade scale (0 = new, 8 = worn).</div>
+      </div>
+
+      {/* Two complementary charts */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <RopMseDepthChart points={points} />
+        <SectionRopChart agg={sizeAgg} bitSizes={bitSizes} />
+      </div>
+
+      {/* Top bit-run leaderboard */}
+      <div className="border border-gray-200 rounded overflow-hidden">
+        <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-700">Fastest bit runs</span>
+          {onView && <button onClick={() => onView("table")} className="text-[11px] text-blue-600 hover:underline">full table →</button>}
+        </div>
+        <div className="overflow-auto">
+          <table className="text-[11px] tabular-nums border-collapse w-full">
+            <thead><tr className="bg-gray-100">
+              {["#", "Well", "Date", "Section", "IADC / class", "ROP (m/hr)", "Footage (m)", "Hours", "MSE (psi)", "Dull I/O"].map((h, i) => (
+                <th key={h} className={`border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${i >= 5 ? "text-right" : "text-left"}`}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {topRuns.map(({ p, maxM, maxRop }, i) => {
+                const clickable = !!onOpenReport && p.serialNo != null;
+                return (
+                  <tr key={i}
+                    onClick={clickable ? () => onOpenReport!(p.wellCode, p.serialNo!, p.date) : undefined}
+                    className={`${i % 2 ? "bg-teal-50/40" : "bg-white"} ${clickable ? "cursor-pointer hover:bg-blue-50" : ""}`}
+                    title={clickable ? "Open this day's daily drilling report" : undefined}>
+                    <td className="border border-gray-300 px-2 py-0.5 text-left text-gray-500">{i + 1}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-left font-semibold text-gray-800 whitespace-nowrap">{p.name || p.wellCode}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">{p.date ?? "—"}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-left" style={{ color: colorForSize(bitSizes, p.bitSize) }}>{p.bitSize}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">{p.iadc ? p.iadc : "—"} · {p.bitClass}</td>
+                    <BarCell text={<b>{p.rop}</b>} frac={p.rop / maxRop} color="#16a34a" />
+                    <BarCell text={intc(p.meters)} frac={(p.meters ?? 0) / maxM} color="#0d9488" />
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{p.bitHour != null ? fmt1(p.bitHour) : "—"}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{p.mse != null ? intc(p.mse) : "—"}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{p.dullInner != null || p.dullOuter != null ? `${p.dullInner ?? "–"}/${p.dullOuter ?? "–"}` : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** ROP & MSE binned by depth (50–100 m bins), drawn as two stacked mini-tracks
+ *  sharing a depth (Y, increasing down) axis — the classic drilling "parameters
+ *  vs depth" plot. Complements the per-well ROP-vs-depth scatter in Progress by
+ *  rolling all wells into a single depth profile and overlaying mean MSE. */
+function RopMseDepthChart({ points }: { points: RopPoint[] }) {
+  const hover = useSvgHover();
+  const bins = useMemo(() => {
+    const withD = points.map((p) => ({ d: midDepth(p), rop: p.rop, mse: p.mse })).filter((x): x is { d: number; rop: number; mse: number | null } => x.d != null);
+    if (withD.length < 2) return null;
+    let lo = Infinity, hi = -Infinity;
+    for (const x of withD) { if (x.d < lo) lo = x.d; if (x.d > hi) hi = x.d; }
+    if (hi <= lo) return null;
+    const step = niceStep(hi - lo, 24);
+    const min = Math.floor(lo / step) * step;
+    const nb = Math.max(1, Math.ceil((hi - min) / step + 1e-9));
+    const acc = Array.from({ length: nb }, () => ({ ropSum: 0, ropN: 0, mseSum: 0, mseN: 0 }));
+    for (const x of withD) {
+      const i = Math.min(nb - 1, Math.floor((x.d - min) / step));
+      const c = acc[i]; c.ropSum += x.rop; c.ropN += 1;
+      if (x.mse != null && x.mse > 0) { c.mseSum += x.mse; c.mseN += 1; }
+    }
+    const rows = acc.map((c, i) => ({
+      dLo: min + i * step, dHi: min + (i + 1) * step,
+      rop: c.ropN ? c.ropSum / c.ropN : null, n: c.ropN,
+      mse: c.mseN ? c.mseSum / c.mseN : null,
+    })).filter((r) => r.n > 0);
+    const maxRop = Math.max(...rows.map((r) => r.rop ?? 0), 1);
+    const maxMse = Math.max(...rows.map((r) => r.mse ?? 0), 1);
+    return { rows, min, step, depMin: min, depMax: min + nb * step, maxRop, maxMse };
+  }, [points]);
+
+  if (!bins) return <div className="border border-gray-200 rounded p-2"><div className="text-sm font-medium text-gray-700 mb-1">ROP &amp; MSE vs depth</div><Empty>Not enough bit runs with depth to build a depth profile.</Empty></div>;
+
+  const PAD = { l: 52, r: 12, t: 22, b: 28 };
+  const trackW = 150, gap = 30;
+  const plotH = 360;
+  const W = PAD.l + trackW + gap + trackW + PAD.r, H = PAD.t + plotH + PAD.b;
+  const span = bins.depMax - bins.depMin || 1;
+  const yOf = (d: number) => PAD.t + ((d - bins.depMin) / span) * plotH;
+  const depTicks = niceTicks(bins.depMin, bins.depMax, 6);
+  const x0Rop = PAD.l, x0Mse = PAD.l + trackW + gap;
+
+  return (
+    <div className="border border-gray-200 rounded p-2 relative">
+      <div className="text-sm font-medium text-gray-700 mb-1">ROP &amp; MSE vs depth — all wells, {bins.step.toFixed(0)} m bins</div>
+      <svg width={W} height={H} className="block max-w-full">
+        {/* depth axis (shared) */}
+        {depTicks.map((d) => (
+          <g key={d}>
+            <line x1={PAD.l - 4} x2={W - PAD.r} y1={yOf(d)} y2={yOf(d)} stroke="#f1f5f9" />
+            <text x={PAD.l - 7} y={yOf(d) + 3} textAnchor="end" fontSize={9} fill="#94a3b8">{Math.round(d)}</text>
+          </g>
+        ))}
+        <text transform={`translate(12 ${PAD.t + plotH / 2}) rotate(-90)`} textAnchor="middle" fontSize={10} fill="#475569" fontWeight={600}>Depth (m)</text>
+        {/* ROP track (bars grow right, coloured by speed) */}
+        <text x={x0Rop + trackW / 2} y={PAD.t - 8} textAnchor="middle" fontSize={10} fill="#1e40af" fontWeight={600}>mean ROP (m/hr)</text>
+        {bins.rows.map((r, i) => {
+          const y = yOf(r.dLo), h = Math.max(1, yOf(r.dHi) - yOf(r.dLo) - 1);
+          const w = ((r.rop ?? 0) / bins.maxRop) * trackW;
+          const html = `Depth ${Math.round(r.dLo)}–${Math.round(r.dHi)} m<br/><b>mean ROP ${(r.rop ?? 0).toFixed(1)} m/hr</b> · ${r.n} run${r.n === 1 ? "" : "s"}${r.mse != null ? `<br/>mean MSE ${intc(r.mse)} psi` : ""}`;
+          return <rect key={i} x={x0Rop} y={y} width={w} height={h} fill={ropColor((r.rop ?? 0) / bins.maxRop)}
+            onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />;
+        })}
+        <line x1={x0Rop} x2={x0Rop} y1={PAD.t} y2={PAD.t + plotH} stroke="#cbd5e1" />
+        {/* MSE track */}
+        <text x={x0Mse + trackW / 2} y={PAD.t - 8} textAnchor="middle" fontSize={10} fill="#b45309" fontWeight={600}>mean MSE (psi)</text>
+        {bins.rows.map((r, i) => {
+          if (r.mse == null) return null;
+          const y = yOf(r.dLo), h = Math.max(1, yOf(r.dHi) - yOf(r.dLo) - 1);
+          const w = (r.mse / bins.maxMse) * trackW;
+          const html = `Depth ${Math.round(r.dLo)}–${Math.round(r.dHi)} m<br/><b>mean MSE ${intc(r.mse)} psi</b> (${psiToMPa(r.mse).toFixed(0)} MPa)`;
+          return <rect key={i} x={x0Mse} y={y} width={w} height={h} fill="#d97706" fillOpacity={0.8}
+            onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />;
+        })}
+        <line x1={x0Mse} x2={x0Mse} y1={PAD.t} y2={PAD.t + plotH} stroke="#cbd5e1" />
+      </svg>
+      <div className="text-[11px] text-gray-400">Each band is a depth interval; bar length is the mean across all bit runs in it. ROP bars are speed-coloured (cool = slow, warm = fast); the matching MSE track flags where energy efficiency drops as ROP falls.</div>
+      {hover.node}
+    </div>
+  );
+}
+
+/** Per-section footage + mean/best ROP overview as grouped horizontal bars —
+ *  the at-a-glance "which section drilled most / fastest" companion to the table. */
+function SectionRopChart({ agg, bitSizes }: { agg: SizeAgg[]; bitSizes: string[] }) {
+  const hover = useSvgHover();
+  if (!agg.length) return <div className="border border-gray-200 rounded p-2"><div className="text-sm font-medium text-gray-700 mb-1">Section footage &amp; ROP</div><Empty>No sections to summarise.</Empty></div>;
+  const maxM = Math.max(1, ...agg.map((s) => s.meters));
+  const maxRop = Math.max(1, ...agg.map((s) => s.bestRop));
+  const PAD = { l: 64, r: 48, t: 24, b: 8 };
+  const rowH = 34, barH = 11;
+  const plotW = 280;
+  const W = PAD.l + plotW + PAD.r, H = PAD.t + agg.length * rowH + PAD.b;
+  return (
+    <div className="border border-gray-200 rounded p-2 relative">
+      <div className="text-sm font-medium text-gray-700 mb-1">Section footage &amp; ROP</div>
+      <svg width={W} height={H} className="block max-w-full">
+        <text x={PAD.l} y={PAD.t - 10} fontSize={10} fill="#0d9488" fontWeight={600}>footage (bar)</text>
+        <text x={PAD.l + plotW} y={PAD.t - 10} textAnchor="end" fontSize={10} fill="#1e40af" fontWeight={600}>● mean ROP  ○ best ROP</text>
+        {agg.map((s, i) => {
+          const yc = PAD.t + i * rowH + rowH / 2;
+          const w = (s.meters / maxM) * plotW;
+          const mx = PAD.l + (s.meanRop / maxRop) * plotW;
+          const bx = PAD.l + (s.bestRop / maxRop) * plotW;
+          const html = `<b>${s.size}</b><br/>${intc(s.meters)} m · ${s.n} runs<br/>mean ROP ${s.meanRop.toFixed(1)} · best ${fmt1(s.bestRop)} m/hr`;
+          return (
+            <g key={s.size}>
+              <text x={PAD.l - 6} y={yc + 3} textAnchor="end" fontSize={10} fill="#334155" fontWeight={600}>{s.size}</text>
+              <rect x={PAD.l} y={yc - barH / 2} width={w} height={barH} fill={colorForSize(bitSizes, s.size)} fillOpacity={0.85}
+                onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />
+              <text x={PAD.l + w + 4} y={yc + 3} fontSize={9} fill="#64748b">{intc(s.meters)} m</text>
+              {/* ROP markers on the same row, scaled to the best-ROP max */}
+              <circle cx={bx} cy={yc} r={4} fill="none" stroke="#1e40af" strokeWidth={1.4} />
+              <circle cx={mx} cy={yc} r={3.5} fill="#1e40af" />
+            </g>
+          );
+        })}
+        <line x1={PAD.l} x2={PAD.l} y1={PAD.t} y2={PAD.t + agg.length * rowH} stroke="#cbd5e1" />
+      </svg>
+      <div className="text-[11px] text-gray-400">Bar = total footage per section (teal scale). Dots overlay mean (filled) and best (open) ROP, scaled to the fastest section — wide section, slow dots ⇒ a long, hard-drilling phase.</div>
+      {hover.node}
+    </div>
+  );
+}
+
+/** "Nice" evenly-spaced tick values across [lo, hi] (≈ `count` ticks). */
+function niceTicks(lo: number, hi: number, count: number): number[] {
+  if (!(hi > lo)) return [lo];
+  const step = niceStep(hi - lo, count);
+  const start = Math.ceil(lo / step) * step;
+  const out: number[] = [];
+  for (let v = start; v <= hi + 1e-9; v += step) out.push(Number(v.toFixed(6)));
+  return out.length ? out : [lo, hi];
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -15,7 +15,7 @@
  *     MudPlanning). Driven by a separate /ddr/mud-planning fetch.
  */
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
@@ -36,8 +36,28 @@ export interface StockRow {
 }
 interface StockData { rows: StockRow[]; truncated?: boolean; total?: number; note?: string }
 
+// Shape of the /ddr/mud-planning payload (see apps/api/src/ddr/db.ts:getMudPlanning).
+// Defined locally — MudPlanning.tsx keeps these private — so the Summary can reuse
+// the SAME cached query (same key) the Planning view fetches, for cost + section
+// metres without a second round-trip.
+interface PlanSectionStat {
+  code: string; size: string; used: number; metres: number; wells: number;
+  perMmean: number; perMmedian: number; perMmin: number; perMmax: number; costR: number; costD: number;
+}
+interface PlanMaterial {
+  material: string; unit: string;
+  totalUsed: number; totalCostR: number; totalCostD: number; bySection: PlanSectionStat[];
+}
+interface PlanSection { code: string; size: string; wells: number; metres: number }
+interface PlanningData { sections: PlanSection[]; materials: PlanMaterial[]; wellCount: number; note?: string }
+
 const fmtNum = (v: unknown): string =>
   v == null || v === "" ? "" : typeof v === "number" ? (Number.isInteger(v) ? String(v) : v.toFixed(1)) : String(v);
+// Compact integer-ish display for big quantities/costs (e.g. 12,345 / 1.2M).
+const fmtBig = (v: number): string =>
+  !Number.isFinite(v) ? "—" : Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : Math.round(v).toLocaleString();
+// Per-metre rate: keep decimals when small so a 0.03 rate doesn't read as 0.
+const fmtRate = (v: number): string => v >= 100 ? Math.round(v).toLocaleString() : v >= 1 ? v.toFixed(2) : v.toFixed(3);
 
 // Columns mirror the Delphi grid (Unit1.pas:4474): the depth + day context, then
 // the material, unit and the six stock figures (Amount→Used, Rec, Stock, OS, Req,
@@ -72,8 +92,9 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
   // and doesn't refetch on every sidebar keystroke.
   const [planningFilters, setPlanningFilters] = useState<PlanningFilters | null>(null);
 
-  // Local view state — table/graph use the loaded rows; planning fetches its own.
-  const [view, setView] = useState<"table" | "graph" | "planning">("table");
+  // Local view state — summary/table/graph use the loaded rows (summary also reuses
+  // the planning fetch for cost + section metres); planning fetches its own.
+  const [view, setView] = useState<"summary" | "table" | "graph" | "planning">("summary");
   const [groupBy, setGroupBy] = useState<"material" | "well">("material");
   // Graph metric: total amount used, or that amount normalised per 100 m drilled
   // (used ÷ the well's drilled depth × 100) so wells of different TDs compare.
@@ -213,14 +234,16 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
           </span>
           {data && rows.length > 0 && (
             <div className="inline-flex rounded border border-gray-300 overflow-hidden shrink-0">
-              {(["table", "graph", "planning"] as const).map((v) => (
+              {(["summary", "table", "graph", "planning"] as const).map((v) => (
                 <button key={v} onClick={() => setView(v)} className={`px-2.5 h-7 text-xs capitalize ${view === v ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{v}</button>
               ))}
             </div>
           )}
         </div>
         <div className="overflow-auto flex-1 min-h-0">
-          {data && (view === "table" ? (
+          {data && (view === "summary" ? (
+            <StockSummary rows={rows} planningFilters={planningFilters} note={data.note} truncated={data.truncated} total={data.total} onShowPlanning={() => setView("planning")} />
+          ) : view === "table" ? (
             <StockTable rows={rows} cols={usedCols} note={data.note} onOpenReport={onOpenReport} />
           ) : view === "graph" ? (
             <StockGraph rows={rows} groupBy={groupBy} metric={metric} unit={graphUnit} note={data.note} />
@@ -229,6 +252,302 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── SUMMARY: default KPI-dashboard overview ──────────────────────────────────
+
+/** Floating HTML tooltip for the hand-rolled SVG chart (matches TimeAnalysis). */
+function useSvgHover() {
+  const [hover, setHover] = useState<{ x: number; y: number; html: string } | null>(null);
+  const enter = (html: string) => (e: React.MouseEvent) => setHover({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY, html });
+  const leave = () => setHover(null);
+  const node = hover ? (
+    <div className="absolute z-20 pointer-events-none px-2 py-1 rounded bg-gray-900 text-white text-[11px] leading-tight shadow-lg"
+      style={{ left: hover.x + 12, top: hover.y + 12, maxWidth: 260 }} dangerouslySetInnerHTML={{ __html: hover.html }} />
+  ) : null;
+  return { enter, leave, node };
+}
+
+/** A single KPI tile (matches the TimeAnalysis Summary tiles). */
+function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "emerald" | "amber" | "blue" }) {
+  const t = tone === "amber" ? "text-amber-600" : tone === "emerald" ? "text-emerald-600" : tone === "blue" ? "text-blue-700" : "text-gray-900";
+  return (
+    <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gradient-to-b from-white to-gray-50">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{label}</div>
+      <div className={`text-lg font-bold tabular-nums leading-tight ${t}`}>{value}</div>
+      {sub && <div className="text-[10px] text-gray-400 truncate" title={sub}>{sub}</div>}
+    </div>
+  );
+}
+
+// Aggregate of one material's loaded stock rows (kept per UNIT — units aren't additive).
+interface MatAgg {
+  material: string; unit: string;
+  used: number; rec: number; sent: number;        // additive flows over the period
+  lastStock: number | null; lastReq: number | null; lastOs: number | null;  // latest snapshot figures
+  lastKey: string;                                  // well|date of the latest snapshot seen
+}
+
+/** Manager/engineer overview of the loaded mud-stock rows: headline KPIs, the
+ *  top materials by quantity used, a cost Pareto + cost-per-metre (from the same
+ *  /ddr/mud-planning fetch the Planning view uses — degrades gracefully where the
+ *  source has no cost), an inventory/stock-balance table, and consumption by hole
+ *  section. Quantities are grouped per material+unit because the measures
+ *  (TON / SX / DR / litr …) aren't additive across units. */
+function StockSummary({ rows, planningFilters, note, truncated, total, onShowPlanning }: {
+  rows: StockRow[]; planningFilters: PlanningFilters | null; note?: string;
+  truncated?: boolean; total?: number; onShowPlanning?: () => void;
+}) {
+  // Reuse the EXACT query the Planning view uses (same key) — cached/shared, no
+  // extra round-trip. Gives cost (when populated) + section metres for per-metre.
+  const planQ = useQuery({
+    queryKey: ["ddr", "mud-planning", planningFilters],
+    queryFn: () => api.post<PlanningData>("/ddr/mud-planning", planningFilters),
+    enabled: !!planningFilters,
+    placeholderData: keepPreviousData,
+  });
+  const plan = planQ.data && !planQ.data.note ? planQ.data : null;
+
+  const agg = useMemo(() => {
+    const wells = new Set<string>();
+    const units = new Set<string>();
+    const byMat = new Map<string, MatAgg>();   // key: material|unit
+    for (const r of rows) {
+      wells.add(r.wellCode);
+      const mat = r.material ?? "—", unit = r.measure ?? "";
+      if (unit) units.add(unit);
+      const key = `${mat}|${unit}`;
+      let m = byMat.get(key);
+      if (!m) { m = { material: mat, unit, used: 0, rec: 0, sent: 0, lastStock: null, lastReq: null, lastOs: null, lastKey: "" }; byMat.set(key, m); }
+      if (typeof r.used === "number") m.used += r.used;
+      if (typeof r.rec === "number") m.rec += r.rec;
+      if (typeof r.sent === "number") m.sent += r.sent;
+      // Latest snapshot (stock/req/os) by well+date order — rows arrive sorted by
+      // well, date; track the lexicographically-last day seen per material.
+      const dk = `${r.wellCode}|${r.date ?? ""}`;
+      if (dk >= m.lastKey) {
+        m.lastKey = dk;
+        if (typeof r.stock === "number") m.lastStock = r.stock;
+        if (typeof r.req === "number") m.lastReq = r.req;
+        if (typeof r.os === "number") m.lastOs = r.os;
+      }
+    }
+    const mats = [...byMat.values()];
+    // Total used per unit (across all materials) — additive only within a unit.
+    const usedByUnit = new Map<string, number>();
+    for (const m of mats) if (m.used > 0) usedByUnit.set(m.unit || "—", (usedByUnit.get(m.unit || "—") ?? 0) + m.used);
+    const distinctMats = new Set(mats.map((m) => m.material)).size;
+    return { wells, units, mats, usedByUnit, distinctMats };
+  }, [rows]);
+
+  // Cost rollup from the planning payload (always-empty in the current dataset, so
+  // every cost panel is guarded and hidden when zero).
+  const cost = useMemo(() => {
+    if (!plan) return null;
+    const totalMetres = plan.sections.reduce((s, x) => s + x.metres, 0);
+    const matCost = plan.materials
+      .map((m) => ({ material: m.material, unit: m.unit, costR: m.totalCostR, costD: m.totalCostD, used: m.totalUsed }))
+      .filter((m) => m.costR > 0 || m.costD > 0);
+    const grandR = matCost.reduce((s, m) => s + m.costR, 0);
+    const grandD = matCost.reduce((s, m) => s + m.costD, 0);
+    const useDollar = grandD > 0;
+    matCost.sort((a, b) => (useDollar ? b.costD - a.costD : b.costR - a.costR));
+    // Pareto cumulative share over the chosen currency.
+    let cum = 0; const grand = useDollar ? grandD : grandR;
+    const pareto = matCost.map((m) => { const v = useDollar ? m.costD : m.costR; cum += v; return { ...m, val: v, share: grand > 0 ? v / grand : 0, cum: grand > 0 ? cum / grand : 0 }; });
+    return { totalMetres, grandR, grandD, useDollar, grand, pareto, hasCost: matCost.length > 0 };
+  }, [plan]);
+
+  if (note) return <div className="p-8 text-center text-sm text-gray-400">{note}</div>;
+  if (!rows.length) return <div className="p-8 text-center text-sm text-gray-400">No mud-stock entries to summarise.</div>;
+
+  const totalMetres = plan ? plan.sections.reduce((s, x) => s + x.metres, 0) : 0;
+  // Total used KPI: if a single dominant unit, show it; else show the unit count.
+  const unitList = [...agg.usedByUnit.entries()].sort((a, b) => b[1] - a[1]);
+  const topUnit = unitList[0];
+  const Th = ({ children, r }: { children: React.ReactNode; r?: boolean }) => (
+    <th className={`bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 ${r ? "text-right" : "text-left"}`}>{children}</th>
+  );
+
+  // Top materials by quantity used (per material+unit), with inline share bars.
+  const topUsed = agg.mats.filter((m) => m.used > 0).sort((a, b) => b.used - a.used).slice(0, 15);
+  const maxUsed = Math.max(1, ...topUsed.map((m) => m.used));
+
+  // Inventory/stock status: materials with a latest stock or an outstanding figure.
+  const inv = agg.mats
+    .filter((m) => m.lastStock != null || (m.lastReq ?? 0) > 0 || (m.lastOs ?? 0) > 0 || m.rec > 0)
+    .sort((a, b) => (b.lastStock ?? 0) - (a.lastStock ?? 0))
+    .slice(0, 15);
+
+  return (
+    <div className="p-3 space-y-5 text-[11px]">
+      {/* Headline KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+        <Kpi label="Wells" value={String(agg.wells.size)} sub={truncated ? `rows capped at ${rows.length.toLocaleString()} of ${total?.toLocaleString()}` : `${rows.length.toLocaleString()} stock rows`} />
+        <Kpi label="Materials" value={String(agg.distinctMats)} sub={`${agg.units.size} unit${agg.units.size === 1 ? "" : "s"} of use`} />
+        <Kpi label={topUnit ? `Used · ${topUnit[0]}` : "Total used"} value={topUnit ? fmtBig(topUnit[1]) : "—"} sub={unitList.length > 1 ? `+ ${unitList.length - 1} other unit${unitList.length - 1 === 1 ? "" : "s"} (not additive)` : (topUnit ? `${topUnit[0]} consumed` : undefined)} tone="blue" />
+        <Kpi label="Depth drilled" value={totalMetres > 0 ? `${fmtBig(totalMetres)} m` : "—"} sub={plan ? `${plan.wellCount} offset well${plan.wellCount === 1 ? "" : "s"} · ${plan.sections.length} section${plan.sections.length === 1 ? "" : "s"}` : "from planning"} />
+        {cost?.hasCost ? (
+          <>
+            <Kpi label="Total mud cost" value={cost.useDollar ? `$${fmtBig(cost.grandD)}` : `${fmtBig(cost.grandR)} R`} sub={cost.useDollar && cost.grandR > 0 ? `${fmtBig(cost.grandR)} Rial` : undefined} tone="amber" />
+            <Kpi label="Cost / metre" value={cost.totalMetres > 0 ? (cost.useDollar ? `$${fmtRate(cost.grandD / cost.totalMetres)}` : `${fmtRate(cost.grandR / cost.totalMetres)} R`) : "—"} sub="over offset metres" tone="amber" />
+          </>
+        ) : (
+          <>
+            <Kpi label="Used / 1000 m" value={topUnit && totalMetres > 0 ? `${fmtRate(topUnit[1] / (totalMetres / 1000))}` : "—"} sub={topUnit ? `${topUnit[0]} per 1000 m drilled` : undefined} tone="blue" />
+            <Kpi label="Mud cost" value="n/a" sub="no cost recorded in source" />
+          </>
+        )}
+      </div>
+
+      {/* Top materials by quantity used */}
+      <section>
+        <h3 className="font-semibold text-gray-700 mb-1">Top materials · by quantity used <span className="font-normal text-gray-400">— per material &amp; unit (units aren’t additive)</span></h3>
+        {topUsed.length ? (
+          <table className="w-full tabular-nums border-collapse">
+            <thead><tr><Th>Material</Th><Th>Unit</Th><Th r>Used</Th><Th r>Received</Th><th className="bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 text-right w-[34%]">Share of its unit</th></tr></thead>
+            <tbody>
+              {topUsed.map((m, i) => {
+                const unitTotal = agg.usedByUnit.get(m.unit || "—") ?? m.used;
+                return (
+                  <tr key={`${m.material}|${m.unit}`} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
+                    <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800 whitespace-nowrap">{m.material}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-left text-gray-500">{m.unit || "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right font-medium">{fmtBig(m.used)}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{m.rec > 0 ? fmtBig(m.rec) : "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex-1 h-2.5 bg-gray-100 rounded-sm overflow-hidden"><div className="h-full rounded-sm" style={{ width: `${100 * m.used / maxUsed}%`, background: PALETTE[i % PALETTE.length] }} /></div>
+                        <span className="w-10 text-right text-gray-600">{unitTotal > 0 ? `${(100 * m.used / unitTotal).toFixed(1)}%` : ""}</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : <div className="text-gray-400 py-3">No consumption recorded in the loaded rows.</div>}
+      </section>
+
+      {/* Cost Pareto (when the source carries cost) */}
+      <section>
+        <h3 className="font-semibold text-gray-700 mb-1">Cost drivers · Pareto <span className="font-normal text-gray-400">— from offset mud-planning</span></h3>
+        {cost?.hasCost ? (
+          <table className="w-full tabular-nums border-collapse">
+            <thead><tr><Th>Material</Th><Th r>{cost.useDollar ? "Cost ($)" : "Cost (Rial)"}</Th><th className="bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 text-right w-[30%]">Share</th><Th r>Cumulative</Th></tr></thead>
+            <tbody>
+              {cost.pareto.slice(0, 15).map((m, i) => (
+                <tr key={m.material} className={i % 2 ? "bg-amber-50/40" : "bg-white"}>
+                  <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800 whitespace-nowrap">{m.material}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{cost.useDollar ? `$${fmtBig(m.costD)}` : fmtBig(m.costR)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex-1 h-2.5 bg-gray-100 rounded-sm overflow-hidden"><div className="h-full rounded-sm bg-amber-500" style={{ width: `${100 * m.share}%` }} /></div>
+                      <span className="w-10 text-right text-gray-600">{(100 * m.share).toFixed(1)}%</span>
+                    </div>
+                  </td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-600">{(100 * m.cum).toFixed(0)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="text-gray-400 py-2">
+            No cost (CostRial / CostDollar) is recorded for this selection — cost KPIs are unavailable.
+            See the <button onClick={onShowPlanning} className="text-blue-600 hover:underline">Planning</button> view for per-metre consumption rates and a forecast.
+          </div>
+        )}
+      </section>
+
+      {/* Consumption by hole section */}
+      {plan && plan.sections.length > 0 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Consumption by hole section <span className="font-normal text-gray-400">— widest → narrowest</span></h3>
+          <SectionConsumption plan={plan} />
+        </section>
+      )}
+
+      {/* Inventory / stock balance */}
+      {inv.length > 0 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Inventory status <span className="font-normal text-gray-400">— latest stock snapshot &amp; period flows</span></h3>
+          <div className="overflow-x-auto">
+            <table className="w-full tabular-nums border-collapse">
+              <thead><tr><Th>Material</Th><Th>Unit</Th><Th r>Stock (latest)</Th><Th r>Received</Th><Th r>Sent</Th><Th r>Req</Th><Th r>OS</Th></tr></thead>
+              <tbody>
+                {inv.map((m, i) => (
+                  <tr key={`${m.material}|${m.unit}`} className={i % 2 ? "bg-gray-50/60" : "bg-white"}>
+                    <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800 whitespace-nowrap">{m.material}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-left text-gray-500">{m.unit || "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right font-medium">{m.lastStock != null ? fmtBig(m.lastStock) : "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{m.rec > 0 ? fmtBig(m.rec) : "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{m.sent > 0 ? fmtBig(m.sent) : "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{(m.lastReq ?? 0) > 0 ? fmtBig(m.lastReq!) : "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{(m.lastOs ?? 0) > 0 ? fmtBig(m.lastOs!) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <p className="text-[10px] text-gray-400 leading-snug">
+        Used / Received / Sent are summed over the loaded rows; Stock / Req / OS show the latest day’s snapshot per material.
+        Quantities are grouped per material &amp; unit because the measures (TON / SX / DR / litr…) aren’t additive across units.
+        Depth, cost and per-metre figures come from the same offset mud-planning analytics as the Planning view.
+      </p>
+    </div>
+  );
+}
+
+/** Total quantity used per hole section (one bar per unit family), from the
+ *  planning payload's per-section consumption — a clean "where material is
+ *  consumed" view that complements the depth/cost KPIs. */
+function SectionConsumption({ plan }: { plan: PlanningData }) {
+  const hover = useSvgHover();
+  // For each section, total used grouped by unit (units aren't additive) — pick the
+  // dominant unit per section for a single comparable bar, with the others in the tip.
+  const secs = useMemo(() => {
+    return plan.sections.map((sec) => {
+      const byUnit = new Map<string, { used: number; metres: number }>();
+      for (const m of plan.materials) {
+        const b = m.bySection.find((x) => x.code === sec.code);
+        if (!b || b.used <= 0) continue;
+        const e = byUnit.get(m.unit || "—") ?? { used: 0, metres: b.metres };
+        e.used += b.used; byUnit.set(m.unit || "—", e);
+      }
+      const units = [...byUnit.entries()].sort((a, b) => b[1].used - a[1].used);
+      return { size: sec.size, metres: sec.metres, wells: sec.wells, top: units[0] ?? null, units };
+    }).filter((s) => s.top);
+  }, [plan]);
+
+  if (!secs.length) return <div className="text-gray-400 py-2">No per-section consumption to chart.</div>;
+  const max = Math.max(1, ...secs.map((s) => s.top![1].used));
+  const PAD = { l: 90, r: 64, t: 6, b: 22 }, rowH = 26, plotW = 380;
+  const W = PAD.l + plotW + PAD.r, H = PAD.t + secs.length * rowH + PAD.b;
+  return (
+    <div className="relative">
+      <p className="text-[11px] text-gray-500 mb-1">Total consumed in each section, in its dominant unit (bar). Hover for the per-metre rate and other units.</p>
+      <svg width={W} height={H} className="block">
+        {[0, 0.5, 1].map((t) => <g key={t}><line x1={PAD.l + t * plotW} x2={PAD.l + t * plotW} y1={PAD.t} y2={PAD.t + secs.length * rowH} stroke="#eef2f7" /><text x={PAD.l + t * plotW} y={PAD.t + secs.length * rowH + 14} textAnchor="middle" fontSize={9} fill="#94a3b8">{fmtBig(max * t)}</text></g>)}
+        {secs.map((s, i) => {
+          const y = PAD.t + i * rowH + 3, bh = rowH - 9, used = s.top![1].used, bw = (used / max) * plotW;
+          const unit = s.top![0], rate = s.metres > 0 ? used / s.metres : 0;
+          const others = s.units.slice(1).map(([u, e]) => `${u}: ${fmtBig(e.used)}`).join("<br/>");
+          const html = `<b>${s.size}</b> · ${s.wells} well(s)<br/>${fmtBig(used)} ${unit} over ${fmtBig(s.metres)} m<br/>${fmtRate(rate)} ${unit}/m${others ? `<br/><span style="opacity:.7">other units —<br/>${others}</span>` : ""}`;
+          return (
+            <g key={s.size}>
+              <text x={PAD.l - 6} y={y + bh / 2 + 3} textAnchor="end" fontSize={10} fill="#334155">{s.size}</text>
+              <rect x={PAD.l} y={y} width={Math.max(1, bw)} height={bh} rx={2} fill={PALETTE[i % PALETTE.length]} onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />
+              <text x={PAD.l + bw + 5} y={y + bh / 2 + 3} fontSize={9} fill="#475569">{fmtBig(used)} {unit}</text>
+            </g>
+          );
+        })}
+      </svg>
+      {hover.node}
     </div>
   );
 }

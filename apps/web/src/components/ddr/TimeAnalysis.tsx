@@ -46,14 +46,28 @@ const COLS: { key: keyof TARow; label: string; text?: boolean; wide?: boolean }[
 const PALETTE = ["#1e40af", "#dc2626", "#0d9488", "#d97706", "#7c3aed", "#65a30d", "#db2777", "#0891b2", "#ea580c", "#4f46e5", "#16a34a", "#9f1239", "#ca8a04", "#0e7490", "#a21caf", "#475569"];
 
 // Chart kinds + the selectable bar dimensions (X axis / split-by series).
-type ChartKind = "bars" | "depthDays" | "npt" | "days1000";
+type ChartKind = "bars" | "depthDays" | "npt" | "nptPareto" | "days1000" | "section";
 type Dim = "well" | "type" | "activity";
 const CHART_KINDS: { key: ChartKind; label: string }[] = [
   { key: "bars", label: "Bars" },
   { key: "depthDays", label: "Depth vs days" },
   { key: "npt", label: "NPT split" },
+  { key: "nptPareto", label: "NPT Pareto" },
   { key: "days1000", label: "Days / 1000 m" },
+  { key: "section", label: "By section" },
 ];
+
+/** Group "Waiting" = non-productive time (NPT); everything else is productive. */
+const isNpt = (r: TARow): boolean => (r.group ?? "").toLowerCase().startsWith("wait");
+/** Numeric value of a hole-size label ("17-1/2\"" or "17 1/2\"" → 17.5) for the
+ *  widest→narrowest section order. Accepts a hyphen- or space-separated fraction. */
+const holeVal = (h: string): number => {
+  const m = (h || "").match(/(\d+(?:\.\d+)?)(?:[\s-](\d+)\/(\d+))?/);
+  if (!m) return 0;
+  let v = parseFloat(m[1]) || 0;
+  if (m[2] && m[3]) v += (+m[2]) / (+m[3]);
+  return v;
+};
 const DIM_LABEL: Record<Dim, string> = { well: "Wells", type: "Activity type", activity: "Activity" };
 const dimKey = (r: TARow, d: Dim, wellNames?: Record<string, string>): string =>
   d === "well" ? (wellNames?.[r.wellCode] || r.wellCode) : d === "type" ? (r.type ?? "—") : (r.activity ?? "—");
@@ -80,7 +94,7 @@ export function TimeAnalysis({ onOpenReport }: { onOpenReport?: (wellCode: strin
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [view, setView] = useState<"rows" | "pivot" | "chart">("rows");
+  const [view, setView] = useState<"summary" | "rows" | "pivot" | "chart">("summary");
   const [pivotBy, setPivotBy] = useState<"type" | "activity">("type");   // pivot column dimension
   // Chart kind: generic bars (with selectable X / Split / 100%-stack), plus the
   // next-well engineering views (depth-vs-days learning curve, NPT split,
@@ -212,7 +226,7 @@ export function TimeAnalysis({ onOpenReport }: { onOpenReport?: (wellCode: strin
                 </div>
               )}
               <div className="inline-flex rounded border border-gray-300 overflow-hidden">
-                {(["rows", "pivot", "chart"] as const).map((v) => (
+                {(["summary", "rows", "pivot", "chart"] as const).map((v) => (
                   <button key={v} onClick={() => setView(v)} className={`px-2.5 h-7 text-xs capitalize ${view === v ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{v}</button>
                 ))}
               </div>
@@ -220,7 +234,9 @@ export function TimeAnalysis({ onOpenReport }: { onOpenReport?: (wellCode: strin
           )}
         </div>
         <div className="overflow-auto flex-1 min-h-0">
-          {data && (view === "rows" ? (
+          {data && (view === "summary" ? (
+            <TASummary rows={rows} wellNames={data.wellNames} note={data.note} />
+          ) : view === "rows" ? (
             <TARowsTable rows={rows} cols={usedCols} note={data.note} onOpenReport={onOpenReport} />
           ) : view === "pivot" ? (
             <TAPivot rows={rows} note={data.note} pivotBy={pivotBy} />
@@ -423,7 +439,9 @@ function TAChart({ rows, kind, chartType, normalize, barX, barSplit, wellNames, 
   if (note) return <div className="p-8 text-center text-sm text-gray-400">{note}</div>;
   if (kind === "depthDays") return <DepthDaysChart rows={rows} wellNames={wellNames} />;
   if (kind === "npt") return <NptChart rows={rows} wellNames={wellNames} />;
+  if (kind === "nptPareto") return <NptParetoChart rows={rows} />;
   if (kind === "days1000") return <Days1000Chart rows={rows} wellNames={wellNames} />;
+  if (kind === "section") return <SectionTimeChart rows={rows} />;
   return <BarsChart rows={rows} chartType={chartType} normalize={normalize} barX={barX} barSplit={barSplit} wellNames={wellNames} />;
 }
 
@@ -760,4 +778,282 @@ function niceTicks(lo: number, hi: number, count: number): number[] {
   const out: number[] = [];
   for (let v = Math.ceil(lo / step) * step; v <= hi + step * 0.001; v += step) out.push(Number(v.toFixed(6)));
   return out;
+}
+
+// ── Aggregate KPIs over the loaded time-analysis rows ────────────────────────
+interface WellKpi { name: string; days: number; drilled: number; mPerDay: number; prod: number; npt: number; nptPct: number; days1000: number | null }
+interface TAStats {
+  totalHours: number; nptHours: number; prodHours: number; nptPct: number;
+  totalDays: number; totalDrilled: number; mPerDay: number; days1000: number | null;
+  wells: WellKpi[];
+  types: { type: string; group: string; hours: number; pct: number; npt: boolean }[];
+  nptTypes: { type: string; hours: number; pct: number; cumPct: number }[];
+  sections: { hole: string; prod: number; npt: number; hours: number; days: number }[];
+}
+/** One pass over the rows → the KPI bundle the Summary + NPT/Section charts share.
+ *  "Rig-days" = distinct report dates (wells run in parallel); "drilled" = the
+ *  well's max − min recorded hole depth; NPT = the "Waiting" activity group. */
+function computeStats(rows: TARow[], wellNames?: Record<string, string>): TAStats {
+  let totalHours = 0, nptHours = 0;
+  const byType = new Map<string, { group: string; hours: number; npt: boolean }>();
+  const nptByType = new Map<string, number>();
+  const bySection = new Map<string, { prod: number; npt: number; days: Set<number> }>();
+  const wellAgg = new Map<string, { name: string; days: Set<number>; minD: number; maxD: number; prod: number; npt: number }>();
+  for (const r of rows) {
+    const h = typeof r.hours === "number" ? r.hours : 0;
+    const npt = isNpt(r);
+    const jd = jDay(r.date);
+    if (h) {
+      totalHours += h; if (npt) nptHours += h;
+      const t = r.type ?? "—";
+      const e = byType.get(t) ?? { group: r.group ?? "—", hours: 0, npt };
+      e.hours += h; byType.set(t, e);
+      if (npt) nptByType.set(t, (nptByType.get(t) ?? 0) + h);
+      const hole = r.holeSize ?? "—";
+      const sec = bySection.get(hole) ?? { prod: 0, npt: 0, days: new Set<number>() };
+      if (npt) sec.npt += h; else sec.prod += h;
+      if (jd != null) sec.days.add(jd);
+      bySection.set(hole, sec);
+    }
+    const w = wellNames?.[r.wellCode] || r.wellCode;
+    const we = wellAgg.get(w) ?? { name: w, days: new Set<number>(), minD: Infinity, maxD: -Infinity, prod: 0, npt: 0 };
+    if (jd != null) we.days.add(jd);
+    if (r.depth != null) { if (r.depth < we.minD) we.minD = r.depth; if (r.depth > we.maxD) we.maxD = r.depth; }
+    if (h) { if (npt) we.npt += h; else we.prod += h; }
+    wellAgg.set(w, we);
+  }
+  const prodHours = totalHours - nptHours;
+  const wells: WellKpi[] = [...wellAgg.values()].map((w) => {
+    const days = w.days.size;
+    const drilled = Number.isFinite(w.maxD) && Number.isFinite(w.minD) ? Math.max(0, w.maxD - w.minD) : 0;
+    const tot = w.prod + w.npt;
+    return { name: w.name, days, drilled, mPerDay: days > 0 ? drilled / days : 0, prod: w.prod, npt: w.npt, nptPct: tot > 0 ? w.npt / tot : 0, days1000: drilled > 100 ? days / (drilled / 1000) : null };
+  }).sort((a, b) => b.drilled - a.drilled);
+  const totalDays = wells.reduce((a, w) => a + w.days, 0);
+  const totalDrilled = wells.reduce((a, w) => a + w.drilled, 0);
+  const types = [...byType.entries()].map(([type, e]) => ({ type, group: e.group, hours: e.hours, pct: totalHours > 0 ? e.hours / totalHours : 0, npt: e.npt })).sort((a, b) => b.hours - a.hours);
+  let cum = 0;
+  const nptTypes = [...nptByType.entries()].map(([type, hours]) => ({ type, hours })).sort((a, b) => b.hours - a.hours)
+    .map((x) => { cum += x.hours; return { ...x, pct: nptHours > 0 ? x.hours / nptHours : 0, cumPct: nptHours > 0 ? cum / nptHours : 0 }; });
+  const sections = [...bySection.entries()].map(([hole, s]) => ({ hole, prod: s.prod, npt: s.npt, hours: s.prod + s.npt, days: s.days.size })).sort((a, b) => holeVal(b.hole) - holeVal(a.hole));
+  return { totalHours, nptHours, prodHours, nptPct: totalHours > 0 ? nptHours / totalHours : 0, totalDays, totalDrilled, mPerDay: totalDays > 0 ? totalDrilled / totalDays : 0, days1000: totalDrilled > 100 ? totalDays / (totalDrilled / 1000) : null, wells, types, nptTypes, sections };
+}
+
+const fmtH = (h: number): string => (h >= 1000 ? `${(h / 1000).toFixed(1)}k` : h1(h));
+const nptToneCls = (p: number): string => (p > 0.25 ? "text-red-600" : p >= 0.15 ? "text-amber-600" : "text-emerald-600");
+
+/** A single KPI tile. */
+function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "emerald" | "amber" | "red" }) {
+  const t = tone === "red" ? "text-red-600" : tone === "amber" ? "text-amber-600" : tone === "emerald" ? "text-emerald-600" : "text-gray-900";
+  return (
+    <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gradient-to-b from-white to-gray-50">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{label}</div>
+      <div className={`text-lg font-bold tabular-nums leading-tight ${t}`}>{value}</div>
+      {sub && <div className="text-[10px] text-gray-400 truncate" title={sub}>{sub}</div>}
+    </div>
+  );
+}
+
+/** Manager/engineer dashboard: headline KPIs, operations breakdown by activity
+ *  type, NPT-by-category, per-well benchmarking, and time-by-hole-section. */
+function TASummary({ rows, wellNames, note }: { rows: TARow[]; wellNames?: Record<string, string>; note?: string }) {
+  const st = useMemo(() => computeStats(rows, wellNames), [rows, wellNames]);
+  if (note) return <div className="p-8 text-center text-sm text-gray-400">{note}</div>;
+  if (!st.totalHours) return <div className="p-8 text-center text-sm text-gray-400">No time-analysis hours to summarise.</div>;
+  const nptTone = st.nptPct > 0.25 ? "red" : st.nptPct >= 0.15 ? "amber" : "emerald";
+  const maxTypeH = Math.max(...st.types.map((t) => t.hours), 1);
+  const Th = ({ children, r }: { children: React.ReactNode; r?: boolean }) => (
+    <th className={`bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 ${r ? "text-right" : "text-left"}`}>{children}</th>
+  );
+  return (
+    <div className="p-3 space-y-5 text-[11px]">
+      {/* Headline KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2">
+        <Kpi label="Wells" value={String(st.wells.length)} />
+        <Kpi label="Rig-days" value={h1(st.totalDays)} sub="distinct report days" />
+        <Kpi label="Depth drilled" value={`${Math.round(st.totalDrilled).toLocaleString()} m`} />
+        <Kpi label="Pace" value={`${st.mPerDay.toFixed(1)} m/d`} sub={st.days1000 != null ? `${st.days1000.toFixed(1)} days/1000 m` : undefined} />
+        <Kpi label="Total time" value={`${fmtH(st.totalHours)} h`} sub={`${h1(st.totalHours / 24)} days`} />
+        <Kpi label="Productive" value={`${Math.round(100 * st.prodHours / st.totalHours)}%`} sub={`${fmtH(st.prodHours)} h`} tone="emerald" />
+        <Kpi label="NPT · Waiting" value={`${(100 * st.nptPct).toFixed(1)}%`} sub="target < 15%" tone={nptTone} />
+      </div>
+
+      {/* Operations breakdown by activity type */}
+      <section>
+        <h3 className="font-semibold text-gray-700 mb-1">Operations breakdown · by activity type</h3>
+        <table className="w-full tabular-nums border-collapse">
+          <thead><tr><Th>Activity type</Th><Th>Class</Th><Th r>Hours</Th><Th r>Days</Th><th className="bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 text-right w-[34%]">Share</th></tr></thead>
+          <tbody>
+            {st.types.map((t, i) => (
+              <tr key={t.type} className={i % 2 ? "bg-gray-50/60" : "bg-white"}>
+                <td className="border border-gray-200 px-2 py-0.5 text-left">{t.type}</td>
+                <td className="border border-gray-200 px-2 py-0.5 text-left">{t.npt ? <span className="text-red-600">NPT</span> : <span className="text-teal-700">Productive</span>}</td>
+                <td className="border border-gray-200 px-2 py-0.5 text-right">{fmtH(t.hours)}</td>
+                <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{h1(t.hours / 24)}</td>
+                <td className="border border-gray-200 px-2 py-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex-1 h-2.5 bg-gray-100 rounded-sm overflow-hidden"><div className="h-full rounded-sm" style={{ width: `${100 * t.hours / maxTypeH}%`, background: t.npt ? "#dc2626" : "#0d9488" }} /></div>
+                    <span className="w-10 text-right text-gray-600">{(100 * t.pct).toFixed(1)}%</span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      {/* NPT by category (Pareto table) */}
+      {st.nptTypes.length > 0 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Non-productive time · by category <span className="font-normal text-gray-400">— see the NPT Pareto chart</span></h3>
+          <table className="w-full tabular-nums border-collapse">
+            <thead><tr><Th>Waiting category</Th><Th r>Hours</Th><Th r>Days</Th><Th r>% of NPT</Th><Th r>Cumulative</Th></tr></thead>
+            <tbody>
+              {st.nptTypes.map((t, i) => (
+                <tr key={t.type} className={i % 2 ? "bg-red-50/40" : "bg-white"}>
+                  <td className="border border-gray-200 px-2 py-0.5 text-left">{t.type}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{fmtH(t.hours)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{h1(t.hours / 24)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{(100 * t.pct).toFixed(1)}%</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-600">{(100 * t.cumPct).toFixed(0)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {/* Per-well benchmarking */}
+      {st.wells.length > 1 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Per-well KPIs <span className="font-normal text-gray-400">— deepest first</span></h3>
+          <div className="overflow-x-auto">
+            <table className="w-full tabular-nums border-collapse">
+              <thead><tr><Th>Well</Th><Th r>Days</Th><Th r>Drilled (m)</Th><Th r>m/day</Th><Th r>days/1000 m</Th><Th r>NPT %</Th></tr></thead>
+              <tbody>
+                {st.wells.map((w, i) => (
+                  <tr key={w.name} className={i % 2 ? "bg-gray-50/60" : "bg-white"}>
+                    <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800 whitespace-nowrap">{w.name}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right">{w.days}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right">{w.drilled > 0 ? Math.round(w.drilled).toLocaleString() : "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right">{w.mPerDay > 0 ? w.mPerDay.toFixed(1) : "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right">{w.days1000 != null ? w.days1000.toFixed(1) : "—"}</td>
+                    <td className={`border border-gray-200 px-2 py-0.5 text-right font-medium ${nptToneCls(w.nptPct)}`}>{(100 * w.nptPct).toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Time by hole section */}
+      {st.sections.length > 0 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Time by hole section</h3>
+          <table className="w-full tabular-nums border-collapse">
+            <thead><tr><Th>Hole / bit size</Th><Th r>Days</Th><Th r>Hours</Th><Th r>Productive</Th><Th r>NPT</Th><Th r>NPT %</Th></tr></thead>
+            <tbody>
+              {st.sections.map((s, i) => (
+                <tr key={s.hole} className={i % 2 ? "bg-gray-50/60" : "bg-white"}>
+                  <td className="border border-gray-200 px-2 py-0.5 text-left">{s.hole}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.days}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{fmtH(s.hours)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-teal-700">{fmtH(s.prod)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-red-600">{fmtH(s.npt)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.hours > 0 ? (100 * s.npt / s.hours).toFixed(1) : "0"}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      <p className="text-[10px] text-gray-400 leading-snug">
+        Rig-days = distinct daily-report dates. Depth drilled = max − min recorded hole depth. NPT = the “Waiting” activity group;
+        industry-acceptable NPT is ~15–25% (lower is better). Pace and days/1000 m skip wells with no recorded depth interval.
+      </p>
+    </div>
+  );
+}
+
+/** NPT Pareto: Waiting hours by category, largest first, with the cumulative-%
+ *  curve and the 80% line — the classic 80/20 lost-time root-cause view. */
+function NptParetoChart({ rows }: { rows: TARow[] }) {
+  const hover = useSvgHover();
+  const cats = useMemo(() => computeStats(rows).nptTypes.slice(0, 12), [rows]);
+  if (!cats.length) return <div className="p-8 text-center text-sm text-gray-400">No NPT (Waiting) hours recorded for this selection.</div>;
+  const maxH = Math.max(...cats.map((c) => c.hours), 1);
+  const PAD = { l: 52, r: 44, t: 14, b: 100 }, barW = 30, gap = 22;
+  const plotW = cats.length * (barW + gap) + gap, plotH = 300;
+  const W = PAD.l + plotW + PAD.r, H = PAD.t + plotH + PAD.b;
+  const yH = (h: number) => PAD.t + plotH - (h / maxH) * plotH;
+  const yC = (p: number) => PAD.t + plotH - p * plotH;
+  const xOf = (i: number) => PAD.l + gap + i * (barW + gap);
+  const ticks = niceTicks(0, maxH, 4);
+  const linePts = cats.map((c, i) => `${xOf(i) + barW / 2},${yC(c.cumPct)}`).join(" ");
+  return (
+    <div className="p-3 relative">
+      <div className="text-[11px] text-gray-500 mb-2"><b>NPT Pareto</b> — Waiting (lost) time by category, largest first, with the cumulative share. Categories left of where the curve crosses <b style={{ color: "#d97706" }}>80%</b> drive most of the lost time — fix those first.</div>
+      <div className="overflow-x-auto">
+        <svg width={W} height={H} className="block">
+          {ticks.map((t) => <g key={t}><line x1={PAD.l} x2={PAD.l + plotW} y1={yH(t)} y2={yH(t)} stroke="#eef2f7" /><text x={PAD.l - 4} y={yH(t) + 3} textAnchor="end" fontSize={9} fill="#94a3b8">{Math.round(t)}</text></g>)}
+          {[0, 0.25, 0.5, 0.75, 1].map((p) => <text key={p} x={PAD.l + plotW + 6} y={yC(p) + 3} fontSize={9} fill="#1e3a8a">{Math.round(p * 100)}%</text>)}
+          <line x1={PAD.l} x2={PAD.l + plotW} y1={yC(0.8)} y2={yC(0.8)} stroke="#d97706" strokeDasharray="5 3" />
+          {cats.map((c, i) => { const html = `<b>${c.type}</b><br/>${h1(c.hours)} h · ${(100 * c.pct).toFixed(1)}% of NPT<br/>cumulative ${(100 * c.cumPct).toFixed(1)}%`; return <rect key={c.type} x={xOf(i)} y={yH(c.hours)} width={barW} height={PAD.t + plotH - yH(c.hours)} fill="#dc2626" onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />; })}
+          <polyline fill="none" stroke="#1e3a8a" strokeWidth={1.6} points={linePts} />
+          {cats.map((c, i) => <circle key={c.type} cx={xOf(i) + barW / 2} cy={yC(c.cumPct)} r={2.5} fill="#1e3a8a" />)}
+          {cats.map((c, i) => { const mid = xOf(i) + barW / 2; return <text key={c.type} x={mid} y={PAD.t + plotH + 12} textAnchor="end" fontSize={9} fill="#475569" transform={`rotate(-40 ${mid} ${PAD.t + plotH + 12})`}>{c.type.length > 20 ? c.type.slice(0, 19) + "…" : c.type}</text>; })}
+          <line x1={PAD.l} x2={PAD.l + plotW} y1={PAD.t + plotH} y2={PAD.t + plotH} stroke="#cbd5e1" />
+          <text x={14} y={PAD.t + plotH / 2} textAnchor="middle" fontSize={10} fill="#475569" fontWeight={600} transform={`rotate(-90 14 ${PAD.t + plotH / 2})`}>NPT hours</text>
+        </svg>
+      </div>
+      {hover.node}
+    </div>
+  );
+}
+
+/** Time by hole section: productive vs NPT hours stacked per bit/hole size,
+ *  widest → narrowest — where the days (and lost time) concentrate. */
+function SectionTimeChart({ rows }: { rows: TARow[] }) {
+  const hover = useSvgHover();
+  const secs = useMemo(() => computeStats(rows).sections.filter((s) => s.hours > 0), [rows]);
+  if (!secs.length) return <div className="p-8 text-center text-sm text-gray-400">No hours by hole section.</div>;
+  const max = Math.max(...secs.map((s) => s.hours), 1);
+  const PAD = { l: 52, r: 16, t: 16, b: 56 }, barW = 46, gap = 28;
+  const plotW = secs.length * (barW + gap) + gap, plotH = 300;
+  const W = PAD.l + plotW + PAD.r, H = PAD.t + plotH + PAD.b;
+  const yOf = (h: number) => PAD.t + plotH - (h / max) * plotH;
+  const xOf = (i: number) => PAD.l + gap + i * (barW + gap);
+  const ticks = niceTicks(0, max, 4);
+  return (
+    <div className="p-3 relative">
+      <div className="text-[11px] text-gray-500 mb-2"><b>Time by hole section</b> — total hours per bit/hole size (widest → narrowest), split productive vs NPT. The day count sits above each bar.</div>
+      <div className="overflow-x-auto">
+        <svg width={W} height={H} className="block">
+          {ticks.map((t) => <g key={t}><line x1={PAD.l} x2={PAD.l + plotW} y1={yOf(t)} y2={yOf(t)} stroke="#eef2f7" /><text x={PAD.l - 4} y={yOf(t) + 3} textAnchor="end" fontSize={9} fill="#94a3b8">{Math.round(t)}</text></g>)}
+          {secs.map((s, i) => {
+            const x = xOf(i), prodH = (s.prod / max) * plotH, nptH = (s.npt / max) * plotH;
+            const yP = PAD.t + plotH - prodH, yN = yP - nptH;
+            const pHtml = `<b>${s.hole}</b><br/>Productive ${h1(s.prod)} h`;
+            const nHtml = `<b>${s.hole}</b><br/>NPT ${h1(s.npt)} h · ${s.hours > 0 ? (100 * s.npt / s.hours).toFixed(1) : 0}%`;
+            return (
+              <g key={s.hole}>
+                <rect x={x} y={yP} width={barW} height={prodH} fill="#0d9488" onMouseEnter={hover.enter(pHtml)} onMouseMove={hover.enter(pHtml)} onMouseLeave={hover.leave} />
+                <rect x={x} y={yN} width={barW} height={nptH} fill="#dc2626" onMouseEnter={hover.enter(nHtml)} onMouseMove={hover.enter(nHtml)} onMouseLeave={hover.leave} />
+                <text x={x + barW / 2} y={yN - 3} textAnchor="middle" fontSize={9} fill="#475569">{Math.round(s.hours / 24)}d</text>
+                <text x={x + barW / 2} y={PAD.t + plotH + 14} textAnchor="middle" fontSize={9} fill="#475569">{s.hole}</text>
+              </g>
+            );
+          })}
+          <line x1={PAD.l} x2={PAD.l + plotW} y1={PAD.t + plotH} y2={PAD.t + plotH} stroke="#cbd5e1" />
+        </svg>
+      </div>
+      <div className="flex gap-4 mt-2 text-[11px] text-gray-600">
+        <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: "#0d9488" }} />Productive</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: "#dc2626" }} />NPT (Waiting)</span>
+      </div>
+      {hover.node}
+    </div>
+  );
 }
