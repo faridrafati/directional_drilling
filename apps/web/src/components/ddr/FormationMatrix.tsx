@@ -80,6 +80,17 @@ export function FormationMatrix() {
 
   const lithoTypes = (show === "graphs" ? graph?.lithoTypes : litho?.lithoTypes) ?? [];
   const showLithoFacet = show === "graphs" || (show === "tables" && mode === "litho");
+  // Rock colour + pattern per lithology name (first seen wins), from whichever
+  // dataset drives the facet — so the Lithology checklist can show the same swatch
+  // icon the Litho. table uses next to each rock name.
+  const lithoStyle = useMemo(() => {
+    const m = new Map<string, { color: string; pattern: string }>();
+    const comps = show === "graphs"
+      ? (graph?.wells ?? []).flatMap((w) => w.lithology).flatMap((l) => l.comps)
+      : (litho?.rows ?? []).flatMap((r) => r.comps);
+    for (const c of comps) if (c.name && !m.has(c.name)) m.set(c.name, { color: c.color, pattern: c.pattern });
+    return m;
+  }, [show, graph, litho]);
 
   async function run(s: "tables" | "graphs" | "prognosis" = show, m: "form" | "litho" = mode) {
     setLoading(true);
@@ -109,7 +120,10 @@ export function FormationMatrix() {
         <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
         <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
         {showLithoFacet && lithoTypes.length > 0 && (
-          <MultiSelect title="Lithology" items={lithoTypes.map((t) => ({ value: t, label: t }))} selected={selLitho} onChange={setSelLitho} />
+          <MultiSelect title="Lithology" items={lithoTypes.map((t) => {
+            const s = lithoStyle.get(t);
+            return { value: t, label: t, icon: s ? <LSwatch color={s.color} pattern={s.pattern || undefined} /> : undefined };
+          })} selected={selLitho} onChange={setSelLitho} />
         )}
         {show === "graphs" && (
           <label className="block pt-2">

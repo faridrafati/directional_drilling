@@ -15,8 +15,8 @@
  * that day's daily report (via onOpenReport), mirroring the 2D plots.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Line, GizmoHelper, GizmoViewport, Html } from "@react-three/drei";
+import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
+import { OrbitControls, Line, GizmoHelper, useGizmoContext, Html } from "@react-three/drei";
 import * as THREE from "three";
 
 export interface Station3D {
@@ -291,10 +291,88 @@ export function WellPathTrajectory3D({ stations, lithoColumn = [], formations = 
 
         <OrbitControls enablePan enableZoom enableRotate makeDefault />
         <GizmoHelper alignment="bottom-right" margin={[40, 40]}>
-          <GizmoViewport axisColors={["#dc2626", "#16a34a", "#2563eb"]} labelColor="white" />
+          {/* X = E/W, Z = N/S; Y is world-up = shallow, −Y = deep, so the "TVD"
+              head sits on the DOWNWARD arrow (see GizmoViewportTVD). */}
+          <GizmoViewportTVD axisColors={["#dc2626", "#16a34a", "#2563eb"]} labels={["E", "TVD", "N"]} labelColor="white" />
         </GizmoHelper>
       </Canvas>
     </div>
+  );
+}
+
+/* ── Orientation gizmo ───────────────────────────────────────────────────────
+ * A near-clone of drei's <GizmoViewport>, with one difference: drei locks the
+ * labelled axis head to the POSITIVE end of each axis. In this scene world-up
+ * (+Y) is the shallow surface and depth grows DOWNWARD, so we put the "TVD"
+ * label on the −Y (downward) head and leave +Y unlabelled. E (+X) and N (+Z)
+ * stay on their positive heads as usual. Camera-orient-on-click is preserved
+ * via the GizmoHelper context, exactly like drei. */
+
+/** One thin axis bar (matches drei's Axis: a box offset to +0.4 along local X). */
+function GizmoAxis({ color, rotation }: { color: string; rotation: [number, number, number] }) {
+  return (
+    <group rotation={rotation}>
+      <mesh position={[0.4, 0, 0]}>
+        <boxGeometry args={[0.8, 0.05, 0.05]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/** A round sprite head with an optional centred label; clicking it tweens the
+ *  camera toward that direction (same UX as drei). */
+function GizmoAxisHead({ position, color, label, labelColor, onTween }: {
+  position: [number, number, number]; color: string; label?: string; labelColor: string;
+  onTween: (dir: THREE.Vector3) => void;
+}) {
+  const gl = useThree((s) => s.gl);
+  const [active, setActive] = useState(false);
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64; canvas.height = 64;
+    const c = canvas.getContext("2d")!;
+    c.beginPath(); c.arc(32, 32, 16, 0, 2 * Math.PI); c.closePath();
+    c.fillStyle = color; c.fill();
+    if (label) { c.font = "18px Inter var, Arial, sans-serif"; c.textAlign = "center"; c.fillStyle = labelColor; c.fillText(label, 32, 41); }
+    return new THREE.CanvasTexture(canvas);
+  }, [color, label, labelColor]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  const scale = (label ? 1 : 0.75) * (active ? 1.2 : 1);
+  return (
+    <sprite
+      position={position}
+      scale={scale}
+      onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); setActive(true); }}
+      onPointerOut={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); setActive(false); }}
+      onPointerDown={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); onTween(e.object.position as THREE.Vector3); }}
+    >
+      <spriteMaterial map={texture} map-anisotropy={gl.capabilities.getMaxAnisotropy() || 1} alphaTest={0.3} opacity={label ? 1 : 0.75} toneMapped={false} />
+    </sprite>
+  );
+}
+
+/** drei-style gizmo viewport with the vertical label on the DOWNWARD (−Y) head. */
+function GizmoViewportTVD({ axisColors, labels, labelColor }: {
+  axisColors: [string, string, string]; labels: [string, string, string]; labelColor: string;
+}) {
+  const [cx, cy, cz] = axisColors;
+  const { tweenCamera } = useGizmoContext();
+  return (
+    <group scale={40}>
+      <GizmoAxis color={cx} rotation={[0, 0, 0]} />
+      <GizmoAxis color={cy} rotation={[0, 0, Math.PI / 2]} />
+      <GizmoAxis color={cz} rotation={[0, -Math.PI / 2, 0]} />
+      {/* E on +X, N on +Z (positive heads, as usual). */}
+      <GizmoAxisHead position={[1, 0, 0]} color={cx} label={labels[0]} labelColor={labelColor} onTween={tweenCamera} />
+      <GizmoAxisHead position={[0, 0, 1]} color={cz} label={labels[2]} labelColor={labelColor} onTween={tweenCamera} />
+      {/* TVD on the −Y (downward) head; +Y stays unlabelled (= shallow surface). */}
+      <GizmoAxisHead position={[0, -1, 0]} color={cy} label={labels[1]} labelColor={labelColor} onTween={tweenCamera} />
+      <GizmoAxisHead position={[0, 1, 0]} color={cy} labelColor={labelColor} onTween={tweenCamera} />
+      {/* Unlabelled negative heads for E/N (matches drei's faint counter-axes). */}
+      <GizmoAxisHead position={[-1, 0, 0]} color={cx} labelColor={labelColor} onTween={tweenCamera} />
+      <GizmoAxisHead position={[0, 0, -1]} color={cz} labelColor={labelColor} onTween={tweenCamera} />
+    </group>
   );
 }
 

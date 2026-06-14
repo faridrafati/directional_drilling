@@ -54,6 +54,7 @@ export function MudLogGraph({ rows, xAxis, tracks, litho, note, wellNames }: {
   const [mode, setMode] = useState<Mode>("step");
 
   const wells = useMemo(() => [...new Set(rows.map((r) => r.wellCode))], [rows]);
+  const anyMerged = useMemo(() => tracks.some((t) => t.keys.length > 1), [tracks]);
   const nameOf = (w: string) => wellNames?.get(w) ?? w;   // well code → display name
   const wellColor = useMemo(() => { const m = new Map<string, string>(); wells.forEach((w, i) => m.set(w, WELL_PALETTE[i % WELL_PALETTE.length])); return m; }, [wells]);
   const rowsByWell = useMemo(() => { const m = new Map<string, MudRow[]>(); for (const r of rows) { const a = m.get(r.wellCode); if (a) a.push(r); else m.set(r.wellCode, [r]); } return m; }, [rows]);
@@ -99,8 +100,14 @@ export function MudLogGraph({ rows, xAxis, tracks, litho, note, wellNames }: {
         <button onClick={() => { setZoomY(1); setZoomX(1); }} className="h-6 px-2 rounded border border-gray-300 bg-white hover:bg-gray-50">Reset</button>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="font-semibold uppercase tracking-wide text-gray-500">Wells</span>
-          {wells.map((w) => (<span key={w} className="inline-flex items-center gap-1"><span className="inline-block w-3 h-0.5 align-middle" style={{ background: wellColor.get(w) }} />{nameOf(w)}</span>))}
+          {/* Show each well's colour AND its dash: separate tracks tell wells apart
+              by colour, merged tracks (e.g. Initial/10min gel) by dash — so the
+              legend must carry both to match every track. */}
+          {wells.map((w, wi) => (<span key={w} className="inline-flex items-center gap-1"><LineSwatch color={wellColor.get(w) ?? "#1e40af"} dash={DASH[wi % DASH.length]} />{nameOf(w)}</span>))}
         </div>
+        {anyMerged && wells.length > 1 && (
+          <div className="text-[10px] text-gray-400">Merged tracks: one colour per property; wells shown by line dash.</div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto">
@@ -211,7 +218,7 @@ function CurveTrack({ track, wells, rowsByWell, wellColor, yOfRow, win, width, h
         v = fp.v; my = fp.yy;
       }
     }
-    return { color: ln.color, label: ln.label, v, my };
+    return { color: ln.color, dash: ln.dash, label: ln.label, v, my };
   }) : [];
 
   return (
@@ -255,7 +262,7 @@ function CurveTrack({ track, wells, rowsByWell, wellColor, yOfRow, win, width, h
           <div className="font-semibold text-center text-gray-900 border-b border-gray-300 pb-1 mb-1 px-1">{track.label}<span className="font-normal text-gray-500"> · {fmtY(hover.yy)}{/* depth/date */}</span></div>
           {readout.map((r, i) => (
             <div key={i} className="flex items-center gap-2 whitespace-nowrap">
-              <span className="inline-block w-2.5 h-0.5 shrink-0" style={{ background: r.color }} />
+              <LineSwatch color={r.color} dash={r.dash} />
               <span className="font-medium text-gray-800">{r.label}</span>
               <span className="tabular-nums text-gray-500 ml-auto pl-3">{r.v == null ? "—" : fmtV(r.v)}</span>
             </div>
@@ -263,5 +270,16 @@ function CurveTrack({ track, wells, rowsByWell, wellColor, yOfRow, win, width, h
         </div>
       )}
     </div>
+  );
+}
+
+/** A small legend/tooltip swatch drawn as a LINE so the dash pattern reads — in a
+ *  merged track, wells differ only by dash (same colour per property), so a plain
+ *  colour bar can't tell e.g. "Initial gel · WellA" from "· WellB". */
+function LineSwatch({ color, dash }: { color: string; dash?: string }) {
+  return (
+    <svg width={16} height={6} className="shrink-0" style={{ overflow: "visible" }} aria-hidden>
+      <line x1={0} x2={16} y1={3} y2={3} stroke={color} strokeWidth={1.5} strokeDasharray={dash || undefined} />
+    </svg>
   );
 }

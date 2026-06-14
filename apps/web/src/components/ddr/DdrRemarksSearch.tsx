@@ -12,7 +12,7 @@
  *     operations still has a daily summary, so the two views differ.
  * Switching the view re-runs the search against the matching table. CSV export.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
@@ -33,7 +33,7 @@ interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[]; holeSizes: string[];
   mudTypes: string[]; rigs: string[]; operations: { code: string; desc: string }[];
 }
-export interface Item { value: string; label: string; keywords?: string; hint?: string }
+export interface Item { value: string; label: string; keywords?: string; hint?: string; icon?: ReactNode }
 
 const parse = (s: string) => s.split(/[,;]+/).map((x) => x.trim()).filter(Boolean);
 const fmt = (v: unknown): string => {
@@ -359,13 +359,13 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => !groupBusy && setEditor(null)}>
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-4 space-y-2" onClick={(e) => e.stopPropagation()}>
             <div className="text-sm font-semibold text-gray-900">{editor.originalName ? "Edit saved search" : "New saved search"}</div>
-            <KwInput label="Name" value={editor.name} onChange={(v) => setEditor({ ...editor, name: v })} placeholder="e.g. STUCK PIPE EVENTS" />
             <label className="block">
               <span className="text-[11px] text-gray-500 block mb-0.5">Category</span>
               <input value={editor.category} onChange={(e) => setEditor({ ...editor, category: e.target.value })} list="ddr-group-cats"
                 className="w-full h-9 border border-gray-300 rounded px-2 text-sm" />
               <datalist id="ddr-group-cats">{[...new Set((groupsQ.data ?? []).map((g) => g.category))].map((c) => <option key={c} value={c} />)}</datalist>
             </label>
+            <KwInput label="Name" value={editor.name} onChange={(v) => setEditor({ ...editor, name: v })} placeholder="e.g. STUCK PIPE EVENTS" />
             <KwInput label="AND (all of)" value={editor.and} onChange={(v) => setEditor({ ...editor, and: v })} placeholder="STUCK, FISHING" />
             <KwInput label="OR (any of)" value={editor.or} onChange={(v) => setEditor({ ...editor, or: v })} placeholder="W&R, WASH" />
             <KwInput label="NOT (none of)" value={editor.not} onChange={(v) => setEditor({ ...editor, not: v })} placeholder="BIT" />
@@ -442,6 +442,7 @@ export function MultiSelect({ title, items, selected, onChange }: {
   const allSel = selected.length > 0 && selected.length === items.length;
   const toggle = (v: string) => onChange(sel.has(v) ? selected.filter((x) => x !== v) : [...selected, v]);
   const labelOf = (v: string) => items.find((i) => i.value === v)?.label ?? v;
+  const iconOf = (v: string) => items.find((i) => i.value === v)?.icon;
   return (
     <div className="border-b border-gray-100">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-600 hover:text-gray-900">
@@ -454,6 +455,7 @@ export function MultiSelect({ title, items, selected, onChange }: {
         <div className="flex flex-wrap gap-1 pb-1 max-h-20 overflow-y-auto">
           {selected.slice(0, 40).map((v) => (
             <span key={v} className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 rounded px-1.5 py-0.5 text-[10px] max-w-[150px]">
+              {iconOf(v)}
               <span className="truncate">{labelOf(v)}</span>
               <button type="button" onClick={() => toggle(v)} className="text-blue-500 hover:text-blue-900 leading-none shrink-0" title="Remove">×</button>
             </span>
@@ -472,6 +474,7 @@ export function MultiSelect({ title, items, selected, onChange }: {
               filtered.map((i) => (
                 <label key={i.value} className="flex items-center gap-1.5 px-1 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50 cursor-pointer">
                   <input type="checkbox" checked={sel.has(i.value)} onChange={() => toggle(i.value)} className="rounded border-gray-300" />
+                  {i.icon}
                   <span className="truncate" title={i.hint || i.label}>{i.label}</span>
                 </label>
               ))}

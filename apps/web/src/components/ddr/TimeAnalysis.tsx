@@ -81,6 +81,7 @@ export function TimeAnalysis({ onOpenReport }: { onOpenReport?: (wellCode: strin
   const [error, setError] = useState<string | null>(null);
 
   const [view, setView] = useState<"rows" | "pivot" | "chart">("rows");
+  const [pivotBy, setPivotBy] = useState<"type" | "activity">("type");   // pivot column dimension
   // Chart kind: generic bars (with selectable X / Split / 100%-stack), plus the
   // next-well engineering views (depth-vs-days learning curve, NPT split,
   // days-per-1000m benchmark).
@@ -201,10 +202,20 @@ export function TimeAnalysis({ onOpenReport }: { onOpenReport?: (wellCode: strin
               : "Pick a field / well, then Show."}
           </span>
           {data && rows.length > 0 && (
-            <div className="inline-flex rounded border border-gray-300 overflow-hidden shrink-0">
-              {(["rows", "pivot", "chart"] as const).map((v) => (
-                <button key={v} onClick={() => setView(v)} className={`px-2.5 h-7 text-xs capitalize ${view === v ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{v}</button>
-              ))}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Pivot column dimension: activity TYPE vs individual ACTIVITY. */}
+              {view === "pivot" && (
+                <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+                  {([["type", "Activity type"], ["activity", "Activity"]] as const).map(([k, lbl]) => (
+                    <button key={k} onClick={() => setPivotBy(k)} className={`px-2.5 h-7 text-xs ${pivotBy === k ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{lbl}</button>
+                  ))}
+                </div>
+              )}
+              <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+                {(["rows", "pivot", "chart"] as const).map((v) => (
+                  <button key={v} onClick={() => setView(v)} className={`px-2.5 h-7 text-xs capitalize ${view === v ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{v}</button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -212,7 +223,7 @@ export function TimeAnalysis({ onOpenReport }: { onOpenReport?: (wellCode: strin
           {data && (view === "rows" ? (
             <TARowsTable rows={rows} cols={usedCols} note={data.note} onOpenReport={onOpenReport} />
           ) : view === "pivot" ? (
-            <TAPivot rows={rows} note={data.note} />
+            <TAPivot rows={rows} note={data.note} pivotBy={pivotBy} />
           ) : (
             <TAChart rows={rows} kind={chartKind} chartType={chartType} normalize={normalize}
               barX={barX} barSplit={barSplit} wellNames={data.wellNames} note={data.note} />
@@ -272,45 +283,82 @@ function TARowsTable({ rows, cols, note, onOpenReport }: {
   );
 }
 
-/** Day × activity-type hours cross-tab with per-day and per-type SUMs (TABF 'A'). */
-function TAPivot({ rows, note }: { rows: TARow[]; note?: string }) {
-  const { days, types, cell, dayTotal, typeTotal, grand } = useMemo(() => {
-    const types = [...new Set(rows.map((r) => r.type).filter((t): t is string => !!t))].sort();
+/** Day × activity hours cross-tab with per-day and per-column SUMs (TABF 'A').
+ *  Columns break out by activity TYPE or individual ACTIVITY, per `pivotBy`. */
+function TAPivot({ rows, note, pivotBy }: { rows: TARow[]; note?: string; pivotBy: "type" | "activity" }) {
+  const { days, types, groups, groupStart, cell, dayTotal, typeTotal, grand } = useMemo(() => {
+    const colOf = (r: TARow) => (pivotBy === "activity" ? r.activity : r.type);
     const dayKey = (r: TARow) => `${r.wellCode}|${r.date ?? ""}`;
     const dayMap = new Map<string, { wellCode: string; date: string | null; holeSize: string | null; from: number | null; to: number | null; mudType: string | null }>();
-    const cell = new Map<string, number>();        // `${dayKey}|${type}` -> hours
+    const cell = new Map<string, number>();        // `${dayKey}|${col}` -> hours
     const dayTotal = new Map<string, number>(), typeTotal = new Map<string, number>();
+    // When pivoting by activity, remember each activity's parent activity-type so
+    // the header can group activities (sub-headers) under their type (top header).
+    const parentType = new Map<string, string>();
     let grand = 0;
     for (const r of rows) {
       const dk = dayKey(r);
       if (!dayMap.has(dk)) dayMap.set(dk, { wellCode: r.wellCode, date: r.date, holeSize: r.holeSize, from: r.from, to: r.to, mudType: r.mudType });
       const h = typeof r.hours === "number" ? r.hours : 0;
-      if (!h || !r.type) continue;
-      const ck = `${dk}|${r.type}`;
+      const col = colOf(r);
+      if (!h || !col) continue;
+      if (pivotBy === "activity" && !parentType.has(col)) parentType.set(col, r.type ?? "—");
+      const ck = `${dk}|${col}`;
       cell.set(ck, (cell.get(ck) ?? 0) + h);
       dayTotal.set(dk, (dayTotal.get(dk) ?? 0) + h);
-      typeTotal.set(r.type, (typeTotal.get(r.type) ?? 0) + h);
+      typeTotal.set(col, (typeTotal.get(col) ?? 0) + h);
       grand += h;
     }
+    // Column order + the two-level grouping. Pivoting by activity → activities
+    // sorted within each parent type (types alpha, activities alpha inside);
+    // pivoting by type → a single flat group per type (no sub-header needed).
+    const types = pivotBy === "activity"
+      ? [...typeTotal.keys()].sort((a, b) => (parentType.get(a) ?? "").localeCompare(parentType.get(b) ?? "") || a.localeCompare(b))
+      : [...typeTotal.keys()].sort();
+    const groups: { type: string; cols: string[]; total: number }[] = [];
+    for (const c of types) {
+      const t = pivotBy === "activity" ? (parentType.get(c) ?? "—") : c;
+      const last = groups[groups.length - 1];
+      if (last && last.type === t) { last.cols.push(c); last.total += typeTotal.get(c) ?? 0; }
+      else groups.push({ type: t, cols: [c], total: typeTotal.get(c) ?? 0 });
+    }
+    // First column of each group → gets the heavy group separator on its left.
+    const groupStart = new Set(groups.map((g) => g.cols[0]));
     const days = [...dayMap.entries()].map(([k, v]) => ({ k, ...v }))
       .sort((a, b) => a.wellCode.localeCompare(b.wellCode) || String(a.date ?? "").localeCompare(String(b.date ?? "")));
-    return { days, types, cell, dayTotal, typeTotal, grand };
-  }, [rows]);
+    return { days, types, groups, groupStart, cell, dayTotal, typeTotal, grand };
+  }, [rows, pivotBy]);
 
   if (!days.length) return <div className="p-8 text-center text-sm text-gray-400">{note ?? "No hours to pivot."}</div>;
   const num = (v: number | undefined) => (v ? h1(v) : "");
+  // Heavy separator on the left edge of each activity-type group (activity pivot).
+  const sep = (col: string) => (pivotBy === "activity" && groupStart.has(col) ? " border-l-2 border-l-gray-500" : "");
   return (
     <table className="text-[11px] tabular-nums border-collapse">
       <thead className="sticky top-0 z-20">
+        {/* Pivoting by activity → two header rows: activity TYPE (grouped, spanning
+            its activities) over the individual ACTIVITY sub-headers. Pivoting by
+            type → a single header row. The fixed left columns span both rows. */}
         <tr className="bg-gray-100">
           {["Well", "Date", "Hole", "From", "To", "Mud type"].map((hh) => (
-            <th key={hh} className="bg-gray-100 border border-gray-300 px-2 py-1 text-left font-semibold text-gray-700 whitespace-nowrap">{hh}</th>
+            <th key={hh} rowSpan={pivotBy === "activity" ? 2 : 1} className="bg-gray-100 border border-gray-300 px-2 py-1 text-left font-semibold text-gray-700 whitespace-nowrap align-bottom">{hh}</th>
           ))}
-          <th className="bg-amber-100 border border-gray-300 px-2 py-1 text-right font-semibold text-gray-800 whitespace-nowrap">SUM</th>
-          {types.map((t) => (
-            <th key={t} className="bg-gray-100 border border-gray-300 px-2 py-1 text-right font-medium text-gray-700 whitespace-nowrap max-w-[110px] truncate" title={t}>{t}</th>
-          ))}
+          <th rowSpan={pivotBy === "activity" ? 2 : 1} className="bg-amber-100 border border-gray-300 px-2 py-1 text-center font-semibold text-gray-800 whitespace-nowrap align-bottom">SUM</th>
+          {pivotBy === "activity"
+            ? groups.map((g) => (
+                <th key={g.type} colSpan={g.cols.length} className="bg-gray-200 border-2 border-gray-500 px-2 py-1 text-center font-semibold text-gray-700 whitespace-nowrap max-w-[220px] truncate" title={g.type}>{g.type}</th>
+              ))
+            : types.map((t) => (
+                <th key={t} className="bg-gray-100 border border-gray-300 px-2 py-1 text-center font-medium text-gray-700 whitespace-nowrap max-w-[110px] truncate" title={t}>{t}</th>
+              ))}
         </tr>
+        {pivotBy === "activity" && (
+          <tr className="bg-gray-100">
+            {types.map((t) => (
+              <th key={t} className={`bg-gray-100 border border-gray-300 px-2 py-1 text-center font-medium text-gray-700 whitespace-nowrap max-w-[110px] truncate${sep(t)}`} title={t}>{t}</th>
+            ))}
+          </tr>
+        )}
       </thead>
       <tbody>
         {days.map((d, ri) => (
@@ -318,20 +366,48 @@ function TAPivot({ rows, note }: { rows: TARow[]; note?: string }) {
             <th className="border border-gray-300 px-2 py-0.5 text-left font-semibold text-gray-800 whitespace-nowrap">{d.wellCode}</th>
             <td className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">{d.date ?? ""}</td>
             <td className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">{d.holeSize ?? ""}</td>
-            <td className="border border-gray-300 px-2 py-0.5 text-right">{fmtNum(d.from)}</td>
-            <td className="border border-gray-300 px-2 py-0.5 text-right">{fmtNum(d.to)}</td>
+            <td className="border border-gray-300 px-2 py-0.5 text-center">{fmtNum(d.from)}</td>
+            <td className="border border-gray-300 px-2 py-0.5 text-center">{fmtNum(d.to)}</td>
             <td className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">{d.mudType ?? ""}</td>
-            <td className="border border-gray-300 px-2 py-0.5 text-right font-semibold bg-amber-50">{num(dayTotal.get(d.k))}</td>
-            {types.map((t) => <td key={t} className="border border-gray-300 px-2 py-0.5 text-right">{num(cell.get(`${d.k}|${t}`))}</td>)}
+            <td className="border border-gray-300 px-2 py-0.5 text-center font-semibold bg-amber-50">{num(dayTotal.get(d.k))}</td>
+            {types.map((t) => <td key={t} className={`border border-gray-300 px-2 py-0.5 text-center${sep(t)}`}>{num(cell.get(`${d.k}|${t}`))}</td>)}
           </tr>
         ))}
-        <tr className="bg-amber-100 font-semibold sticky bottom-0">
+        {/* Footer rows pin to the bottom; offsets stack them so none overlap.
+            Pivoting by activity adds two type-rollup rows below, so the per-column
+            SUM/% sit two row-heights (1.5rem each) higher. */}
+        <tr className={`bg-amber-100 font-semibold sticky ${pivotBy === "activity" ? "bottom-[4.5rem]" : "bottom-6"}`}>
           <th className="border border-gray-300 px-2 py-0.5 text-left text-gray-800 whitespace-nowrap">SUM</th>
           <td className="border border-gray-300 px-2 py-0.5" colSpan={4} />
-          <td className="border border-gray-300 px-2 py-0.5 text-right text-gray-500">{days.length} days</td>
-          <td className="border border-gray-300 px-2 py-0.5 text-right text-gray-900">{h1(grand)}</td>
-          {types.map((t) => <td key={t} className="border border-gray-300 px-2 py-0.5 text-right text-gray-900">{num(typeTotal.get(t))}</td>)}
+          <td className="border border-gray-300 px-2 py-0.5 text-center text-gray-500">{days.length} days</td>
+          <td className="border border-gray-300 px-2 py-0.5 text-center text-gray-900">{h1(grand)}</td>
+          {types.map((t) => <td key={t} className={`border border-gray-300 px-2 py-0.5 text-center text-gray-900${sep(t)}`}>{num(typeTotal.get(t))}</td>)}
         </tr>
+        {/* Each column's share of total hours (SUM column = 100 %). */}
+        <tr className={`bg-amber-50 font-semibold text-gray-600 sticky ${pivotBy === "activity" ? "bottom-[3rem]" : "bottom-0"}`}>
+          <th className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">%</th>
+          <td className="border border-gray-300 px-2 py-0.5" colSpan={5} />
+          <td className="border border-gray-300 px-2 py-0.5 text-center text-gray-900">{grand > 0 ? "100%" : ""}</td>
+          {types.map((t) => <td key={t} className={`border border-gray-300 px-2 py-0.5 text-center${sep(t)}`}>{grand > 0 ? `${(100 * (typeTotal.get(t) ?? 0) / grand).toFixed(1)}%` : ""}</td>)}
+        </tr>
+        {/* When pivoting by activity, roll the activities up to their parent
+            activity-type: a SUM and % per type, each spanning its activity cols. */}
+        {pivotBy === "activity" && (
+          <>
+            <tr className="bg-amber-200 font-semibold sticky bottom-6 text-gray-800">
+              <th className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">Type SUM</th>
+              <td className="border border-gray-300 px-2 py-0.5" colSpan={5} />
+              <td className="border border-gray-300 px-2 py-0.5 text-center">{h1(grand)}</td>
+              {groups.map((g) => <td key={g.type} colSpan={g.cols.length} className="border border-gray-300 border-l-2 border-l-gray-500 px-2 py-0.5 text-center" title={g.type}>{num(g.total)}</td>)}
+            </tr>
+            <tr className="bg-amber-100 font-semibold sticky bottom-0 text-gray-700">
+              <th className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">Type %</th>
+              <td className="border border-gray-300 px-2 py-0.5" colSpan={5} />
+              <td className="border border-gray-300 px-2 py-0.5 text-center">{grand > 0 ? "100%" : ""}</td>
+              {groups.map((g) => <td key={g.type} colSpan={g.cols.length} className="border border-gray-300 border-l-2 border-l-gray-500 px-2 py-0.5 text-center" title={g.type}>{grand > 0 ? `${(100 * g.total / grand).toFixed(1)}%` : ""}</td>)}
+            </tr>
+          </>
+        )}
       </tbody>
     </table>
   );
@@ -383,25 +459,49 @@ function BarsChart({ rows, chartType, normalize, barX, barSplit, wellNames }: {
     }
     const SER_MAX = 16, CAT_MAX = 30;
     const cats = [...catTotalAll.entries()].sort((a, b) => b[1] - a[1]).slice(0, CAT_MAX).map((x) => x[0]);
-    const series = [...serTotal.entries()].sort((a, b) => b[1] - a[1]).slice(0, SER_MAX).map((x) => x[0]);
-    const capped = catTotalAll.size > cats.length || serTotal.size > series.length;
-    const matrix = cats.map((c) => series.map((sName) => cell.get(`${c} ${sName}`) ?? 0));
-    const catTotal = cats.map((_, i) => matrix[i].reduce((a, b) => a + b, 0));
-    const pie = series.map((sName) => ({ name: sName, value: serTotal.get(sName) ?? 0 }));
+    const key = (c: string, s: string) => `${c} ${s}`;
+    // Which series to keep: the top-N by GLOBAL total (stable — independent of
+    // the category set). But ORDER them by their value in the LEFTMOST bar
+    // (cats[0], the largest category), so that bar reads largest→smallest from the
+    // base up and the legend follows the most-left bar. Ties break on global total.
+    const topSeries = [...serTotal.entries()].sort((a, b) => b[1] - a[1]).slice(0, SER_MAX).map((x) => x[0]);
+    const lead = cats[0];
+    topSeries.sort((a, b) => (cell.get(key(lead, b)) ?? 0) - (cell.get(key(lead, a)) ?? 0) || (serTotal.get(b) ?? 0) - (serTotal.get(a) ?? 0));
+    const capped = catTotalAll.size > cats.length || serTotal.size > topSeries.length;
+    // If the split-by has more values than fit, fold the rest into an "Other"
+    // bucket so each bar's stack still sums to the category's TRUE total. Without
+    // this a bar's height depended on which series globally ranked top-N, so a
+    // well's value changed when *another* well was added to / removed from the chart.
+    const seriesOverflow = serTotal.size > topSeries.length;
+    const series = seriesOverflow ? [...topSeries, "Other"] : topSeries;
+    const topSet = new Set(topSeries);
+    const matrix = cats.map((c) => series.map((sName) =>
+      sName === "Other" && seriesOverflow
+        ? (catTotalAll.get(c) ?? 0) - topSeries.reduce((a, s) => a + (cell.get(key(c, s)) ?? 0), 0)
+        : (cell.get(key(c, sName)) ?? 0)));
+    // Bar total = the category's true total (independent of the series cap).
+    const catTotal = cats.map((c) => catTotalAll.get(c) ?? 0);
+    const pie = series.map((sName) =>
+      sName === "Other" && seriesOverflow
+        ? { name: "Other", value: [...serTotal].filter(([n]) => !topSet.has(n)).reduce((a, [, v]) => a + v, 0) }
+        : { name: sName, value: serTotal.get(sName) ?? 0 });
     const grand = pie.reduce((a, s) => a + s.value, 0);
     return { cats, series, matrix, catTotal, pie, grand, capped };
   }, [rows, barX, barSplit, wellNames]);
 
   if (!cats.length || grand <= 0) return <div className="p-8 text-center text-sm text-gray-400">No hours recorded to chart.</div>;
 
+  // "Other" (the folded-in overflow series) is drawn neutral grey, not a palette hue.
+  const serColor = (sName: string, si: number) => (sName === "Other" ? "#94a3b8" : colorOf(si));
   const legend = (
     <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px] text-gray-600">
       {series.map((sName, si) => (
-        <span key={sName} className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: colorOf(si) }} />{sName}</span>
+        <span key={sName} className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: serColor(sName, si) }} />{sName}</span>
       ))}
     </div>
   );
-  const capNote = capped ? <span className="text-amber-600"> Showing the top {cats.length} {DIM_LABEL[barX].toLowerCase()} × {series.length} {DIM_LABEL[barSplit].toLowerCase()}.</span> : null;
+  const otherCount = series.includes("Other") ? <span className="text-amber-600"> Lower-ranked {DIM_LABEL[barSplit].toLowerCase()} are folded into “Other”.</span> : null;
+  const capNote = capped ? <span className="text-amber-600"> Showing the top {cats.length} {DIM_LABEL[barX].toLowerCase()}.{otherCount}</span> : null;
 
   if (chartType === "pie") {
     const slices = pie.filter((s) => s.value > 0);
@@ -416,7 +516,7 @@ function BarsChart({ rows, chartType, normalize, barX, barSplit, wellNames }: {
       <div className="p-3 relative">
         <div className="text-[11px] text-gray-500 mb-2">Overall time distribution by {DIM_LABEL[barSplit].toLowerCase()} — {h1(grand)} h total.{capNote}</div>
         <svg width={300} height={300} className="block">
-          {slices.map((s) => { const a1 = a0 + (s.value / grand) * 2 * Math.PI; const d = arc(a1); a0 = a1; const html = `<b>${s.name}</b><br/>${h1(s.value)} h · ${(100 * s.value / grand).toFixed(1)}%`; return <path key={s.name} d={d} fill={colorOf(series.indexOf(s.name))} stroke="#fff" strokeWidth={1} onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />; })}
+          {slices.map((s) => { const a1 = a0 + (s.value / grand) * 2 * Math.PI; const d = arc(a1); a0 = a1; const html = `<b>${s.name}</b><br/>${h1(s.value)} h · ${(100 * s.value / grand).toFixed(1)}%`; return <path key={s.name} d={d} fill={serColor(s.name, series.indexOf(s.name))} stroke="#fff" strokeWidth={1} onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />; })}
         </svg>
         {legend}
         {hover.node}
@@ -455,9 +555,9 @@ function BarsChart({ rows, chartType, normalize, barX, barSplit, wellNames }: {
                   const raw = matrix[ci][si]; if (raw <= 0) return null;
                   const v = pct ? raw / tot : raw;
                   const html = `<b>${c}</b> · ${sName}<br/>${h1(raw)} h${stacked ? ` · ${(100 * raw / tot).toFixed(1)}%` : ""}`;
-                  if (stacked) { const y = yOf(acc + v), hgt = yOf(acc) - yOf(acc + v); acc += v; return <rect key={sName} x={x0} y={y} width={barGroupW} height={hgt} fill={colorOf(si)} onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />; }
+                  if (stacked) { const y = yOf(acc + v), hgt = yOf(acc) - yOf(acc + v); acc += v; return <rect key={sName} x={x0} y={y} width={barGroupW} height={hgt} fill={serColor(sName, si)} onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />; }
                   const bw = barGroupW / series.length, x = x0 + si * bw, y = yOf(v);
-                  return <rect key={sName} x={x} y={y} width={Math.max(1, bw - 0.5)} height={baseY - y} fill={colorOf(si)} onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />;
+                  return <rect key={sName} x={x} y={y} width={Math.max(1, bw - 0.5)} height={baseY - y} fill={serColor(sName, si)} onMouseEnter={hover.enter(html)} onMouseMove={hover.enter(html)} onMouseLeave={hover.leave} />;
                 })}
                 <text x={mid} y={baseY + 12} textAnchor="end" fontSize={9} fill="#475569" transform={`rotate(-40 ${mid} ${baseY + 12})`}>{c.length > 18 ? c.slice(0, 17) + "…" : c}</text>
               </g>
