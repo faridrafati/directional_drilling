@@ -21,6 +21,7 @@ import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
 import { MudPlanning, type PlanningFilters } from "./MudPlanning.js";
 import { useFacetOptions } from "./useFacetOptions.js";
+import { useDdrSelection } from "./ddrSelection.js";
 
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
@@ -77,13 +78,12 @@ const COLS: { key: keyof StockRow; label: string; title?: string; text?: boolean
 const PALETTE = ["#1e40af", "#dc2626", "#0d9488", "#d97706", "#7c3aed", "#65a30d", "#db2777", "#0891b2", "#ea580c", "#4f46e5", "#16a34a", "#9f1239"];
 
 export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void } = {}) {
-  const [selFields, setSelFields] = useState<string[]>([]);
-  const [selWells, setSelWells] = useState<string[]>([]);
-  const [selHole, setSelHole] = useState<string[]>([]);
-  const [selMud, setSelMud] = useState<string[]>([]);
-  const [selMat, setSelMat] = useState<string[]>([]);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // Shared across tabs (see ddrSelection) so the facet picks survive a tab switch.
+  const {
+    fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
+    holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
+    materials: selMat, setMaterials: setSelMat, dateFrom, setDateFrom, dateTo, setDateTo,
+  } = useDdrSelection();
   const [data, setData] = useState<StockData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

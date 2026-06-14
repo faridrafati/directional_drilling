@@ -26,6 +26,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { useFacetOptions } from "./useFacetOptions.js";
+import { useDdrSelection } from "./ddrSelection.js";
 import { MudLogGraph, type MudTrack } from "./MudLogGraph.js";
 import type { GraphWell } from "./LithologyGraph.js";
 import { MudProgram, type ProgramFilters } from "./MudProgram.js";
@@ -129,10 +130,11 @@ function buildTracks(selected: { key: keyof MudRow; label: string; color: string
 }
 
 export function MudProperties({ onOpenReport }: { onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void } = {}) {
-  const [selFields, setSelFields] = useState<string[]>([]);
-  const [selWells, setSelWells] = useState<string[]>([]);
-  const [selHole, setSelHole] = useState<string[]>([]);
-  const [selMud, setSelMud] = useState<string[]>([]);
+  // Shared across tabs (see ddrSelection) so the facet picks survive a tab switch.
+  const {
+    fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
+    holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
+  } = useDdrSelection();
   const [data, setData] = useState<MudData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

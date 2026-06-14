@@ -24,6 +24,7 @@ import { WellPath } from "../components/ddr/WellPath.js";
 import { TimeAnalysis } from "../components/ddr/TimeAnalysis.js";
 import { Tools } from "../components/ddr/Tools.js";
 import { RopOptimization } from "../components/ddr/RopOptimization.js";
+import { DdrSelectionProvider } from "../components/ddr/ddrSelection.js";
 
 type Row = Record<string, unknown>;
 
@@ -91,6 +92,7 @@ export function DdrReportsPage() {
   });
 
   return (
+    <DdrSelectionProvider>
     <div className="h-full flex flex-col p-4 sm:p-6">
       <div className="w-full max-w-[1700px] mx-auto flex flex-col flex-1 min-h-0">
         <div className="mb-4 shrink-0">
@@ -162,6 +164,7 @@ export function DdrReportsPage() {
         />
       )}
     </div>
+    </DdrSelectionProvider>
   );
 }
 

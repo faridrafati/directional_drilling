@@ -28,6 +28,7 @@ import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
 import { useFacetOptions } from "./useFacetOptions.js";
+import { useDdrSelection } from "./ddrSelection.js";
 
 // Tool types (keys match the API's TOOL_SPECS). Bit first (richest / default).
 const TOOLS = [
@@ -54,12 +55,12 @@ const colorOf = (i: number) => PALETTE[i % PALETTE.length];
 
 export function Tools({ onOpenReport }: { onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void } = {}) {
   const [tool, setTool] = useState("bit");
-  const [selFields, setSelFields] = useState<string[]>([]);
-  const [selWells, setSelWells] = useState<string[]>([]);
-  const [selHole, setSelHole] = useState<string[]>([]);
-  const [selMud, setSelMud] = useState<string[]>([]);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // Shared across tabs (see ddrSelection) so the facet picks survive a tab switch.
+  const {
+    fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
+    holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
+    dateFrom, setDateFrom, dateTo, setDateTo,
+  } = useDdrSelection();
   const [data, setData] = useState<ToolsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

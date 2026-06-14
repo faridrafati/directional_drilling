@@ -17,6 +17,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
 import { useFacetOptions } from "./useFacetOptions.js";
+import { useDdrSelection } from "./ddrSelection.js";
 
 interface GroupEditor { originalName: string | null; name: string; category: string; and: string; or: string; not: string }
 
@@ -79,16 +80,16 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
   const [andKw, setAndKw] = useState("");
   const [orKw, setOrKw] = useState("");
   const [notKw, setNotKw] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const { dateFrom, setDateFrom, dateTo, setDateTo } = useDdrSelection();   // shared across tabs
   const [onlyTimed, setOnlyTimed] = useState(false);
   const [view, setView] = useState<"remarks" | "summary">("remarks");
   const [groupFilter, setGroupFilter] = useState("");
-  // facet selections
-  const [selFields, setSelFields] = useState<string[]>([]);
-  const [selWells, setSelWells] = useState<string[]>([]);
-  const [selHole, setSelHole] = useState<string[]>([]);
-  const [selMud, setSelMud] = useState<string[]>([]);
+  // facet selections — fields/wells/bit/mud shared across tabs (ddrSelection);
+  // rigs/operations stay local to this search tab.
+  const {
+    fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
+    holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
+  } = useDdrSelection();
   const [selRigs, setSelRigs] = useState<string[]>([]);
   const [selOps, setSelOps] = useState<string[]>([]);
   // results

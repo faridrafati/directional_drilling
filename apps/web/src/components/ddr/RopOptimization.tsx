@@ -30,6 +30,7 @@ import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
 import { useFacetOptions } from "./useFacetOptions.js";
+import { useDdrSelection } from "./ddrSelection.js";
 
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
@@ -164,12 +165,12 @@ function screenOutliers(points: RopPoint[]): { kept: RopPoint[]; removed: number
 }
 
 export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void } = {}) {
-  const [selFields, setSelFields] = useState<string[]>([]);
-  const [selWells, setSelWells] = useState<string[]>([]);
-  const [selHole, setSelHole] = useState<string[]>([]);
-  const [selMud, setSelMud] = useState<string[]>([]);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // Shared across tabs (see ddrSelection) so the facet picks survive a tab switch.
+  const {
+    fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
+    holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
+    dateFrom, setDateFrom, dateTo, setDateTo,
+  } = useDdrSelection();
   const [data, setData] = useState<RopData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

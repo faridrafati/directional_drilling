@@ -29,6 +29,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { useFacetOptions } from "./useFacetOptions.js";
+import { useDdrSelection } from "./ddrSelection.js";
 import { FormationMatrix } from "./FormationMatrix.js";
 
 interface SearchOptions {
@@ -100,10 +101,11 @@ function niceTicks(lo: number, hi: number, count: number): number[] {
 
 export function FormationLithology() {
   const [view, setView] = useState<"summary" | "browse">("summary");
-  const [selFields, setSelFields] = useState<string[]>([]);
-  const [selWells, setSelWells] = useState<string[]>([]);
-  const [selHole, setSelHole] = useState<string[]>([]);
-  const [selMud, setSelMud] = useState<string[]>([]);
+  // Shared across tabs (see ddrSelection) so the facet picks survive a tab switch.
+  const {
+    fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
+    holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
+  } = useDdrSelection();
 
   // Snapshotted facets that produced the last Show — the Summary fetches from these.
   const [filters, setFilters] = useState<{ fields: string[]; wells: string[]; holeSizes: string[]; mudTypes: string[] } | null>(null);
