@@ -5,7 +5,8 @@
  * div/mod — `Math.trunc`, not `Math.floor`, which matters for negative args),
  * used only to align the day grid under the correct weekday.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const div = (a: number, b: number) => Math.trunc(a / b);
 const mod = (a: number, b: number) => a - Math.trunc(a / b) * b;
@@ -68,7 +69,11 @@ export function JalaliDatePicker({ value, onChange, placeholder, className }: {
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>(null);          // the input wrapper
+  const popupRef = useRef<HTMLDivElement>(null);      // the (portalled) calendar
+  // Fixed-position coords for the portalled popup, kept inside the viewport so a
+  // narrow sidebar (which clips horizontal overflow) can't cut the calendar off.
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const sel = parse(value);
   const [view, setView] = useState(() => (sel ? { jy: sel.jy, jm: sel.jm } : { jy: 1395, jm: 1 }));
 
@@ -77,11 +82,37 @@ export function JalaliDatePicker({ value, onChange, placeholder, className }: {
     if (p) setView({ jy: p.jy, jm: p.jm });
   }, [value]);
 
+  // Position the popup under the field, flipping left/up when it would overflow.
+  useLayoutEffect(() => {
+    if (!open || !ref.current) { setPos(null); return; }
+    const r = ref.current.getBoundingClientRect();
+    const PW = 240, PH = 286, M = 8;                  // popup width/height + margin
+    let left = r.left;
+    if (left + PW > window.innerWidth - M) left = r.right - PW;   // right-align
+    left = Math.max(M, Math.min(left, window.innerWidth - PW - M));
+    let top = r.bottom + 4;
+    if (top + PH > window.innerHeight - M) top = Math.max(M, r.top - PH - 4); // flip up
+    setPos({ left, top });
+  }, [open]);
+
+  // Close on an outside click (considering BOTH the field and the portalled popup)
+  // or when the page/sidebar scrolls (the fixed popup would otherwise detach).
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (ref.current?.contains(t) || popupRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
   }, [open]);
 
   const len = monthLen(view.jy, view.jm);
@@ -103,8 +134,8 @@ export function JalaliDatePicker({ value, onChange, placeholder, className }: {
         placeholder={placeholder}
         className="w-full h-9 border border-gray-300 rounded px-2 text-sm"
       />
-      {open && (
-        <div className="absolute z-50 mt-1 w-60 bg-white border border-gray-300 rounded shadow-lg p-2 text-xs">
+      {open && pos && createPortal(
+        <div ref={popupRef} style={{ position: "fixed", left: pos.left, top: pos.top }} className="z-50 w-60 bg-white border border-gray-300 rounded shadow-lg p-2 text-xs">
           <div className="flex items-center justify-between gap-1 mb-1">
             <button type="button" onClick={() => setMonth(-1)} className="px-2 py-0.5 rounded hover:bg-gray-100 text-gray-600">‹</button>
             <div className="flex items-center gap-1">
@@ -138,7 +169,8 @@ export function JalaliDatePicker({ value, onChange, placeholder, className }: {
           <div className="flex justify-end mt-1 pt-1 border-t border-gray-100">
             <button type="button" onClick={() => { onChange(""); setOpen(false); }} className="text-[11px] text-gray-500 hover:underline">Clear</button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
