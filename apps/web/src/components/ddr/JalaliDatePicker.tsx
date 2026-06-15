@@ -61,8 +61,11 @@ function parse(s: string) {
   return m ? { jy: +m[1], jm: +m[2], jd: +m[3] } : null;
 }
 
-export function JalaliDatePicker({ value, onChange, placeholder }: {
+export function JalaliDatePicker({ value, onChange, placeholder, className }: {
   value: string; onChange: (v: string) => void; placeholder?: string;
+  /** Width/flex class for the field wrapper. Defaults to a fixed w-36; pass e.g.
+   *  "flex-1 min-w-0" so two pickers share a narrow sidebar row without overflow. */
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -92,13 +95,13 @@ export function JalaliDatePicker({ value, onChange, placeholder }: {
   });
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={`relative ${className ?? "w-36"}`} ref={ref}>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
-        className="w-36 h-9 border border-gray-300 rounded px-2 text-sm"
+        className="w-full h-9 border border-gray-300 rounded px-2 text-sm"
       />
       {open && (
         <div className="absolute z-50 mt-1 w-60 bg-white border border-gray-300 rounded shadow-lg p-2 text-xs">

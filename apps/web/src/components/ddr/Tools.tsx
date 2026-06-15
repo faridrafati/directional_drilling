@@ -140,9 +140,9 @@ export function Tools({ onOpenReport }: { onOpenReport?: (wellCode: string, seri
         <div className="pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Date range (Jalali)</div>
           <div className="flex items-center gap-1.5">
-            <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="From" />
+            <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="From" className="flex-1 min-w-0" />
             <span className="text-gray-400">–</span>
-            <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="To" />
+            <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="To" className="flex-1 min-w-0" />
           </div>
         </div>
         <div className="flex gap-2 pt-3">

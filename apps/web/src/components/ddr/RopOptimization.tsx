@@ -272,9 +272,9 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
         <div className="pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Date range (Jalali)</div>
           <div className="flex items-center gap-1.5">
-            <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="From" />
+            <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="From" className="flex-1 min-w-0" />
             <span className="text-gray-400">–</span>
-            <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="To" />
+            <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="To" className="flex-1 min-w-0" />
           </div>
         </div>
         <label className="flex items-center gap-1.5 pt-2 text-[11px] text-gray-600 cursor-pointer" title="Statistical screening: Tukey IQR fence (1.5×) on ROP / WOB / RPM / MSE — outliers are hidden, not deleted.">

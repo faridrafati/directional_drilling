@@ -5,7 +5,7 @@ interface Props { children: ReactNode }
 
 /** Top-level sections — moved from the old left sidebar into the top navbar. */
 const NAV: { to: string; label: string }[] = [
-  { to: "/projects", label: "Projects" },
+  { to: "/projects", label: "Directional Drilling" },
   { to: "/logs", label: "EMI Log Analysis" },
   { to: "/air-gas", label: "Air & Gas Drilling" },
   { to: "/ddr", label: "Daily Drilling Reports" },
@@ -23,7 +23,7 @@ export function AppShell({ children }: Props) {
       <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
         <div className="flex items-center gap-x-4 gap-y-1 px-4 py-2 flex-wrap">
           <div className="flex items-baseline gap-2 mr-1">
-            <h1 className="text-base font-semibold text-gray-900 whitespace-nowrap">Directional Drilling</h1>
+            <h1 className="text-base font-semibold text-gray-900 whitespace-nowrap">Rock Drill</h1>
             <span className="text-[11px] text-gray-500 whitespace-nowrap">v0.6 — Phase 6</span>
           </div>
           <nav className="flex items-center gap-1 flex-wrap">
