@@ -22,7 +22,7 @@ import { useDdrSelection } from "./ddrSelection.js";
 
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
-  holeSizes: string[]; mudTypes: string[]; rigs: string[]; activityTypes: string[];
+  holeSizes: string[]; mudTypes: string[]; rigs: string[]; activityTypes: string[]; formations: string[];
 }
 export interface TARow {
   wellCode: string; date: string | null; serialNo: number | null;
@@ -89,6 +89,7 @@ export function TimeAnalysis({ onOpenReport }: { onOpenReport?: (wellCode: strin
     fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
     holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
     activityTypes: selAct, setActivityTypes: setSelAct, dateFrom, setDateFrom, dateTo, setDateTo,
+    formations: selForm, setFormations: setSelForm, depthFrom, setDepthFrom, depthTo, setDepthTo,
   } = useDdrSelection();
   const [data, setData] = useState<TAData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -128,12 +129,12 @@ export function TimeAnalysis({ onOpenReport }: { onOpenReport?: (wellCode: strin
     setLoading(true);
     setError(null);
     try {
-      const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, activityTypes: selAct, dateFrom, dateTo };
+      const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, activityTypes: selAct, formations: selForm, depthFrom, depthTo, dateFrom, dateTo };
       setData(await api.post<TAData>("/ddr/time-analysis", body));
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
   function clearAll() {
-    setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setSelAct([]); setDateFrom(""); setDateTo(""); setData(null);
+    setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setSelAct([]); setSelForm([]); setDepthFrom(""); setDepthTo(""); setDateFrom(""); setDateTo(""); setData(null);
   }
 
   return (
@@ -144,12 +145,21 @@ export function TimeAnalysis({ onOpenReport }: { onOpenReport?: (wellCode: strin
         <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
         <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
         <MultiSelect title="Activity types" items={facet.activityTypes.map((a) => ({ value: a, label: a }))} selected={selAct} onChange={setSelAct} />
+        <MultiSelect title="Formations" items={facet.formations.map((m) => ({ value: m, label: m }))} selected={selForm} onChange={setSelForm} />
         <div className="pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Date range (Jalali)</div>
           <div className="flex items-center gap-1.5">
             <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="From" />
             <span className="text-gray-400">–</span>
             <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="To" />
+          </div>
+        </div>
+        <div className="pt-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Depth interval (m)</div>
+          <div className="flex items-center gap-1.5">
+            <input type="number" inputMode="numeric" value={depthFrom} onChange={(e) => setDepthFrom(e.target.value)} placeholder="From" className="flex-1 min-w-0 h-9 border border-gray-300 rounded px-2 text-sm tabular-nums" />
+            <span className="text-gray-400">–</span>
+            <input type="number" inputMode="numeric" value={depthTo} onChange={(e) => setDepthTo(e.target.value)} placeholder="To" className="flex-1 min-w-0 h-9 border border-gray-300 rounded px-2 text-sm tabular-nums" />
           </div>
         </div>
         <div className="flex gap-2 pt-3">

@@ -26,6 +26,7 @@ import { useDdrSelection } from "./ddrSelection.js";
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
   holeSizes: string[]; mudTypes: string[]; rigs: string[]; materials: string[];
+  formations: string[];
 }
 export interface StockRow {
   wellCode: string; date: string | null; serialNo: number | null;
@@ -83,6 +84,7 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
     fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
     holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
     materials: selMat, setMaterials: setSelMat, dateFrom, setDateFrom, dateTo, setDateTo,
+    formations: selForm, setFormations: setSelForm, depthFrom, setDepthFrom, depthTo, setDepthTo,
   } = useDdrSelection();
   const [data, setData] = useState<StockData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -143,7 +145,8 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
     prune(facet.holeSizes, setSelHole);
     prune(facet.mudTypes, setSelMud);
     prune(facet.materials, setSelMat);
-  }, [facet.holeSizes, facet.mudTypes, facet.materials]);
+    prune(facet.formations, setSelForm);
+  }, [facet.holeSizes, facet.mudTypes, facet.materials, facet.formations]);
 
   const rows = data?.rows ?? [];
   // Hide columns that are entirely empty for the current rows.
@@ -157,13 +160,14 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
     setLoading(true);
     setError(null);
     try {
-      const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, materials: selMat, dateFrom, dateTo };
+      const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, materials: selMat, formations: selForm, depthFrom, depthTo, dateFrom, dateTo };
       setData(await api.post<StockData>("/ddr/mud-stock", body));
       setPlanningFilters(body);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
   function clearAll() {
     setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setSelMat([]);
+    setSelForm([]); setDepthFrom(""); setDepthTo("");
     setDateFrom(""); setDateTo(""); setData(null); setPlanningFilters(null);
   }
 
@@ -175,6 +179,15 @@ export function MudStock({ onOpenReport }: { onOpenReport?: (wellCode: string, s
         <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
         <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
         <MultiSelect title="Materials" items={facet.materials.map((m) => ({ value: m, label: m }))} selected={selMat} onChange={setSelMat} />
+        <MultiSelect title="Formations" items={facet.formations.map((m) => ({ value: m, label: m }))} selected={selForm} onChange={setSelForm} />
+        <div className="pt-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Depth interval (m)</div>
+          <div className="flex items-center gap-1.5">
+            <input type="number" inputMode="numeric" value={depthFrom} onChange={(e) => setDepthFrom(e.target.value)} placeholder="From" className="flex-1 min-w-0 h-9 border border-gray-300 rounded px-2 text-sm tabular-nums" />
+            <span className="text-gray-400">–</span>
+            <input type="number" inputMode="numeric" value={depthTo} onChange={(e) => setDepthTo(e.target.value)} placeholder="To" className="flex-1 min-w-0 h-9 border border-gray-300 rounded px-2 text-sm tabular-nums" />
+          </div>
+        </div>
         <div className="pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Date range (Jalali)</div>
           <div className="flex items-center gap-1.5">

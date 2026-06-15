@@ -434,6 +434,57 @@ export function readLithoPattern(name: string): Buffer | null {
 
 export interface FormationMatrixFilters {
   fields?: string[]; wells?: string[]; rigs?: string[]; holeSizes?: string[]; mudTypes?: string[];
+  // Cross-tab depth/geology facets (apply per row by the row's MD): a depth window
+  // and a set of formation names (resolved from D07 tops). Shared by every tab.
+  formations?: string[]; depthFrom?: number | string; depthTo?: number | string;
+}
+
+/** (wellCode, MD) → formation name = the deepest D07 top at/above that MD. Loads
+ *  D07 once (no WellCode index → a single full scan, as getFormationMatrix does). */
+function buildFormationResolver(): (wc: string, md: number) => string | null {
+  const db = data(), lk = lookups();
+  const byWell = new Map<string, { d: number; name: string }[]>();
+  for (const r of db.prepare(`SELECT WellCode, FormCode, DepthPoint FROM D07 WHERE DepthPoint IS NOT NULL`).all() as Row[]) {
+    const wc = s(r.WellCode), name = look(lk.formation, r.FormCode), d = Number(s(r.DepthPoint));
+    if (!name || !Number.isFinite(d)) continue;
+    let arr = byWell.get(wc); if (!arr) { arr = []; byWell.set(wc, arr); } arr.push({ d, name });
+  }
+  for (const a of byWell.values()) a.sort((x, y) => x.d - y.d);
+  return (wc, md) => {
+    const arr = byWell.get(wc); if (!arr) return null;
+    let name: string | null = null;
+    for (const t of arr) { if (t.d <= md) name = t.name; else break; }
+    return name;
+  };
+}
+
+/**
+ * Shared depth-interval + formation row gate used by the DDR data endpoints.
+ * `pass(wellCode, md)` is false for a row whose MD falls outside the picked depth
+ * window or not inside one of the picked formations. A row with no usable MD is
+ * dropped whenever either filter is active (it can't be placed). `active` lets a
+ * caller skip the work entirely when neither facet is set.
+ */
+function depthFormationGate(f: FormationMatrixFilters) {
+  // Treat undefined / null / "" as "not set" — Number("") is 0 (finite), which
+  // would otherwise turn an absent filter into a bogus [0,0] depth window.
+  const numOrNaN = (v: unknown) => (v === undefined || v === null || s(v) === "" ? NaN : Number(s(v)));
+  const fromD = numOrNaN(f.depthFrom), toD = numOrNaN(f.depthTo);
+  const hasFrom = Number.isFinite(fromD), hasTo = Number.isFinite(toD);
+  const formNames = new Set((f.formations ?? []).map((x) => s(x)).filter(Boolean));
+  const wantForm = formNames.size > 0, wantDepth = hasFrom || hasTo;
+  const resolve = wantForm ? buildFormationResolver() : null;
+  return {
+    active: wantForm || wantDepth,
+    pass(wc: string, md: number | null): boolean {
+      if (!wantForm && !wantDepth) return true;
+      if (md == null || !Number.isFinite(md)) return false;
+      if (hasFrom && md < fromD) return false;
+      if (hasTo && md > toD) return false;
+      if (wantForm) { const fn = resolve!(wc, md); if (!fn || !formNames.has(fn)) return false; }
+      return true;
+    },
+  };
 }
 
 /** Facet filters → the matched well-code set (null = no facet selected at all;
@@ -871,6 +922,7 @@ export function getMudProperties(f: FormationMatrixFilters): Record<string, unkn
   const db = data(), lk = lookups();
   const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
   if (!codes.length) return { rows: [], truncated: false, total: 0 };
+  const gate = depthFormationGate(f);   // depth-window + formation row filter
 
   // N01/N05 have no WellCode index → one grouped, chunked-IN pass over each
   // (like getLithologyGraph), not a per-well loop.
@@ -967,7 +1019,8 @@ export function getMudProperties(f: FormationMatrixFilters): Record<string, unkn
       // Day remark (L04.Description) — the Delphi mud report's trailing DESCRIPTION column.
       remarks: descByDay.get(`${wc}|${fd}`) ?? null,
     };
-  }).filter((row) => typeof row.from === "number" || row.mudType != null);
+  }).filter((row) => (typeof row.from === "number" || row.mudType != null)
+    && (!gate.active || gate.pass(row.wellCode, typeof row.to === "number" ? row.to : (typeof row.from === "number" ? row.from : null))));
 
   rows.sort((a, b) =>
     a.wellCode.localeCompare(b.wellCode) ||
@@ -1190,6 +1243,7 @@ export function getMudStock(f: MudStockFilters): Record<string, unknown> {
   const mudNames = new Set(clean(f.mudTypes));
   const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
   const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
+  const gate = depthFormationGate(f);   // depth-window + formation row filter
 
   // The hole size (L04) and mud type (N01) in use per (well | date), plus the
   // day's primary (lowest-serial) L04 report — so each stock row shows that day's
@@ -1224,6 +1278,7 @@ export function getMudStock(f: MudStockFilters): Record<string, unknown> {
       if (holeCodes && !holeCodes.has(holeCode)) continue;
       const mudCode = mudByDay.get(k) ?? "";
       if (mudCodes && !mudCodes.has(mudCode)) continue;
+      if (gate.active) { const toMd = Number(s(r.ToPoint)), frMd = Number(s(r.FromPoint)); if (!gate.pass(wc, Number.isFinite(toMd) ? toMd : frMd)) continue; }
       out.push({
         wellCode: wc, date: orNull(date), serialNo: serialByDay.get(k) ?? null,
         from: val(r.FromPoint), to: val(r.ToPoint),
@@ -1420,6 +1475,7 @@ export function getWellPath(f: WellPathFilters): Record<string, unknown> {
   const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
   const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
   const num = (v: unknown): number | null => { const n = parseFloat(s(v)); return Number.isFinite(n) ? n : null; };
+  const gate = depthFormationGate(f);   // depth-window + formation row filter
 
   // hole/mud in use per (well|date) + the day's primary L04 report serial.
   const holeByDay = new Map<string, string>(), mudByDay = new Map<string, string>(), serialByDay = new Map<string, number>();
@@ -1450,6 +1506,7 @@ export function getWellPath(f: WellPathFilters): Record<string, unknown> {
       if (holeCodes && !holeCodes.has(holeCode)) continue;
       const mudCode = mudByDay.get(k) ?? "";
       if (mudCodes && !mudCodes.has(mudCode)) continue;
+      if (gate.active && !gate.pass(wc, num(r.FromPoint))) continue;   // MD = survey station depth
       const ns = num(r.N_S), ew = num(r.E_W);
       if (ns == null || ew == null) continue; // plottable stations only (matches Delphi)
       out.push({
@@ -1560,6 +1617,7 @@ export function getTimeAnalysis(f: TimeAnalysisFilters): Record<string, unknown>
     }
   }
 
+  const gate = depthFormationGate(f);   // depth-window + formation row filter
   const out: Record<string, unknown>[] = [];
   for (let i = 0; i < codes.length; i += 800) {
     const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
@@ -1578,6 +1636,7 @@ export function getTimeAnalysis(f: TimeAnalysisFilters): Record<string, unknown>
       if (holeCodes && !holeCodes.has(holeCode)) continue;
       const mudCode = mudByDay.get(k) ?? "";
       if (mudCodes && !mudCodes.has(mudCode)) continue;
+      if (gate.active) { const md = d?.depth != null ? d.depth : (typeof d?.to === "number" ? d.to : null); if (!gate.pass(wc, md)) continue; }
       out.push({
         wellCode: wc, date: orNull(date), serialNo: d?.serial ?? null,
         holeSize: orNull(look(lk.holeSize, holeCode)), from: d?.from ?? null, to: d?.to ?? null,
@@ -1804,6 +1863,9 @@ export function getTools(f: ToolsFilters): Record<string, unknown> {
   const mudNames = new Set(clean(f.mudTypes));
   const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
   const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
+  const gate = depthFormationGate(f);   // depth-window + formation row filter
+  // A tool record's MD from whichever depth column it carries (bit: From/ToPoint).
+  const rowMd = (r: Row): number | null => { for (const key of ["ToPoint", "FromPoint", "DepthPoint", "Depth"]) { const sv = s(r[key]); if (sv !== "") { const v = Number(sv); if (Number.isFinite(v)) return v; } } return null; };
 
   // Day context: hole size + primary L04 serial (per well|date), and mud type.
   const byDay = new Map<string, { serial: number | null; hole: string }>();
@@ -1833,6 +1895,7 @@ export function getTools(f: ToolsFilters): Record<string, unknown> {
       if (holeCodes && !holeCodes.has(holeCode)) continue;
       const mudCode = mudByDay.get(k) ?? "";
       if (mudCodes && !mudCodes.has(mudCode)) continue;
+      if (gate.active && !gate.pass(wc, rowMd(r))) continue;
       const row: Record<string, unknown> = {
         wellCode: wc, date: orNull(date), serialNo: d?.serial ?? null,
         holeSize: orNull(look(lk.holeSize, holeCode)), mudType: orNull(look(lk.mud, mudCode)),
@@ -1892,6 +1955,7 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
   const mudNames = new Set(clean(f.mudTypes));
   const mudCodes = mudNames.size ? new Set([...lk.mud].filter(([, n]) => mudNames.has(n)).map(([c]) => c)) : null;
   const dateFrom = s(f.dateFrom), dateTo = s(f.dateTo);
+  const gate = depthFormationGate(f);   // depth-window + formation row filter
 
   // Mud weight → ppg (for HSI). Reports mostly store pcf (≈60–140); a few use
   // ppg (≈8–20) or SG (≈1.0–2.5). Pick the unit from the magnitude.
@@ -1970,6 +2034,7 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
       // ROP (m/hr) = footage ÷ rotating hours (BitMeterTotal, else interval).
       const hrs = Number(s(r.BitHour)); let m = Number(s(r.BitMeterTotal));
       const fp = Number(s(r.FromPoint)), tp = Number(s(r.ToPoint));
+      if (gate.active && !gate.pass(wc, Number.isFinite(tp) ? tp : (Number.isFinite(fp) ? fp : null))) continue;  // bit-run MD
       if (!Number.isFinite(m) || m <= 0) { m = (Number.isFinite(fp) && Number.isFinite(tp)) ? tp - fp : NaN; }
       const rop = Number.isFinite(hrs) && hrs > 0 && Number.isFinite(m) && m > 0 ? Number((m / hrs).toFixed(2)) : null;
       // A contour point needs all three axes; drop incomplete / out-of-range rows.
@@ -2538,9 +2603,12 @@ export function searchOptions(): Record<string, unknown> {
   const materials = [...new Set([...lk.material.values()].filter(Boolean))].sort();
   // Activity types for the Time Analysis facet (ActivityTypes.ActivityType names).
   const activityTypes = [...new Set([...lk.activityType.values()].filter(Boolean))].sort();
+  // Formations actually recorded as a D07 top (the shared formation facet).
+  const formations = [...new Set((db.prepare(`SELECT DISTINCT FormCode FROM D07 WHERE DepthPoint IS NOT NULL`).all() as Row[])
+    .map((r) => look(lk.formation, r.FormCode)).filter((v): v is string => !!v))].sort();
   const operations = [...lk.operation.entries()].map(([code, desc]) => ({ code, desc }))
     .sort((a, b) => a.desc.localeCompare(b.desc));
-  _opts = { fields, wells, holeSizes, mudTypes, rigs, materials, activityTypes, operations };
+  _opts = { fields, wells, holeSizes, mudTypes, rigs, materials, activityTypes, formations, operations };
   return _opts;
 }
 
@@ -2556,18 +2624,19 @@ export function searchOptions(): Record<string, unknown> {
  */
 export function getFacetOptions(f: { fields?: string[]; wells?: string[] }): Record<string, unknown> {
   const wellSet = resolveWellSet({ fields: f.fields, wells: f.wells });
-  if (!wellSet) return { holeSizes: null, mudTypes: null, materials: null, activityTypes: null };
+  if (!wellSet) return { holeSizes: null, mudTypes: null, materials: null, activityTypes: null, formations: null };
   const db = data(), lk = lookups();
   const codes = [...wellSet].filter((w) => /[A-Za-z0-9]/.test(w));
-  if (!codes.length) return { holeSizes: [], mudTypes: [], materials: [], activityTypes: [] };
+  if (!codes.length) return { holeSizes: [], mudTypes: [], materials: [], activityTypes: [], formations: [] };
 
-  const holeCodes = new Set<string>(), mudCodes = new Set<string>(), matCodes = new Set<string>(), actKeys = new Set<string>();
+  const holeCodes = new Set<string>(), mudCodes = new Set<string>(), matCodes = new Set<string>(), actKeys = new Set<string>(), formCodes = new Set<string>();
   for (let i = 0; i < codes.length; i += 800) {
     const chunk = codes.slice(i, i + 800), ph = chunk.map(() => "?").join(",");
     for (const r of db.prepare(`SELECT DISTINCT HoleSizeCode c FROM L04 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) { const c = s(r.c); if (c) holeCodes.add(c); }
     for (const r of db.prepare(`SELECT DISTINCT MudCode c FROM N01 WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) { const c = s(r.c); if (c) mudCodes.add(c); }
     for (const r of db.prepare(`SELECT DISTINCT MaterialCode c FROM ChemicalMaterials WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) { const c = s(r.c); if (c) matCodes.add(c); }
     for (const r of db.prepare(`SELECT DISTINCT ActivityGroupCode g, ActivityTypeCode t FROM TimeAnalysis WHERE TRIM(WellCode) IN (${ph})`).all(...chunk) as Row[]) { const k = `${s(r.g)}|${s(r.t)}`; if (k !== "|") actKeys.add(k); }
+    for (const r of db.prepare(`SELECT DISTINCT FormCode c FROM D07 WHERE TRIM(WellCode) IN (${ph}) AND DepthPoint IS NOT NULL`).all(...chunk) as Row[]) { const c = s(r.c); if (c) formCodes.add(c); }
   }
 
   // Codes → display names, deduped + sorted exactly as searchOptions does, so the
@@ -2577,5 +2646,6 @@ export function getFacetOptions(f: { fields?: string[]; wells?: string[] }): Rec
   const mudTypes = [...new Set([...mudCodes].map((c) => look(lk.mud, c)).filter((v): v is string => !!v))].sort();
   const materials = [...new Set([...matCodes].map((c) => look(lk.material, c)).filter((v): v is string => !!v))].sort();
   const activityTypes = [...new Set([...actKeys].map((k) => lk.activityType.get(k)).filter((v): v is string => !!v))].sort();
-  return { holeSizes, mudTypes, materials, activityTypes };
+  const formations = [...new Set([...formCodes].map((c) => look(lk.formation, c)).filter((v): v is string => !!v))].sort();
+  return { holeSizes, mudTypes, materials, activityTypes, formations };
 }

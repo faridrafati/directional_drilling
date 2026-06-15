@@ -19,6 +19,7 @@ interface ScopedFacets {
   mudTypes: string[] | null;
   materials: string[] | null;
   activityTypes: string[] | null;
+  formations: string[] | null;
 }
 
 export interface GlobalFacets {
@@ -26,6 +27,7 @@ export interface GlobalFacets {
   mudTypes?: string[];
   materials?: string[];
   activityTypes?: string[];
+  formations?: string[];
 }
 
 export interface FacetOptions {
@@ -33,6 +35,7 @@ export interface FacetOptions {
   mudTypes: string[];
   materials: string[];
   activityTypes: string[];
+  formations: string[];
 }
 
 /**
@@ -56,6 +59,7 @@ export function useFacetOptions(fields: string[], wells: string[], global: Globa
     mudTypes: global?.mudTypes ?? [],
     materials: global?.materials ?? [],
     activityTypes: global?.activityTypes ?? [],
+    formations: global?.formations ?? [],
   };
 
   // Use the scoped list when a selection is active and the fetch has returned a
@@ -71,5 +75,6 @@ export function useFacetOptions(fields: string[], wells: string[], global: Globa
     mudTypes: pick(d?.mudTypes, g.mudTypes),
     materials: pick(d?.materials, g.materials),
     activityTypes: pick(d?.activityTypes, g.activityTypes),
+    formations: pick(d?.formations, g.formations),
   };
 }

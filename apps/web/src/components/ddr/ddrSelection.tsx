@@ -24,9 +24,12 @@ export interface DdrSelection {
   mudTypes: StrList; setMudTypes: SetList;
   materials: StrList; setMaterials: SetList;
   activityTypes: StrList; setActivityTypes: SetList;
+  formations: StrList; setFormations: SetList;
   dateFrom: string; setDateFrom: SetStr;
   dateTo: string; setDateTo: SetStr;
-  /** Reset every shared facet + the date range (the sidebar "Clear" action). */
+  depthFrom: string; setDepthFrom: SetStr;
+  depthTo: string; setDepthTo: SetStr;
+  /** Reset every shared facet + the date/depth ranges (the sidebar "Clear" action). */
   clearShared: () => void;
 }
 
@@ -39,14 +42,21 @@ export function DdrSelectionProvider({ children }: { children: ReactNode }) {
   const [mudTypes, setMudTypes] = useState<StrList>([]);
   const [materials, setMaterials] = useState<StrList>([]);
   const [activityTypes, setActivityTypes] = useState<StrList>([]);
+  const [formations, setFormations] = useState<StrList>([]);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [depthFrom, setDepthFrom] = useState("");
+  const [depthTo, setDepthTo] = useState("");
 
   const value = useMemo<DdrSelection>(() => ({
     fields, setFields, wells, setWells, holeSizes, setHoleSizes, mudTypes, setMudTypes,
-    materials, setMaterials, activityTypes, setActivityTypes, dateFrom, setDateFrom, dateTo, setDateTo,
-    clearShared: () => { setFields([]); setWells([]); setHoleSizes([]); setMudTypes([]); setMaterials([]); setActivityTypes([]); setDateFrom(""); setDateTo(""); },
-  }), [fields, wells, holeSizes, mudTypes, materials, activityTypes, dateFrom, dateTo]);
+    materials, setMaterials, activityTypes, setActivityTypes, formations, setFormations,
+    dateFrom, setDateFrom, dateTo, setDateTo, depthFrom, setDepthFrom, depthTo, setDepthTo,
+    clearShared: () => {
+      setFields([]); setWells([]); setHoleSizes([]); setMudTypes([]); setMaterials([]); setActivityTypes([]);
+      setFormations([]); setDateFrom(""); setDateTo(""); setDepthFrom(""); setDepthTo("");
+    },
+  }), [fields, wells, holeSizes, mudTypes, materials, activityTypes, formations, dateFrom, dateTo, depthFrom, depthTo]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

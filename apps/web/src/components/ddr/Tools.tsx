@@ -39,7 +39,7 @@ const TOOLS = [
 
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
-  holeSizes: string[]; mudTypes: string[]; rigs: string[];
+  holeSizes: string[]; mudTypes: string[]; rigs: string[]; formations: string[];
 }
 interface ToolColumn { key: string; label: string; text?: boolean; wide?: boolean; titleKey?: string }
 type ToolRow = Record<string, unknown> & { wellCode: string; date: string | null; serialNo: number | null };
@@ -59,6 +59,7 @@ export function Tools({ onOpenReport }: { onOpenReport?: (wellCode: string, seri
   const {
     fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
     holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
+    formations: selForm, setFormations: setSelForm, depthFrom, setDepthFrom, depthTo, setDepthTo,
     dateFrom, setDateFrom, dateTo, setDateTo,
   } = useDdrSelection();
   const [data, setData] = useState<ToolsData | null>(null);
@@ -96,12 +97,12 @@ export function Tools({ onOpenReport }: { onOpenReport?: (wellCode: string, seri
     setLoading(true);
     setError(null);
     try {
-      const body = { tool: t, fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, dateFrom, dateTo };
+      const body = { tool: t, fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, formations: selForm, depthFrom, depthTo, dateFrom, dateTo };
       setData(await api.post<ToolsData>("/ddr/tools", body));
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
   function clearAll() {
-    setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setDateFrom(""); setDateTo(""); setSearchKw(""); setData(null);
+    setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setSelForm([]); setDepthFrom(""); setDepthTo(""); setDateFrom(""); setDateTo(""); setSearchKw(""); setData(null);
   }
   function changeTool(t: string) {
     setTool(t); setSearchCol("all"); setSearchKw("");
@@ -137,6 +138,15 @@ export function Tools({ onOpenReport }: { onOpenReport?: (wellCode: string, seri
         <MultiSelect title={selFields.length ? `Wells · in ${selFields.length} field(s)` : "Wells"} items={wellItems} selected={selWells} onChange={setSelWells} />
         <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
         <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
+        <MultiSelect title="Formations" items={facet.formations.map((m) => ({ value: m, label: m }))} selected={selForm} onChange={setSelForm} />
+        <div className="pt-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Depth interval (m)</div>
+          <div className="flex items-center gap-1.5">
+            <input type="number" inputMode="numeric" value={depthFrom} onChange={(e) => setDepthFrom(e.target.value)} placeholder="From" className="flex-1 min-w-0 h-9 border border-gray-300 rounded px-2 text-sm tabular-nums" />
+            <span className="text-gray-400">–</span>
+            <input type="number" inputMode="numeric" value={depthTo} onChange={(e) => setDepthTo(e.target.value)} placeholder="To" className="flex-1 min-w-0 h-9 border border-gray-300 rounded px-2 text-sm tabular-nums" />
+          </div>
+        </div>
         <div className="pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Date range (Jalali)</div>
           <div className="flex items-center gap-1.5">

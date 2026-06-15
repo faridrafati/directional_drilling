@@ -33,7 +33,7 @@ import { MudProgram, type ProgramFilters } from "./MudProgram.js";
 
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
-  holeSizes: string[]; mudTypes: string[]; rigs: string[];
+  holeSizes: string[]; mudTypes: string[]; rigs: string[]; formations: string[];
 }
 export interface MudRow {
   wellCode: string; date: string | null; serialNo: number | null;
@@ -134,6 +134,7 @@ export function MudProperties({ onOpenReport }: { onOpenReport?: (wellCode: stri
   const {
     fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
     holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
+    formations: selForm, setFormations: setSelForm, depthFrom, setDepthFrom, depthTo, setDepthTo,
   } = useDdrSelection();
   const [data, setData] = useState<MudData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -201,7 +202,7 @@ export function MudProperties({ onOpenReport }: { onOpenReport?: (wellCode: stri
     setError(null);
     try {
       // selWells already holds unique well codes (the picker is keyed by code).
-      const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud };
+      const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, formations: selForm, depthFrom, depthTo };
       const d = await api.post<MudData>("/ddr/mud-properties", body);
       setData(d);
       setProgramFilters(body);
@@ -209,6 +210,7 @@ export function MudProperties({ onOpenReport }: { onOpenReport?: (wellCode: stri
   }
   function clearAll() {
     setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]);
+    setSelForm([]); setDepthFrom(""); setDepthTo("");
     setData(null); setProgramFilters(null);
   }
 
@@ -224,6 +226,15 @@ export function MudProperties({ onOpenReport }: { onOpenReport?: (wellCode: stri
         <MultiSelect title={selFields.length ? `Wells · in ${selFields.length} field(s)` : "Wells"} items={wellItems} selected={selWells} onChange={setSelWells} />
         <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
         <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
+        <MultiSelect title="Formations" items={facet.formations.map((m) => ({ value: m, label: m }))} selected={selForm} onChange={setSelForm} />
+        <div className="pt-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Depth interval (m)</div>
+          <div className="flex items-center gap-1.5">
+            <input type="number" inputMode="numeric" value={depthFrom} onChange={(e) => setDepthFrom(e.target.value)} placeholder="From" className="flex-1 min-w-0 h-9 border border-gray-300 rounded px-2 text-sm tabular-nums" />
+            <span className="text-gray-400">–</span>
+            <input type="number" inputMode="numeric" value={depthTo} onChange={(e) => setDepthTo(e.target.value)} placeholder="To" className="flex-1 min-w-0 h-9 border border-gray-300 rounded px-2 text-sm tabular-nums" />
+          </div>
+        </div>
         <div className="flex gap-2 pt-3">
           <button onClick={() => run()} disabled={loading} className="h-9 px-4 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300">{loading ? "Loading…" : "Show"}</button>
           <button onClick={clearAll} className="h-9 px-3 text-sm rounded border border-gray-300 hover:bg-gray-50">Clear</button>

@@ -34,7 +34,7 @@ import { useDdrSelection } from "./ddrSelection.js";
 
 interface SearchOptions {
   fields: string[]; wells: { code: string; name: string; field: string | null }[];
-  holeSizes: string[]; mudTypes: string[]; rigs: string[];
+  holeSizes: string[]; mudTypes: string[]; rigs: string[]; formations: string[];
 }
 interface RopPoint {
   wob: number; rpm: number; rop: number; bitSize: string;
@@ -169,6 +169,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
   const {
     fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
     holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
+    formations: selForm, setFormations: setSelForm, depthFrom, setDepthFrom, depthTo, setDepthTo,
     dateFrom, setDateFrom, dateTo, setDateTo,
   } = useDdrSelection();
   const [data, setData] = useState<RopData | null>(null);
@@ -203,12 +204,13 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
     setLoading(true);
     setError(null);
     try {
-      const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, dateFrom, dateTo };
+      const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, formations: selForm, depthFrom, depthTo, dateFrom, dateTo };
       setData(await api.post<RopData>("/ddr/rop-optimization", body));
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
   function clearAll() {
     setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setDateFrom(""); setDateTo(""); setData(null);
+    setSelForm([]); setDepthFrom(""); setDepthTo("");
     setSelClass(""); setSelPdcSeries([]); setSelConeSeries([]);
   }
 
@@ -269,6 +271,15 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
           selConeSeries={selConeSeries} onConeSeries={setSelConeSeries}
         />
         <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
+        <MultiSelect title="Formations" items={facet.formations.map((m) => ({ value: m, label: m }))} selected={selForm} onChange={setSelForm} />
+        <div className="pt-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Depth interval (m)</div>
+          <div className="flex items-center gap-1.5">
+            <input type="number" inputMode="numeric" value={depthFrom} onChange={(e) => setDepthFrom(e.target.value)} placeholder="From" className="flex-1 min-w-0 h-9 border border-gray-300 rounded px-2 text-sm tabular-nums" />
+            <span className="text-gray-400">–</span>
+            <input type="number" inputMode="numeric" value={depthTo} onChange={(e) => setDepthTo(e.target.value)} placeholder="To" className="flex-1 min-w-0 h-9 border border-gray-300 rounded px-2 text-sm tabular-nums" />
+          </div>
+        </div>
         <div className="pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Date range (Jalali)</div>
           <div className="flex items-center gap-1.5">
