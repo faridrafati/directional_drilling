@@ -321,7 +321,7 @@ const sizeVal = (h: string): number => {
 
 interface BitRun {
   wellCode: string; date: string | null; serialNo: number | null;
-  size: string; type: string; kind: string | null; iadc: string; bit: string;
+  size: string; type: string; kind: string | null; iadc: string; bit: string; topFormation: string;
   footage: number; hours: number; rop: number | null;
   dull: string | null; dullTitle: string | null; reason: string | null;
 }
@@ -331,6 +331,7 @@ interface BitStats {
   wells: number; sizes: number; pdc: number; cone: number;
   bySize: { size: string; runs: number; footage: number; hours: number; rop: number | null }[];
   byType: { type: string; runs: number; footage: number; hours: number; rop: number | null }[];
+  byFormation: { formation: string; runs: number; footage: number; hours: number; rop: number | null }[];
   reasons: { reason: string; runs: number; pct: number }[];
   dulls: { dull: string; runs: number; pct: number; title: string | null }[];
 }
@@ -356,6 +357,7 @@ function bitStats(rows: ToolRow[]): BitStats {
       wellCode: best.wellCode, date: best.date, serialNo: best.serialNo,
       size: String(best.size ?? "—") || "—", type: String(best.type ?? "") || "—",
       kind: best.kind != null ? String(best.kind) : null, iadc: String(best.iadc ?? ""), bit: String(best.bit ?? ""),
+      topFormation: String(best.topFormation ?? "—") || "—",
       footage, hours, rop: footage > 0 && hours > 0 ? footage / hours : null,
       dull: best.dull != null && best.dull !== "" ? String(best.dull) : null,
       dullTitle: best.dullTitle != null ? String(best.dullTitle) : null,
@@ -368,6 +370,7 @@ function bitStats(rows: ToolRow[]): BitStats {
   const wells = new Set<string>(), sizes = new Set<string>();
   const bySizeM = new Map<string, { runs: number; footage: number; hours: number }>();
   const byTypeM = new Map<string, { runs: number; footage: number; hours: number }>();
+  const byFormM = new Map<string, { runs: number; footage: number; hours: number }>();
   const reasonM = new Map<string, number>(), dullM = new Map<string, { runs: number; title: string | null }>();
   for (const r of runs) {
     totFootage += r.footage; totHours += r.hours;
@@ -377,7 +380,7 @@ function bitStats(rows: ToolRow[]): BitStats {
     const acc = (m: Map<string, { runs: number; footage: number; hours: number }>, key: string) => {
       const e = m.get(key) ?? { runs: 0, footage: 0, hours: 0 }; e.runs++; e.footage += r.footage; e.hours += r.hours; m.set(key, e);
     };
-    acc(bySizeM, r.size); acc(byTypeM, r.type);
+    acc(bySizeM, r.size); acc(byTypeM, r.type); acc(byFormM, r.topFormation);
     if (r.reason) reasonM.set(r.reason, (reasonM.get(r.reason) ?? 0) + 1);
     if (r.dull) { const e = dullM.get(r.dull) ?? { runs: 0, title: r.dullTitle }; e.runs++; dullM.set(r.dull, e); }
   }
@@ -387,6 +390,8 @@ function bitStats(rows: ToolRow[]): BitStats {
     .sort((a, b) => b.footage - a.footage);
   const byType = roll(byTypeM).map((e) => ({ type: e.key, runs: e.runs, footage: e.footage, hours: e.hours, rop: e.rop }))
     .filter((t) => t.footage > 0).sort((a, b) => b.footage - a.footage);
+  const byFormation = roll(byFormM).map((e) => ({ formation: e.key, runs: e.runs, footage: e.footage, hours: e.hours, rop: e.rop }))
+    .sort((a, b) => b.footage - a.footage);
   const totReason = [...reasonM.values()].reduce((a, b) => a + b, 0) || 1;
   const reasons = [...reasonM.entries()].map(([reason, runs]) => ({ reason, runs, pct: runs / totReason })).sort((a, b) => b.runs - a.runs);
   const totDull = [...dullM.values()].reduce((a, e) => a + e.runs, 0) || 1;
@@ -396,7 +401,7 @@ function bitStats(rows: ToolRow[]): BitStats {
     runs, rawRows: rows.length,
     totFootage, totHours, fleetRop: totHours > 0 ? totFootage / totHours : null,
     avgRunRop: rops.length ? rops.reduce((a, b) => a + b, 0) / rops.length : null,
-    wells: wells.size, sizes: sizes.size, pdc, cone, bySize, byType, reasons, dulls,
+    wells: wells.size, sizes: sizes.size, pdc, cone, bySize, byType, byFormation, reasons, dulls,
   };
 }
 
@@ -408,6 +413,7 @@ function BitSummary({ rows, note }: { rows: ToolRow[]; note?: string }) {
   if (!st.runs.length) return <div className="p-8 text-center text-sm text-gray-400">No bit records to summarise.</div>;
   const maxSizeF = Math.max(...st.bySize.map((s) => s.footage), 1);
   const maxTypeF = Math.max(...st.byType.map((t) => t.footage), 1);
+  const maxFormF = Math.max(...st.byFormation.map((s) => s.footage), 1);
   const kindKnown = st.pdc + st.cone;
   return (
     <div className="p-3 space-y-5 text-[11px]">
@@ -462,6 +468,33 @@ function BitSummary({ rows, note }: { rows: ToolRow[]; note?: string }) {
                   <td className="border border-gray-200 px-2 py-0.5 text-right">{t.rop != null ? t.rop.toFixed(2) : "—"}</td>
                   <td className="border border-gray-200 px-2 py-0.5">
                     <div className="h-2.5 bg-gray-100 rounded-sm overflow-hidden"><div className="h-full rounded-sm bg-blue-600" style={{ width: `${100 * t.footage / maxTypeF}%` }} /></div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {/* Performance by top formation */}
+      {st.byFormation.length > 0 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Performance by top formation <span className="font-normal text-gray-400">— most footage first</span></h3>
+          <table className="w-full tabular-nums border-collapse">
+            <thead><tr><Th>Top formation</Th><Th r>Runs</Th><Th r>Footage (m)</Th><Th r>Hours</Th><Th r>ROP m/hr</Th><th className="bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 text-right w-[30%]">Footage share</th></tr></thead>
+            <tbody>
+              {st.byFormation.map((s, i) => (
+                <tr key={s.formation} className={i % 2 ? "bg-gray-50/60" : "bg-white"}>
+                  <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800">{s.formation}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.runs}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{Math.round(s.footage).toLocaleString()}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{s.hours > 0 ? n1(s.hours) : "—"}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.rop != null ? s.rop.toFixed(2) : "—"}</td>
+                  <td className="border border-gray-200 px-2 py-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex-1 h-2.5 bg-gray-100 rounded-sm overflow-hidden"><div className="h-full rounded-sm bg-purple-600" style={{ width: `${100 * s.footage / maxFormF}%` }} /></div>
+                      <span className="w-10 text-right text-gray-600">{(100 * s.footage / (st.totFootage || 1)).toFixed(1)}%</span>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -700,6 +733,7 @@ interface GenStats {
   records: number; wells: number; totHours: number | null;
   byType: { key: string; records: number; hours: number; wells: number }[] | null;
   bySize: { key: string; records: number; hours: number; wells: number }[] | null;
+  byFormation: { key: string; records: number; hours: number; wells: number }[] | null;
   typeLabel: string; sizeLabel: string; hasHours: boolean;
 }
 function genStats(rows: ToolRow[], cols: ToolColumn[]): GenStats {
@@ -722,9 +756,11 @@ function genStats(rows: ToolRow[], cols: ToolColumn[]): GenStats {
   };
   for (const r of rows) { wells.add(r.wellCode); if (num(r.hours)) { totHours += r.hours; anyHours = true; } }
   const labelOf = (k?: string) => cols.find((c) => c.key === k)?.label ?? k ?? "—";
+  // Only offer a by-formation table when the rows actually carry a top formation.
+  const hasForm = rows.some((r) => r.topFormation != null && r.topFormation !== "" && r.topFormation !== "—");
   return {
     records: rows.length, wells: wells.size, totHours: anyHours ? totHours : null,
-    byType: agg(typeKey), bySize: agg(sizeKey),
+    byType: agg(typeKey), bySize: agg(sizeKey), byFormation: hasForm ? agg("topFormation") : null,
     typeLabel: labelOf(typeKey), sizeLabel: labelOf(sizeKey), hasHours,
   };
 }
@@ -771,6 +807,7 @@ function ToolSummary({ rows, cols, label, note }: { rows: ToolRow[]; cols: ToolC
       </div>
       <UsageTable title={`Usage by ${st.typeLabel.toLowerCase()}`} dimLabel={st.typeLabel} data={st.byType} />
       {st.sizeLabel.toLowerCase().includes("size") && <UsageTable title={`Usage by ${st.sizeLabel.toLowerCase()}`} dimLabel={st.sizeLabel} data={st.bySize} />}
+      <UsageTable title="Usage by top formation" dimLabel="Top formation" data={st.byFormation} />
       <p className="text-[10px] text-gray-400 leading-snug">
         Counts are raw {label} records (often one per rig-day). {st.hasHours ? "Hours are summed across the loaded records." : "This tool table carries no run hours."}
       </p>

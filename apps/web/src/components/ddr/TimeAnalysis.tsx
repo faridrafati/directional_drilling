@@ -26,7 +26,7 @@ interface SearchOptions {
 }
 export interface TARow {
   wellCode: string; date: string | null; serialNo: number | null;
-  holeSize: string | null; from: number | null; to: number | null; depth: number | null; mudType: string | null;
+  holeSize: string | null; topFormation: string | null; from: number | null; to: number | null; depth: number | null; mudType: string | null;
   group: string | null; type: string | null; activity: string | null;
   hours: number | null; description: string | null; dayNarrative: string | null;
 }
@@ -37,7 +37,8 @@ const fmtNum = (v: unknown): string =>
 const h1 = (v: number): string => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
 const COLS: { key: keyof TARow; label: string; text?: boolean; wide?: boolean }[] = [
-  { key: "holeSize", label: "Hole", text: true }, { key: "from", label: "From (m)" }, { key: "to", label: "To (m)" },
+  { key: "holeSize", label: "Hole", text: true }, { key: "topFormation", label: "Top formation", text: true },
+  { key: "from", label: "From (m)" }, { key: "to", label: "To (m)" },
   { key: "mudType", label: "Mud type", text: true },
   { key: "group", label: "Group", text: true }, { key: "type", label: "Activity type", text: true }, { key: "activity", label: "Activity", text: true },
   { key: "hours", label: "Hours" },
@@ -291,9 +292,12 @@ function TARowsTable({ rows, cols, note, onOpenReport }: {
               <td className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">{row.date ?? ""}</td>
               {cols.map((c) => {
                 const v = row[c.key];
+                // Free-text columns (Description, Day narrative) — single line, full
+                // text, matching the Mud Properties "Remarks" column (no width cap /
+                // truncation; the row stays one line and the full text shows on hover).
                 if (c.wide) {
                   const t = v == null ? "" : String(v);
-                  return <td key={c.key} className="border border-gray-300 px-2 py-0.5 text-left max-w-[320px] truncate" title={t}>{t}</td>;
+                  return <td key={c.key} className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap" title={t}>{t}</td>;
                 }
                 return (
                   <td key={c.key} className={`border border-gray-300 px-2 py-0.5 whitespace-nowrap ${c.text ? "text-left" : "text-right"}`}>
@@ -799,6 +803,7 @@ interface TAStats {
   types: { type: string; group: string; hours: number; pct: number; npt: boolean }[];
   nptTypes: { type: string; hours: number; pct: number; cumPct: number }[];
   sections: { hole: string; prod: number; npt: number; hours: number; days: number }[];
+  formations: { formation: string; prod: number; npt: number; hours: number; days: number }[];
 }
 /** One pass over the rows → the KPI bundle the Summary + NPT/Section charts share.
  *  "Rig-days" = distinct report dates (wells run in parallel); "drilled" = the
@@ -808,6 +813,7 @@ function computeStats(rows: TARow[], wellNames?: Record<string, string>): TAStat
   const byType = new Map<string, { group: string; hours: number; npt: boolean }>();
   const nptByType = new Map<string, number>();
   const bySection = new Map<string, { prod: number; npt: number; days: Set<number> }>();
+  const byFormation = new Map<string, { prod: number; npt: number; days: Set<number> }>();
   const wellAgg = new Map<string, { name: string; days: Set<number>; minD: number; maxD: number; prod: number; npt: number }>();
   for (const r of rows) {
     const h = typeof r.hours === "number" ? r.hours : 0;
@@ -824,6 +830,11 @@ function computeStats(rows: TARow[], wellNames?: Record<string, string>): TAStat
       if (npt) sec.npt += h; else sec.prod += h;
       if (jd != null) sec.days.add(jd);
       bySection.set(hole, sec);
+      const fm = r.topFormation ?? "—";
+      const fse = byFormation.get(fm) ?? { prod: 0, npt: 0, days: new Set<number>() };
+      if (npt) fse.npt += h; else fse.prod += h;
+      if (jd != null) fse.days.add(jd);
+      byFormation.set(fm, fse);
     }
     const w = wellNames?.[r.wellCode] || r.wellCode;
     const we = wellAgg.get(w) ?? { name: w, days: new Set<number>(), minD: Infinity, maxD: -Infinity, prod: 0, npt: 0 };
@@ -846,7 +857,8 @@ function computeStats(rows: TARow[], wellNames?: Record<string, string>): TAStat
   const nptTypes = [...nptByType.entries()].map(([type, hours]) => ({ type, hours })).sort((a, b) => b.hours - a.hours)
     .map((x) => { cum += x.hours; return { ...x, pct: nptHours > 0 ? x.hours / nptHours : 0, cumPct: nptHours > 0 ? cum / nptHours : 0 }; });
   const sections = [...bySection.entries()].map(([hole, s]) => ({ hole, prod: s.prod, npt: s.npt, hours: s.prod + s.npt, days: s.days.size })).sort((a, b) => holeVal(b.hole) - holeVal(a.hole));
-  return { totalHours, nptHours, prodHours, nptPct: totalHours > 0 ? nptHours / totalHours : 0, totalDays, totalDrilled, mPerDay: totalDays > 0 ? totalDrilled / totalDays : 0, days1000: totalDrilled > 100 ? totalDays / (totalDrilled / 1000) : null, wells, types, nptTypes, sections };
+  const formations = [...byFormation.entries()].map(([formation, s]) => ({ formation, prod: s.prod, npt: s.npt, hours: s.prod + s.npt, days: s.days.size })).sort((a, b) => b.hours - a.hours);
+  return { totalHours, nptHours, prodHours, nptPct: totalHours > 0 ? nptHours / totalHours : 0, totalDays, totalDrilled, mPerDay: totalDays > 0 ? totalDrilled / totalDays : 0, days1000: totalDrilled > 100 ? totalDays / (totalDrilled / 1000) : null, wells, types, nptTypes, sections, formations };
 }
 
 const fmtH = (h: number): string => (h >= 1000 ? `${(h / 1000).toFixed(1)}k` : h1(h));
@@ -972,6 +984,28 @@ function TASummary({ rows, wellNames, note }: { rows: TARow[]; wellNames?: Recor
                   <td className="border border-gray-200 px-2 py-0.5 text-right text-teal-700">{fmtH(s.prod)}</td>
                   <td className="border border-gray-200 px-2 py-0.5 text-right text-red-600">{fmtH(s.npt)}</td>
                   <td className="border border-gray-200 px-2 py-0.5 text-right">{s.hours > 0 ? (100 * s.npt / s.hours).toFixed(1) : "0"}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {/* Time by top formation */}
+      {st.formations.length > 0 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Time by top formation <span className="font-normal text-gray-400">— most time first</span></h3>
+          <table className="w-full tabular-nums border-collapse">
+            <thead><tr><Th>Top formation</Th><Th r>Days</Th><Th r>Hours</Th><Th r>Productive</Th><Th r>NPT</Th><Th r>NPT %</Th></tr></thead>
+            <tbody>
+              {st.formations.map((s, i) => (
+                <tr key={s.formation} className={i % 2 ? "bg-gray-50/60" : "bg-white"}>
+                  <td className="border border-gray-200 px-2 py-0.5 text-left">{s.formation}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.days}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{fmtH(s.hours)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-teal-700">{fmtH(s.prod)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-red-600">{fmtH(s.npt)}</td>
+                  <td className={`border border-gray-200 px-2 py-0.5 text-right ${s.hours > 0 && s.npt / s.hours > 0.25 ? "text-red-600" : s.hours > 0 && s.npt / s.hours >= 0.15 ? "text-amber-600" : ""}`}>{s.hours > 0 ? (100 * s.npt / s.hours).toFixed(1) : "0"}%</td>
                 </tr>
               ))}
             </tbody>

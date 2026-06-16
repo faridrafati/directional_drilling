@@ -36,7 +36,7 @@ export interface PathRow {
   wellCode: string; date: string | null; serialNo: number | null;
   md: number | null; inc: number | null; az: number | null; tvd: number | null;
   ns: number | null; ew: number | null; sectionHD: number | null; dls: number | null; vs: number | null;
-  direction: string | null; holeSize: string | null; mudType: string | null;
+  direction: string | null; holeSize: string | null; topFormation: string | null; mudType: string | null;
 }
 interface PathData { rows: PathRow[]; truncated?: boolean; total?: number; note?: string }
 
@@ -51,7 +51,8 @@ const COLS: { key: keyof PathRow; label: string; text?: boolean }[] = [
   { key: "md", label: "MD (m)" }, { key: "inc", label: "Inc (°)" }, { key: "az", label: "Az (°)" },
   { key: "tvd", label: "TVD (m)" }, { key: "ns", label: "N/S (m)" }, { key: "ew", label: "E/W (m)" },
   { key: "sectionHD", label: "Section HD (m)" }, { key: "dls", label: "DLS" }, { key: "vs", label: "VS (m)" },
-  { key: "direction", label: "Dir", text: true }, { key: "holeSize", label: "Hole", text: true }, { key: "mudType", label: "Mud type", text: true },
+  { key: "direction", label: "Dir", text: true }, { key: "holeSize", label: "Hole", text: true },
+  { key: "topFormation", label: "Top formation", text: true }, { key: "mudType", label: "Mud type", text: true },
 ];
 
 const WELL_PALETTE = ["#1e40af", "#dc2626", "#0d9488", "#d97706", "#7c3aed", "#65a30d", "#db2777", "#0891b2", "#ea580c", "#4f46e5", "#16a34a", "#9f1239"];
@@ -77,7 +78,7 @@ export function WellPath({ onOpenReport }: { onOpenReport?: (wellCode: string, s
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [view, setView] = useState<"table" | "graph">("table");
+  const [view, setView] = useState<"summary" | "table" | "graph">("summary");
 
   const optsQ = useQuery({ queryKey: ["ddr", "search-options"], queryFn: () => api.get<SearchOptions>("/ddr/search-options") });
   const o = optsQ.data;
@@ -159,20 +160,150 @@ export function WellPath({ onOpenReport }: { onOpenReport?: (wellCode: string, s
           </span>
           {data && rows.length > 0 && (
             <div className="inline-flex rounded border border-gray-300 overflow-hidden shrink-0">
-              {(["table", "graph"] as const).map((v) => (
+              {(["summary", "table", "graph"] as const).map((v) => (
                 <button key={v} onClick={() => setView(v)} className={`px-2.5 h-7 text-xs capitalize ${view === v ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{v}</button>
               ))}
             </div>
           )}
         </div>
         <div className="overflow-auto flex-1 min-h-0">
-          {data && (view === "table" ? (
+          {data && (view === "summary" ? (
+            <PathSummary rows={rows} note={data.note} />
+          ) : view === "table" ? (
             <PathTable rows={rows} cols={usedCols} note={data.note} onOpenReport={onOpenReport} />
           ) : (
             <PerWellPaths rows={rows} note={data.note} onOpenReport={onOpenReport} />
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── SUMMARY: directional statistics by formation and by hole section ─────────
+
+/** Numeric value of a hole-size label ("17-1/2\"" → 17.5) for widest→narrowest
+ *  ordering (same parser the other tabs use). */
+const holeValPath = (h: string): number => {
+  const m = (h || "").match(/(\d+(?:\.\d+)?)(?:[\s-](\d+)\/(\d+))?/);
+  if (!m) return 0;
+  let v = parseFloat(m[1]) || 0;
+  if (m[2] && m[3]) v += (+m[2]) / (+m[3]);
+  return v;
+};
+
+interface DirStat {
+  key: string; stations: number;
+  mdMin: number | null; mdMax: number | null;
+  incAvg: number | null; incMax: number | null;
+  dlsAvg: number | null; dlsMax: number | null;
+}
+
+/** Build/turn statistics for one grouping key (formation or hole size) over the
+ *  loaded survey stations: station count, MD span, average & max inclination and
+ *  dogleg severity — the directional fingerprint of each interval. */
+function groupDirStats(rows: PathRow[], keyOf: (r: PathRow) => string, order: (a: DirStat, b: DirStat) => number): DirStat[] {
+  const m = new Map<string, { md: number[]; inc: number[]; dls: number[] }>();
+  for (const r of rows) {
+    const k = keyOf(r);
+    const e = m.get(k) ?? { md: [], inc: [], dls: [] };
+    if (typeof r.md === "number") e.md.push(r.md);
+    if (typeof r.inc === "number") e.inc.push(r.inc);
+    if (typeof r.dls === "number") e.dls.push(r.dls);
+    m.set(k, e);
+  }
+  const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+  return [...m.entries()].map(([key, e]) => ({
+    key, stations: e.md.length || e.inc.length || e.dls.length,
+    mdMin: e.md.length ? Math.min(...e.md) : null, mdMax: e.md.length ? Math.max(...e.md) : null,
+    incAvg: avg(e.inc), incMax: e.inc.length ? Math.max(...e.inc) : null,
+    dlsAvg: avg(e.dls), dlsMax: e.dls.length ? Math.max(...e.dls) : null,
+  })).filter((s) => s.stations > 0).sort(order);
+}
+
+function PathSummary({ rows, note }: { rows: PathRow[]; note?: string }) {
+  const st = useMemo(() => {
+    const wells = new Set(rows.map((r) => r.wellCode));
+    const incs = rows.map((r) => r.inc).filter((v): v is number => typeof v === "number");
+    const dlss = rows.map((r) => r.dls).filter((v): v is number => typeof v === "number");
+    const tvds = rows.map((r) => r.tvd).filter((v): v is number => typeof v === "number");
+    const mds = rows.map((r) => r.md).filter((v): v is number => typeof v === "number");
+    // Shallowest formation first; a group with no usable MD sorts last. Compare via
+    // a finite key so two null-MD groups don't yield NaN (an unstable sort order).
+    const mdKey = (s: DirStat) => (s.mdMin == null ? Number.MAX_SAFE_INTEGER : s.mdMin);
+    const byForm = groupDirStats(rows, (r) => r.topFormation ?? "—", (a, b) => mdKey(a) - mdKey(b) || a.key.localeCompare(b.key));
+    const bySize = groupDirStats(rows, (r) => r.holeSize ?? "—", (a, b) => holeValPath(b.key) - holeValPath(a.key));
+    return {
+      wells: wells.size, stations: rows.length,
+      maxInc: incs.length ? Math.max(...incs) : null,
+      maxDls: dlss.length ? Math.max(...dlss) : null,
+      maxTvd: tvds.length ? Math.max(...tvds) : null,
+      maxMd: mds.length ? Math.max(...mds) : null,
+      byForm, bySize,
+    };
+  }, [rows]);
+  if (note) return <div className="p-8 text-center text-sm text-gray-400">{note}</div>;
+  if (!rows.length) return <div className="p-8 text-center text-sm text-gray-400">No survey stations to summarise.</div>;
+  const Th = ({ children, r }: { children: React.ReactNode; r?: boolean }) => (
+    <th className={`bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 ${r ? "text-right" : "text-left"}`}>{children}</th>
+  );
+  const f1 = (v: number | null) => (v == null ? "—" : Number.isInteger(v) ? String(v) : v.toFixed(1));
+  const f0 = (v: number | null) => (v == null ? "—" : v.toFixed(0));
+  const Kpi = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
+    <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gradient-to-b from-white to-gray-50">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{label}</div>
+      <div className="text-lg font-bold tabular-nums leading-tight text-gray-900">{value}</div>
+      {sub && <div className="text-[10px] text-gray-400 truncate">{sub}</div>}
+    </div>
+  );
+  const DirTable = ({ stats, firstLabel }: { stats: DirStat[]; firstLabel: string }) => (
+    <table className="w-full tabular-nums border-collapse">
+      <thead><tr><Th>{firstLabel}</Th><Th r>Stations</Th><Th r>MD from (m)</Th><Th r>MD to (m)</Th><Th r>Avg inc (°)</Th><Th r>Max inc (°)</Th><Th r>Avg DLS</Th><Th r>Max DLS</Th></tr></thead>
+      <tbody>
+        {stats.map((s, i) => (
+          <tr key={s.key} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
+            <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800 whitespace-nowrap">{s.key}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{s.stations}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right">{f0(s.mdMin)}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right">{f0(s.mdMax)}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right font-medium">{f1(s.incAvg)}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right">{f1(s.incMax)}</td>
+            <td className={`border border-gray-200 px-2 py-0.5 text-right font-medium ${s.dlsAvg != null && s.dlsAvg > 3 ? "text-amber-600" : ""}`}>{f1(s.dlsAvg)}</td>
+            <td className={`border border-gray-200 px-2 py-0.5 text-right ${s.dlsMax != null && s.dlsMax > 5 ? "text-red-600" : s.dlsMax != null && s.dlsMax > 3 ? "text-amber-600" : ""}`}>{f1(s.dlsMax)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+  return (
+    <div className="p-3 space-y-5 text-[11px]">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+        <Kpi label="Wells" value={String(st.wells)} sub={`${st.stations.toLocaleString()} survey stations`} />
+        <Kpi label="Max MD" value={st.maxMd != null ? `${st.maxMd.toFixed(0)} m` : "—"} />
+        <Kpi label="Max TVD" value={st.maxTvd != null ? `${st.maxTvd.toFixed(0)} m` : "—"} />
+        <Kpi label="Max inclination" value={st.maxInc != null ? `${st.maxInc.toFixed(1)}°` : "—"} />
+        <Kpi label="Max DLS" value={st.maxDls != null ? st.maxDls.toFixed(1) : "—"} sub="°/30 m" />
+        <Kpi label="Formations" value={String(st.byForm.length)} sub={`${st.bySize.length} hole section${st.bySize.length === 1 ? "" : "s"}`} />
+      </div>
+
+      {st.byForm.length > 0 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Directional profile by top formation <span className="font-normal text-gray-400">— shallowest → deepest</span></h3>
+          <DirTable stats={st.byForm} firstLabel="Top formation" />
+        </section>
+      )}
+
+      {st.bySize.length > 0 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Directional profile by hole section <span className="font-normal text-gray-400">— widest → narrowest</span></h3>
+          <DirTable stats={st.bySize} firstLabel="Hole / bit size" />
+        </section>
+      )}
+
+      <p className="text-[10px] text-gray-400 leading-snug">
+        Built from the loaded directional-survey stations. Inclination and dogleg severity (DLS, °/30 m) are summarised per top formation and per hole section, so a high build/turn interval stands out.
+        DLS &gt; 3°/30 m is flagged amber, &gt; 5 red. The top formation is resolved from the survey station MD against the well’s formation tops.
+      </p>
     </div>
   );
 }

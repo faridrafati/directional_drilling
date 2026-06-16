@@ -37,7 +37,7 @@ interface SearchOptions {
   holeSizes: string[]; mudTypes: string[]; rigs: string[]; formations: string[];
 }
 interface RopPoint {
-  wob: number; rpm: number; rop: number; bitSize: string;
+  wob: number; rpm: number; rop: number; bitSize: string; topFormation: string | null;
   wellCode: string; name: string; field: string | null;
   date: string | null; serialNo: number | null;
   from: number | null; to: number | null; meters: number | null;
@@ -1086,6 +1086,7 @@ const TABLE_COLS: { key: string; label: string; align: "left" | "right"; get: (p
   { key: "date", label: "Date", align: "left", get: (p) => p.date ?? "—" },
   { key: "field", label: "Field", align: "left", get: (p) => p.field ?? "—" },
   { key: "bitSize", label: "Bit size", align: "right", get: (p) => p.bitSize },
+  { key: "topFormation", label: "Top formation", align: "left", get: (p) => p.topFormation ?? "—" },
   { key: "iadc", label: "IADC", align: "left", get: (p) => p.iadc ?? "—" },
   { key: "bitClass", label: "Class", align: "left", get: (p) => p.bitClass },
   { key: "make", label: "Make", align: "left", get: (p) => p.make ?? "—" },
@@ -1209,25 +1210,35 @@ interface SizeAgg {
   size: string; n: number; meters: number; hours: number;
   meanRop: number; bestRop: number; medMse: number | null; avgDull: number | null;
 }
+/** Roll one group of points up to the section-performance row shape. */
+function rollupAgg(size: string, ps: RopPoint[]): SizeAgg {
+  const meters = ps.reduce((a, p) => a + (p.meters ?? 0), 0);
+  const hours = ps.reduce((a, p) => a + (p.bitHour ?? 0), 0);
+  const mses = ps.map((p) => p.mse).filter((v): v is number => v != null && v > 0);
+  const dulls = ps.map((p) => (p.dullInner != null && p.dullOuter != null ? (p.dullInner + p.dullOuter) / 2 : null)).filter((v): v is number => v != null);
+  return {
+    size, n: ps.length, meters, hours,
+    meanRop: mean(ps.map((p) => p.rop)) ?? 0,
+    bestRop: Math.max(...ps.map((p) => p.rop)),
+    medMse: median(mses),
+    avgDull: dulls.length ? mean(dulls)! : null,
+  };
+}
+
 /** Per-bit-size rollup for the section-performance table. */
 function aggregateBySize(points: RopPoint[], bitSizes: string[]): SizeAgg[] {
   const m = new Map<string, RopPoint[]>();
   for (const p of points) { const a = m.get(p.bitSize); if (a) a.push(p); else m.set(p.bitSize, [p]); }
   const order = bitSizes.length ? bitSizes : [...m.keys()].sort((a, b) => sizeVal(b) - sizeVal(a));
-  return order.filter((b) => m.has(b)).map((b) => {
-    const ps = m.get(b)!;
-    const meters = ps.reduce((a, p) => a + (p.meters ?? 0), 0);
-    const hours = ps.reduce((a, p) => a + (p.bitHour ?? 0), 0);
-    const mses = ps.map((p) => p.mse).filter((v): v is number => v != null && v > 0);
-    const dulls = ps.map((p) => (p.dullInner != null && p.dullOuter != null ? (p.dullInner + p.dullOuter) / 2 : null)).filter((v): v is number => v != null);
-    return {
-      size: b, n: ps.length, meters, hours,
-      meanRop: mean(ps.map((p) => p.rop)) ?? 0,
-      bestRop: Math.max(...ps.map((p) => p.rop)),
-      medMse: median(mses),
-      avgDull: dulls.length ? mean(dulls)! : null,
-    };
-  });
+  return order.filter((b) => m.has(b)).map((b) => rollupAgg(b, m.get(b)!));
+}
+
+/** Per-top-formation rollup, busiest (most footage) first — the geology-keyed
+ *  companion to aggregateBySize. */
+function aggregateByFormation(points: RopPoint[]): SizeAgg[] {
+  const m = new Map<string, RopPoint[]>();
+  for (const p of points) { const k = p.topFormation ?? "—"; const a = m.get(k); if (a) a.push(p); else m.set(k, [p]); }
+  return [...m.entries()].map(([k, ps]) => rollupAgg(k, ps)).sort((a, b) => b.meters - a.meters || b.meanRop - a.meanRop);
 }
 
 function SummaryView({ points, bitSizes, onOpenReport, onView }: {
@@ -1255,6 +1266,8 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
   }, [points]);
 
   const sizeAgg = useMemo(() => aggregateBySize(points, bitSizes), [points, bitSizes]);
+  // By-formation rollup, shown only when the runs actually carry a formation.
+  const formAgg = useMemo(() => aggregateByFormation(points).filter((s) => s.size !== "—"), [points]);
 
   // Top bit runs by ROP for the leaderboard (footage-weighted columns get bars).
   const topRuns = useMemo(() => {
@@ -1265,6 +1278,8 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
 
   const maxSizeM = Math.max(1, ...sizeAgg.map((s) => s.meters));
   const maxSizeRop = Math.max(1, ...sizeAgg.map((s) => s.bestRop));
+  const maxFormM = Math.max(1, ...formAgg.map((s) => s.meters));
+  const maxFormRop = Math.max(1, ...formAgg.map((s) => s.bestRop));
 
   return (
     <div className="space-y-4">
@@ -1329,6 +1344,40 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
         </div>
         <div className="px-3 py-1 text-[11px] text-gray-400">Mean ROP = simple average per run; the “All” row uses footage-weighted overall ROP (total m ÷ total hr). Avg dull = (inner + outer) ÷ 2 on the IADC dull-grade scale (0 = new, 8 = worn).</div>
       </div>
+
+      {/* Performance by top formation */}
+      {formAgg.length > 0 && (
+        <div className="border border-gray-200 rounded overflow-hidden">
+          <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-200">
+            <span className="text-sm font-medium text-gray-700">Performance by top formation</span>
+            <span className="text-[11px] text-gray-400"> — most footage first</span>
+          </div>
+          <div className="overflow-auto">
+            <table className="text-[11px] tabular-nums border-collapse w-full">
+              <thead><tr className="bg-gray-100">
+                {["Top formation", "Runs", "Footage (m)", "Hours", "Mean ROP", "Best ROP", "Median MSE", "Avg dull"].map((h, i) => (
+                  <th key={h} className={`border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {formAgg.map((s, i) => (
+                  <tr key={s.size} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
+                    <td className="border border-gray-300 px-2 py-0.5 text-left font-semibold text-gray-800">{s.size}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{s.n}</td>
+                    <BarCell text={intc(s.meters)} frac={s.meters / maxFormM} color="#7c3aed" />
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{intc(s.hours)}</td>
+                    <BarCell text={s.meanRop.toFixed(1)} frac={s.meanRop / maxFormRop} color="#1e40af" />
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{fmt1(s.bestRop)}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{s.medMse != null ? intc(s.medMse) : "—"}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{s.avgDull != null ? s.avgDull.toFixed(1) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-3 py-1 text-[11px] text-gray-400">ROP and MSE rolled up by the top formation at each bit run’s depth — the geology-keyed view of where the bit drilled fast or stalled.</div>
+        </div>
+      )}
 
       {/* Two complementary charts */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

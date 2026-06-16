@@ -464,6 +464,13 @@ function buildFormationResolver(): (wc: string, md: number) => string | null {
  * window or not inside one of the picked formations. A row with no usable MD is
  * dropped whenever either filter is active (it can't be placed). `active` lets a
  * caller skip the work entirely when neither facet is set.
+ *
+ * `topFormation(wellCode, md)` returns the deepest D07 top at/above that MD — the
+ * per-row "top formation" name — independent of whether the formation FILTER is
+ * active. Every tab query uses this to emit a `topFormation` column so results can
+ * be displayed and broken down by formation. The resolver is built lazily on first
+ * use (one D07 scan) so a query that needs neither the formation filter nor the
+ * emitted value pays nothing.
  */
 function depthFormationGate(f: FormationMatrixFilters) {
   // Treat undefined / null / "" as "not set" — Number("") is 0 (finite), which
@@ -473,7 +480,11 @@ function depthFormationGate(f: FormationMatrixFilters) {
   const hasFrom = Number.isFinite(fromD), hasTo = Number.isFinite(toD);
   const formNames = new Set((f.formations ?? []).map((x) => s(x)).filter(Boolean));
   const wantForm = formNames.size > 0, wantDepth = hasFrom || hasTo;
-  const resolve = wantForm ? buildFormationResolver() : null;
+  // One resolver shared by both the formation filter and the emitted value, built
+  // on first need so depth-only / unfiltered queries that never read the formation
+  // skip the D07 scan entirely.
+  let resolve: ((wc: string, md: number) => string | null) | null = null;
+  const resolver = () => (resolve ??= buildFormationResolver());
   return {
     active: wantForm || wantDepth,
     pass(wc: string, md: number | null): boolean {
@@ -481,8 +492,13 @@ function depthFormationGate(f: FormationMatrixFilters) {
       if (md == null || !Number.isFinite(md)) return false;
       if (hasFrom && md < fromD) return false;
       if (hasTo && md > toD) return false;
-      if (wantForm) { const fn = resolve!(wc, md); if (!fn || !formNames.has(fn)) return false; }
+      if (wantForm) { const fn = resolver()(wc, md); if (!fn || !formNames.has(fn)) return false; }
       return true;
+    },
+    /** The deepest formation top at/above this MD (null when MD is unusable). */
+    topFormation(wc: string, md: number | null): string | null {
+      if (md == null || !Number.isFinite(md)) return null;
+      return resolver()(wc, md);
     },
   };
 }
@@ -995,9 +1011,12 @@ export function getMudProperties(f: FormationMatrixFilters): Record<string, unkn
     const from = val(r.FromPoint), to = val(r.ToPoint);
     const mid = typeof from === "number" ? (typeof to === "number" && to > from ? (from + to) / 2 : from) : null;
     const bitSize = mid != null ? segAt(bitByWell.get(wc), mid) : null;
+    // Top formation at this interval's gate MD (to ?? from), so the displayed
+    // formation matches the row the formation filter would keep/drop.
+    const gateMd = typeof to === "number" ? to : (typeof from === "number" ? from : null);
     return {
       wellCode: wc, date: orNull(fd), serialNo,
-      from, to, bitSize, mudType: look(lk.mud, r.MudCode),
+      from, to, bitSize, topFormation: gate.topFormation(wc, gateMd), mudType: look(lk.mud, r.MudCode),
       minWeight: val(r.MinWeight), maxWeight: val(r.MaxWeight),
       visc: val(r.Viscosity),
       pv: haveFan ? Number((f600 - f300).toFixed(2)) : null,
@@ -1278,11 +1297,13 @@ export function getMudStock(f: MudStockFilters): Record<string, unknown> {
       if (holeCodes && !holeCodes.has(holeCode)) continue;
       const mudCode = mudByDay.get(k) ?? "";
       if (mudCodes && !mudCodes.has(mudCode)) continue;
-      if (gate.active) { const toMd = Number(s(r.ToPoint)), frMd = Number(s(r.FromPoint)); if (!gate.pass(wc, Number.isFinite(toMd) ? toMd : frMd)) continue; }
+      const toMd = Number(s(r.ToPoint)), frMd = Number(s(r.FromPoint));
+      const stockMd = Number.isFinite(toMd) ? toMd : (Number.isFinite(frMd) ? frMd : null);
+      if (gate.active && !gate.pass(wc, stockMd)) continue;
       out.push({
         wellCode: wc, date: orNull(date), serialNo: serialByDay.get(k) ?? null,
         from: val(r.FromPoint), to: val(r.ToPoint),
-        holeSize: orNull(look(lk.holeSize, holeCode)), mudType: orNull(look(lk.mud, mudCode)),
+        holeSize: orNull(look(lk.holeSize, holeCode)), topFormation: gate.topFormation(wc, stockMd), mudType: orNull(look(lk.mud, mudCode)),
         material: orNull(look(lk.material, matCode)), measure: orNull(look(lk.measure, r.MeasureCode)),
         used: val(r.Amount), rec: val(r.Rec), stock: val(r.Stock),
         os: val(r.OS), req: val(r.Req), sent: val(r.Sent),
@@ -1506,14 +1527,15 @@ export function getWellPath(f: WellPathFilters): Record<string, unknown> {
       if (holeCodes && !holeCodes.has(holeCode)) continue;
       const mudCode = mudByDay.get(k) ?? "";
       if (mudCodes && !mudCodes.has(mudCode)) continue;
-      if (gate.active && !gate.pass(wc, num(r.FromPoint))) continue;   // MD = survey station depth
+      const stationMd = num(r.FromPoint);   // MD = survey station depth
+      if (gate.active && !gate.pass(wc, stationMd)) continue;
       const ns = num(r.N_S), ew = num(r.E_W);
       if (ns == null || ew == null) continue; // plottable stations only (matches Delphi)
       out.push({
         wellCode: wc, date: orNull(date), serialNo: serialByDay.get(k) ?? null,
-        md: num(r.FromPoint), inc: num(r.Angle), az: num(r.Azimuth), tvd: num(r.TVD),
+        md: stationMd, inc: num(r.Angle), az: num(r.Azimuth), tvd: num(r.TVD),
         ns, ew, sectionHD: num(r.SectionHD), dls: num(r.DLS), vs: num(r.VS), direction: orNull(r.Direction),
-        holeSize: orNull(look(lk.holeSize, holeCode)), mudType: orNull(look(lk.mud, mudCode)),
+        holeSize: orNull(look(lk.holeSize, holeCode)), topFormation: gate.topFormation(wc, stationMd), mudType: orNull(look(lk.mud, mudCode)),
       });
     }
   }
@@ -1636,11 +1658,12 @@ export function getTimeAnalysis(f: TimeAnalysisFilters): Record<string, unknown>
       if (holeCodes && !holeCodes.has(holeCode)) continue;
       const mudCode = mudByDay.get(k) ?? "";
       if (mudCodes && !mudCodes.has(mudCode)) continue;
-      if (gate.active) { const md = d?.depth != null ? d.depth : (typeof d?.to === "number" ? d.to : null); if (!gate.pass(wc, md)) continue; }
+      const taMd = d?.depth != null ? d.depth : (typeof d?.to === "number" ? d.to : null);
+      if (gate.active && !gate.pass(wc, taMd)) continue;
       out.push({
         wellCode: wc, date: orNull(date), serialNo: d?.serial ?? null,
         holeSize: orNull(look(lk.holeSize, holeCode)), from: d?.from ?? null, to: d?.to ?? null,
-        depth: d?.depth ?? null,
+        depth: d?.depth ?? null, topFormation: gate.topFormation(wc, taMd),
         mudType: orNull(look(lk.mud, mudCode)),
         group: orNull(look(lk.activityGroup, gc)),
         type: lk.activityType.get(typeKey) ?? null,
@@ -1845,7 +1868,7 @@ export function getTools(f: ToolsFilters): Record<string, unknown> {
   const spec = TOOL_SPECS[toolKey];
   if (!spec) return { tool: toolKey, columns: [], rows: [], truncated: false, total: 0, note: "Unknown tool." };
   const columns = [
-    { key: "holeSize", label: "Hole", text: true }, { key: "mudType", label: "Mud type", text: true },
+    { key: "holeSize", label: "Hole", text: true }, { key: "topFormation", label: "Top formation", text: true }, { key: "mudType", label: "Mud type", text: true },
     ...spec.fields.filter((fl) => !fl.hidden).map((fl) => ({ key: fl.key, label: fl.label, text: fl.text, wide: fl.wide, titleKey: fl.titleKey })),
   ];
   const base = { tool: toolKey, label: spec.label, columns };
@@ -1895,10 +1918,11 @@ export function getTools(f: ToolsFilters): Record<string, unknown> {
       if (holeCodes && !holeCodes.has(holeCode)) continue;
       const mudCode = mudByDay.get(k) ?? "";
       if (mudCodes && !mudCodes.has(mudCode)) continue;
-      if (gate.active && !gate.pass(wc, rowMd(r))) continue;
+      const md = rowMd(r);
+      if (gate.active && !gate.pass(wc, md)) continue;
       const row: Record<string, unknown> = {
         wellCode: wc, date: orNull(date), serialNo: d?.serial ?? null,
-        holeSize: orNull(look(lk.holeSize, holeCode)), mudType: orNull(look(lk.mud, mudCode)),
+        holeSize: orNull(look(lk.holeSize, holeCode)), topFormation: gate.topFormation(wc, md), mudType: orNull(look(lk.mud, mudCode)),
       };
       for (const fl of spec.fields) row[fl.key] = fl.get(r, lk);
       out.push(row);
@@ -2034,7 +2058,8 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
       // ROP (m/hr) = footage ÷ rotating hours (BitMeterTotal, else interval).
       const hrs = Number(s(r.BitHour)); let m = Number(s(r.BitMeterTotal));
       const fp = Number(s(r.FromPoint)), tp = Number(s(r.ToPoint));
-      if (gate.active && !gate.pass(wc, Number.isFinite(tp) ? tp : (Number.isFinite(fp) ? fp : null))) continue;  // bit-run MD
+      const bitMd = Number.isFinite(tp) ? tp : (Number.isFinite(fp) ? fp : null);  // bit-run MD
+      if (gate.active && !gate.pass(wc, bitMd)) continue;
       if (!Number.isFinite(m) || m <= 0) { m = (Number.isFinite(fp) && Number.isFinite(tp)) ? tp - fp : NaN; }
       const rop = Number.isFinite(hrs) && hrs > 0 && Number.isFinite(m) && m > 0 ? Number((m / hrs).toFixed(2)) : null;
       // A contour point needs all three axes; drop incomplete / out-of-range rows.
@@ -2089,7 +2114,8 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
 
       points.push({
         wob: Number(wob.toFixed(1)), rpm: Number(rpm.toFixed(0)), rop,
-        bitSize, wellCode: wc, name: nameMap.get(wc) || wc, field: fieldMap.get(wc) ?? null,
+        bitSize, topFormation: gate.topFormation(wc, bitMd),
+        wellCode: wc, name: nameMap.get(wc) || wc, field: fieldMap.get(wc) ?? null,
         date: orNull(date), serialNo: d?.serial ?? null,
         // Depth + footage for the progress charts (cumulative-depth & ROP-vs-depth).
         from: Number.isFinite(fp) && fp > 0 ? Number(fp.toFixed(1)) : null,

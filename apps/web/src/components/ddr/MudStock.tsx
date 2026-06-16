@@ -31,7 +31,7 @@ interface SearchOptions {
 export interface StockRow {
   wellCode: string; date: string | null; serialNo: number | null;
   from: number | null; to: number | null;
-  holeSize: string | null; mudType: string | null;
+  holeSize: string | null; topFormation: string | null; mudType: string | null;
   material: string | null; measure: string | null;
   used: number | null; rec: number | null; stock: number | null;
   os: number | null; req: number | null; sent: number | null;
@@ -66,7 +66,7 @@ const fmtRate = (v: number): string => v >= 100 ? Math.round(v).toLocaleString()
 // Sent). `text` columns are left-aligned; the numeric stock figures right-aligned.
 const COLS: { key: keyof StockRow; label: string; title?: string; text?: boolean }[] = [
   { key: "from", label: "From (m)" }, { key: "to", label: "To (m)" },
-  { key: "holeSize", label: "Hole", text: true }, { key: "mudType", label: "Mud type", text: true },
+  { key: "holeSize", label: "Hole", text: true }, { key: "topFormation", label: "Top formation", text: true }, { key: "mudType", label: "Mud type", text: true },
   { key: "material", label: "Material", text: true }, { key: "measure", label: "Unit", text: true },
   { key: "used", label: "Used", title: "Amount used / consumed that day (Delphi: Amount)" },
   { key: "rec", label: "Rec", title: "Received that day" },
@@ -327,6 +327,11 @@ function StockSummary({ rows, planningFilters, note, truncated, total, onShowPla
     const wells = new Set<string>();
     const units = new Set<string>();
     const byMat = new Map<string, MatAgg>();   // key: material|unit
+    // Consumption broken down by top formation, kept per unit (units aren't
+    // additive). Each bucket tracks total used and the contributing well count.
+    const byForm = new Map<string, { formation: string; unit: string; used: number; wells: Set<string> }>();
+    // Per-unit total of POSITIVE used rows (the formation-share denominator).
+    const posUsedByUnit = new Map<string, number>();
     for (const r of rows) {
       wells.add(r.wellCode);
       const mat = r.material ?? "—", unit = r.measure ?? "";
@@ -346,13 +351,29 @@ function StockSummary({ rows, planningFilters, note, truncated, total, onShowPla
         if (typeof r.req === "number") m.lastReq = r.req;
         if (typeof r.os === "number") m.lastOs = r.os;
       }
+      if (typeof r.used === "number" && r.used > 0) {
+        const fm = r.topFormation ?? "—", fk = `${fm}|${unit}`;
+        let fe = byForm.get(fk);
+        if (!fe) { fe = { formation: fm, unit, used: 0, wells: new Set() }; byForm.set(fk, fe); }
+        fe.used += r.used; fe.wells.add(r.wellCode);
+        // Per-unit positive-used total — the denominator for the formation share.
+        // Built from the SAME positive rows as the buckets (not the net-of-returns
+        // material totals) so a formation's share is always a true subset ≤ 100%.
+        posUsedByUnit.set(unit || "—", (posUsedByUnit.get(unit || "—") ?? 0) + r.used);
+      }
     }
     const mats = [...byMat.values()];
     // Total used per unit (across all materials) — additive only within a unit.
     const usedByUnit = new Map<string, number>();
     for (const m of mats) if (m.used > 0) usedByUnit.set(m.unit || "—", (usedByUnit.get(m.unit || "—") ?? 0) + m.used);
     const distinctMats = new Set(mats.map((m) => m.material)).size;
-    return { wells, units, mats, usedByUnit, distinctMats };
+    // Formation consumption rows, busiest first, with the per-unit positive total
+    // for share (so the share is a true subset percentage, never > 100%).
+    const formations = [...byForm.values()]
+      .map((f) => ({ formation: f.formation, unit: f.unit, used: f.used, wells: f.wells.size, unitTotal: posUsedByUnit.get(f.unit || "—") ?? f.used }))
+      .sort((a, b) => b.used - a.used)
+      .slice(0, 15);
+    return { wells, units, mats, usedByUnit, distinctMats, formations };
   }, [rows]);
 
   // Cost rollup from the planning payload (always-empty in the current dataset, so
@@ -479,6 +500,32 @@ function StockSummary({ rows, planningFilters, note, truncated, total, onShowPla
         <section>
           <h3 className="font-semibold text-gray-700 mb-1">Consumption by hole section <span className="font-normal text-gray-400">— widest → narrowest</span></h3>
           <SectionConsumption plan={plan} />
+        </section>
+      )}
+
+      {/* Consumption by top formation */}
+      {agg.formations.length > 0 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Consumption by top formation <span className="font-normal text-gray-400">— total used per formation &amp; unit (units aren’t additive)</span></h3>
+          <table className="w-full tabular-nums border-collapse">
+            <thead><tr><Th>Top formation</Th><Th>Unit</Th><Th r>Wells</Th><Th r>Used</Th><th className="bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 text-right w-[34%]">Share of its unit</th></tr></thead>
+            <tbody>
+              {agg.formations.map((f, i) => (
+                <tr key={`${f.formation}|${f.unit}`} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
+                  <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800 whitespace-nowrap">{f.formation}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-left text-gray-500">{f.unit || "—"}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{f.wells}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right font-medium">{fmtBig(f.used)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex-1 h-2.5 bg-gray-100 rounded-sm overflow-hidden"><div className="h-full rounded-sm" style={{ width: `${f.unitTotal > 0 ? 100 * f.used / f.unitTotal : 0}%`, background: PALETTE[i % PALETTE.length] }} /></div>
+                      <span className="w-10 text-right text-gray-600">{f.unitTotal > 0 ? `${(100 * f.used / f.unitTotal).toFixed(1)}%` : ""}</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
 

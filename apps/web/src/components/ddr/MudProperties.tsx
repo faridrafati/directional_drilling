@@ -37,7 +37,7 @@ interface SearchOptions {
 }
 export interface MudRow {
   wellCode: string; date: string | null; serialNo: number | null;
-  from: number | null; to: number | null; bitSize: string | null; mudType: string | null;
+  from: number | null; to: number | null; bitSize: string | null; topFormation: string | null; mudType: string | null;
   minWeight: number | null; maxWeight: number | null; visc: number | null;
   pv: number | null; yp: number | null; fan600: number | null; fan300: number | null;
   initialGel: number | null; gel10: number | null; ph: number | null; alk: number | null;
@@ -60,7 +60,7 @@ const fmtNum = (v: unknown): string =>
 // match the rest of the app. The N05 losses/gains columns are appended at the end.
 const COLS: { key: keyof MudRow; label: string }[] = [
   { key: "from", label: "From (m)" }, { key: "to", label: "To (m)" },
-  { key: "bitSize", label: "Bit size" }, { key: "mudType", label: "Mud type" },
+  { key: "bitSize", label: "Bit size" }, { key: "topFormation", label: "Top formation" }, { key: "mudType", label: "Mud type" },
   { key: "minWeight", label: "Min wt (pcf)" }, { key: "maxWeight", label: "Max wt (pcf)" },
   { key: "visc", label: "Visc (s)" },
   { key: "pv", label: "PV" }, { key: "yp", label: "YP" },
@@ -83,7 +83,7 @@ const COLS: { key: keyof MudRow; label: string }[] = [
 // Plottable series = every numeric column: all of COLS except the depth axis
 // (from/to) and the two text columns. Derived from COLS so any column added
 // there is automatically selectable in the graph. Each gets a palette colour.
-const NON_SERIES = new Set<keyof MudRow>(["from", "to", "bitSize", "mudType", "remarks", "repTime", "mudChangeDepth"]);
+const NON_SERIES = new Set<keyof MudRow>(["from", "to", "bitSize", "topFormation", "mudType", "remarks", "repTime", "mudChangeDepth"]);
 const PALETTE = [
   "#1e40af", "#0d9488", "#7c3aed", "#db2777", "#d97706", "#65a30d", "#dc2626", "#0891b2",
   "#9333ea", "#ea580c", "#16a34a", "#e11d48", "#2563eb", "#ca8a04", "#15803d", "#be123c",
@@ -333,7 +333,7 @@ function MudTable({ rows, cols, note, onOpenReport }: {
           <th className="sticky left-0 z-30 bg-gray-100 border border-gray-300 px-2 py-1 text-left font-semibold text-gray-700 whitespace-nowrap">Well</th>
           <th className="bg-gray-100 border border-gray-300 px-2 py-1 text-left font-medium text-gray-700 whitespace-nowrap">Date</th>
           {cols.map((c) => (
-            <th key={c.key} className={`bg-gray-100 border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${c.key === "mudType" || c.key === "bitSize" || c.key === "remarks" ? "text-left" : "text-right"}`}>{c.label}</th>
+            <th key={c.key} className={`bg-gray-100 border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${c.key === "mudType" || c.key === "bitSize" || c.key === "topFormation" || c.key === "remarks" ? "text-left" : "text-right"}`}>{c.label}</th>
           ))}
         </tr>
       </thead>
@@ -357,7 +357,7 @@ function MudTable({ rows, cols, note, onOpenReport }: {
                   const t = v == null ? "" : String(v);
                   return <td key={c.key} className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap" title={t}>{t}</td>;
                 }
-                const isText = c.key === "mudType" || c.key === "bitSize";
+                const isText = c.key === "mudType" || c.key === "bitSize" || c.key === "topFormation";
                 return (
                   <td key={c.key} className={`border border-gray-300 px-2 py-0.5 whitespace-nowrap ${isText ? "text-left" : "text-right"}`}>
                     {isText ? (v == null ? "" : String(v)) : fmtNum(v)}
@@ -462,10 +462,35 @@ interface MudStats {
   mw: { n: number; min: number; avg: number; max: number } | null;
   pvAvg: number | null; ypAvg: number | null; solidsAvg: number | null; maxSolids: number | null;
   mudTypes: { name: string; n: number }[];
-  props: PropStat[]; sections: SectionStat[];
+  props: PropStat[]; sections: SectionStat[]; formations: SectionStat[];
 }
 
 function mean(a: number[]): number { return a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0; }
+
+/** Mud-weight band + average rheology & solids grouped by an arbitrary key
+ *  (hole/bit size or top formation). Shared by the two breakdown tables so they
+ *  stay in lock-step. `order` sorts the resulting buckets. */
+function groupMudStats(rows: MudRow[], keyOf: (r: MudRow) => string, order: (a: SectionStat, b: SectionStat) => number): SectionStat[] {
+  const m = new Map<string, { mw: number[]; pv: number[]; yp: number[]; sol: number[] }>();
+  for (const r of rows) {
+    const k = keyOf(r);
+    const e = m.get(k) ?? { mw: [], pv: [], yp: [], sol: [] };
+    if (typeof r.maxWeight === "number") e.mw.push(r.maxWeight);
+    if (typeof r.pv === "number") e.pv.push(r.pv);
+    if (typeof r.yp === "number") e.yp.push(r.yp);
+    if (typeof r.solids === "number") e.sol.push(r.solids);
+    m.set(k, e);
+  }
+  return [...m.entries()]
+    .filter(([, e]) => e.mw.length > 0)
+    .map(([hole, e]) => ({
+      hole, n: e.mw.length,
+      mwMin: Math.min(...e.mw), mwAvg: mean(e.mw), mwMax: Math.max(...e.mw),
+      pvAvg: e.pv.length ? mean(e.pv) : null, ypAvg: e.yp.length ? mean(e.yp) : null,
+      solidsAvg: e.sol.length ? mean(e.sol) : null,
+    }))
+    .sort(order);
+}
 
 /** One pass over the loaded mud rows → the KPI + table bundle the Summary uses. */
 function computeMudStats(rows: MudRow[]): MudStats {
@@ -489,34 +514,46 @@ function computeMudStats(rows: MudRow[]): MudStats {
     const outHi = spec.hi != null ? v.filter((x) => x > spec.hi!).length : 0;
     props.push({ spec, n: v.length, min: Math.min(...v), avg: mean(v), max: Math.max(...v), outLo, outHi });
   }
-  // Per hole / bit-size section: mud-weight band + average rheology & solids.
-  const secMap = new Map<string, { mw: number[]; pv: number[]; yp: number[]; sol: number[] }>();
-  for (const r of rows) {
-    const hole = r.bitSize ?? "—";
-    const e = secMap.get(hole) ?? { mw: [], pv: [], yp: [], sol: [] };
-    if (typeof r.maxWeight === "number") e.mw.push(r.maxWeight);
-    if (typeof r.pv === "number") e.pv.push(r.pv);
-    if (typeof r.yp === "number") e.yp.push(r.yp);
-    if (typeof r.solids === "number") e.sol.push(r.solids);
-    secMap.set(hole, e);
-  }
-  const sections: SectionStat[] = [...secMap.entries()]
-    .filter(([, e]) => e.mw.length > 0)
-    .map(([hole, e]) => ({
-      hole, n: e.mw.length,
-      mwMin: Math.min(...e.mw), mwAvg: mean(e.mw), mwMax: Math.max(...e.mw),
-      pvAvg: e.pv.length ? mean(e.pv) : null, ypAvg: e.yp.length ? mean(e.yp) : null,
-      solidsAvg: e.sol.length ? mean(e.sol) : null,
-    }))
-    .sort((a, b) => holeVal(b.hole) - holeVal(a.hole));
+  // Per hole / bit-size section: mud-weight band + average rheology & solids,
+  // ordered widest → narrowest. Plus the same broken down by top formation,
+  // ordered by reading count (most-sampled first).
+  const sections = groupMudStats(rows, (r) => r.bitSize ?? "—", (a, b) => holeVal(b.hole) - holeVal(a.hole));
+  const formations = groupMudStats(rows, (r) => r.topFormation ?? "—", (a, b) => b.n - a.n || a.hole.localeCompare(b.hole));
   return {
     wells: wells.size, intervals: rows.length, days: days.size,
     mw: mwAll.length ? { n: mwAll.length, min: Math.min(...mwAll), avg: mean(mwAll), max: Math.max(...mwAll) } : null,
     pvAvg: pvAll.length ? mean(pvAll) : null, ypAvg: ypAll.length ? mean(ypAll) : null,
     solidsAvg: solAll.length ? mean(solAll) : null, maxSolids: solAll.length ? Math.max(...solAll) : null,
     mudTypes: [...mudTypeN.entries()].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n),
-    props, sections,
+    props, sections, formations,
   };
+}
+
+/** The mud-weight / rheology breakdown grid, shared by the by-hole-section and
+ *  by-top-formation tables (identical columns, only the first header differs). */
+function MudGroupTable({ rows, firstLabel, Th }: {
+  rows: SectionStat[]; firstLabel: string; Th: (p: { children: ReactNode; r?: boolean }) => JSX.Element;
+}) {
+  return (
+    <table className="w-full tabular-nums border-collapse">
+      <thead><tr><Th>{firstLabel}</Th><Th r>Readings</Th><Th r>Min wt (pcf)</Th><Th r>Avg wt (pcf)</Th><Th r>Avg wt (ppg)</Th><Th r>Max wt (pcf)</Th><Th r>Avg PV</Th><Th r>Avg YP</Th><Th r>Avg solids %</Th></tr></thead>
+      <tbody>
+        {rows.map((s, i) => (
+          <tr key={s.hole} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
+            <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800">{s.hole}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{s.n}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right">{s.mwMin.toFixed(0)}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right font-medium">{s.mwAvg.toFixed(0)}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-600">{toPpg(s.mwAvg).toFixed(1)}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right">{s.mwMax.toFixed(0)}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right">{s.pvAvg != null ? s.pvAvg.toFixed(0) : "—"}</td>
+            <td className="border border-gray-200 px-2 py-0.5 text-right">{s.ypAvg != null ? s.ypAvg.toFixed(0) : "—"}</td>
+            <td className={`border border-gray-200 px-2 py-0.5 text-right ${s.solidsAvg != null && s.solidsAvg > 40 ? "text-red-600" : s.solidsAvg != null && s.solidsAvg > 30 ? "text-amber-600" : ""}`}>{s.solidsAvg != null ? s.solidsAvg.toFixed(1) : "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 /** Manager / mud-engineer dashboard: headline KPIs, per-property stats with
@@ -577,24 +614,15 @@ function MudSummary({ rows, wellNames, note }: { rows: MudRow[]; wellNames: Map<
       {st.sections.length > 0 && (
         <section>
           <h3 className="font-semibold text-gray-700 mb-1">Mud weight &amp; rheology by hole section <span className="font-normal text-gray-400">— widest → narrowest</span></h3>
-          <table className="w-full tabular-nums border-collapse">
-            <thead><tr><Th>Hole / bit size</Th><Th r>Readings</Th><Th r>Min wt (pcf)</Th><Th r>Avg wt (pcf)</Th><Th r>Avg wt (ppg)</Th><Th r>Max wt (pcf)</Th><Th r>Avg PV</Th><Th r>Avg YP</Th><Th r>Avg solids %</Th></tr></thead>
-            <tbody>
-              {st.sections.map((s, i) => (
-                <tr key={s.hole} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
-                  <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800">{s.hole}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{s.n}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.mwMin.toFixed(0)}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right font-medium">{s.mwAvg.toFixed(0)}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-600">{toPpg(s.mwAvg).toFixed(1)}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.mwMax.toFixed(0)}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.pvAvg != null ? s.pvAvg.toFixed(0) : "—"}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.ypAvg != null ? s.ypAvg.toFixed(0) : "—"}</td>
-                  <td className={`border border-gray-200 px-2 py-0.5 text-right ${s.solidsAvg != null && s.solidsAvg > 40 ? "text-red-600" : s.solidsAvg != null && s.solidsAvg > 30 ? "text-amber-600" : ""}`}>{s.solidsAvg != null ? s.solidsAvg.toFixed(1) : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <MudGroupTable rows={st.sections} firstLabel="Hole / bit size" Th={Th} />
+        </section>
+      )}
+
+      {/* Mud weight & rheology by top formation */}
+      {st.formations.length > 0 && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">Mud weight &amp; rheology by top formation <span className="font-normal text-gray-400">— most-sampled first</span></h3>
+          <MudGroupTable rows={st.formations} firstLabel="Top formation" Th={Th} />
         </section>
       )}
 
