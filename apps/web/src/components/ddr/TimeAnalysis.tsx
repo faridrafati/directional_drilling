@@ -802,7 +802,7 @@ interface TAStats {
   wells: WellKpi[];
   types: { type: string; group: string; hours: number; pct: number; npt: boolean }[];
   nptTypes: { type: string; hours: number; pct: number; cumPct: number }[];
-  sections: { hole: string; prod: number; npt: number; hours: number; days: number }[];
+  sections: { hole: string; wells: number; prod: number; npt: number; hours: number; days: number; drilled: number; mPerDay: number; days1000: number | null }[];
   formations: { formation: string; prod: number; npt: number; hours: number; days: number }[];
 }
 /** One pass over the rows → the KPI bundle the Summary + NPT/Section charts share.
@@ -812,7 +812,10 @@ function computeStats(rows: TARow[], wellNames?: Record<string, string>): TAStat
   let totalHours = 0, nptHours = 0;
   const byType = new Map<string, { group: string; hours: number; npt: boolean }>();
   const nptByType = new Map<string, number>();
-  const bySection = new Map<string, { prod: number; npt: number; days: Set<number> }>();
+  // Per hole section: hours split + distinct rig-days, plus a per-well depth
+  // range (min/max recorded depth) so the section's "drilled" reconciles toward
+  // the per-well total (sum of each well's max − min depth seen in that section).
+  const bySection = new Map<string, { prod: number; npt: number; days: Set<number>; wells: Map<string, { minD: number; maxD: number }> }>();
   const byFormation = new Map<string, { prod: number; npt: number; days: Set<number> }>();
   const wellAgg = new Map<string, { name: string; days: Set<number>; minD: number; maxD: number; prod: number; npt: number }>();
   for (const r of rows) {
@@ -826,9 +829,15 @@ function computeStats(rows: TARow[], wellNames?: Record<string, string>): TAStat
       e.hours += h; byType.set(t, e);
       if (npt) nptByType.set(t, (nptByType.get(t) ?? 0) + h);
       const hole = r.holeSize ?? "—";
-      const sec = bySection.get(hole) ?? { prod: 0, npt: 0, days: new Set<number>() };
+      const sec = bySection.get(hole) ?? { prod: 0, npt: 0, days: new Set<number>(), wells: new Map<string, { minD: number; maxD: number }>() };
       if (npt) sec.npt += h; else sec.prod += h;
       if (jd != null) sec.days.add(jd);
+      if (r.depth != null) {
+        const sw = sec.wells.get(r.wellCode) ?? { minD: Infinity, maxD: -Infinity };
+        if (r.depth < sw.minD) sw.minD = r.depth;
+        if (r.depth > sw.maxD) sw.maxD = r.depth;
+        sec.wells.set(r.wellCode, sw);
+      }
       bySection.set(hole, sec);
       const fm = r.topFormation ?? "—";
       const fse = byFormation.get(fm) ?? { prod: 0, npt: 0, days: new Set<number>() };
@@ -856,7 +865,14 @@ function computeStats(rows: TARow[], wellNames?: Record<string, string>): TAStat
   let cum = 0;
   const nptTypes = [...nptByType.entries()].map(([type, hours]) => ({ type, hours })).sort((a, b) => b.hours - a.hours)
     .map((x) => { cum += x.hours; return { ...x, pct: nptHours > 0 ? x.hours / nptHours : 0, cumPct: nptHours > 0 ? cum / nptHours : 0 }; });
-  const sections = [...bySection.entries()].map(([hole, s]) => ({ hole, prod: s.prod, npt: s.npt, hours: s.prod + s.npt, days: s.days.size })).sort((a, b) => holeVal(b.hole) - holeVal(a.hole));
+  const sections = [...bySection.entries()].map(([hole, s]) => {
+    // Section "drilled" = Σ over wells of (max − min depth seen in this section),
+    // so it reconciles toward the per-well total drilled metre.
+    let drilled = 0;
+    for (const sw of s.wells.values()) if (Number.isFinite(sw.minD) && Number.isFinite(sw.maxD)) drilled += Math.max(0, sw.maxD - sw.minD);
+    const days = s.days.size;
+    return { hole, wells: s.wells.size, prod: s.prod, npt: s.npt, hours: s.prod + s.npt, days, drilled, mPerDay: days > 0 ? drilled / days : 0, days1000: drilled > 100 ? days / (drilled / 1000) : null };
+  }).sort((a, b) => holeVal(b.hole) - holeVal(a.hole));
   const formations = [...byFormation.entries()].map(([formation, s]) => ({ formation, prod: s.prod, npt: s.npt, hours: s.prod + s.npt, days: s.days.size })).sort((a, b) => b.hours - a.hours);
   return { totalHours, nptHours, prodHours, nptPct: totalHours > 0 ? nptHours / totalHours : 0, totalDays, totalDrilled, mPerDay: totalDays > 0 ? totalDrilled / totalDays : 0, days1000: totalDrilled > 100 ? totalDays / (totalDrilled / 1000) : null, wells, types, nptTypes, sections, formations };
 }
@@ -969,25 +985,50 @@ function TASummary({ rows, wellNames, note }: { rows: TARow[]; wellNames?: Recor
         </section>
       )}
 
-      {/* Time by hole section */}
+      {/* Time by hole section — the headline KPI cards, broken out per hole
+          section (widest → narrowest), with a bold Total row that reconciles to
+          the cards: rates/percentages on the Total row are the OVERALL value
+          (total ÷ total), not an average of the per-section figures. */}
       {st.sections.length > 0 && (
         <section>
-          <h3 className="font-semibold text-gray-700 mb-1">Time by hole section</h3>
-          <table className="w-full tabular-nums border-collapse">
-            <thead><tr><Th>Hole / bit size</Th><Th r>Days</Th><Th r>Hours</Th><Th r>Productive</Th><Th r>NPT</Th><Th r>NPT %</Th></tr></thead>
-            <tbody>
-              {st.sections.map((s, i) => (
-                <tr key={s.hole} className={i % 2 ? "bg-gray-50/60" : "bg-white"}>
-                  <td className="border border-gray-200 px-2 py-0.5 text-left">{s.hole}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.days}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right">{fmtH(s.hours)}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right text-teal-700">{fmtH(s.prod)}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right text-red-600">{fmtH(s.npt)}</td>
-                  <td className="border border-gray-200 px-2 py-0.5 text-right">{s.hours > 0 ? (100 * s.npt / s.hours).toFixed(1) : "0"}%</td>
+          <h3 className="font-semibold text-gray-700 mb-1">KPIs by hole section <span className="font-normal text-gray-400">— headline metrics per section, widest first</span></h3>
+          <div className="overflow-x-auto">
+            <table className="w-full tabular-nums border-collapse">
+              <thead><tr><Th>Hole / bit size</Th><Th r>Wells</Th><Th r>Rig-days</Th><Th r>Drilled (m)</Th><Th r>m/day</Th><Th r>days/1000 m</Th><Th r>Hours</Th><Th r>Productive</Th><Th r>NPT</Th><Th r>NPT %</Th></tr></thead>
+              <tbody>
+                {st.sections.map((s, i) => (
+                  <tr key={s.hole} className={i % 2 ? "bg-gray-50/60" : "bg-white"}>
+                    <td className="border border-gray-200 px-2 py-0.5 text-left">{s.hole}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right">{s.wells}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right">{s.days}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right">{s.drilled > 0 ? Math.round(s.drilled).toLocaleString() : "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right">{s.mPerDay > 0 ? s.mPerDay.toFixed(1) : "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right">{s.days1000 != null ? s.days1000.toFixed(1) : "—"}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right">{fmtH(s.hours)}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right text-teal-700">{fmtH(s.prod)}</td>
+                    <td className="border border-gray-200 px-2 py-0.5 text-right text-red-600">{fmtH(s.npt)}</td>
+                    <td className={`border border-gray-200 px-2 py-0.5 text-right ${nptToneCls(s.hours > 0 ? s.npt / s.hours : 0)}`}>{s.hours > 0 ? (100 * s.npt / s.hours).toFixed(1) : "0"}%</td>
+                  </tr>
+                ))}
+                {/* Bold Total row — reconciles to the headline KPI cards above. */}
+                <tr className="bg-gray-100 font-bold text-gray-800">
+                  <td className="border border-gray-200 px-2 py-0.5 text-left">Total</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{st.wells.length}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{h1(st.totalDays)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{st.totalDrilled > 0 ? Math.round(st.totalDrilled).toLocaleString() : "—"}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{st.mPerDay > 0 ? st.mPerDay.toFixed(1) : "—"}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{st.days1000 != null ? st.days1000.toFixed(1) : "—"}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right">{fmtH(st.totalHours)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-teal-700">{fmtH(st.prodHours)}</td>
+                  <td className="border border-gray-200 px-2 py-0.5 text-right text-red-600">{fmtH(st.nptHours)}</td>
+                  <td className={`border border-gray-200 px-2 py-0.5 text-right ${nptToneCls(st.nptPct)}`}>{(100 * st.nptPct).toFixed(1)}%</td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-gray-400 leading-snug mt-1">
+            Per-section Rig-days are that section's distinct report dates; the Total Rig-days, Pace and days/1000 m are the overall figures from the cards (a section's depth interval, hence m/day, can overlap with neighbours, so per-section drilled need not sum exactly to the total).
+          </p>
         </section>
       )}
 

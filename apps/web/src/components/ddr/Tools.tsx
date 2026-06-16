@@ -409,6 +409,8 @@ function bitStats(rows: ToolRow[]): BitStats {
  *  PDC-vs-roller-cone, reason-pulled and IADC dull-grade frequency. */
 function BitSummary({ rows, note }: { rows: ToolRow[]; note?: string }) {
   const st = useMemo(() => bitStats(rows), [rows]);
+  // Per-hole-section order = widest → narrowest (file's existing sizeVal helper).
+  const bySizeOrdered = useMemo(() => st.bySize.slice().sort((a, b) => sizeVal(b.size) - sizeVal(a.size)), [st.bySize]);
   if (note) return <div className="p-8 text-center text-sm text-gray-400">{note}</div>;
   if (!st.runs.length) return <div className="p-8 text-center text-sm text-gray-400">No bit records to summarise.</div>;
   const maxSizeF = Math.max(...st.bySize.map((s) => s.footage), 1);
@@ -428,13 +430,14 @@ function BitSummary({ rows, note }: { rows: ToolRow[]; note?: string }) {
         <Kpi label="PDC / cone" value={kindKnown ? `${st.pdc} / ${st.cone}` : "—"} sub={kindKnown ? `${Math.round(100 * st.pdc / kindKnown)}% PDC of graded` : "kind not graded"} />
       </div>
 
-      {/* Performance by bit size */}
+      {/* Performance by bit size — same headline metrics as the KPI cards, broken
+          out per hole section (widest → narrowest), with a reconciling Total row. */}
       <section>
-        <h3 className="font-semibold text-gray-700 mb-1">Performance by bit size <span className="font-normal text-gray-400">— most footage first</span></h3>
+        <h3 className="font-semibold text-gray-700 mb-1">Performance by bit size <span className="font-normal text-gray-400">— per hole section, widest → narrowest</span></h3>
         <table className="w-full tabular-nums border-collapse">
           <thead><tr><Th>Bit size</Th><Th r>Runs</Th><Th r>Footage (m)</Th><Th r>Hours</Th><Th r>ROP m/hr</Th><th className="bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 text-right w-[30%]">Footage share</th></tr></thead>
           <tbody>
-            {st.bySize.map((s, i) => (
+            {bySizeOrdered.map((s, i) => (
               <tr key={s.size} className={i % 2 ? "bg-gray-50/60" : "bg-white"}>
                 <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800">{s.size}</td>
                 <td className="border border-gray-200 px-2 py-0.5 text-right">{s.runs}</td>
@@ -449,6 +452,15 @@ function BitSummary({ rows, note }: { rows: ToolRow[]; note?: string }) {
                 </td>
               </tr>
             ))}
+            {/* Total — reconciles to the headline KPI cards. Fleet ROP = total footage ÷ total hours (not a mean of per-size ROPs). */}
+            <tr className="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300">
+              <td className="border border-gray-300 px-2 py-1 text-left">Total</td>
+              <td className="border border-gray-300 px-2 py-1 text-right">{st.runs.length}</td>
+              <td className="border border-gray-300 px-2 py-1 text-right">{Math.round(st.totFootage).toLocaleString()}</td>
+              <td className="border border-gray-300 px-2 py-1 text-right">{st.totHours > 0 ? n1(st.totHours) : "—"}</td>
+              <td className="border border-gray-300 px-2 py-1 text-right">{st.fleetRop != null ? st.fleetRop.toFixed(2) : "—"}</td>
+              <td className="border border-gray-300 px-2 py-1 text-right">100.0%</td>
+            </tr>
           </tbody>
         </table>
       </section>
@@ -792,6 +804,14 @@ function ToolSummary({ rows, cols, label, note }: { rows: ToolRow[]; cols: ToolC
                 </td>
               </tr>
             ))}
+            {/* Total — reconciles to the headline KPI cards (Records / Wells / Total hours). */}
+            <tr className="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300">
+              <td className="border border-gray-300 px-2 py-1 text-left">Total</td>
+              <td className="border border-gray-300 px-2 py-1 text-right">{st.records.toLocaleString()}</td>
+              <td className="border border-gray-300 px-2 py-1 text-right">{st.wells}</td>
+              {st.hasHours && <td className="border border-gray-300 px-2 py-1 text-right">{st.totHours != null && st.totHours > 0 ? n1(st.totHours) : "—"}</td>}
+              <td className="border border-gray-300 px-2 py-1" />
+            </tr>
           </tbody>
         </table>
       </section>

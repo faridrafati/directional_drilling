@@ -197,27 +197,34 @@ interface DirStat {
   mdMin: number | null; mdMax: number | null;
   incAvg: number | null; incMax: number | null;
   dlsAvg: number | null; dlsMax: number | null;
+  tvdMax: number | null;
 }
 
+/** Average across a flat list of numbers (null when empty), shared by the
+ *  per-group stats and the reconciling overall total so an "average" always
+ *  means the mean across every station — never the mean of per-section means. */
+const avgOf = (a: number[]): number | null => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+
 /** Build/turn statistics for one grouping key (formation or hole size) over the
- *  loaded survey stations: station count, MD span, average & max inclination and
- *  dogleg severity — the directional fingerprint of each interval. */
+ *  loaded survey stations: station count, MD span, max TVD, average & max
+ *  inclination and dogleg severity — the directional fingerprint of each interval. */
 function groupDirStats(rows: PathRow[], keyOf: (r: PathRow) => string, order: (a: DirStat, b: DirStat) => number): DirStat[] {
-  const m = new Map<string, { md: number[]; inc: number[]; dls: number[] }>();
+  const m = new Map<string, { md: number[]; inc: number[]; dls: number[]; tvd: number[] }>();
   for (const r of rows) {
     const k = keyOf(r);
-    const e = m.get(k) ?? { md: [], inc: [], dls: [] };
+    const e = m.get(k) ?? { md: [], inc: [], dls: [], tvd: [] };
     if (typeof r.md === "number") e.md.push(r.md);
     if (typeof r.inc === "number") e.inc.push(r.inc);
     if (typeof r.dls === "number") e.dls.push(r.dls);
+    if (typeof r.tvd === "number") e.tvd.push(r.tvd);
     m.set(k, e);
   }
-  const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
   return [...m.entries()].map(([key, e]) => ({
-    key, stations: e.md.length || e.inc.length || e.dls.length,
+    key, stations: e.md.length || e.inc.length || e.dls.length || e.tvd.length,
     mdMin: e.md.length ? Math.min(...e.md) : null, mdMax: e.md.length ? Math.max(...e.md) : null,
-    incAvg: avg(e.inc), incMax: e.inc.length ? Math.max(...e.inc) : null,
-    dlsAvg: avg(e.dls), dlsMax: e.dls.length ? Math.max(...e.dls) : null,
+    incAvg: avgOf(e.inc), incMax: e.inc.length ? Math.max(...e.inc) : null,
+    dlsAvg: avgOf(e.dls), dlsMax: e.dls.length ? Math.max(...e.dls) : null,
+    tvdMax: e.tvd.length ? Math.max(...e.tvd) : null,
   })).filter((s) => s.stations > 0).sort(order);
 }
 
@@ -233,13 +240,24 @@ function PathSummary({ rows, note }: { rows: PathRow[]; note?: string }) {
     const mdKey = (s: DirStat) => (s.mdMin == null ? Number.MAX_SAFE_INTEGER : s.mdMin);
     const byForm = groupDirStats(rows, (r) => r.topFormation ?? "—", (a, b) => mdKey(a) - mdKey(b) || a.key.localeCompare(b.key));
     const bySize = groupDirStats(rows, (r) => r.holeSize ?? "—", (a, b) => holeValPath(b.key) - holeValPath(a.key));
+    // Reconciling overall row: every aggregate is computed straight off ALL the
+    // loaded stations (a max is the overall max; an average is the mean across
+    // every station — NOT the mean of the per-section averages), so the bottom
+    // "Total / All" row of each table equals the headline KPI cards exactly.
+    const total: DirStat = {
+      key: "Total / All", stations: rows.length,
+      mdMin: mds.length ? Math.min(...mds) : null, mdMax: mds.length ? Math.max(...mds) : null,
+      incAvg: avgOf(incs), incMax: incs.length ? Math.max(...incs) : null,
+      dlsAvg: avgOf(dlss), dlsMax: dlss.length ? Math.max(...dlss) : null,
+      tvdMax: tvds.length ? Math.max(...tvds) : null,
+    };
     return {
       wells: wells.size, stations: rows.length,
-      maxInc: incs.length ? Math.max(...incs) : null,
-      maxDls: dlss.length ? Math.max(...dlss) : null,
-      maxTvd: tvds.length ? Math.max(...tvds) : null,
-      maxMd: mds.length ? Math.max(...mds) : null,
-      byForm, bySize,
+      maxInc: total.incMax,
+      maxDls: total.dlsMax,
+      maxTvd: total.tvdMax,
+      maxMd: total.mdMax,
+      byForm, bySize, total,
     };
   }, [rows]);
   if (note) return <div className="p-8 text-center text-sm text-gray-400">{note}</div>;
@@ -256,22 +274,31 @@ function PathSummary({ rows, note }: { rows: PathRow[]; note?: string }) {
       {sub && <div className="text-[10px] text-gray-400 truncate">{sub}</div>}
     </div>
   );
-  const DirTable = ({ stats, firstLabel }: { stats: DirStat[]; firstLabel: string }) => (
+  // One body row of the directional table. Reused for both the per-group rows and
+  // the bold reconciling "Total / All" footer so the formatting/flagging stays
+  // identical; `total` swaps zebra striping for an emphasised top-bordered row.
+  const DirRow = ({ s, zebra, total }: { s: DirStat; zebra?: boolean; total?: boolean }) => {
+    const tone = total ? "bg-gray-50 font-semibold text-gray-900 border-t-2 border-t-gray-300" : zebra ? "bg-teal-50/40" : "bg-white";
+    return (
+      <tr className={tone}>
+        <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800 whitespace-nowrap">{s.key}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right ${total ? "" : "text-gray-500"}`}>{s.stations.toLocaleString()}</td>
+        <td className="border border-gray-200 px-2 py-0.5 text-right">{f0(s.mdMin)}</td>
+        <td className="border border-gray-200 px-2 py-0.5 text-right">{f0(s.mdMax)}</td>
+        <td className="border border-gray-200 px-2 py-0.5 text-right">{f0(s.tvdMax)}</td>
+        <td className="border border-gray-200 px-2 py-0.5 text-right font-medium">{f1(s.incAvg)}</td>
+        <td className="border border-gray-200 px-2 py-0.5 text-right">{f1(s.incMax)}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right font-medium ${s.dlsAvg != null && s.dlsAvg > 3 ? "text-amber-600" : ""}`}>{f1(s.dlsAvg)}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right ${s.dlsMax != null && s.dlsMax > 5 ? "text-red-600" : s.dlsMax != null && s.dlsMax > 3 ? "text-amber-600" : ""}`}>{f1(s.dlsMax)}</td>
+      </tr>
+    );
+  };
+  const DirTable = ({ stats, firstLabel, total }: { stats: DirStat[]; firstLabel: string; total: DirStat }) => (
     <table className="w-full tabular-nums border-collapse">
-      <thead><tr><Th>{firstLabel}</Th><Th r>Stations</Th><Th r>MD from (m)</Th><Th r>MD to (m)</Th><Th r>Avg inc (°)</Th><Th r>Max inc (°)</Th><Th r>Avg DLS</Th><Th r>Max DLS</Th></tr></thead>
+      <thead><tr><Th>{firstLabel}</Th><Th r>Stations</Th><Th r>MD from (m)</Th><Th r>MD to (m)</Th><Th r>Max TVD (m)</Th><Th r>Avg inc (°)</Th><Th r>Max inc (°)</Th><Th r>Avg DLS</Th><Th r>Max DLS</Th></tr></thead>
       <tbody>
-        {stats.map((s, i) => (
-          <tr key={s.key} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
-            <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800 whitespace-nowrap">{s.key}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{s.stations}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right">{f0(s.mdMin)}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right">{f0(s.mdMax)}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right font-medium">{f1(s.incAvg)}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right">{f1(s.incMax)}</td>
-            <td className={`border border-gray-200 px-2 py-0.5 text-right font-medium ${s.dlsAvg != null && s.dlsAvg > 3 ? "text-amber-600" : ""}`}>{f1(s.dlsAvg)}</td>
-            <td className={`border border-gray-200 px-2 py-0.5 text-right ${s.dlsMax != null && s.dlsMax > 5 ? "text-red-600" : s.dlsMax != null && s.dlsMax > 3 ? "text-amber-600" : ""}`}>{f1(s.dlsMax)}</td>
-          </tr>
-        ))}
+        {stats.map((s, i) => <DirRow key={s.key} s={s} zebra={i % 2 === 1} />)}
+        <DirRow s={total} total />
       </tbody>
     </table>
   );
@@ -289,19 +316,20 @@ function PathSummary({ rows, note }: { rows: PathRow[]; note?: string }) {
       {st.byForm.length > 0 && (
         <section>
           <h3 className="font-semibold text-gray-700 mb-1">Directional profile by top formation <span className="font-normal text-gray-400">— shallowest → deepest</span></h3>
-          <DirTable stats={st.byForm} firstLabel="Top formation" />
+          <DirTable stats={st.byForm} firstLabel="Top formation" total={st.total} />
         </section>
       )}
 
       {st.bySize.length > 0 && (
         <section>
-          <h3 className="font-semibold text-gray-700 mb-1">Directional profile by hole section <span className="font-normal text-gray-400">— widest → narrowest</span></h3>
-          <DirTable stats={st.bySize} firstLabel="Hole / bit size" />
+          <h3 className="font-semibold text-gray-700 mb-1">Directional profile by hole section <span className="font-normal text-gray-400">— widest → narrowest; the bold row reconciles to the KPI cards above</span></h3>
+          <DirTable stats={st.bySize} firstLabel="Hole / bit size" total={st.total} />
         </section>
       )}
 
       <p className="text-[10px] text-gray-400 leading-snug">
         Built from the loaded directional-survey stations. Inclination and dogleg severity (DLS, °/30 m) are summarised per top formation and per hole section, so a high build/turn interval stands out.
+        The bold <b>Total / All</b> row of each table is computed across every station — a max is the overall max, an average the mean over all stations (not the mean of the per-section values) — so it matches the headline KPI cards.
         DLS &gt; 3°/30 m is flagged amber, &gt; 5 red. The top formation is resolved from the survey station MD against the well’s formation tops.
       </p>
     </div>

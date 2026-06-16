@@ -1208,7 +1208,11 @@ function BarCell({ text, frac, color = "#1e40af", align = "right" }: {
 
 interface SizeAgg {
   size: string; n: number; meters: number; hours: number;
-  meanRop: number; bestRop: number; medMse: number | null; avgDull: number | null;
+  // overallRop = footage-weighted pace (total m ÷ total hr) — reconciles to the
+  // "Overall ROP" headline card; meanRop = simple per-run mean. worstRop = slowest
+  // single run in the group, matching the "Slowest run ROP" card.
+  meanRop: number; overallRop: number; bestRop: number; worstRop: number;
+  medMse: number | null; avgDull: number | null;
 }
 /** Roll one group of points up to the section-performance row shape. */
 function rollupAgg(size: string, ps: RopPoint[]): SizeAgg {
@@ -1216,10 +1220,12 @@ function rollupAgg(size: string, ps: RopPoint[]): SizeAgg {
   const hours = ps.reduce((a, p) => a + (p.bitHour ?? 0), 0);
   const mses = ps.map((p) => p.mse).filter((v): v is number => v != null && v > 0);
   const dulls = ps.map((p) => (p.dullInner != null && p.dullOuter != null ? (p.dullInner + p.dullOuter) / 2 : null)).filter((v): v is number => v != null);
+  const meanRop = mean(ps.map((p) => p.rop)) ?? 0;
   return {
-    size, n: ps.length, meters, hours,
-    meanRop: mean(ps.map((p) => p.rop)) ?? 0,
+    size, n: ps.length, meters, hours, meanRop,
+    overallRop: hours > 0 ? meters / hours : meanRop,
     bestRop: Math.max(...ps.map((p) => p.rop)),
+    worstRop: Math.min(...ps.map((p) => p.rop)),
     medMse: median(mses),
     avgDull: dulls.length ? mean(dulls)! : null,
   };
@@ -1312,7 +1318,7 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
         <div className="overflow-auto">
           <table className="text-[11px] tabular-nums border-collapse w-full">
             <thead><tr className="bg-gray-100">
-              {["Section", "Runs", "Footage (m)", "Hours", "Mean ROP", "Best ROP", "Median MSE", "Avg dull"].map((h, i) => (
+              {["Section", "Runs", "Footage (m)", "Hours", "Overall ROP", "Mean ROP", "Best ROP", "Slowest ROP", "Median MSE", "Avg dull"].map((h, i) => (
                 <th key={h} className={`border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
               ))}
             </tr></thead>
@@ -1323,26 +1329,30 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
                   <td className="border border-gray-300 px-2 py-0.5 text-right">{s.n}</td>
                   <BarCell text={intc(s.meters)} frac={s.meters / maxSizeM} color={colorForSize(bitSizes, s.size)} />
                   <td className="border border-gray-300 px-2 py-0.5 text-right">{intc(s.hours)}</td>
-                  <BarCell text={s.meanRop.toFixed(1)} frac={s.meanRop / maxSizeRop} color="#1e40af" />
-                  <td className="border border-gray-300 px-2 py-0.5 text-right">{fmt1(s.bestRop)}</td>
+                  <BarCell text={s.overallRop.toFixed(1)} frac={s.overallRop / maxSizeRop} color="#1e40af" />
+                  <td className="border border-gray-300 px-2 py-0.5 text-right">{s.meanRop.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-2 py-0.5 text-right text-green-700">{fmt1(s.bestRop)}</td>
+                  <td className="border border-gray-300 px-2 py-0.5 text-right text-red-700">{fmt1(s.worstRop)}</td>
                   <td className="border border-gray-300 px-2 py-0.5 text-right">{s.medMse != null ? intc(s.medMse) : "—"}</td>
                   <td className="border border-gray-300 px-2 py-0.5 text-right">{s.avgDull != null ? s.avgDull.toFixed(1) : "—"}</td>
                 </tr>
               ))}
               <tr className="bg-amber-50 font-semibold text-gray-800">
-                <td className="border border-gray-300 px-2 py-0.5 text-left">All</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-left">Total / overall</td>
                 <td className="border border-gray-300 px-2 py-0.5 text-right">{kpi.n}</td>
                 <td className="border border-gray-300 px-2 py-0.5 text-right">{intc(kpi.totalM)}</td>
                 <td className="border border-gray-300 px-2 py-0.5 text-right">{intc(kpi.totalHr)}</td>
                 <td className="border border-gray-300 px-2 py-0.5 text-right">{kpi.overallRop.toFixed(1)}</td>
-                <td className="border border-gray-300 px-2 py-0.5 text-right">{fmt1(kpi.best.rop)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right">{kpi.meanRop.toFixed(1)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right text-green-700">{fmt1(kpi.best.rop)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right text-red-700">{fmt1(kpi.worst.rop)}</td>
                 <td className="border border-gray-300 px-2 py-0.5 text-right">{kpi.medMse != null ? intc(kpi.medMse) : "—"}</td>
                 <td className="border border-gray-300 px-2 py-0.5 text-right">—</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div className="px-3 py-1 text-[11px] text-gray-400">Mean ROP = simple average per run; the “All” row uses footage-weighted overall ROP (total m ÷ total hr). Avg dull = (inner + outer) ÷ 2 on the IADC dull-grade scale (0 = new, 8 = worn).</div>
+        <div className="px-3 py-1 text-[11px] text-gray-400">Overall ROP = footage-weighted pace (section metres ÷ section rotating hours) and reconciles to the headline cards on the “Total / overall” row; Mean ROP = simple average per run. Best / Slowest ROP are the fastest / slowest single runs. Avg dull = (inner + outer) ÷ 2 on the IADC dull-grade scale (0 = new, 8 = worn).</div>
       </div>
 
       {/* Performance by top formation */}
@@ -1355,7 +1365,7 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
           <div className="overflow-auto">
             <table className="text-[11px] tabular-nums border-collapse w-full">
               <thead><tr className="bg-gray-100">
-                {["Top formation", "Runs", "Footage (m)", "Hours", "Mean ROP", "Best ROP", "Median MSE", "Avg dull"].map((h, i) => (
+                {["Top formation", "Runs", "Footage (m)", "Hours", "Overall ROP", "Mean ROP", "Best ROP", "Slowest ROP", "Median MSE", "Avg dull"].map((h, i) => (
                   <th key={h} className={`border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
                 ))}
               </tr></thead>
@@ -1366,8 +1376,10 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
                     <td className="border border-gray-300 px-2 py-0.5 text-right">{s.n}</td>
                     <BarCell text={intc(s.meters)} frac={s.meters / maxFormM} color="#7c3aed" />
                     <td className="border border-gray-300 px-2 py-0.5 text-right">{intc(s.hours)}</td>
-                    <BarCell text={s.meanRop.toFixed(1)} frac={s.meanRop / maxFormRop} color="#1e40af" />
-                    <td className="border border-gray-300 px-2 py-0.5 text-right">{fmt1(s.bestRop)}</td>
+                    <BarCell text={s.overallRop.toFixed(1)} frac={s.overallRop / maxFormRop} color="#1e40af" />
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{s.meanRop.toFixed(1)}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-right text-green-700">{fmt1(s.bestRop)}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-right text-red-700">{fmt1(s.worstRop)}</td>
                     <td className="border border-gray-300 px-2 py-0.5 text-right">{s.medMse != null ? intc(s.medMse) : "—"}</td>
                     <td className="border border-gray-300 px-2 py-0.5 text-right">{s.avgDull != null ? s.avgDull.toFixed(1) : "—"}</td>
                   </tr>

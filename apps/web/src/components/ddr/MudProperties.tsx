@@ -456,13 +456,17 @@ const PROP_SPECS: PropSpec[] = [
 ];
 
 interface PropStat { spec: PropSpec; n: number; min: number; avg: number; max: number; outLo: number; outHi: number }
-interface SectionStat { hole: string; n: number; mwMin: number; mwAvg: number; mwMax: number; pvAvg: number | null; ypAvg: number | null; solidsAvg: number | null }
+interface SectionStat { hole: string; wells: number; n: number; mwMin: number; mwAvg: number; mwMax: number; pvAvg: number | null; ypAvg: number | null; solidsAvg: number | null; solidsMax: number | null }
 interface MudStats {
   wells: number; intervals: number; days: number;
   mw: { n: number; min: number; avg: number; max: number } | null;
   pvAvg: number | null; ypAvg: number | null; solidsAvg: number | null; maxSolids: number | null;
   mudTypes: { name: string; n: number }[];
   props: PropStat[]; sections: SectionStat[]; formations: SectionStat[];
+  // Reconciling "Total / All" row for the breakdown tables: the same OVERALL
+  // averages the headline KPI cards show (over ALL readings — NOT the mean of
+  // the per-section means), so the bottom row ties out to the cards above.
+  total: SectionStat | null;
 }
 
 function mean(a: number[]): number { return a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0; }
@@ -471,23 +475,24 @@ function mean(a: number[]): number { return a.length ? a.reduce((x, y) => x + y,
  *  (hole/bit size or top formation). Shared by the two breakdown tables so they
  *  stay in lock-step. `order` sorts the resulting buckets. */
 function groupMudStats(rows: MudRow[], keyOf: (r: MudRow) => string, order: (a: SectionStat, b: SectionStat) => number): SectionStat[] {
-  const m = new Map<string, { mw: number[]; pv: number[]; yp: number[]; sol: number[] }>();
+  const m = new Map<string, { mw: number[]; pv: number[]; yp: number[]; sol: number[]; wells: Set<string> }>();
   for (const r of rows) {
     const k = keyOf(r);
-    const e = m.get(k) ?? { mw: [], pv: [], yp: [], sol: [] };
+    const e = m.get(k) ?? { mw: [], pv: [], yp: [], sol: [], wells: new Set<string>() };
     if (typeof r.maxWeight === "number") e.mw.push(r.maxWeight);
     if (typeof r.pv === "number") e.pv.push(r.pv);
     if (typeof r.yp === "number") e.yp.push(r.yp);
     if (typeof r.solids === "number") e.sol.push(r.solids);
+    e.wells.add(r.wellCode);
     m.set(k, e);
   }
   return [...m.entries()]
     .filter(([, e]) => e.mw.length > 0)
     .map(([hole, e]) => ({
-      hole, n: e.mw.length,
+      hole, wells: e.wells.size, n: e.mw.length,
       mwMin: Math.min(...e.mw), mwAvg: mean(e.mw), mwMax: Math.max(...e.mw),
       pvAvg: e.pv.length ? mean(e.pv) : null, ypAvg: e.yp.length ? mean(e.yp) : null,
-      solidsAvg: e.sol.length ? mean(e.sol) : null,
+      solidsAvg: e.sol.length ? mean(e.sol) : null, solidsMax: e.sol.length ? Math.max(...e.sol) : null,
     }))
     .sort(order);
 }
@@ -519,38 +524,65 @@ function computeMudStats(rows: MudRow[]): MudStats {
   // ordered by reading count (most-sampled first).
   const sections = groupMudStats(rows, (r) => r.bitSize ?? "—", (a, b) => holeVal(b.hole) - holeVal(a.hole));
   const formations = groupMudStats(rows, (r) => r.topFormation ?? "—", (a, b) => b.n - a.n || a.hole.localeCompare(b.hole));
+  const mw = mwAll.length ? { n: mwAll.length, min: Math.min(...mwAll), avg: mean(mwAll), max: Math.max(...mwAll) } : null;
+  const pvAvg = pvAll.length ? mean(pvAll) : null, ypAvg = ypAll.length ? mean(ypAll) : null;
+  const solidsAvg = solAll.length ? mean(solAll) : null, maxSolids = solAll.length ? Math.max(...solAll) : null;
+  // Reconciling row: every figure is the OVERALL value the KPI cards report,
+  // recomputed across all readings rather than averaged from the section rows.
+  const total: SectionStat | null = mw
+    ? { hole: "Total / All", wells: wells.size, n: mw.n, mwMin: mw.min, mwAvg: mw.avg, mwMax: mw.max, pvAvg, ypAvg, solidsAvg, solidsMax: maxSolids }
+    : null;
   return {
     wells: wells.size, intervals: rows.length, days: days.size,
-    mw: mwAll.length ? { n: mwAll.length, min: Math.min(...mwAll), avg: mean(mwAll), max: Math.max(...mwAll) } : null,
-    pvAvg: pvAll.length ? mean(pvAll) : null, ypAvg: ypAll.length ? mean(ypAll) : null,
-    solidsAvg: solAll.length ? mean(solAll) : null, maxSolids: solAll.length ? Math.max(...solAll) : null,
+    mw, pvAvg, ypAvg, solidsAvg, maxSolids,
     mudTypes: [...mudTypeN.entries()].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n),
-    props, sections, formations,
+    props, sections, formations, total,
   };
 }
 
 /** The mud-weight / rheology breakdown grid, shared by the by-hole-section and
- *  by-top-formation tables (identical columns, only the first header differs). */
-function MudGroupTable({ rows, firstLabel, Th }: {
-  rows: SectionStat[]; firstLabel: string; Th: (p: { children: ReactNode; r?: boolean }) => JSX.Element;
+ *  by-top-formation tables (identical columns, only the first header differs).
+ *  `total`, when given, renders a bold reconciling row whose figures equal the
+ *  headline KPI cards (overall averages across all readings). */
+function MudGroupTable({ rows, firstLabel, Th, total }: {
+  rows: SectionStat[]; firstLabel: string; Th: (p: { children: ReactNode; r?: boolean }) => JSX.Element; total?: SectionStat | null;
 }) {
+  const solTone = (v: number | null) => (v != null && v > 40 ? "text-red-600" : v != null && v > 30 ? "text-amber-600" : "");
+  // One row of value cells, reused by the body rows and the bold total row so
+  // they stay column-aligned and share number formatting.
+  const cells = (s: SectionStat, bold: boolean) => {
+    const b = bold ? " font-bold" : "";
+    return (
+      <>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right text-gray-500${b}`}>{s.wells}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right text-gray-500${b}`}>{s.n}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right${b}`}>{s.mwMin.toFixed(0)}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right font-medium${b}`}>{s.mwAvg.toFixed(0)}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right text-gray-600${b}`}>{toPpg(s.mwAvg).toFixed(1)}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right${b}`}>{s.mwMax.toFixed(0)}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right${b}`}>{s.pvAvg != null ? s.pvAvg.toFixed(0) : "—"}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right${b}`}>{s.ypAvg != null ? s.ypAvg.toFixed(0) : "—"}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right ${solTone(s.solidsAvg)}${b}`}>{s.solidsAvg != null ? s.solidsAvg.toFixed(1) : "—"}</td>
+        <td className={`border border-gray-200 px-2 py-0.5 text-right ${solTone(s.solidsMax)}${b}`}>{s.solidsMax != null ? s.solidsMax.toFixed(0) : "—"}</td>
+      </>
+    );
+  };
   return (
     <table className="w-full tabular-nums border-collapse">
-      <thead><tr><Th>{firstLabel}</Th><Th r>Readings</Th><Th r>Min wt (pcf)</Th><Th r>Avg wt (pcf)</Th><Th r>Avg wt (ppg)</Th><Th r>Max wt (pcf)</Th><Th r>Avg PV</Th><Th r>Avg YP</Th><Th r>Avg solids %</Th></tr></thead>
+      <thead><tr><Th>{firstLabel}</Th><Th r>Wells</Th><Th r>Readings</Th><Th r>Min wt (pcf)</Th><Th r>Avg wt (pcf)</Th><Th r>Avg wt (ppg)</Th><Th r>Max wt (pcf)</Th><Th r>Avg PV</Th><Th r>Avg YP</Th><Th r>Avg solids %</Th><Th r>Max solids %</Th></tr></thead>
       <tbody>
         {rows.map((s, i) => (
           <tr key={s.hole} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
             <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800">{s.hole}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{s.n}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right">{s.mwMin.toFixed(0)}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right font-medium">{s.mwAvg.toFixed(0)}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-600">{toPpg(s.mwAvg).toFixed(1)}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right">{s.mwMax.toFixed(0)}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right">{s.pvAvg != null ? s.pvAvg.toFixed(0) : "—"}</td>
-            <td className="border border-gray-200 px-2 py-0.5 text-right">{s.ypAvg != null ? s.ypAvg.toFixed(0) : "—"}</td>
-            <td className={`border border-gray-200 px-2 py-0.5 text-right ${s.solidsAvg != null && s.solidsAvg > 40 ? "text-red-600" : s.solidsAvg != null && s.solidsAvg > 30 ? "text-amber-600" : ""}`}>{s.solidsAvg != null ? s.solidsAvg.toFixed(1) : "—"}</td>
+            {cells(s, false)}
           </tr>
         ))}
+        {total && (
+          <tr className="bg-gray-100">
+            <td className="border border-gray-200 px-2 py-0.5 text-left font-bold text-gray-800">{total.hole}</td>
+            {cells(total, true)}
+          </tr>
+        )}
       </tbody>
     </table>
   );
@@ -613,8 +645,8 @@ function MudSummary({ rows, wellNames, note }: { rows: MudRow[]; wellNames: Map<
       {/* Mud weight & rheology by hole section */}
       {st.sections.length > 0 && (
         <section>
-          <h3 className="font-semibold text-gray-700 mb-1">Mud weight &amp; rheology by hole section <span className="font-normal text-gray-400">— widest → narrowest</span></h3>
-          <MudGroupTable rows={st.sections} firstLabel="Hole / bit size" Th={Th} />
+          <h3 className="font-semibold text-gray-700 mb-1">Mud weight &amp; rheology by hole section <span className="font-normal text-gray-400">— widest → narrowest; bold row reconciles to the headline KPIs</span></h3>
+          <MudGroupTable rows={st.sections} firstLabel="Hole / bit size" Th={Th} total={st.total} />
         </section>
       )}
 

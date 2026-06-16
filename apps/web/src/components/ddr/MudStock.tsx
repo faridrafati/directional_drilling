@@ -394,19 +394,59 @@ function StockSummary({ rows, planningFilters, note, truncated, total, onShowPla
     return { totalMetres, grandR, grandD, useDollar, grand, pareto, hasCost: matCost.length > 0 };
   }, [plan]);
 
+  // Per-hole-section breakdown of the headline KPIs, from the FULL planning payload
+  // (server-side over ALL wells) — NOT the loaded `rows`, which are capped (e.g.
+  // 8000 of 55k for a big field) and would undercount. Per section: metres drilled,
+  // quantity used per unit (units aren't additive — show the dominant, others
+  // summarised), used / 1000 m and cost. The Total row reconciles to the (also
+  // plan-derived) headline cards; rates are the OVERALL total ÷ total metres.
+  const sectionKpis = useMemo(() => {
+    if (!plan || !plan.sections.length) return null;
+    const secRows = plan.sections.map((sec) => {
+      const byUnit = new Map<string, number>(); let costR = 0, costD = 0;
+      for (const m of plan.materials) { const b = m.bySection.find((x) => x.code === sec.code); if (!b) continue; if (b.used > 0) byUnit.set(m.unit || "—", (byUnit.get(m.unit || "—") ?? 0) + b.used); costR += b.costR; costD += b.costD; }
+      const units = [...byUnit.entries()].sort((a, b) => b[1] - a[1]);
+      return { code: sec.code, size: sec.size, wells: sec.wells, metres: sec.metres, topUnit: units[0] ?? null, otherUnits: units.slice(1), costR, costD };
+    });
+    const totMetres = secRows.reduce((s, r) => s + r.metres, 0);
+    const totByUnit = new Map<string, number>();
+    for (const r of secRows) for (const [u, v] of [...(r.topUnit ? [r.topUnit] : []), ...r.otherUnits]) totByUnit.set(u, (totByUnit.get(u) ?? 0) + v);
+    const totUnits = [...totByUnit.entries()].sort((a, b) => b[1] - a[1]);
+    const totCostR = secRows.reduce((s, r) => s + r.costR, 0), totCostD = secRows.reduce((s, r) => s + r.costD, 0);
+    const useDollar = totCostD > 0, hasCost = totCostR > 0 || totCostD > 0;
+    const colUnit = totUnits[0]?.[0] ?? null;
+    return { rows: secRows, totMetres, totUnits, colUnit, totCostR, totCostD, useDollar, hasCost };
+  }, [plan]);
+
+  // FULL (uncapped) headline aggregates from the planning payload, since the loaded
+  // `rows` are capped and would undercount wells / used / materials for a big field.
+  const full = useMemo(() => {
+    if (!plan) return null;
+    const byUnit = new Map<string, number>();
+    for (const m of plan.materials) if (m.totalUsed > 0) byUnit.set(m.unit || "—", (byUnit.get(m.unit || "—") ?? 0) + m.totalUsed);
+    const usedByUnit = [...byUnit.entries()].sort((a, b) => b[1] - a[1]);
+    const recByMat = new Map<string, number>();
+    for (const m of agg.mats) recByMat.set(`${m.material}|${m.unit}`, m.rec);   // rec only in (capped) rows
+    const materials = plan.materials.map((m) => ({ material: m.material, unit: m.unit, used: m.totalUsed, rec: recByMat.get(`${m.material}|${m.unit}`) ?? 0 }))
+      .filter((m) => m.used > 0).sort((a, b) => b.used - a.used);
+    return { wells: plan.wellCount, distinctMaterials: new Set(plan.materials.map((m) => m.material)).size, units: byUnit.size, usedByUnit, materials };
+  }, [plan, agg.mats]);
+
   if (note) return <div className="p-8 text-center text-sm text-gray-400">{note}</div>;
   if (!rows.length) return <div className="p-8 text-center text-sm text-gray-400">No mud-stock entries to summarise.</div>;
 
   const totalMetres = plan ? plan.sections.reduce((s, x) => s + x.metres, 0) : 0;
   // Total used KPI: if a single dominant unit, show it; else show the unit count.
-  const unitList = [...agg.usedByUnit.entries()].sort((a, b) => b[1] - a[1]);
+  // Prefer the FULL (plan) figures; fall back to the (capped) row aggregate.
+  const unitList = full ? full.usedByUnit : [...agg.usedByUnit.entries()].sort((a, b) => b[1] - a[1]);
   const topUnit = unitList[0];
   const Th = ({ children, r }: { children: React.ReactNode; r?: boolean }) => (
     <th className={`bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 ${r ? "text-right" : "text-left"}`}>{children}</th>
   );
 
   // Top materials by quantity used (per material+unit), with inline share bars.
-  const topUsed = agg.mats.filter((m) => m.used > 0).sort((a, b) => b.used - a.used).slice(0, 15);
+  // FULL (plan) totals when available — the capped rows would undercount.
+  const topUsed = (full ? full.materials : agg.mats.filter((m) => m.used > 0).sort((a, b) => b.used - a.used)).slice(0, 15);
   const maxUsed = Math.max(1, ...topUsed.map((m) => m.used));
 
   // Inventory/stock status: materials with a latest stock or an outstanding figure.
@@ -419,8 +459,8 @@ function StockSummary({ rows, planningFilters, note, truncated, total, onShowPla
     <div className="p-3 space-y-5 text-[11px]">
       {/* Headline KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
-        <Kpi label="Wells" value={String(agg.wells.size)} sub={truncated ? `rows capped at ${rows.length.toLocaleString()} of ${total?.toLocaleString()}` : `${rows.length.toLocaleString()} stock rows`} />
-        <Kpi label="Materials" value={String(agg.distinctMats)} sub={`${agg.units.size} unit${agg.units.size === 1 ? "" : "s"} of use`} />
+        <Kpi label="Wells" value={String(full ? full.wells : agg.wells.size)} sub={full ? "with mud-stock consumption" : `${rows.length.toLocaleString()} stock rows`} />
+        <Kpi label="Materials" value={String(full ? full.distinctMaterials : agg.distinctMats)} sub={`${full ? full.units : agg.units.size} unit${(full ? full.units : agg.units.size) === 1 ? "" : "s"} of use`} />
         <Kpi label={topUnit ? `Used · ${topUnit[0]}` : "Total used"} value={topUnit ? fmtBig(topUnit[1]) : "—"} sub={unitList.length > 1 ? `+ ${unitList.length - 1} other unit${unitList.length - 1 === 1 ? "" : "s"} (not additive)` : (topUnit ? `${topUnit[0]} consumed` : undefined)} tone="blue" />
         <Kpi label="Depth drilled" value={totalMetres > 0 ? `${fmtBig(totalMetres)} m` : "—"} sub={plan ? `${plan.wellCount} offset well${plan.wellCount === 1 ? "" : "s"} · ${plan.sections.length} section${plan.sections.length === 1 ? "" : "s"}` : "from planning"} />
         {cost?.hasCost ? (
@@ -444,7 +484,7 @@ function StockSummary({ rows, planningFilters, note, truncated, total, onShowPla
             <thead><tr><Th>Material</Th><Th>Unit</Th><Th r>Used</Th><Th r>Received</Th><th className="bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 text-right w-[34%]">Share of its unit</th></tr></thead>
             <tbody>
               {topUsed.map((m, i) => {
-                const unitTotal = agg.usedByUnit.get(m.unit || "—") ?? m.used;
+                const unitTotal = (full ? full.usedByUnit.find(([u]) => u === (m.unit || "—"))?.[1] : agg.usedByUnit.get(m.unit || "—")) ?? m.used;
                 return (
                   <tr key={`${m.material}|${m.unit}`} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
                     <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800 whitespace-nowrap">{m.material}</td>
@@ -495,6 +535,78 @@ function StockSummary({ rows, planningFilters, note, truncated, total, onShowPla
         )}
       </section>
 
+      {/* Headline KPIs broken down per hole section, with a reconciling Total row */}
+      {sectionKpis && (
+        <section>
+          <h3 className="font-semibold text-gray-700 mb-1">KPIs by hole section <span className="font-normal text-gray-400">— widest → narrowest; the Total row reconciles to the cards above</span></h3>
+          <div className="overflow-x-auto">
+            <table className="w-full tabular-nums border-collapse">
+              <thead>
+                <tr>
+                  <Th>Hole</Th>
+                  <Th r>Wells</Th>
+                  <Th r>Depth drilled (m)</Th>
+                  <Th r>{sectionKpis.colUnit ? `Used · ${sectionKpis.colUnit}` : "Used"}</Th>
+                  <Th r>{sectionKpis.colUnit ? `${sectionKpis.colUnit} / 1000 m` : "Used / 1000 m"}</Th>
+                  {sectionKpis.hasCost && <Th r>{sectionKpis.useDollar ? "Cost ($)" : "Cost (Rial)"}</Th>}
+                  {sectionKpis.hasCost && <Th r>Cost / m</Th>}
+                </tr>
+              </thead>
+              <tbody>
+                {sectionKpis.rows.map((s, i) => {
+                  // The Used column is keyed to the OVERALL dominant unit so the
+                  // column is additive; a section measured only in another unit
+                  // shows "—" here (its quantity surfaces in the tooltip/other cols).
+                  const colUsed = sectionKpis.colUnit
+                    ? (s.topUnit?.[0] === sectionKpis.colUnit ? s.topUnit[1] : s.otherUnits.find(([u]) => u === sectionKpis.colUnit)?.[1] ?? null)
+                    : (s.topUnit?.[1] ?? null);
+                  const otherUnits = [s.topUnit, ...s.otherUnits].filter((u): u is [string, number] => !!u && u[0] !== sectionKpis.colUnit);
+                  const cost = sectionKpis.useDollar ? s.costD : s.costR;
+                  return (
+                    <tr key={s.code} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
+                      <td className="border border-gray-200 px-2 py-0.5 text-left font-medium text-gray-800 whitespace-nowrap">{s.size}</td>
+                      <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-500">{s.wells}</td>
+                      <td className="border border-gray-200 px-2 py-0.5 text-right">{s.metres > 0 ? fmtBig(s.metres) : "—"}</td>
+                      <td className="border border-gray-200 px-2 py-0.5 text-right font-medium" title={otherUnits.length ? otherUnits.map(([u, v]) => `${fmtBig(v)} ${u}`).join(" · ") : undefined}>
+                        {colUsed != null ? fmtBig(colUsed) : "—"}
+                        {otherUnits.length > 0 && <span className="text-gray-400"> +{otherUnits.length}u</span>}
+                      </td>
+                      <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-600">{colUsed != null && s.metres > 0 ? fmtRate(colUsed / (s.metres / 1000)) : "—"}</td>
+                      {sectionKpis.hasCost && <td className="border border-gray-200 px-2 py-0.5 text-right">{cost > 0 ? (sectionKpis.useDollar ? `$${fmtBig(cost)}` : fmtBig(cost)) : "—"}</td>}
+                      {sectionKpis.hasCost && <td className="border border-gray-200 px-2 py-0.5 text-right text-gray-600">{cost > 0 && s.metres > 0 ? (sectionKpis.useDollar ? `$${fmtRate(cost / s.metres)}` : fmtRate(cost / s.metres)) : "—"}</td>}
+                    </tr>
+                  );
+                })}
+                {/* Total row — reconciles to the headline KPI cards. Rates are the
+                    OVERALL total ÷ total metres, NOT an average of the section rates. */}
+                {(() => {
+                  const colTot = sectionKpis.colUnit ? (sectionKpis.totUnits.find(([u]) => u === sectionKpis.colUnit)?.[1] ?? 0) : (sectionKpis.totUnits[0]?.[1] ?? 0);
+                  const otherTot = sectionKpis.totUnits.filter(([u]) => u !== sectionKpis.colUnit);
+                  const totCost = sectionKpis.useDollar ? sectionKpis.totCostD : sectionKpis.totCostR;
+                  return (
+                    <tr className="bg-gray-100 font-bold text-gray-800 border-t-2 border-gray-300">
+                      <td className="border border-gray-200 px-2 py-1 text-left">Total</td>
+                      <td className="border border-gray-200 px-2 py-1 text-right">{sectionKpis.rows.length} sec</td>
+                      <td className="border border-gray-200 px-2 py-1 text-right">{sectionKpis.totMetres > 0 ? `${fmtBig(sectionKpis.totMetres)} m` : "—"}</td>
+                      <td className="border border-gray-200 px-2 py-1 text-right" title={otherTot.length ? otherTot.map(([u, v]) => `${fmtBig(v)} ${u}`).join(" · ") : undefined}>
+                        {sectionKpis.colUnit ? fmtBig(colTot) : "—"}
+                        {otherTot.length > 0 && <span className="font-normal text-gray-500"> +{otherTot.length}u</span>}
+                      </td>
+                      <td className="border border-gray-200 px-2 py-1 text-right">{sectionKpis.colUnit && sectionKpis.totMetres > 0 ? fmtRate(colTot / (sectionKpis.totMetres / 1000)) : "—"}</td>
+                      {sectionKpis.hasCost && <td className="border border-gray-200 px-2 py-1 text-right">{totCost > 0 ? (sectionKpis.useDollar ? `$${fmtBig(totCost)}` : fmtBig(totCost)) : "—"}</td>}
+                      {sectionKpis.hasCost && <td className="border border-gray-200 px-2 py-1 text-right">{totCost > 0 && sectionKpis.totMetres > 0 ? (sectionKpis.useDollar ? `$${fmtRate(totCost / sectionKpis.totMetres)}` : fmtRate(totCost / sectionKpis.totMetres)) : "—"}</td>}
+                    </tr>
+                  );
+                })()}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-gray-400 leading-snug mt-1">
+            Per-section figures come from the same offset mud-planning analytics as the Depth-drilled and Cost cards above, so the Total row’s metres and cost reconcile to those cards. Used is keyed to the overall dominant unit ({sectionKpis.colUnit ?? "—"}); sections measured in other units show “+Nu” with the breakdown on hover (units aren’t additive). Rates in the Total row are total ÷ total metres, not a section average.
+          </p>
+        </section>
+      )}
+
       {/* Consumption by hole section */}
       {plan && plan.sections.length > 0 && (
         <section>
@@ -506,7 +618,7 @@ function StockSummary({ rows, planningFilters, note, truncated, total, onShowPla
       {/* Consumption by top formation */}
       {agg.formations.length > 0 && (
         <section>
-          <h3 className="font-semibold text-gray-700 mb-1">Consumption by top formation <span className="font-normal text-gray-400">— total used per formation &amp; unit (units aren’t additive)</span></h3>
+          <h3 className="font-semibold text-gray-700 mb-1">Consumption by top formation <span className="font-normal text-gray-400">— total used per formation &amp; unit (units aren’t additive)</span>{truncated && <span className="font-normal text-amber-600"> · loaded sample ({rows.length.toLocaleString()} of {total?.toLocaleString()} rows)</span>}</h3>
           <table className="w-full tabular-nums border-collapse">
             <thead><tr><Th>Top formation</Th><Th>Unit</Th><Th r>Wells</Th><Th r>Used</Th><th className="bg-gray-100 border border-gray-200 px-2 py-1 font-medium text-gray-600 text-right w-[34%]">Share of its unit</th></tr></thead>
             <tbody>
@@ -532,7 +644,7 @@ function StockSummary({ rows, planningFilters, note, truncated, total, onShowPla
       {/* Inventory / stock balance */}
       {inv.length > 0 && (
         <section>
-          <h3 className="font-semibold text-gray-700 mb-1">Inventory status <span className="font-normal text-gray-400">— latest stock snapshot &amp; period flows</span></h3>
+          <h3 className="font-semibold text-gray-700 mb-1">Inventory status <span className="font-normal text-gray-400">— latest stock snapshot &amp; period flows</span>{truncated && <span className="font-normal text-amber-600"> · loaded sample ({rows.length.toLocaleString()} of {total?.toLocaleString()} rows)</span>}</h3>
           <div className="overflow-x-auto">
             <table className="w-full tabular-nums border-collapse">
               <thead><tr><Th>Material</Th><Th>Unit</Th><Th r>Stock (latest)</Th><Th r>Received</Th><Th r>Sent</Th><Th r>Req</Th><Th r>OS</Th></tr></thead>
