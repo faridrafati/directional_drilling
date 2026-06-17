@@ -16,7 +16,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ResponsiveContainer, ScatterChart, Scatter, BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, Cell,
+  XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, Cell, ReferenceArea, ReferenceLine,
 } from "recharts";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, GizmoHelper, GizmoViewport, Text } from "@react-three/drei";
@@ -49,6 +49,8 @@ interface RopPoint {
   hsi: number | null; hsiSource: "reported" | "computed" | null;
   tfa: number | null; nozzles: number[] | null; flow: number | null; spp: number | null; mudWeight: number | null;
   dullInner: number | null; dullOuter: number | null; bitHour: number | null;
+  dullGrade: string | null; dullTitle: string | null;
+  reasonCode: string | null; reasonLabel: string | null;
 }
 interface RopData {
   points: RopPoint[]; bitSizes: string[]; truncated?: boolean; total?: number; note?: string;
@@ -1100,7 +1102,9 @@ const TABLE_COLS: { key: string; label: string; align: "left" | "right"; get: (p
   { key: "hsi", label: "HSI", align: "right", get: (p) => (p.hsi != null ? fmt1(p.hsi) : "—") },
   { key: "flow", label: "Flow (gpm)", align: "right", get: (p) => (p.flow != null ? Math.round(p.flow) : "—") },
   { key: "spp", label: "SPP (psi)", align: "right", get: (p) => (p.spp != null ? Math.round(p.spp) : "—") },
-  { key: "dull", label: "Dull I/O", align: "right", get: (p) => (p.dullInner != null || p.dullOuter != null ? `${p.dullInner ?? "–"}/${p.dullOuter ?? "–"}` : "—") },
+  // Full IADC 8-position dull grade; hover the code for the decoded title, else
+  // fall back to the inner/outer numbers when no full grade was recorded.
+  { key: "dull", label: "IADC dull grade", align: "left", get: (p) => p.dullGrade ? <span title={p.dullTitle ?? undefined} className="cursor-help underline decoration-dotted decoration-gray-400">{p.dullGrade}</span> : (p.dullInner != null || p.dullOuter != null ? `${p.dullInner ?? "–"}/${p.dullOuter ?? "–"}` : "—") },
 ];
 
 function TableView({ points, onOpenReport }: {
@@ -1247,6 +1251,19 @@ function aggregateByFormation(points: RopPoint[]): SizeAgg[] {
   return [...m.entries()].map(([k, ps]) => rollupAgg(k, ps)).sort((a, b) => b.meters - a.meters || b.meanRop - a.meanRop);
 }
 
+interface ReasonAgg { reason: string; n: number; meters: number; meanRop: number; }
+/** Reason-pulled rollup (IADC dull-grade position 8) — why each bit came off
+ *  bottom, busiest reason first. Null/empty reasons fold into the "—" group. */
+function aggregateByReason(points: RopPoint[]): ReasonAgg[] {
+  const m = new Map<string, RopPoint[]>();
+  for (const p of points) { const k = p.reasonLabel ?? "—"; const a = m.get(k); if (a) a.push(p); else m.set(k, [p]); }
+  return [...m.entries()].map(([reason, ps]) => ({
+    reason, n: ps.length,
+    meters: ps.reduce((a, p) => a + (p.meters ?? 0), 0),
+    meanRop: mean(ps.map((p) => p.rop)) ?? 0,
+  })).sort((a, b) => b.n - a.n);
+}
+
 function SummaryView({ points, bitSizes, onOpenReport, onView }: {
   points: RopPoint[]; bitSizes: string[];
   onOpenReport?: (wellCode: string, serialNo: number, date: string | null) => void;
@@ -1274,6 +1291,8 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
   const sizeAgg = useMemo(() => aggregateBySize(points, bitSizes), [points, bitSizes]);
   // By-formation rollup, shown only when the runs actually carry a formation.
   const formAgg = useMemo(() => aggregateByFormation(points).filter((s) => s.size !== "—"), [points]);
+  // Reason-pulled rollup; rendered only when at least one run carries a reason.
+  const reasonAgg = useMemo(() => aggregateByReason(points).filter((r) => r.reason !== "—"), [points]);
 
   // Top bit runs by ROP for the leaderboard (footage-weighted columns get bars).
   const topRuns = useMemo(() => {
@@ -1286,6 +1305,7 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
   const maxSizeRop = Math.max(1, ...sizeAgg.map((s) => s.bestRop));
   const maxFormM = Math.max(1, ...formAgg.map((s) => s.meters));
   const maxFormRop = Math.max(1, ...formAgg.map((s) => s.bestRop));
+  const reasonRuns = reasonAgg.reduce((a, r) => a + r.n, 0);
 
   return (
     <div className="space-y-4">
@@ -1391,6 +1411,37 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
         </div>
       )}
 
+      {/* Why bits came off bottom (reason pulled) */}
+      {reasonAgg.length > 0 && (
+        <div className="border border-gray-200 rounded overflow-hidden">
+          <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-200">
+            <span className="text-sm font-medium text-gray-700">Why bits came off bottom (reason pulled)</span>
+            <span className="text-[11px] text-gray-400"> — most runs first</span>
+          </div>
+          <div className="overflow-auto">
+            <table className="text-[11px] tabular-nums border-collapse w-full">
+              <thead><tr className="bg-gray-100">
+                {["Reason pulled", "Runs", "% of runs", "Footage (m)", "Mean ROP"].map((h, i) => (
+                  <th key={h} className={`border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {reasonAgg.map((r, i) => (
+                  <tr key={r.reason} className={i % 2 ? "bg-teal-50/40" : "bg-white"}>
+                    <td className="border border-gray-300 px-2 py-0.5 text-left font-semibold text-gray-800">{r.reason}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{r.n}</td>
+                    <BarCell text={`${((r.n / reasonRuns) * 100).toFixed(0)}%`} frac={r.n / reasonRuns} color="#7c3aed" />
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{intc(r.meters)}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{r.meanRop.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-3 py-1 text-[11px] text-gray-400">IADC reason-pulled code (position 8) decoded — TD = drilled to section depth, the rest are early pulls.</div>
+        </div>
+      )}
+
       {/* Two complementary charts */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <RopMseDepthChart points={points} />
@@ -1406,7 +1457,7 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
         <div className="overflow-auto">
           <table className="text-[11px] tabular-nums border-collapse w-full">
             <thead><tr className="bg-gray-100">
-              {["#", "Well", "Date", "Section", "IADC / class", "ROP (m/hr)", "Footage (m)", "Hours", "MSE (psi)", "Dull I/O"].map((h, i) => (
+              {["#", "Well", "Date", "Section", "IADC / class", "ROP (m/hr)", "Footage (m)", "Hours", "MSE (psi)", "Dull grade"].map((h, i) => (
                 <th key={h} className={`border border-gray-300 px-2 py-1 font-medium text-gray-700 whitespace-nowrap ${i >= 5 ? "text-right" : "text-left"}`}>{h}</th>
               ))}
             </tr></thead>
@@ -1427,7 +1478,7 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
                     <BarCell text={intc(p.meters)} frac={(p.meters ?? 0) / maxM} color="#0d9488" />
                     <td className="border border-gray-300 px-2 py-0.5 text-right">{p.bitHour != null ? fmt1(p.bitHour) : "—"}</td>
                     <td className="border border-gray-300 px-2 py-0.5 text-right">{p.mse != null ? intc(p.mse) : "—"}</td>
-                    <td className="border border-gray-300 px-2 py-0.5 text-right">{p.dullInner != null || p.dullOuter != null ? `${p.dullInner ?? "–"}/${p.dullOuter ?? "–"}` : "—"}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-right">{p.dullGrade ? <span title={p.dullTitle ?? undefined} className="cursor-help underline decoration-dotted decoration-gray-400">{p.dullGrade}</span> : (p.dullInner != null || p.dullOuter != null ? `${p.dullInner ?? "–"}/${p.dullOuter ?? "–"}` : "—")}</td>
                   </tr>
                 );
               })}
@@ -1881,6 +1932,18 @@ function HydraulicsView({ points, bitSizes }: { points: RopPoint[]; bitSizes: st
     return [{ hsi: lo, rop: fit.slope * lo + fit.intercept }, { hsi: hi, rop: fit.slope * hi + fit.intercept }];
   }, [fit, withHsi]);
   const shownHsi = useMemo(() => sample(withHsi, 2500), [withHsi]); // rendered markers only
+  // Coverage against the 2.5–5.0 hp/in² optimal-cleaning window (research §3.3):
+  // below = under-cleaned, within = optimum, above = diminishing returns.
+  const band = useMemo(() => {
+    const n = withHsi.length || 1;
+    const below = withHsi.filter((p) => (p.hsi as number) < 2.5).length;
+    const above = withHsi.filter((p) => (p.hsi as number) > 5.0).length;
+    const within = withHsi.length - below - above;
+    const pct = (k: number) => Math.round((k / n) * 100);
+    // Derive the largest bucket's % from the other two so the three always sum to 100.
+    const belowPct = pct(below), abovePct = pct(above);
+    return { below, within, above, belowPct, withinPct: 100 - belowPct - abovePct, abovePct };
+  }, [withHsi]);
 
   if (!withHsi.length) return <Empty>No bit records with HSI for this selection. HSI needs a reported value, or nozzle sizes + flow rate + mud weight to compute it.</Empty>;
 
@@ -1892,7 +1955,15 @@ function HydraulicsView({ points, bitSizes }: { points: RopPoint[]; bitSizes: st
       </div>
 
       <div className="border border-gray-200 rounded p-2">
-        <div className="text-sm font-medium text-gray-700 mb-1">ROP vs HSI (hydraulic horsepower per in²)</div>
+        <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+          <div className="text-sm font-medium text-gray-700">ROP vs HSI (hydraulic horsepower per in²)</div>
+          {/* Coverage against the 2.5–5.0 hp/in² optimal-cleaning window (§3.3). */}
+          <div className="flex items-center gap-2 text-[11px] tabular-nums">
+            <span className="text-gray-500" title="below 2.5 hp/in² — under-cleaned">&lt;2.5: <b>{band.below}</b> ({band.belowPct}%)</span>
+            <span className="text-green-700" title="2.5–5.0 hp/in² — optimum cleaning window">optimum: <b>{band.within}</b> ({band.withinPct}%)</span>
+            <span className="text-gray-500" title="above 5.0 hp/in² — diminishing returns">&gt;5.0: <b>{band.above}</b> ({band.abovePct}%)</span>
+          </div>
+        </div>
         <ResponsiveContainer width="100%" height={360}>
           <ScatterChart margin={{ ...CHART_MARGIN, right: 16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
@@ -1902,6 +1973,13 @@ function HydraulicsView({ points, bitSizes }: { points: RopPoint[]; bitSizes: st
               label={{ value: "ROP (m/hr)", angle: -90, position: "insideLeft", fontSize: 11 }} />
             <ZAxis range={[26, 26]} />
             <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<HsiTip />} />
+            {/* Optimal-cleaning window 2.5–5.0 hp/in² shaded behind the points (§3.3).
+                ifOverflow="extendDomain" keeps the band visible — and pulls the axis to
+                include it — even when the data doesn't span the whole 2.5–5.0 range. */}
+            <ReferenceArea x1={2.5} x2={5.0} fill="#16a34a" fillOpacity={0.07} ifOverflow="extendDomain"
+              label={{ value: "optimum 2.5–5.0", position: "insideTop", fontSize: 10, fill: "#15803d" }} />
+            <ReferenceLine x={2.5} stroke="#16a34a" strokeDasharray="4 3" strokeOpacity={0.5} ifOverflow="extendDomain" />
+            <ReferenceLine x={5.0} stroke="#16a34a" strokeDasharray="4 3" strokeOpacity={0.5} ifOverflow="extendDomain" />
             <Scatter name="bit records" data={shownHsi} fill="#0891b2" fillOpacity={0.5} />
             {!!trendLine.length && <Scatter name="trend" data={trendLine} fill="none" line={{ stroke: "#dc2626", strokeWidth: 2 }} shape={renderNoDot} legendType="none" />}
             <Legend {...LEGEND_TOP} />
@@ -1909,7 +1987,7 @@ function HydraulicsView({ points, bitSizes }: { points: RopPoint[]; bitSizes: st
         </ResponsiveContainer>
       </div>
 
-      <Interp>{hsiInterpretation(rho, fit ? fit.slope : 0)} HSI gauges how well the bit face is cleaned of cuttings; it only lifts ROP when cuttings removal — not formation strength — is the limiter.</Interp>
+      <Interp>{hsiInterpretation(rho, fit ? fit.slope : 0)} {band.belowPct}% of runs sit below 2.5 hp/in² (under-optimized cleaning); {band.withinPct}% in the 2.5–5.0 optimum; {band.abovePct}% above 5.0 (little extra ROP). HSI gauges how well the bit face is cleaned of cuttings; it only lifts ROP when cuttings removal — not formation strength — is the limiter.</Interp>
     </div>
   );
 }

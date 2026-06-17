@@ -2111,6 +2111,8 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
       }
 
       const dull = (v: unknown): number | null => { const x = Number(s(v)); return Number.isFinite(x) && x >= 0 && x <= 8 ? x : null; };
+      const dg = bitDull(r, lk);
+      const rpCode = s(r.ReasonPulledCode).toUpperCase() || null;
 
       points.push({
         wob: Number(wob.toFixed(1)), rpm: Number(rpm.toFixed(0)), rop,
@@ -2131,6 +2133,10 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
         spp: spp > 0 ? Number(spp.toFixed(0)) : null,
         mudWeight: mudWeight != null ? Number(mudWeight.toFixed(2)) : null,
         dullInner: dull(r.ICutterWearCode), dullOuter: dull(r.OCutterWearCode),
+        // Full IADC 8-position dull grade (code + decoded title) and reason-pulled (§3.1).
+        dullGrade: dg.code, dullTitle: dg.title,
+        reasonCode: rpCode,
+        reasonLabel: rpCode ? (IADC_REASON[rpCode] ?? look(lk.reasonPulled, r.ReasonPulledCode) ?? rpCode) : null,
         bitHour: Number.isFinite(hrs) && hrs > 0 ? Number(hrs.toFixed(1)) : null,
       });
     }
