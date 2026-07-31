@@ -92,12 +92,14 @@ export function ProjectDetailPage() {
         </Link>
       </div>
 
-      <h2 className="text-xl sm:text-2xl font-semibold mb-1 text-gray-900">{data.name}</h2>
-      <p className="text-xs sm:text-sm text-gray-500 mb-6">
-        Units: <span className="font-mono">{units.length}</span> /{" "}
-        <span className="font-mono">{units.angle}</span> /{" "}
-        <span className="font-mono">{units.dls}</span>
-      </p>
+      <div className="border-l-[3px] border-amber-500 pl-3 mb-6">
+        <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 tracking-tight">{data.name}</h2>
+        <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+          Units: <span className="font-mono">{units.length}</span> /{" "}
+          <span className="font-mono">{units.angle}</span> /{" "}
+          <span className="font-mono">{units.dls}</span>
+        </p>
+      </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
         <h3 className="text-base sm:text-lg font-medium text-gray-900">Countries</h3>
@@ -117,7 +119,7 @@ export function ProjectDetailPage() {
             onClick={() => importInput.current?.click()}
             disabled={importMut.isPending}
             title="Bulk-load Country/Field/Well/Calculation/Segment CSVs (Pascal MIXED column names)"
-            className="text-sm px-3 h-9 rounded-md bg-gray-100 hover:bg-gray-200 active:bg-gray-300"
+            className="text-sm px-3 h-9 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150 disabled:bg-gray-100 disabled:text-gray-400"
           >
             {importMut.isPending ? "Importing…" : "Import CSVs"}
           </button>
@@ -133,12 +135,16 @@ export function ProjectDetailPage() {
 
       <div className="space-y-3">
         {data.countries.length === 0 && (
-          <p className="text-sm text-gray-500">No countries yet.</p>
+          <div className="bg-white border-2 border-dashed border-gray-200 rounded-lg p-8 text-center text-sm text-gray-500">
+            No countries yet — add one above, or use Import CSVs to bulk-load the hierarchy.
+          </div>
         )}
         {data.countries.map((c) => (
           <div key={c.id} className="bg-white border border-gray-200 rounded-lg shadow-sm p-3 sm:p-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-              <span className="font-semibold text-gray-900">🌎 {c.name}</span>
+              <span className="font-semibold text-gray-900 inline-flex items-center gap-1.5">
+                <GlobeIcon /> {c.name}
+              </span>
               <AddInline
                 placeholder="Field name"
                 small
@@ -151,7 +157,9 @@ export function ProjectDetailPage() {
               {c.fields.map((f) => (
                 <div key={f.id} className="border border-gray-100 rounded-md p-2 sm:p-3 bg-gray-50/30">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                    <span className="text-sm font-medium text-gray-800">📍 {f.name}</span>
+                    <span className="text-sm font-medium text-gray-800 inline-flex items-center gap-1.5">
+                      <PinIcon /> {f.name}
+                    </span>
                     <div className="flex items-center gap-2 flex-wrap">
                       <Link
                         to={`/fields/${f.id}/maps`}
@@ -176,14 +184,16 @@ export function ProjectDetailPage() {
                         className="border border-gray-100 rounded-md p-2 bg-white"
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-1">
-                          <span className="text-sm text-gray-800">⛏️ {w.name}</span>
+                          <span className="text-sm text-gray-800 inline-flex items-center gap-1.5">
+                            <DerrickIcon /> {w.name}
+                          </span>
                           <div className="flex gap-1 flex-wrap">
                             <button
                               onClick={() =>
                                 addCalc.mutate({ wellId: w.id, name: "Well Design", type: "WellDesign" })
                               }
                               data-testid={`add-well-design-${w.name.replace(/\s+/g, "_")}`}
-                              className="text-xs px-2 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 rounded-md"
+                              className="text-xs px-2 py-1.5 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 active:bg-gray-100 rounded-md transition-colors duration-150"
                             >
                               + Well Design
                             </button>
@@ -191,7 +201,7 @@ export function ProjectDetailPage() {
                               onClick={() =>
                                 addCalc.mutate({ wellId: w.id, name: "Survey Editor", type: "SurveyEditor" })
                               }
-                              className="text-xs px-2 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 rounded-md"
+                              className="text-xs px-2 py-1.5 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 active:bg-gray-100 rounded-md transition-colors duration-150"
                             >
                               + Survey Editor
                             </button>
@@ -261,10 +271,49 @@ function AddInline({
       <button
         type="submit"
         data-testid={testId ? `${testId}-button` : undefined}
-        className={`bg-blue-600 text-white rounded-md hover:bg-blue-700 active:bg-blue-800 font-medium ${btnCls}`}
+        className={`bg-blue-600 text-white rounded-md hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 font-medium ${btnCls}`}
       >
         Add
       </button>
     </form>
+  );
+}
+
+function GlobeIcon() {
+  return (
+    <svg
+      className="text-gray-400 shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg
+      className="text-gray-400 shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >
+      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
+function DerrickIcon() {
+  return (
+    <svg
+      className="text-gray-400 shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >
+      <path d="M12 2 5 22" />
+      <path d="M12 2l7 20" />
+      <path d="M7.5 15h9" />
+      <path d="M9.2 9.5h5.6" />
+    </svg>
   );
 }

@@ -166,8 +166,8 @@ export function LogAnalysisPage() {
     <div className="h-full flex flex-col p-4 sm:p-6">
      <div className="w-full max-w-[1500px] mx-auto flex flex-col flex-1 min-h-0">
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap shrink-0">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">
+        <div className="border-l-[3px] border-amber-500 pl-3">
+          <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 tracking-tight">
             EMI Log Analysis
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
@@ -186,14 +186,14 @@ export function LogAnalysisPage() {
           <button
             onClick={() => fileInput.current?.click()}
             disabled={busy}
-            className="px-4 h-10 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300"
+            className="px-4 h-10 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-150 disabled:bg-gray-300"
           >
             {busy ? "Working…" : "Open .las file"}
           </button>
           <button
             onClick={() => setDialog("merge")}
             disabled={busy}
-            className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:text-gray-400"
+            className="px-3 h-10 text-sm rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150 disabled:bg-gray-50 disabled:text-gray-400"
             title="Merge a hi-res FMI button file with a lo-res auxiliary file by depth"
           >
             Merge…
@@ -201,7 +201,7 @@ export function LogAnalysisPage() {
           {model && params && (
             <button
               onClick={() => setDialog("options")}
-              className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
+              className="px-3 h-10 text-sm rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150"
               title="Graphs, data options & pad order"
             >
               Options
@@ -210,7 +210,7 @@ export function LogAnalysisPage() {
           {las && (
             <button
               onClick={() => setDialog("details")}
-              className="px-3 h-10 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
+              className="px-3 h-10 text-sm rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150"
               title="LAS header, data tables & histograms"
             >
               Details
@@ -219,7 +219,7 @@ export function LogAnalysisPage() {
           {model && (
             <button
               onClick={() => setDialog("export")}
-              className="px-3 h-10 text-sm rounded-md bg-green-700 text-white hover:bg-green-800"
+              className="px-3 h-10 text-sm rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150"
               title="Export as PNG image, PDF report or Excel workbook"
             >
               Export

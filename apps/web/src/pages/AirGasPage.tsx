@@ -157,8 +157,8 @@ export function AirGasPage() {
       <div className="w-full max-w-[1600px] mx-auto flex flex-col flex-1 min-h-0">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 mb-4 flex-wrap shrink-0">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">Air &amp; Gas Drilling</h2>
+          <div className="border-l-[3px] border-amber-500 pl-3">
+            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 tracking-tight">Air &amp; Gas Drilling</h2>
             <p className="text-xs text-gray-500 mt-0.5">
               Underbalanced dry-gas / aerated-mist hydraulics. Port of the Air &amp; Gas tool —
               everything computes in your browser.
@@ -179,10 +179,13 @@ export function AirGasPage() {
                 <option value="custom" disabled>Custom (edited)</option>
               </select>
             </label>
+            {/* Dirty state is dark-on-amber: white on amber-500 is ~2:1 and fails WCAG. */}
             <button
               onClick={() => run(input)}
-              className={`px-4 h-10 text-sm rounded-md text-white ${
-                dirty ? "bg-amber-500 hover:bg-amber-600" : "bg-blue-600 hover:bg-blue-700"
+              className={`px-4 h-10 text-sm rounded-md transition-colors duration-150 ${
+                dirty
+                  ? "bg-amber-500 hover:bg-amber-400 text-amber-950 font-medium"
+                  : "bg-blue-600 hover:bg-blue-700 text-white"
               }`}
               title={dirty ? "Inputs changed since the last calculation" : "Recompute"}
             >
@@ -190,7 +193,7 @@ export function AirGasPage() {
             </button>
             <button
               onClick={() => setDialog("units")}
-              className="px-3 h-10 text-sm rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              className="px-3 h-10 text-sm rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150"
               title="Choose the unit system / per-quantity units"
             >
               Units: <span className="font-medium">{systemLabel(sel)}</span>
@@ -198,7 +201,7 @@ export function AirGasPage() {
             <button
               onClick={() => setDialog("export")}
               disabled={!result}
-              className="px-3 h-10 text-sm rounded-md bg-green-700 text-white hover:bg-green-800 disabled:bg-gray-300"
+              className="px-3 h-10 text-sm rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150 disabled:opacity-50 disabled:hover:bg-white"
               title="Export CSV / PDF / Excel"
             >
               Export
@@ -573,10 +576,10 @@ function TabBar({ tab, setTab }: { tab: ReportTab; setTab: (t: ReportTab) => voi
         <button
           key={t.id}
           onClick={() => setTab(t.id)}
-          className={`px-3 py-2 text-sm -mb-px border-b-2 ${
+          className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors duration-150 ${
             tab === t.id
               ? "border-blue-600 text-blue-700 font-medium"
-              : "border-transparent text-gray-500 hover:text-gray-700"
+              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
           }`}
         >
           {t.label}

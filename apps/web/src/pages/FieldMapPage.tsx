@@ -266,9 +266,11 @@ export function FieldMapPage() {
         </Link>
       </div>
 
-      <h2 className="text-xl sm:text-2xl font-semibold mb-4 text-gray-900">
-        Field maps
-      </h2>
+      <div className="border-l-[3px] border-amber-500 pl-3 mb-4">
+        <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 tracking-tight">
+          Field maps
+        </h2>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-4 md:gap-6">
         {/* Sidebar — full-width above the map on mobile */}
@@ -319,7 +321,7 @@ export function FieldMapPage() {
               <button
                 onClick={() => fileInput.current?.click()}
                 disabled={uploadMut.isPending}
-                className="w-full px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300"
+                className="w-full px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-150 disabled:bg-gray-300"
               >
                 {uploadMut.isPending ? "Uploading…" : "Upload .grd"}
               </button>
@@ -508,7 +510,7 @@ export function FieldMapPage() {
               <button
                 onClick={() => volumeMut.mutate()}
                 disabled={!bottomId || !topId || volumeMut.isPending}
-                className="w-full px-3 py-1.5 text-sm rounded bg-green-700 text-white hover:bg-green-800 disabled:bg-gray-300"
+                className="w-full px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-150 disabled:bg-gray-300"
               >
                 {volumeMut.isPending ? "Calculating…" : "Compute volume"}
               </button>
@@ -551,10 +553,10 @@ export function FieldMapPage() {
                   <button
                     key={t}
                     onClick={() => setView(t)}
-                    className={`px-4 py-2 text-sm border-b-2 ${
+                    className={`px-4 py-2 text-sm border-b-2 transition-colors duration-150 ${
                       view === t
                         ? "border-blue-600 text-blue-700 font-medium"
-                        : "border-transparent text-gray-600 hover:text-gray-900"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                     }`}
                   >
                     {t === "map" ? "2D Map" : t === "cross" ? "Cross-section" : "3D View"}

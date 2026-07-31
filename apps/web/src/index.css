@@ -1,3 +1,12 @@
+/* Self-hosted UI fonts (rig PCs can be offline — no Google Fonts CDN).
+   Fira Sans = UI text · Fira Code = data/mono. Bundled by Vite from npm. */
+@import "@fontsource/fira-sans/400.css";
+@import "@fontsource/fira-sans/500.css";
+@import "@fontsource/fira-sans/600.css";
+@import "@fontsource/fira-sans/700.css";
+@import "@fontsource/fira-code/400.css";
+@import "@fontsource/fira-code/500.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -11,10 +20,38 @@ html, body, #root { height: 100%; }
 }
 body {
   margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  color: #1f2937;
-  background: #f9fafb;
+  /* Font family comes from the Tailwind config (Fira Sans stack) via preflight. */
+  color: #1e293b;      /* slate-800 */
+  background: #f8fafc; /* slate-50 — the design system's canvas */
+}
+
+/* Numbers in tables/KPIs line up — Fira Sans ships tabular figures. */
+.tabular-nums { font-feature-settings: "tnum" 1, "lnum" 1; }
+
+/* Keyboard-navigation focus: visible everywhere, even where a component
+   forgot its own focus:ring. Mouse clicks don't trigger :focus-visible. */
+:focus-visible {
+  outline: 2px solid #1e40af;
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* Thin, quiet scrollbars for the dense side panels and wide tables. */
+* { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+*::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+::selection { background: #bfdbfe; color: #1e3a8a; }
+
+/* Vestibular safety: kill decorative motion for users who asked for less. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /*

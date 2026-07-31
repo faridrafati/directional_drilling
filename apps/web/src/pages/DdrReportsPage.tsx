@@ -96,15 +96,17 @@ export function DdrReportsPage() {
     <div className="h-full flex flex-col p-4 sm:p-6">
       <div className="w-full max-w-[1700px] mx-auto flex flex-col flex-1 min-h-0">
         <div className="mb-4 shrink-0">
-          <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">Daily Drilling Reports</h2>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Search operations &amp; daily summaries across every well, then click a row to open its full
-            report. Reading the legacy DDR databases directly. Dates are Jalali (Shamsi).
-          </p>
+          <div className="border-l-[3px] border-amber-500 pl-3">
+            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 tracking-tight">Daily Drilling Reports</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Search operations &amp; daily summaries across every well, then click a row to open its full
+              report. Reading the legacy DDR databases directly. Dates are Jalali (Shamsi).
+            </p>
+          </div>
         </div>
 
         {statusQ.data && !statusQ.data.available && (
-          <div className="mb-3 px-3 py-2 rounded bg-red-50 border border-red-200 text-sm text-red-700">
+          <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg shadow-sm text-sm text-red-700">
             The DDR SQLite databases were not found on this machine — search and reports are unavailable.
           </div>
         )}
@@ -112,7 +114,7 @@ export function DdrReportsPage() {
         <div className="flex gap-1 border-b border-gray-200 mb-3 shrink-0">
           {([["search", "Reports & Search"], ["litho", "Formation & Lithology"], ["mud", "Mud Properties"], ["stock", "Mud Stock"], ["path", "Well Path"], ["time", "Time Analysis"], ["tools", "Tools"], ["rop", "ROP Optimization"]] as const).map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)}
-              className={`px-3 py-2 text-sm -mb-px border-b-2 ${tab === id ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+              className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors duration-150 ${tab === id ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>
               {label}
             </button>
           ))}
@@ -231,12 +233,12 @@ function ReportModal({ report, view, setView, detail, well, loading, onNavigate,
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+            <div className="inline-flex rounded-md border border-gray-300 overflow-hidden">
               {(["form", "tables", "analytics"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setView(m)}
-                  className={`px-2.5 h-7 text-xs capitalize ${view === m ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+                  className={`px-2.5 h-7 text-xs capitalize transition-colors duration-150 ${view === m ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-white text-gray-700 hover:bg-gray-50"}`}
                 >
                   {m}
                 </button>
@@ -250,8 +252,9 @@ function ReportModal({ report, view, setView, detail, well, loading, onNavigate,
             )}
             <button
               onClick={onClose}
-              className="ml-1 h-7 w-7 grid place-items-center rounded hover:bg-gray-100 text-gray-500 text-xl leading-none"
+              className="ml-1 h-7 w-7 grid place-items-center rounded-md hover:bg-gray-100 text-gray-500 text-xl leading-none transition-colors duration-150"
               title="Close (Esc)"
+              aria-label="Close report"
             >
               ×
             </button>
@@ -268,7 +271,7 @@ function ReportModal({ report, view, setView, detail, well, loading, onNavigate,
             <select
               value={report.serialNo}
               onChange={(e) => go(list.find((r) => r.serialNo === Number(e.target.value)))}
-              className="h-7 border border-gray-300 rounded px-1.5 text-xs bg-white"
+              className="h-7 border border-gray-300 rounded-md px-1.5 text-xs bg-white"
               title="Jump to any date in this well's operations"
             >
               {list.map((r) => (
@@ -425,7 +428,7 @@ function WellInfo({ well }: { well: DdrWellInfo }) {
 
 function ExportBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} className="px-2 h-7 text-xs rounded bg-green-700 text-white hover:bg-green-800">
+    <button onClick={onClick} className="px-2 h-7 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-150">
       {children}
     </button>
   );
@@ -439,7 +442,8 @@ function NavBtn({ onClick, disabled, title, children }: {
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="h-7 min-w-[28px] px-1.5 grid place-items-center rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-default"
+      aria-label={title}
+      className="h-7 min-w-[28px] px-1.5 grid place-items-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150 disabled:opacity-40 disabled:cursor-default"
     >
       {children}
     </button>

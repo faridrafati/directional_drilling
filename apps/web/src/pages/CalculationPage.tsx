@@ -422,8 +422,8 @@ export function CalculationPage() {
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
         {/* Title + breadcrumb on ONE line to keep the frozen header short. */}
-        <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 truncate shrink-0">
+        <div className="min-w-0 flex items-baseline gap-2 flex-wrap border-l-[3px] border-amber-500 pl-3">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 tracking-tight truncate shrink-0">
             {data.name}
           </h2>
           <span className="text-gray-300 hidden sm:inline">·</span>
@@ -450,7 +450,7 @@ export function CalculationPage() {
           />
           {(tab === "3d" || tab === "charts") && (
             <label
-              className="inline-flex items-center gap-1.5 text-sm text-gray-700 select-none px-2 h-10 sm:h-9 rounded-md bg-gray-100 hover:bg-gray-200 cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-sm text-gray-700 select-none px-2 h-10 sm:h-9 rounded-md border border-gray-300 bg-white hover:bg-gray-50 transition-colors duration-150 cursor-pointer"
               title="When on, the path is rendered as a smooth curve through stations (Recharts monotone + 3D Catmull-Rom). When off, straight polyline segments."
             >
               <input
@@ -470,7 +470,7 @@ export function CalculationPage() {
                   disabled={!history.canUndo}
                   title="Undo (Ctrl+Z)"
                   aria-label="Undo"
-                  className="w-10 h-10 sm:w-9 sm:h-9 inline-flex items-center justify-center rounded-md bg-gray-100 hover:bg-gray-200 active:bg-gray-300 disabled:opacity-40"
+                  className="w-10 h-10 sm:w-9 sm:h-9 inline-flex items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150 disabled:opacity-40"
                 >
                   ↶
                 </button>
@@ -479,14 +479,14 @@ export function CalculationPage() {
                   disabled={!history.canRedo}
                   title="Redo (Ctrl+Shift+Z)"
                   aria-label="Redo"
-                  className="w-10 h-10 sm:w-9 sm:h-9 inline-flex items-center justify-center rounded-md bg-gray-100 hover:bg-gray-200 active:bg-gray-300 disabled:opacity-40"
+                  className="w-10 h-10 sm:w-9 sm:h-9 inline-flex items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150 disabled:opacity-40"
                 >
                   ↷
                 </button>
               </div>
               <button
                 onClick={addRow}
-                className="px-3 h-10 sm:h-9 text-sm rounded-md bg-gray-100 hover:bg-gray-200 active:bg-gray-300"
+                className="px-3 h-10 sm:h-9 text-sm rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150"
               >
                 + Add profile
               </button>
@@ -495,7 +495,7 @@ export function CalculationPage() {
           <button
             onClick={triggerCalculate}
             disabled={calculateMut.isPending}
-            className="px-4 h-10 sm:h-9 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-300 font-medium min-w-[110px]"
+            className="px-4 h-10 sm:h-9 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 disabled:bg-gray-300 font-medium min-w-[110px]"
           >
             {calculateMut.isPending ? "Calculating…" : "Calculate"}
           </button>
@@ -506,7 +506,7 @@ export function CalculationPage() {
           <button
             onClick={() => setExportMenuOpen(true)}
             disabled={stations.length === 0}
-            className="px-3 h-10 sm:h-9 text-sm rounded-md bg-amber-600 text-white hover:bg-amber-700 active:bg-amber-800 disabled:bg-gray-300 inline-flex items-center gap-1.5"
+            className="px-3 h-10 sm:h-9 text-sm rounded-md bg-amber-600 text-white hover:bg-amber-700 active:bg-amber-800 transition-colors duration-150 disabled:bg-gray-300 inline-flex items-center gap-1.5"
             title={stations.length === 0
               ? "Calculate the trajectory first to enable exports."
               : "Choose an export format (PDF, Excel, or print current view)."}
@@ -1160,10 +1160,10 @@ function Tabs({ current, onChange }: { current: Tab; onChange: (t: Tab) => void 
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className={`px-4 py-3 sm:py-2 text-sm border-b-2 whitespace-nowrap transition-colors ${
+          className={`px-4 py-3 sm:py-2 text-sm border-b-2 whitespace-nowrap transition-colors duration-150 ${
             current === t.id
               ? "border-blue-600 text-blue-700 font-medium"
-              : "border-transparent text-gray-600 hover:text-gray-900"
+              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
           }`}
         >
           {t.label}

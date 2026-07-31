@@ -30,7 +30,12 @@ export function ProjectsPage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
-      <h2 className="text-xl sm:text-2xl font-semibold mb-4 text-gray-900">Projects</h2>
+      <div className="border-l-[3px] border-amber-500 pl-3 mb-4">
+        <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 tracking-tight">Projects</h2>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Countries, fields, wells and calculations — the full drilling-plan hierarchy.
+        </p>
+      </div>
 
       <form
         onSubmit={(e) => {
@@ -67,7 +72,7 @@ export function ProjectsPage() {
         <button
           type="submit"
           disabled={createMut.isPending || !name.trim()}
-          className="bg-blue-600 text-white px-4 h-10 rounded-md hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-300 font-medium min-w-[110px]"
+          className="bg-blue-600 text-white px-4 h-10 rounded-md hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-300 font-medium min-w-[110px] transition-colors duration-150"
         >
           {createMut.isPending ? "Creating…" : "Create"}
         </button>
@@ -87,7 +92,6 @@ export function ProjectsPage() {
 
       {data && data.length === 0 && (
         <EmptyState
-          icon="📂"
           title="No projects yet"
           description="Create your first project above to get started. A project holds countries, fields, wells, and calculations — the full drilling-plan hierarchy."
         />
@@ -97,7 +101,7 @@ export function ProjectsPage() {
         <ul className="grid gap-3 sm:gap-2">
           {data.map((p) => (
             <li key={p.id}>
-              <div className="group bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md hover:border-blue-300 transition-all p-4 flex items-center justify-between gap-3">
+              <div className="group bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md hover:border-blue-300 hover:bg-blue-50/50 transition-all p-4 flex items-center justify-between gap-3">
                 <Link
                   to={`/projects/${p.id}`}
                   className="flex-1 min-w-0"
@@ -114,6 +118,7 @@ export function ProjectsPage() {
                     if (confirm(`Delete "${p.name}"?`)) deleteMut.mutate(p.id);
                   }}
                   aria-label={`Delete ${p.name}`}
+                  title={`Delete ${p.name}`}
                   className="text-sm text-gray-400 hover:text-red-600 -m-1 p-2 rounded transition-colors"
                 >
                   <TrashIcon />
@@ -128,14 +133,27 @@ export function ProjectsPage() {
 }
 
 function EmptyState({
-  icon, title, description,
-}: { icon: string; title: string; description: string }) {
+  title, description,
+}: { title: string; description: string }) {
   return (
     <div className="bg-white border-2 border-dashed border-gray-200 rounded-lg p-8 sm:p-12 text-center">
-      <div className="text-4xl mb-2">{icon}</div>
+      <FolderIcon />
       <h3 className="text-base font-medium text-gray-900 mb-1">{title}</h3>
       <p className="text-sm text-gray-500 max-w-md mx-auto">{description}</p>
     </div>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg
+      className="mx-auto mb-3 text-gray-300"
+      width="36" height="36" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+    </svg>
   );
 }
 
