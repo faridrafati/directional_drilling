@@ -9,6 +9,8 @@ import { registerCalculationRoutes } from "./routes/calculations.js";
 import { registerGridRoutes } from "./routes/grids.js";
 import { registerDdrRoutes } from "./routes/ddr.js";
 import { registerAirmudRoutes } from "./routes/airmud.js";
+import { registerEntryRoutes } from "./routes/entry.js";
+import { seedAdmin } from "./entry/auth.js";
 
 const prisma = new PrismaClient();
 
@@ -24,6 +26,24 @@ async function main() {
     (_req, body, done) => done(null, body)
   );
 
+  // Tolerate an empty application/json body (Fastify 400s on it by default).
+  // Action endpoints like POST /entry/reports/:id/submit have nothing to send,
+  // and fetch() still labels the request application/json.
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      const text = (body as string).trim();
+      if (!text) return done(null, {});
+      try {
+        done(null, JSON.parse(text));
+      } catch {
+        const err = Object.assign(new Error("invalid JSON body"), { statusCode: 400 });
+        done(err, undefined);
+      }
+    }
+  );
+
   app.get("/health", async () => ({ ok: true }));
 
   await registerProjectRoutes(app, prisma);
@@ -34,6 +54,9 @@ async function main() {
   await registerGridRoutes(app, prisma);
   await registerDdrRoutes(app);
   await registerAirmudRoutes(app);
+  // Rig-side report entry (the only authenticated part of the API).
+  await registerEntryRoutes(app, prisma);
+  await seedAdmin(prisma, (msg) => app.log.info(msg));
 
   const port = Number(process.env.PORT ?? 4000);
   await app.listen({ port, host: "0.0.0.0" });

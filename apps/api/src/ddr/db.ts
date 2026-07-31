@@ -2681,3 +2681,40 @@ export function getFacetOptions(f: { fields?: string[]; wells?: string[] }): Rec
   const formations = [...new Set([...formCodes].map((c) => look(lk.formation, c)).filter((v): v is string => !!v))].sort();
   return { holeSizes, mudTypes, materials, activityTypes, formations };
 }
+
+// ── Well-registration option lists (for the report-entry admin form) ─────────
+/**
+ * The values an admin can pick from when registering a well the rig is drilling
+ * now: the company's own lookup tables (Fields / WellType / WellProfiles /
+ * Contractor) plus the free-text Location and Reservoir columns as actually used
+ * across A01. Returns empty lists when the legacy DB isn't on this machine — the
+ * form then just takes typed values.
+ */
+export function wellRegistryOptions(): {
+  fields: string[]; locations: string[]; wellTypes: string[];
+  profiles: string[]; reservoirs: string[]; contractors: string[];
+} {
+  const empty = { fields: [], locations: [], wellTypes: [], profiles: [], reservoirs: [], contractors: [] };
+  if (!ddrAvailable()) return empty;
+  const lk = lookups();
+  // The free-text columns are full of placeholder junk from the Access days
+  // ("-", ".", "0", "None"). A real name has a letter in it and isn't a single
+  // character — that alone clears the noise without dropping short names.
+  const usable = (v: string) => v.length > 1 && /\p{L}/u.test(v) && v.toLowerCase() !== "none";
+  const names = (m: Map<string, string>) =>
+    [...new Set([...m.values()].map((v) => s(v)).filter(usable))].sort();
+  /** DISTINCT of a free-text A01 column (Location / Reservoir have no lookup). */
+  const distinctA01 = (col: string) =>
+    [...new Set((data().prepare(`SELECT DISTINCT "${col}" v FROM A01`).all() as Row[])
+      .map((r) => s(r.v)).filter(usable))].sort();
+  return {
+    fields: names(lk.field),
+    locations: distinctA01("Location"),
+    wellTypes: names(lk.wellType),
+    profiles: names(lk.wellProfile),
+    // Reservoir is free text in A01; Zone names are the curated equivalent, so
+    // offer both (deduped) rather than making the admin retype a known zone.
+    reservoirs: [...new Set([...distinctA01("Reservoir"), ...names(lk.zone)])].sort(),
+    contractors: names(lk.contractor),
+  };
+}

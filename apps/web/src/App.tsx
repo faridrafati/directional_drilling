@@ -27,6 +27,10 @@ const AirGasPage = lazy(() =>
 const DdrReportsPage = lazy(() =>
   import("./pages/DdrReportsPage.js").then((m) => ({ default: m.DdrReportsPage }))
 );
+// Rig-side entry for the same report — authenticated, writes to the app's own DB.
+const ReportEntryPage = lazy(() =>
+  import("./pages/ReportEntryPage.js").then((m) => ({ default: m.ReportEntryPage }))
+);
 
 export function App() {
   return (
@@ -44,6 +48,8 @@ export function App() {
           <Route path="/air-gas" element={<AirGasPage />} />
           {/* Daily Drilling Reports — reads the legacy DDR SQLite databases. */}
           <Route path="/ddr" element={<DdrReportsPage />} />
+          {/* Daily Report Entry — company men file the same form from the rig. */}
+          <Route path="/ddr-entry" element={<ReportEntryPage />} />
           <Route
             path="/3d/:id"
             element={<PlaceholderPage title="3D Field Visualization" phase="Phase 5" />}

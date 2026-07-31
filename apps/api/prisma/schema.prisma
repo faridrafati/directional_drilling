@@ -176,3 +176,360 @@ model GridFile {
 
   @@index([fieldId])
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Rig-side daily report ENTRY (company man data capture)
+//
+//  The /ddr/* routes read the legacy Access→SQLite databases read-only; those
+//  are historical. This block is the writable side: company men on the rig log
+//  in and fill the same DR.xls form for the well they are assigned to, and the
+//  rows land here (apps/api/prisma/dev.db), never in the legacy files.
+//
+//  Model names are prefixed Entry* so they can't collide with the directional
+//  project store above (Project / Well / Calculation ...).
+// ═══════════════════════════════════════════════════════════════════════════
+
+model EntryUser {
+  id                 String            @id @default(cuid())
+  username           String            @unique
+  fullName           String
+  // "admin" (manages rigs / wells / users) | "companyman" (files reports).
+  role               String            @default("companyman")
+  // scrypt, stored as "salt:derivedKey" hex — see entry/auth.ts.
+  passwordHash       String
+  mustChangePassword Boolean           @default(false)
+  active             Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  assignments        EntryAssignment[]
+  reports            EntryReport[]
+}
+
+model EntryRig {
+  id         String      @id @default(cuid())
+  name       String      @unique
+  contractor String?
+  createdAt  DateTime    @default(now())
+  wells      EntryWell[]
+}
+
+/// A well being drilled now — the DR.xls header band is well-level, so it lives
+/// here and is filled once instead of on every daily report.
+model EntryWell {
+  id                 String            @id @default(cuid())
+  rigId              String
+  name               String
+  field              String?
+  /// Optional link to the legacy A01 WellCode, so an entered well can later be
+  /// lined up with its historical reports.
+  legacyWellCode     String?
+  location           String?
+  wellType           String?
+  profile            String?
+  reservoir          String?
+  contractor         String?
+  spudDate           String?
+  rigReleasedDate    String?
+  rtElevation        Float?
+  waterDepth         Float?
+  finalForecastDepth Float?
+  forecastDays       Float?
+  active             Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  rig                EntryRig          @relation(fields: [rigId], references: [id], onDelete: Cascade)
+  assignments        EntryAssignment[]
+  reports            EntryReport[]
+
+  @@unique([rigId, name])
+  @@index([rigId])
+}
+
+/// Which wells a company man may file reports for.
+model EntryAssignment {
+  id        String    @id @default(cuid())
+  userId    String
+  wellId    String
+  createdAt DateTime  @default(now())
+  user      EntryUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  well      EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, wellId])
+  @@index([wellId])
+}
+
+/// One daily drilling report — the L04-equivalent header plus every section of
+/// the DR.xls sheet as child rows.
+model EntryReport {
+  id         String @id @default(cuid())
+  wellId     String
+  /// Author (the company man who filed it).
+  userId     String
+  /// Day number within the well, like the legacy SerialNo.
+  serialNo   Int
+  /// Jalali (Shamsi) "YYYY/MM/DD", the same shape the legacy DBs store.
+  reportDate String
+  /// "draft" — still editable by its author | "submitted" — locked.
+  status     String @default("draft")
+
+  // ── Well / Operations ──
+  morningDepth    Float?
+  midnightDepth   Float?
+  previousDepth   Float?
+  drillingTime    Float?
+  cumDrillingTime Float?
+  holeSize        String?
+  formation       String?
+  lithology       String?
+  lastCasing      String?
+  linerLap        String?
+  kop             String?
+  wellSiteSupt    String?
+  opnSupt         String?
+  progEng         String?
+  geologist       String?
+  toolPusher1     String?
+  toolPusher2     String?
+
+  // ── Mud volume balance (legacy N05) ──
+  formationLoss Float?
+  mudLossUnit   Float?
+  mudGains      Float?
+
+  // ── Summary / weather ──
+  description  String?
+  windSpeedDir String?
+  waveVisible  String?
+  freshWater   Float?
+  fuel         Float?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  submittedAt DateTime?
+
+  well          EntryWell           @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  user          EntryUser           @relation(fields: [userId], references: [id])
+  bitRuns       EntryBitRun[]
+  bha           EntryBhaItem[]
+  drillString   EntryDrillPipe[]
+  tools         EntryTool[]
+  mud           EntryMud?
+  solidControl  EntrySolidControl[]
+  chemicals     EntryChemical[]
+  casing        EntryCasingRun[]
+  formationTops EntryFormationTop[]
+  surveys       EntrySurvey[]
+  timeBreakdown EntryTimeEntry[]
+  operations    EntryOperation[]
+
+  @@unique([wellId, reportDate])
+  @@unique([wellId, serialNo])
+  @@index([wellId, status])
+  @@index([userId])
+}
+
+model EntryBitRun {
+  id              String      @id @default(cuid())
+  reportId        String
+  order           Int         @default(0)
+  bitNo           String?
+  bitSerialNo     String?
+  size            String?
+  type            String?
+  iadcCode        String?
+  nozzles         String?
+  tfa             Float?
+  meterage        Float?
+  hours           Float?
+  wob             Float?
+  rpm             Float?
+  torque          String?
+  dullGrade       String?
+  reasonPulled    String?
+  pumpType        String?
+  pumpOutput      Float?
+  pumpPressure    Float?
+  annularVelocity Float?
+  hsi             Float?
+  cmtDrilled      String?
+  washAndRun      String?
+  bitChangeIn     String?
+  bitChangeOut    String?
+  report          EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+model EntryBhaItem {
+  id            String      @id @default(cuid())
+  reportId      String
+  order         Int         @default(0)
+  assemblyNo    String?
+  lengthM       Float?
+  specification String?
+  report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// D/P size + grade columns under the BHA (Unit10.pas rows 34–36).
+model EntryDrillPipe {
+  id       String      @id @default(cuid())
+  reportId String
+  order    Int         @default(0)
+  size     String?
+  grade    String?
+  lengthM  Float?
+  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// Jar / MWD / DH-motor row of the "Drilling tools" table.
+model EntryTool {
+  id       String      @id @default(cuid())
+  reportId String
+  /// "jar" | "mwd" | "dhMotor"
+  kind     String
+  type     String?
+  size     String?
+  serialNo String?
+  hours    Float?
+  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, kind])
+}
+
+/// Mud properties (legacy N01) — one reported check per day.
+model EntryMud {
+  id            String      @id @default(cuid())
+  reportId      String      @unique
+  mudSystem     String?
+  maxWeight     Float?
+  minWeight     Float?
+  reportTime    String?
+  funnelVisc    Float?
+  pv            Float?
+  yp            Float?
+  gelInitial    Float?
+  gel10min      Float?
+  fan600        Float?
+  fan300        Float?
+  ph            Float?
+  alkalinity    Float?
+  waterLoss     Float?
+  hpht          Float?
+  airFoam       Float?
+  oilPct        Float?
+  oilWaterRatio String?
+  eStability    Float?
+  kcl           Float?
+  mbt           Float?
+  pf            Float?
+  mf            Float?
+  chloride      Float?
+  calcium       Float?
+  solidsPct     Float?
+  tempF         Float?
+  report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+}
+
+/// Clay Jactor / Mud Cleaner / Shaker — HRS, U.F., O.F., FEED, CONS, F.PRS.
+model EntrySolidControl {
+  id        String      @id @default(cuid())
+  reportId  String
+  unit      String
+  hours     Float?
+  underFlow Float?
+  overFlow  Float?
+  feed      Float?
+  cons      Float?
+  fprs      Float?
+  report    EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, unit])
+}
+
+model EntryChemical {
+  id          String      @id @default(cuid())
+  reportId    String
+  order       Int         @default(0)
+  material    String?
+  unit        String?
+  used        Float?
+  received    Float?
+  stock       Float?
+  outstanding Float?
+  requested   Float?
+  sent        Float?
+  report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+model EntryCasingRun {
+  id       String      @id @default(cuid())
+  reportId String
+  order    Int         @default(0)
+  casing   String?
+  depth    Float?
+  joints   Float?
+  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+model EntryFormationTop {
+  id          String      @id @default(cuid())
+  reportId    String
+  order       Int         @default(0)
+  formation   String?
+  depth       Float?
+  secondDepth Float?
+  type        String?
+  report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+model EntrySurvey {
+  id       String      @id @default(cuid())
+  reportId String
+  order    Int         @default(0)
+  md       Float?
+  inc      Float?
+  azi      Float?
+  tvd      Float?
+  ns       Float?
+  ew       Float?
+  dls      Float?
+  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+model EntryTimeEntry {
+  id       String      @id @default(cuid())
+  reportId String
+  order    Int         @default(0)
+  group    String?
+  type     String?
+  activity String?
+  hours    Float?
+  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+model EntryOperation {
+  id       String      @id @default(cuid())
+  reportId String
+  order    Int         @default(0)
+  opCode   String?
+  fromTime String?
+  toTime   String?
+  remarks  String?
+  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
