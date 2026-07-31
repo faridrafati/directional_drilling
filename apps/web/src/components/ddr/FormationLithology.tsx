@@ -19,7 +19,9 @@
  *
  *   • BROWSE — the existing multi-well browser (FormationMatrix): the Form./Litho.
  *     tops cross-tab, the lithology + formation Graph, and the Prognosis sub-views
- *     (top prognosis / correlation / thickness / hazards). Unchanged.
+ *     (top prognosis / correlation / thickness / hazards). Its sidebar is bound to
+ *     the SAME shared selection, so switching view keeps the Fields / Wells / Bit
+ *     size / Mud type picks (each view still has its own Show button + results).
  *
  * Only this file is authored here; the Summary fetches the same /ddr/* endpoints
  * FormationMatrix already uses, so nothing else changes.
@@ -133,9 +135,9 @@ export function FormationLithology() {
     setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setFilters(null);
   }
 
-  // BROWSE re-uses the existing self-contained multi-well browser (its own facets
-  // + Show / Clear / Tables / Graphs / Prognosis). The Summary sidebar is hidden
-  // then so the two facet sets don't sit side by side.
+  // BROWSE re-uses the multi-well browser (Show / Clear / Tables / Graphs /
+  // Prognosis). It renders its own copy of the sidebar — bound to the same shared
+  // selection — so the Summary sidebar is hidden here rather than sitting beside it.
   if (view === "browse") {
     return (
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">

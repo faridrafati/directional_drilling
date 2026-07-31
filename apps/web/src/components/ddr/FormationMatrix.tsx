@@ -8,12 +8,18 @@
  *                   adjustable transparency), patterns from LITHO/*.bmp.
  * A lithology checklist filters which components appear; it applies to the
  * Litho. table and the graph.
+ *
+ * Fields / Wells / Bit sizes / Mud types come from the shared DDR selection (see
+ * ddrSelection) like every other tab, so a pick made in the Formation & Lithology
+ * SUMMARY is still there after switching to BROWSE and vice versa. Only the
+ * browser's own facets (Lithology checklist, transparency) stay local.
  */
 import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
 import { useFacetOptions } from "./useFacetOptions.js";
+import { useDdrSelection } from "./ddrSelection.js";
 import { LithologyGraph, type GraphWell } from "./LithologyGraph.js";
 import { FormationPrognosis, type PrognosisFilters } from "./FormationPrognosis.js";
 
@@ -44,10 +50,11 @@ function LSwatch({ color, pattern, size = 11 }: { color: string; pattern?: strin
 export function FormationMatrix() {
   const [show, setShow] = useState<"tables" | "graphs" | "prognosis">("tables");
   const [mode, setMode] = useState<"form" | "litho">("form");
-  const [selFields, setSelFields] = useState<string[]>([]);
-  const [selWells, setSelWells] = useState<string[]>([]);
-  const [selHole, setSelHole] = useState<string[]>([]);
-  const [selMud, setSelMud] = useState<string[]>([]);
+  // Shared across tabs (and with the Summary view above) — see ddrSelection.
+  const {
+    fields: selFields, setFields: setSelFields, wells: selWells, setWells: setSelWells,
+    holeSizes: selHole, setHoleSizes: setSelHole, mudTypes: selMud, setMudTypes: setSelMud,
+  } = useDdrSelection();
   const [selLitho, setSelLitho] = useState<string[]>([]);
   const [transparency, setTransparency] = useState(20);
   const [form, setForm] = useState<Matrix | null>(null);
