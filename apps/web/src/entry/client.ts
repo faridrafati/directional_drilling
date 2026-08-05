@@ -76,6 +76,15 @@ export interface EntryWell {
   spudDate: string | null; rigReleasedDate: string | null;
   rtElevation: number | null; waterDepth: number | null;
   finalForecastDepth: number | null; forecastDays: number | null;
+  // ── a.json `report_header`, the part that is constant for the whole well ──
+  /** Operator the report is filed for, e.g. "POGC". */
+  client: string | null;
+  /** Coordinates as PRINTED — DMS text (26° 46' 39.11" N), never a number. */
+  latitude: string | null; longitude: string | null;
+  /** Free text beside the KB elevation, usually "Air Gap(m): 18". */
+  elevationNote: string | null;
+  /** Free text; on jack-ups the leg penetration, "Leg Pen.(m): FWD/STBD/PORT". */
+  comment: string | null;
   active: boolean; rig: EntryRig;
   _count?: { reports: number; assignments?: number };
 }
@@ -98,6 +107,14 @@ export interface BitRun {
 export interface BhaItem { order: number; assemblyNo: string | null; lengthM: number | null; specification: string | null }
 export interface DrillPipe { order: number; size: string | null; grade: string | null; lengthM: number | null }
 export interface ToolItem { kind: "jar" | "mwd" | "dhMotor"; type: string | null; size: string | null; serialNo: string | null; hours: number | null }
+/**
+ * Mud check — the union of the DR.xls block and a.json `mud_information`.
+ *
+ * The two standards overlap but neither is a superset, so both are kept: the
+ * office sheet still prints its own fields, and the PEDC/POGC DDR adds the
+ * sample depth, ppg density, flowline temperature, low-shear-rate viscosities
+ * and the three mud volumes.
+ */
 export interface MudProps {
   mudSystem: string | null; maxWeight: number | null; minWeight: number | null;
   reportTime: string | null; funnelVisc: number | null; pv: number | null; yp: number | null;
@@ -107,30 +124,155 @@ export interface MudProps {
   eStability: number | null; kcl: number | null; mbt: number | null; pf: number | null;
   mf: number | null; chloride: number | null; calcium: number | null;
   solidsPct: number | null; tempF: number | null;
+  // ── a.json mud_information additions ──
+  depthMkb: number | null; densityPpg: number | null; tFlowlineC: number | null;
+  filtrateMl: number | null; vis3rpm: number | null; vis6rpm: number | null;
+  percentWater: number | null; lowGravitySolidsPct: number | null; hardnessCaPpm: number | null;
+  mudLostBbl: number | null; activeMudVolBbl: number | null; volMudResBbl: number | null;
 }
 export interface SolidControlRow { unit: string; hours: number | null; underFlow: number | null; overFlow: number | null; feed: number | null; cons: number | null; fprs: number | null }
 export interface ChemicalRow { order: number; material: string | null; unit: string | null; used: number | null; received: number | null; stock: number | null; outstanding: number | null; requested: number | null; sent: number | null }
-export interface CasingRow { order: number; casing: string | null; depth: number | null; joints: number | null }
-export interface FormationTopRow { order: number; formation: string | null; depth: number | null; secondDepth: number | null; type: string | null }
-export interface SurveyRow { order: number; md: number | null; inc: number | null; azi: number | null; tvd: number | null; ns: number | null; ew: number | null; dls: number | null }
+/**
+ * One casing string — a.json `casing_string`.
+ *
+ * NOTE: `depth` is a.json set_depth_mkb (the shoe), NOT the top. `topMkb` is
+ * a.json top_mkb — the two are separate depths and must never be conflated.
+ * `joints` is a DR.xls-only column with no a.json counterpart.
+ */
+export interface CasingRow {
+  order: number; casing: string | null; depth: number | null; joints: number | null;
+  // ── a.json casing_string additions ──
+  /** a.json run_date, as printed. */
+  runDate: string | null;
+  topMkb: number | null; com: string | null;
+}
+/** One wellhead spool / housing — a.json `wellhead_component`. */
+export interface WellheadRow {
+  order: number; installDate: string | null; sizeIn: number | null; type: string | null;
+  make: string | null; wpPsi: number | null; com: string | null;
+}
+/** One slow-circulation rate — a.json `well_control_scr`, one row per pump / rate. */
+export interface ScrRateRow {
+  order: number; pumpNo: string | null; depthMkb: number | null; strokesSpm: number | null;
+  effPct: number | null; pPsi: number | null; qFlowGpm: number | null;
+}
+/** One support vessel alongside — a.json `support_vessels` (offshore only). */
+export interface SupportVesselRow {
+  order: number; vesselName: string | null; vesselType: string | null;
+  arrivalDate: string | null; departureDate: string | null; note: string | null;
+}
+/**
+ * Formation integrity test — a.json `formation_integrity_test`.
+ *
+ * At most one FIT/LOT per report — an OBJECT in a.json, 1:1 like mud (not an
+ * array), so the whole block is null on the many days with no test.
+ */
+export interface FitProps {
+  testType: string | null; testDate: string | null; lastCasingStringRun: string | null;
+  depthMkb: number | null; tvdMkb: number | null; appliedSurfacePressurePsi: number | null;
+  fluidDensityPpg: number | null; volumePumpedBbl: number | null;
+  leakOffPressurePsi: number | null; leakOffEqDensityPpg: number | null;
+}
+/**
+ * Marine conditions — a.json `marine_conditions` (offshore only).
+ *
+ * This is the structured form of the DR.xls windSpeedDir/waveVisible free text,
+ * which stays on EntryReport for the office sheet. Both are kept: the sheet
+ * prints its own two strings, the DDR prints these broken-out numbers.
+ */
+export interface MarineProps {
+  swellHtM: number | null; visibilityKm: number | null; windSpdKnots: number | null;
+  tHighC: number | null; waveHtM: number | null;
+  windDir: string | null; com: string | null;
+}
+/**
+ * One formation top — a.json `formations`.
+ *
+ * The whole point of the block is prognosed-vs-actual, so keep the two depths
+ * apart: `depth` is final_top_md_mkb (where the top ACTUALLY came in) while
+ * `progTopMd` is prog_top_md_mkb (where it was PROGNOSED). Never conflate them.
+ */
+export interface FormationTopRow {
+  order: number; formation: string | null; depth: number | null; secondDepth: number | null; type: string | null;
+  // ── a.json formations additions ──
+  progTopMd: number | null; finalTopTvd: number | null; thickM: number | null;
+  drilledRopMHr: number | null;
+  /** Comma-separated lithology codes, e.g. "Lst,Mrl,Clst,Gyp". */
+  lithDes: string | null;
+}
+/** One line of a.json `supervisors_contact` — who to call, and their position. */
+export interface SupervisorRow { order: number; jobContact: string | null; position: string | null }
+/** One line of a.json `onboard_companies`; `note` is the role (Client / Operator / …). */
+export interface OnboardCompanyRow { order: number; company: string | null; count: number | null; note: string | null }
+/**
+ * One HSE drill — a.json `hse_drill_schedule`.
+ *
+ * A FIXED four-row set ("BOP Test", "H2S Drill", "Fire Drill", "Abandon Drill")
+ * keyed by `type`, not by order: the sheet prints all four rows every day even
+ * when they are blank, so the editor always renders four and never adds/removes.
+ */
+export interface HseDrillRow { type: string; date: string | null; daysToNextCheck: number | null }
+/** One line of a.json `bulk_material`; `unitLabel` is the printed unit (MT, liter, m3). */
+export interface BulkMaterialRow {
+  order: number; supplyItemDes: string | null; unitLabel: string | null;
+  consumed: number | null; received: number | null; returned: number | null; onLoc: number | null;
+  note: string | null;
+}
+/** One survey station — a.json `directional_survey` (md_mkb … build_deg_30m). */
+export interface SurveyRow {
+  order: number; md: number | null; inc: number | null; azi: number | null; tvd: number | null;
+  ns: number | null; ew: number | null; vs: number | null; dls: number | null; build: number | null;
+}
+/**
+ * One drilled interval — a.json `drilling_parameters`.
+ *
+ * Every column is nullable: a trailing row carrying only circulating time and
+ * no depths is normal (circulating without making hole).
+ */
+export interface DrillingParameterRow {
+  order: number; startMkb: number | null; endDepthMkb: number | null;
+  drillTimeHr: number | null; slideTimeHr: number | null; circTimeHr: number | null;
+  intRopMHr: number | null; drillTq: number | null; rpm: number | null;
+  qFlowGpm: number | null; sppPsi: number | null; wob1000Lbf: number | null;
+}
 export interface TimeRow { order: number; group: string | null; type: string | null; activity: string | null; hours: number | null }
 export interface OperationRow { order: number; opCode: string | null; fromTime: string | null; toTime: string | null; remarks: string | null }
 
 /** The editable body of a report — exactly what PUT /entry/reports/:id accepts. */
 export interface ReportBody {
   morningDepth: number | null; midnightDepth: number | null; previousDepth: number | null;
+  /** a.json end_depth_tvd_mkb — the day's end depth on the TVD scale. */
+  endDepthTvd: number | null;
   drillingTime: number | null; cumDrillingTime: number | null;
+  /**
+   * a.json report_header per-day counters. `cumTimeLogDays` is elapsed DAYS on
+   * the well — a different quantity from `cumDrillingTime` (hours), never merge
+   * the two. `hazards` is the free-text safety note ("STOP CARD: 12").
+   */
+  cumTimeLogDays: number | null; daysLti: number | null; headCount: number | null;
+  hazards: string | null;
   holeSize: string | null; formation: string | null; lithology: string | null;
   lastCasing: string | null; linerLap: string | null; kop: string | null;
   wellSiteSupt: string | null; opnSupt: string | null; progEng: string | null;
   geologist: string | null; toolPusher1: string | null; toolPusher2: string | null;
   formationLoss: number | null; mudLossUnit: number | null; mudGains: number | null;
-  description: string | null; windSpeedDir: string | null; waveVisible: string | null;
+  /** a.json operations.summary — the 24-hour narrative. */
+  description: string | null;
+  /** a.json operations.at_report_time, e.g. 'RIH 24" H.S. BHA at 21m.' */
+  opsAtReportTime: string | null;
+  /** a.json operations.next_report_period — what is planned for the next 24 hrs. */
+  opsNextPeriod: string | null;
+  windSpeedDir: string | null; waveVisible: string | null;
   freshWater: number | null; fuel: number | null;
   bitRuns: BitRun[]; bha: BhaItem[]; drillString: DrillPipe[]; tools: ToolItem[];
+  drillingParameters: DrillingParameterRow[];
   mud: MudProps | null; solidControl: SolidControlRow[]; chemicals: ChemicalRow[];
   casing: CasingRow[]; formationTops: FormationTopRow[]; surveys: SurveyRow[];
   timeBreakdown: TimeRow[]; operations: OperationRow[];
+  supervisors: SupervisorRow[]; companies: OnboardCompanyRow[];
+  hseDrills: HseDrillRow[]; bulkMaterials: BulkMaterialRow[];
+  wellheads: WellheadRow[]; scrRates: ScrRateRow[]; supportVessels: SupportVesselRow[];
+  fit: FitProps | null; marine: MarineProps | null;
 }
 
 export interface ReportDetail extends ReportBody {

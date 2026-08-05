@@ -34,6 +34,12 @@ const str = z.preprocess(
   z.string().nullable(),
 ).default(null);
 const int0 = z.preprocess((v) => (blank(v) ? 0 : Number(v)), z.number().int()).default(0);
+// Like `int0`, but a blank stays null — Prisma rejects a float on an Int column,
+// so a nullable integer field must never go through `num`.
+const intOrNull = z.preprocess(
+  (v) => (blank(v) ? null : String(v).trim() === "" ? null : Number(v)),
+  z.number().int().nullable(),
+).default(null);
 
 /** Jalali (Shamsi) date as the legacy DBs store it: "1404/05/09". */
 const jalali = z.string().regex(/^\d{3,4}\/\d{1,2}\/\d{1,2}$/, "date must be Jalali YYYY/MM/DD");
@@ -54,6 +60,10 @@ const mudSchema = z.object({
   ph: num, alkalinity: num, waterLoss: num, hpht: num, airFoam: num, oilPct: num,
   oilWaterRatio: str, eStability: num, kcl: num, mbt: num, pf: num, mf: num,
   chloride: num, calcium: num, solidsPct: num, tempF: num,
+  // ── a.json mud_information additions (all numeric) ──
+  depthMkb: num, densityPpg: num, tFlowlineC: num, filtrateMl: num,
+  vis3rpm: num, vis6rpm: num, percentWater: num, lowGravitySolidsPct: num,
+  hardnessCaPpm: num, mudLostBbl: num, activeMudVolBbl: num, volMudResBbl: num,
 }).nullable().default(null);
 const solidControlSchema = z.object({
   unit: z.string().min(1), hours: num, underFlow: num, overFlow: num, feed: num, cons: num, fprs: num,
@@ -62,20 +72,84 @@ const chemicalSchema = z.object({
   order: int0, material: str, unit: str, used: num, received: num, stock: num,
   outstanding: num, requested: num, sent: num,
 });
-const casingSchema = z.object({ order: int0, casing: str, depth: num, joints: num });
-const formationTopSchema = z.object({ order: int0, formation: str, depth: num, secondDepth: num, type: str });
-const surveySchema = z.object({ order: int0, md: num, inc: num, azi: num, tvd: num, ns: num, ew: num, dls: num });
+/** a.json `casing_string`. `depth` is set_depth_mkb — the shoe; `topMkb` the hanger. */
+const casingSchema = z.object({
+  order: int0, casing: str, depth: num, joints: num, runDate: str, topMkb: num, com: str,
+});
+/** a.json `wellhead_component` — the stack as installed, one row per spool/head. */
+const wellheadSchema = z.object({
+  order: int0, installDate: str, sizeIn: num, type: str, make: str, wpPsi: num, com: str,
+});
+/** a.json `well_control_scr` — slow circulation rates, one row per pump / rate. */
+const scrRateSchema = z.object({
+  order: int0, pumpNo: str, depthMkb: num, strokesSpm: num, effPct: num, pPsi: num, qFlowGpm: num,
+});
+/** a.json `support_vessels` — offshore only. */
+const supportVesselSchema = z.object({
+  order: int0, vesselName: str, vesselType: str, arrivalDate: str, departureDate: str, note: str,
+});
+/**
+ * a.json `formation_integrity_test` — an OBJECT, not a table: at most one FIT/LOT
+ * per day. Same 1:1 shape as `mud`, so it saves through the same path.
+ */
+const fitSchema = z.object({
+  testType: str, testDate: str, lastCasingStringRun: str, depthMkb: num, tvdMkb: num,
+  appliedSurfacePressurePsi: num, fluidDensityPpg: num, volumePumpedBbl: num,
+  leakOffPressurePsi: num, leakOffEqDensityPpg: num,
+}).nullable().default(null);
+/** a.json `marine_conditions` — offshore only, one object per day (1:1 like `mud`). */
+const marineSchema = z.object({
+  swellHtM: num, visibilityKm: num, windDir: str, windSpdKnots: num, tHighC: num,
+  waveHtM: num, com: str,
+}).nullable().default(null);
+/**
+ * a.json `formations`. `depth` is final_top_md_mkb — where the top actually came
+ * in; `progTopMd` is where it was prognosed. Prognosed-vs-actual is the point of
+ * the block, so the two never merge.
+ */
+const formationTopSchema = z.object({
+  order: int0, formation: str, depth: num, secondDepth: num, type: str,
+  progTopMd: num, finalTopTvd: num, thickM: num, drilledRopMHr: num, lithDes: str,
+});
+/** a.json `supervisors_contact` — whoever is on tour, roles vary per rig. */
+const supervisorSchema = z.object({ order: int0, jobContact: str, position: str });
+/** a.json `onboard_companies` — the POB breakdown behind the header head count. */
+const companySchema = z.object({ order: int0, company: str, count: intOrNull, note: str });
+/** a.json `hse_drill_schedule` — fixed four-row set, blank rows still print. */
+const hseDrillSchema = z.object({ type: z.string().min(1), date: str, daysToNextCheck: num });
+/** a.json `bulk_material` — rig bulks in MT / liter / m³ (not mud additives). */
+const bulkMaterialSchema = z.object({
+  order: int0, supplyItemDes: str, unitLabel: str, consumed: num, received: num,
+  returned: num, onLoc: num, note: str,
+});
+const surveySchema = z.object({
+  order: int0, md: num, inc: num, azi: num, tvd: num, ns: num, ew: num, vs: num,
+  dls: num, build: num,
+});
+/** a.json "drilling_parameters" — one row per drilled interval. */
+const drillingParameterSchema = z.object({
+  order: int0, startMkb: num, endDepthMkb: num, drillTimeHr: num, slideTimeHr: num,
+  circTimeHr: num, intRopMHr: num, drillTq: num, rpm: num, qFlowGpm: num,
+  sppPsi: num, wob1000Lbf: num,
+});
 const timeSchema = z.object({ order: int0, group: str, type: str, activity: str, hours: num });
 const operationSchema = z.object({ order: int0, opCode: str, fromTime: str, toTime: str, remarks: str });
 
 /** The whole sheet, as the form posts it on save. */
 const reportSaveSchema = z.object({
-  morningDepth: num, midnightDepth: num, previousDepth: num, drillingTime: num,
-  cumDrillingTime: num, holeSize: str, formation: str, lithology: str,
+  morningDepth: num, midnightDepth: num, previousDepth: num, endDepthTvd: num,
+  drillingTime: num, cumDrillingTime: num,
+  // Day counters carried on the header band. cumTimeLogDays is elapsed DAYS on
+  // the well — not to be confused with cumDrillingTime, which is hours.
+  cumTimeLogDays: num, daysLti: num, headCount: num, hazards: str,
+  holeSize: str, formation: str, lithology: str,
   lastCasing: str, linerLap: str, kop: str, wellSiteSupt: str, opnSupt: str,
   progEng: str, geologist: str, toolPusher1: str, toolPusher2: str,
   formationLoss: num, mudLossUnit: num, mudGains: num,
-  description: str, windSpeedDir: str, waveVisible: str, freshWater: num, fuel: num,
+  // The three narrative fields of a.json `operations`: what the rig is doing
+  // right now, the 24-hour summary (`description`), and the plan ahead.
+  opsAtReportTime: str, description: str, opsNextPeriod: str,
+  windSpeedDir: str, waveVisible: str, freshWater: num, fuel: num,
   bitRuns: z.array(bitRunSchema).default([]),
   bha: z.array(bhaSchema).default([]),
   drillString: z.array(drillPipeSchema).default([]),
@@ -84,17 +158,31 @@ const reportSaveSchema = z.object({
   solidControl: z.array(solidControlSchema).default([]),
   chemicals: z.array(chemicalSchema).default([]),
   casing: z.array(casingSchema).default([]),
+  wellheads: z.array(wellheadSchema).default([]),
+  scrRates: z.array(scrRateSchema).default([]),
+  supportVessels: z.array(supportVesselSchema).default([]),
+  fit: fitSchema,
+  marine: marineSchema,
   formationTops: z.array(formationTopSchema).default([]),
   surveys: z.array(surveySchema).default([]),
+  drillingParameters: z.array(drillingParameterSchema).default([]),
   timeBreakdown: z.array(timeSchema).default([]),
   operations: z.array(operationSchema).default([]),
+  supervisors: z.array(supervisorSchema).default([]),
+  companies: z.array(companySchema).default([]),
+  hseDrills: z.array(hseDrillSchema).default([]),
+  bulkMaterials: z.array(bulkMaterialSchema).default([]),
 });
 
 const wellSchema = z.object({
   rigId: z.string().min(1), name: z.string().min(1), field: str, legacyWellCode: str,
   location: str, wellType: str, profile: str, reservoir: str, contractor: str,
+  client: str,
   spudDate: str, rigReleasedDate: str, rtElevation: num, waterDepth: num,
-  finalForecastDepth: num, forecastDays: num, active: z.boolean().default(true),
+  finalForecastDepth: num, forecastDays: num,
+  // Typed once per well: coordinates stay TEXT so the DMS reads exactly as printed.
+  latitude: str, longitude: str, elevationNote: str, comment: str,
+  active: z.boolean().default(true),
 });
 
 /** Every child relation, in the shape the detail endpoint returns. */
@@ -107,10 +195,20 @@ const REPORT_INCLUDE = {
   solidControl: true,
   chemicals: { orderBy: { order: "asc" } },
   casing: { orderBy: { order: "asc" } },
+  wellheads: { orderBy: { order: "asc" } },
+  scrRates: { orderBy: { order: "asc" } },
+  supportVessels: { orderBy: { order: "asc" } },
+  fit: true,
+  marine: true,
   formationTops: { orderBy: { order: "asc" } },
   surveys: { orderBy: { order: "asc" } },
+  drillingParameters: { orderBy: { order: "asc" } },
   timeBreakdown: { orderBy: { order: "asc" } },
   operations: { orderBy: { order: "asc" } },
+  supervisors: { orderBy: { order: "asc" } },
+  companies: { orderBy: { order: "asc" } },
+  hseDrills: { orderBy: { type: "asc" } },   // fixed row set — no order column
+  bulkMaterials: { orderBy: { order: "asc" } },
   well: { include: { rig: true } },
   user: { select: { id: true, username: true, fullName: true } },
 } as const;
@@ -224,6 +322,11 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
             morningDepth: last?.midnightDepth ?? null,
             // The three fixed solid-control units always exist on the sheet.
             solidControl: { create: ["Clay Jactor", "Mud Cleaner", "Shaker"].map((unit) => ({ unit })) },
+            // Likewise the four HSE drills: they print blank when undrilled, so
+            // a new day must open with the block already there.
+            hseDrills: {
+              create: ["BOP Test", "H2S Drill", "Fire Drill", "Abandon Drill"].map((type) => ({ type })),
+            },
           },
           include: REPORT_INCLUDE,
         });
@@ -255,7 +358,10 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
       try { body = reportSaveSchema.parse(req.body); } catch (e) { return badReq(reply, e); }
 
       const { bitRuns, bha, drillString, tools, mud, solidControl, chemicals,
-        casing, formationTops, surveys, timeBreakdown, operations, ...header } = body;
+        casing, wellheads, scrRates, supportVessels, fit, marine,
+        formationTops, surveys, drillingParameters, timeBreakdown,
+        operations, supervisors, companies, hseDrills, bulkMaterials,
+        ...header } = body;
       const id = existing.id;
 
       // Replace-all: the form always posts the complete sheet.
@@ -269,10 +375,20 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
         prisma.entrySolidControl.deleteMany({ where: { reportId: id } }),
         prisma.entryChemical.deleteMany({ where: { reportId: id } }),
         prisma.entryCasingRun.deleteMany({ where: { reportId: id } }),
+        prisma.entryWellheadComponent.deleteMany({ where: { reportId: id } }),
+        prisma.entryScrRate.deleteMany({ where: { reportId: id } }),
+        prisma.entrySupportVessel.deleteMany({ where: { reportId: id } }),
+        prisma.entryFit.deleteMany({ where: { reportId: id } }),
+        prisma.entryMarine.deleteMany({ where: { reportId: id } }),
         prisma.entryFormationTop.deleteMany({ where: { reportId: id } }),
         prisma.entrySurvey.deleteMany({ where: { reportId: id } }),
+        prisma.entryDrillingParameter.deleteMany({ where: { reportId: id } }),
         prisma.entryTimeEntry.deleteMany({ where: { reportId: id } }),
         prisma.entryOperation.deleteMany({ where: { reportId: id } }),
+        prisma.entrySupervisor.deleteMany({ where: { reportId: id } }),
+        prisma.entryOnboardCompany.deleteMany({ where: { reportId: id } }),
+        prisma.entryHseDrill.deleteMany({ where: { reportId: id } }),
+        prisma.entryBulkMaterial.deleteMany({ where: { reportId: id } }),
         prisma.entryBitRun.createMany({ data: bitRuns.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryBhaItem.createMany({ data: bha.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryDrillPipe.createMany({ data: drillString.map((r) => ({ ...r, reportId: id })) }),
@@ -281,10 +397,21 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
         prisma.entrySolidControl.createMany({ data: solidControl.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryChemical.createMany({ data: chemicals.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryCasingRun.createMany({ data: casing.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryWellheadComponent.createMany({ data: wellheads.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryScrRate.createMany({ data: scrRates.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entrySupportVessel.createMany({ data: supportVessels.map((r) => ({ ...r, reportId: id })) }),
+        // 1:1 like `mud` above — a null block just leaves the row deleted.
+        ...(fit ? [prisma.entryFit.create({ data: { ...fit, reportId: id } })] : []),
+        ...(marine ? [prisma.entryMarine.create({ data: { ...marine, reportId: id } })] : []),
         prisma.entryFormationTop.createMany({ data: formationTops.map((r) => ({ ...r, reportId: id })) }),
         prisma.entrySurvey.createMany({ data: surveys.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryDrillingParameter.createMany({ data: drillingParameters.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryTimeEntry.createMany({ data: timeBreakdown.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryOperation.createMany({ data: operations.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entrySupervisor.createMany({ data: supervisors.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryOnboardCompany.createMany({ data: companies.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryHseDrill.createMany({ data: hseDrills.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryBulkMaterial.createMany({ data: bulkMaterials.map((r) => ({ ...r, reportId: id })) }),
       ]);
       return prisma.entryReport.findUnique({ where: { id }, include: REPORT_INCLUDE });
     });

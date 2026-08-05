@@ -1,0 +1,471 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.local/schemas/pedc-ddr.json",
+  "title": "PEDC/POGC Daily Drilling Report (DDR)",
+  "description": "Structure of one DDR PDF (one well, one report day). 21 top-level blocks. Derived from SPD20-14, DDR No. 5.0, 4/30/2026, rig P-200. Empty tables still print their headers in the PDF - parse them to [] or nulls, do not skip.",
+  "type": "object",
+  "required": ["report_header", "operations", "operations_24hr"],
+  "properties": {
+
+    "document": {
+      "title": "Repeating page banner + footer",
+      "description": "Printed on every page; use it to detect page breaks and to validate that all pages belong to the same report.",
+      "type": "object",
+      "properties": {
+        "ddr_no": { "type": ["string", "null"], "examples": ["5.0"] },
+        "well_name": { "type": ["string", "null"], "examples": ["SPD20-14"] },
+        "ddr_date": { "type": ["string", "null"], "description": "M/D/YYYY as printed", "examples": ["4/30/2026"] },
+        "page_count": { "type": ["integer", "null"], "description": "From the 'Page ( n )' footer" }
+      }
+    },
+
+    "report_header": {
+      "title": "Top identification grid (unlabelled block on page 1)",
+      "type": "object",
+      "properties": {
+        "field_name": { "type": ["string", "null"] },
+        "client": { "type": ["string", "null"] },
+        "well_type": { "type": ["string", "null"], "examples": ["Infill"] },
+        "water_depth_m": { "type": ["number", "null"] },
+        "latitude": { "type": ["string", "null"], "description": "DMS text, e.g. 26 deg 46' 39.11\" N" },
+        "longitude": { "type": ["string", "null"] },
+        "rig_number": { "type": ["string", "null"] },
+        "contractor": { "type": ["string", "null"] },
+        "original_kb_elevation_m": { "type": ["number", "null"] },
+        "other_elevation_note": { "type": ["string", "null"], "description": "Free text, usually 'Air Gap(m): x'" },
+        "comment": { "type": ["string", "null"], "description": "Free text, on jack-ups usually 'Leg Pen.(m): FWD/STBD/PORT'" },
+        "spud_date": { "type": ["string", "null"] },
+        "cum_time_log_days": { "type": ["number", "null"] },
+        "days_lti": { "type": ["number", "null"] },
+        "kick_off_depth_mkb": { "type": ["number", "null"] },
+        "last_casing_string": { "type": ["string", "null"], "examples": ["26\" Conductor, 195.00mKB"] },
+        "ops_category": { "type": ["string", "null"], "examples": ["24\" H.S."] },
+        "current_geology": { "type": ["string", "null"] },
+        "mud_type": { "type": ["string", "null"] },
+        "last_mud_check_density_ppg": { "type": ["number", "null"] },
+        "head_count": { "type": ["number", "null"] },
+        "hazards": { "type": ["string", "null"], "examples": ["STOP CARD: 12"] },
+        "start_depth_mkb": { "type": ["number", "null"] },
+        "end_depth_mkb": { "type": ["number", "null"] },
+        "end_depth_tvd_mkb": { "type": ["number", "null"] },
+        "depth_progress_m": { "type": ["number", "null"] },
+        "drilling_hours_hr": { "type": ["number", "null"] },
+        "avg_rop_m_hr": { "type": ["number", "null"] }
+      }
+    },
+
+    "operations": {
+      "title": "Three narrative fields under the header grid",
+      "type": "object",
+      "properties": {
+        "at_report_time": { "type": ["string", "null"] },
+        "summary": { "type": ["string", "null"] },
+        "next_report_period": { "type": ["string", "null"] }
+      }
+    },
+
+    "supervisors_contact": {
+      "title": "Supervisors Contact",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "job_contact": { "type": "string" },
+          "position": { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "onboard_companies": {
+      "title": "On-Board Companies",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "company": { "type": "string" },
+          "count": { "type": ["integer", "null"] },
+          "note": { "type": ["string", "null"], "description": "Role, e.g. Client / Operator / Drilling Unit Service" }
+        }
+      }
+    },
+
+    "hse_drill_schedule": {
+      "title": "HSE Drill Schedule",
+      "description": "Fixed row set: BOP Test, H2S Drill, Fire Drill, Abandon Drill. Rows are always printed even when blank.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string" },
+          "date": { "type": ["string", "null"] },
+          "days_to_next_check": { "type": ["number", "null"] }
+        }
+      }
+    },
+
+    "bulk_material": {
+      "title": "Bulk Material",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "supply_item_des": { "type": "string" },
+          "unit_label": { "type": ["string", "null"], "description": "MT, liter, m3" },
+          "consumed": { "type": ["number", "null"] },
+          "received": { "type": ["number", "null"] },
+          "returned": { "type": ["number", "null"] },
+          "on_loc": { "type": ["number", "null"] },
+          "note": { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "formations": {
+      "title": "Formations",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "formation_name": { "type": "string" },
+          "prog_top_md_mkb": { "type": ["number", "null"] },
+          "final_top_md_mkb": { "type": ["number", "null"] },
+          "final_top_tvd_mkb": { "type": ["number", "null"] },
+          "thick_m": { "type": ["number", "null"] },
+          "drilled_rop_m_hr": { "type": ["number", "null"] },
+          "lith_des": { "type": ["string", "null"], "description": "Comma-separated lithology codes, e.g. Lst,Mrl,Clst,Gyp" }
+        }
+      }
+    },
+
+    "directional_survey": {
+      "title": "Directional Survey",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "md_mkb": { "type": ["number", "null"] },
+          "incl_deg": { "type": ["number", "null"] },
+          "azm_deg": { "type": ["number", "null"] },
+          "tvd_mkb": { "type": ["number", "null"] },
+          "ns_m": { "type": ["number", "null"] },
+          "ew_m": { "type": ["number", "null"] },
+          "vs_m": { "type": ["number", "null"] },
+          "dls_deg_30m": { "type": ["number", "null"] },
+          "build_deg_30m": { "type": ["number", "null"] }
+        }
+      }
+    },
+
+    "operations_24hr": {
+      "title": "24 Hrs Operation Report",
+      "description": "The main time log, 00:00-00:00. Spans page 1 to page 2 - the section header is reprinted after the page break, so join the fragments. Durations should sum to 24.0.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "start_time": { "type": "string", "description": "HH:MM" },
+          "dur_hr": { "type": ["number", "null"] },
+          "end_time": { "type": ["string", "null"] },
+          "code_1": { "type": ["string", "null"], "description": "Operation code, e.g. DRL1, DRL2, DRL3, DRL4, DRL8" },
+          "code_2": { "type": ["string", "null"], "description": "P (productive) / NP (non-productive)" },
+          "com": { "type": ["string", "null"], "description": "Free text. First line is the activity; subsequent lines starting with '>>' are sub-notes (parameters, observations, dull grading). Parse them into 'notes'." },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "The '>>' lines split out of com"
+          },
+          "parameters": {
+            "type": ["object", "null"],
+            "description": "Optional derived block - values scraped out of a '>> Parameters: (...)' note",
+            "properties": {
+              "fr_gpm": { "type": ["string", "null"] },
+              "spp_psi": { "type": ["string", "null"] },
+              "srpm": { "type": ["string", "null"] },
+              "tq_klbf_ft": { "type": ["string", "null"] },
+              "wob_klbf": { "type": ["string", "null"] }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+
+    "morning_report_6hr": {
+      "title": "6 Hrs Morning Report",
+      "description": "Free-text 'Remarks' field covering 00:00-06:00 of the NEXT calendar day. Internally structured as 'HH:MM - HH:MM' headings followed by prose and '>>' sub-notes. NPT is flagged inline as '[ n hr NPT for XXX ]'.",
+      "type": "object",
+      "properties": {
+        "remarks_date": { "type": ["string", "null"], "description": "As printed, e.g. 2026.MAY.01" },
+        "raw_text": { "type": ["string", "null"] },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "start_time": { "type": "string" },
+              "end_time": { "type": "string" },
+              "text": { "type": "string" },
+              "notes": { "type": "array", "items": { "type": "string" } },
+              "npt_hr": { "type": ["number", "null"] },
+              "npt_party": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+
+    "drill_strings": {
+      "title": "Drill Strings",
+      "description": "Composite block, one entry per BHA in hole during the day: string header + bit record + component list. The component table spans the page 2 / page 3 break.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "drill_string_name": { "type": ["string", "null"] },
+          "bha_no": { "type": ["integer", "null"] },
+          "depth_in_mkb": { "type": ["number", "null"] },
+          "date_in": { "type": ["string", "null"] },
+          "bha_objective": { "type": ["string", "null"] },
+          "depth_drilled_m": { "type": ["number", "null"] },
+          "drilling_time_hr": { "type": ["number", "null"] },
+          "circulating_time_hr": { "type": ["number", "null"] },
+          "rotating_time_hr": { "type": ["number", "null"] },
+          "sliding_time_hr": { "type": ["number", "null"] },
+          "note": { "type": ["string", "null"] },
+          "bit": {
+            "type": "object",
+            "properties": {
+              "size_in": { "type": ["number", "null"] },
+              "model": { "type": ["string", "null"] },
+              "iadc_codes": { "type": ["string", "null"], "examples": ["115"] },
+              "make": { "type": ["string", "null"] },
+              "serial_number": { "type": ["string", "null"] },
+              "bit_run": { "type": ["integer", "null"] },
+              "nozzles_32nds": { "type": ["string", "null"], "description": "Slash-separated, e.g. 22/22/22/18" },
+              "tfa_in2": { "type": ["number", "null"] },
+              "bit_revs": { "type": ["number", "null"] },
+              "iadc_bit_dull": { "type": ["string", "null"], "description": "8-position dull grade: I-O-D-L-B-G-O-R. Printed inconsistently between this field and the 24 Hrs log - normalize and cross-check." }
+            }
+          },
+          "components": {
+            "type": "array",
+            "description": "BHA make-up, listed bottom-up or top-down depending on the export; cum_len is the running total.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item_des": { "type": "string" },
+                "serv": { "type": ["string", "null"], "description": "Owning service company" },
+                "sn": { "type": ["string", "null"] },
+                "od_in": { "type": ["number", "null"] },
+                "id_in": { "type": ["number", "null"] },
+                "jts": { "type": ["integer", "null"] },
+                "len_m": { "type": ["number", "null"] },
+                "cum_len_m": { "type": ["number", "null"] },
+                "com": { "type": ["string", "null"] }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "drilling_parameters": {
+      "title": "Drilling Parameters",
+      "description": "One row per drilled interval. A trailing partial row with only circ time and no depths is normal (circulating without progress).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "start_mkb": { "type": ["number", "null"] },
+          "end_depth_mkb": { "type": ["number", "null"] },
+          "drill_time_hr": { "type": ["number", "null"] },
+          "slide_time_hr": { "type": ["number", "null"] },
+          "circ_time_hr": { "type": ["number", "null"] },
+          "int_rop_m_hr": { "type": ["number", "null"] },
+          "drill_tq": { "type": ["number", "null"] },
+          "rpm": { "type": ["number", "null"] },
+          "q_flow_gpm": { "type": ["number", "null"] },
+          "spp_psi": { "type": ["number", "null"] },
+          "wob_1000lbf": { "type": ["number", "null"] }
+        }
+      }
+    },
+
+    "mud_information": {
+      "title": "Mud Information",
+      "description": "Flat 24-field block printed as three label/value rows. Blank on days with no mud check (e.g. seawater drilling).",
+      "type": "object",
+      "properties": {
+        "depth_mkb": { "type": ["number", "null"] },
+        "type": { "type": ["string", "null"] },
+        "density_ppg": { "type": ["number", "null"] },
+        "t_flowline_c": { "type": ["number", "null"] },
+        "funnel_viscosity_s_qt": { "type": ["number", "null"] },
+        "pv_calc_cp": { "type": ["number", "null"] },
+        "yp_calc_lbf_100ft2": { "type": ["number", "null"] },
+        "filtrate_ml_30min": { "type": ["number", "null"] },
+        "vis_3rpm": { "type": ["number", "null"] },
+        "vis_6rpm": { "type": ["number", "null"] },
+        "gel_10sec_lbf_100ft2": { "type": ["number", "null"] },
+        "gel_10min_lbf_100ft2": { "type": ["number", "null"] },
+        "percent_water": { "type": ["number", "null"] },
+        "percent_oil": { "type": ["number", "null"] },
+        "solids_pct": { "type": ["number", "null"] },
+        "low_gravity_solids_pct": { "type": ["number", "null"] },
+        "mbt_lb_bbl": { "type": ["number", "null"] },
+        "ph": { "type": ["number", "null"] },
+        "chlorides_mg_l": { "type": ["number", "null"] },
+        "hardness_ca_ppm": { "type": ["number", "null"] },
+        "kcl_lb_bbl": { "type": ["number", "null"] },
+        "mud_lost_to_hole_bbl": { "type": ["number", "null"] },
+        "active_mud_volume_bbl": { "type": ["number", "null"] },
+        "vol_mud_res_bbl": { "type": ["number", "null"] }
+      }
+    },
+
+    "mud_additive_balance": {
+      "title": "Mud Additive Balance",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "des": { "type": "string" },
+          "units": { "type": ["string", "null"] },
+          "consumed": { "type": ["number", "null"] },
+          "rec": { "type": ["number", "null"] },
+          "on_loc": { "type": ["number", "null"] }
+        }
+      }
+    },
+
+    "casing_string": {
+      "title": "Casing String",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "csg_des": { "type": "string" },
+          "run_date": { "type": ["string", "null"] },
+          "top_mkb": { "type": ["number", "null"] },
+          "set_depth_mkb": { "type": ["number", "null"] },
+          "com": { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "wellhead_component": {
+      "title": "Wellhead Component",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "install_date": { "type": ["string", "null"] },
+          "size_in": { "type": ["number", "null"] },
+          "type": { "type": ["string", "null"] },
+          "make": { "type": ["string", "null"] },
+          "wp_psi": { "type": ["number", "null"] },
+          "com": { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "well_control_scr": {
+      "title": "Well Control-SCR",
+      "description": "Slow circulation rates, one row per pump / rate.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pump_no": { "type": ["string", "null"] },
+          "depth_mkb": { "type": ["number", "null"] },
+          "strokes_spm": { "type": ["number", "null"] },
+          "eff_pct": { "type": ["number", "null"] },
+          "p_psi": { "type": ["number", "null"] },
+          "q_flow_gpm": { "type": ["number", "null"] }
+        }
+      }
+    },
+
+    "formation_integrity_test": {
+      "title": "Formation Integrity Test",
+      "description": "FIT / LOT block, printed as two label/value rows.",
+      "type": "object",
+      "properties": {
+        "test_type": { "type": ["string", "null"] },
+        "test_date": { "type": ["string", "null"] },
+        "last_casing_string_run": { "type": ["string", "null"] },
+        "depth_mkb": { "type": ["number", "null"] },
+        "tvd_mkb": { "type": ["number", "null"] },
+        "applied_surface_pressure_psi": { "type": ["number", "null"] },
+        "fluid_density_ppg": { "type": ["number", "null"] },
+        "volume_pumped_bbl": { "type": ["number", "null"] },
+        "leak_off_pressure_psi": { "type": ["number", "null"] },
+        "leak_off_equivalent_fluid_density_ppg": { "type": ["number", "null"] }
+      }
+    },
+
+    "marine_conditions": {
+      "title": "Marine Conditions",
+      "description": "Offshore-only block.",
+      "type": "object",
+      "properties": {
+        "swell_ht_m": { "type": ["number", "null"] },
+        "visibility_km": { "type": ["number", "null"] },
+        "wind_dir": { "type": ["string", "null"] },
+        "wind_spd_knots": { "type": ["number", "null"] },
+        "t_high_c": { "type": ["number", "null"] },
+        "wave_ht_m": { "type": ["number", "null"] },
+        "com": { "type": ["string", "null"] }
+      }
+    },
+
+    "support_vessels": {
+      "title": "Support Vessels",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "vessel_name": { "type": "string" },
+          "vessel_type": { "type": ["string", "null"] },
+          "arrival_date": { "type": ["string", "null"] },
+          "departure_date": { "type": ["string", "null"] },
+          "note": { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "general_notes": {
+      "title": "General Notes",
+      "description": "One free-text 'Comment' cell with informal sub-headings separated by dashed rules. Sub-headings are stable enough to split on.",
+      "type": "object",
+      "properties": {
+        "raw_text": { "type": ["string", "null"] },
+        "material_request": {
+          "type": "object",
+          "properties": {
+            "new_request": { "type": "array", "items": { "type": "string" } },
+            "outstanding": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "received": { "type": "array", "items": { "type": "string" } },
+        "sent": { "type": "array", "items": { "type": "string" } },
+        "vessel_remaining_onboard": { "type": "array", "items": { "type": "string" } },
+        "rig_contractor_shortages": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "annotations": {
+      "title": "Manual mark-ups (not part of the form)",
+      "description": "Some copies carry yellow highlights and hand-added text boxes (e.g. a TBR calculation next to the drilling interval). These are added after export - keep them out of the data model, or capture them separately here.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "page": { "type": ["integer", "null"] },
+          "kind": { "type": ["string", "null"], "description": "highlight | textbox" },
+          "text": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

@@ -230,10 +230,25 @@ model EntryWell {
   contractor         String?
   spudDate           String?
   rigReleasedDate    String?
+  /// a.json report_header: original_kb_elevation_m. RT and KB are the same datum
+  /// on these rigs; the label reads "R.T. / KB elevation" in the UI.
   rtElevation        Float?
   waterDepth         Float?
   finalForecastDepth Float?
   forecastDays       Float?
+  // ── a.json report_header — well-level identification (typed once) ──
+  /// client — the operator the report is filed for, e.g. POGC.
+  client             String?
+  /// latitude / longitude as PRINTED (DMS text, e.g. 26° 46' 39.11" N).
+  /// Kept as text on purpose: the source is a formatted string and round-tripping
+  /// it through a decimal would lose the exact printed form the report must show.
+  latitude           String?
+  longitude          String?
+  /// other_elevation_note — free text, usually "Air Gap(m): 18".
+  elevationNote      String?
+  /// comment — free text; on jack-ups the leg penetration
+  /// ("Leg Pen.(m): FWD: 1.92/STBD: 1.86/PORT: 1.68").
+  comment            String?
   active             Boolean           @default(true)
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
@@ -276,8 +291,21 @@ model EntryReport {
   morningDepth    Float?
   midnightDepth   Float?
   previousDepth   Float?
+  /// a.json end_depth_tvd_mkb — the day's end depth on the TVD scale.
+  endDepthTvd     Float?
   drillingTime    Float?
+  /// Cumulative DRILLING hours (DR.xls). Not the same quantity as
+  /// cumTimeLogDays below — that is elapsed days on the well.
   cumDrillingTime Float?
+  // ── a.json report_header — per-day operational counters ──
+  /// cum_time_log_days — cumulative elapsed days on the well, e.g. 3.13.
+  cumTimeLogDays  Float?
+  /// days_lti — days since the last lost-time incident, e.g. 132.
+  daysLti         Float?
+  /// head_count — persons on board.
+  headCount       Float?
+  /// hazards — free text, e.g. "STOP CARD: 12".
+  hazards         String?
   holeSize        String?
   formation       String?
   lithology       String?
@@ -297,7 +325,13 @@ model EntryReport {
   mudGains      Float?
 
   // ── Summary / weather ──
+  /// a.json operations.summary — the day's narrative.
   description  String?
+  /// a.json operations.at_report_time — where the rig is RIGHT NOW, e.g.
+  /// "RIH 24" H.S. BHA at 21m." a.json marks the `operations` block required.
+  opsAtReportTime String?
+  /// a.json operations.next_report_period — what is planned next.
+  opsNextPeriod   String?
   windSpeedDir String?
   waveVisible  String?
   freshWater   Float?
@@ -318,7 +352,17 @@ model EntryReport {
   chemicals     EntryChemical[]
   casing        EntryCasingRun[]
   formationTops EntryFormationTop[]
+  supervisors   EntrySupervisor[]
+  companies     EntryOnboardCompany[]
+  hseDrills     EntryHseDrill[]
+  bulkMaterials EntryBulkMaterial[]
+  wellheads     EntryWellheadComponent[]
+  scrRates      EntryScrRate[]
+  supportVessels EntrySupportVessel[]
+  fit           EntryFit?
+  marine        EntryMarine?
   surveys       EntrySurvey[]
+  drillingParameters EntryDrillingParameter[]
   timeBreakdown EntryTimeEntry[]
   operations    EntryOperation[]
 
@@ -401,14 +445,34 @@ model EntryTool {
 }
 
 /// Mud properties (legacy N01) — one reported check per day.
+/// Mud check for the day.
+///
+/// A UNION of two report standards, deliberately: the DR.xls fields the office
+/// archive already uses (fan600/300, PF/MF, e-stability, air/foam, O:W …) plus
+/// a.json's `mud_information` block. Dropping the DR.xls-only fields to match
+/// a.json exactly would lose data the legacy form captures, so both live here and
+/// the subform groups them.
 model EntryMud {
   id            String      @id @default(cuid())
   reportId      String      @unique
-  mudSystem     String?
+  mudSystem     String? /// a.json: type
   maxWeight     Float?
   minWeight     Float?
   reportTime    String?
-  funnelVisc    Float?
+  funnelVisc    Float? /// a.json: funnel_viscosity_s_qt
+  // ── a.json mud_information additions ──
+  depthMkb      Float? /// depth_mkb — depth the sample was taken at
+  densityPpg    Float? /// density_ppg
+  tFlowlineC    Float? /// t_flowline_c
+  filtrateMl    Float? /// filtrate_ml_30min
+  vis3rpm       Float? /// vis_3rpm
+  vis6rpm       Float? /// vis_6rpm
+  percentWater  Float? /// percent_water
+  lowGravitySolidsPct Float? /// low_gravity_solids_pct
+  hardnessCaPpm Float? /// hardness_ca_ppm
+  mudLostBbl    Float? /// mud_lost_to_hole_bbl
+  activeMudVolBbl Float? /// active_mud_volume_bbl
+  volMudResBbl  Float? /// vol_mud_res_bbl
   pv            Float?
   yp            Float?
   gelInitial    Float?
@@ -467,43 +531,94 @@ model EntryChemical {
   @@index([reportId, order])
 }
 
+/// Casing / liner run — a.json `casing_string` unioned with the DR.xls columns.
 model EntryCasingRun {
   id       String      @id @default(cuid())
   reportId String
   order    Int         @default(0)
-  casing   String?
+  casing   String? /// csg_des
+  /// set_depth_mkb — the shoe depth.
   depth    Float?
   joints   Float?
+  // ── a.json casing_string additions ──
+  runDate  String? /// run_date, as printed
+  topMkb   Float? /// top_mkb — top of the string / liner hanger
+  com      String?
   report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
 }
 
+/// Formation top — a.json `formations` unioned with the DR.xls columns.
+///
+/// The point of this block is PROGNOSED vs ACTUAL: `progTopMd` is where the
+/// geologist expected the top, `depth` (final_top_md_mkb) is where it came in.
+/// A single depth column cannot express that, which is why both exist.
 model EntryFormationTop {
   id          String      @id @default(cuid())
   reportId    String
   order       Int         @default(0)
-  formation   String?
+  formation   String? /// formation_name
+  /// final_top_md_mkb — where the top ACTUALLY came in.
   depth       Float?
   secondDepth Float?
   type        String?
+  // ── a.json formations additions ──
+  progTopMd     Float? /// prog_top_md_mkb — prognosed top
+  finalTopTvd   Float? /// final_top_tvd_mkb
+  thickM        Float? /// thick_m
+  drilledRopMHr Float? /// drilled_rop_m_hr
+  /// lith_des — comma-separated lithology codes, e.g. "Lst,Mrl,Clst,Gyp".
+  lithDes       String?
   report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
 }
 
+/// Directional survey station — a.json `directional_survey`.
+/// Units are fixed by that schema: md/tvd in mKB, angles in degrees, NS/EW/VS in
+/// metres, DLS and build rate per 30 m. Field names stay short (md/inc/azi/…);
+/// the units live in the UI labels and here.
 model EntrySurvey {
   id       String      @id @default(cuid())
   reportId String
   order    Int         @default(0)
-  md       Float?
-  inc      Float?
-  azi      Float?
-  tvd      Float?
-  ns       Float?
-  ew       Float?
-  dls      Float?
+  md       Float? /// md_mkb
+  inc      Float? /// incl_deg
+  azi      Float? /// azm_deg
+  tvd      Float? /// tvd_mkb
+  ns       Float? /// ns_m
+  ew       Float? /// ew_m
+  vs       Float? /// vs_m — vertical section
+  dls      Float? /// dls_deg_30m
+  build    Float? /// build_deg_30m
   report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// Drilling parameters — a.json `drilling_parameters`: one row per drilled
+/// interval. A trailing partial row with only circulating time and no depths is
+/// normal (circulating without progress), so every column is nullable.
+///
+/// This is a finer granularity than the bit record: a single bit run covers many
+/// intervals, each with its own WOB / RPM / flow / SPP.
+model EntryDrillingParameter {
+  id          String      @id @default(cuid())
+  reportId    String
+  order       Int         @default(0)
+  startMkb    Float? /// start_mkb
+  endDepthMkb Float? /// end_depth_mkb
+  drillTimeHr Float? /// drill_time_hr
+  slideTimeHr Float? /// slide_time_hr
+  circTimeHr  Float? /// circ_time_hr
+  intRopMHr   Float? /// int_rop_m_hr
+  drillTq     Float? /// drill_tq
+  rpm         Float? /// rpm
+  qFlowGpm    Float? /// q_flow_gpm
+  sppPsi      Float? /// spp_psi
+  wob1000Lbf  Float? /// wob_1000lbf
+  report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
 }
@@ -532,4 +647,162 @@ model EntryOperation {
   report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
+}
+
+/// Supervisors Contact — a.json `supervisors_contact`.
+///
+/// A repeating table, NOT the six fixed DR.xls name slots (wellSiteSupt,
+/// opnSupt, …): the PEDC sheet lists whoever is on tour — Head of Operation,
+/// Night Drilling Sup., POGC Rep., Rig OIM — and those roles vary per rig, so
+/// fixed slots would drop rows on some reports and leave blanks on others.
+/// Both live on the report; the DR.xls slots stay for the office sheet.
+model EntrySupervisor {
+  id         String      @id @default(cuid())
+  reportId   String
+  order      Int         @default(0)
+  jobContact String? /// job_contact
+  position   String? /// position
+  report     EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// On-Board Companies — a.json `onboard_companies`. The POB breakdown behind
+/// the header's head_count.
+model EntryOnboardCompany {
+  id       String      @id @default(cuid())
+  reportId String
+  order    Int         @default(0)
+  company  String? /// company
+  count    Int? /// count — persons from that company
+  note     String? /// note — role, e.g. Client / Operator / Drilling Unit Service
+  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// HSE Drill Schedule — a.json `hse_drill_schedule`.
+///
+/// A FIXED row set (BOP Test, H2S Drill, Fire Drill, Abandon Drill), like the
+/// solid-control block. a.json is explicit that the rows print even when blank,
+/// so an undrilled type is stored as a row with null date, never omitted.
+model EntryHseDrill {
+  id               String      @id @default(cuid())
+  reportId         String
+  /// "BOP Test" | "H2S Drill" | "Fire Drill" | "Abandon Drill"
+  type             String
+  /// date as PRINTED (the PEDC sheet uses Gregorian M/D/YYYY here, not Jalali).
+  date             String?
+  daysToNextCheck  Float? /// days_to_next_check
+  report           EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, type])
+}
+
+/// Bulk Material — a.json `bulk_material`.
+///
+/// Distinct from EntryChemical, which is a.json `mud_additive_balance`: this one
+/// tracks rig bulks (barite, cement, diesel, drill/fresh water) in MT / liter /
+/// m³ and carries `returned` + `note`, which the additive balance has no column
+/// for. Merging the two would silently lose the returned volumes.
+model EntryBulkMaterial {
+  id            String      @id @default(cuid())
+  reportId      String
+  order         Int         @default(0)
+  supplyItemDes String? /// supply_item_des
+  unitLabel     String? /// unit_label — MT, liter, m3
+  consumed      Float?
+  received      Float?
+  returned      Float?
+  onLoc         Float? /// on_loc
+  note          String?
+  report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// Wellhead Component — a.json `wellhead_component`.
+model EntryWellheadComponent {
+  id          String      @id @default(cuid())
+  reportId    String
+  order       Int         @default(0)
+  installDate String? /// install_date, as printed
+  sizeIn      Float? /// size_in
+  type        String?
+  make        String?
+  wpPsi       Float? /// wp_psi — working pressure
+  com         String?
+  report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// Well Control — SCR (slow circulation rates), a.json `well_control_scr`.
+/// One row per pump / rate; these are the kill-sheet numbers.
+model EntryScrRate {
+  id         String      @id @default(cuid())
+  reportId   String
+  order      Int         @default(0)
+  pumpNo     String? /// pump_no
+  depthMkb   Float? /// depth_mkb
+  strokesSpm Float? /// strokes_spm
+  effPct     Float? /// eff_pct
+  pPsi       Float? /// p_psi
+  qFlowGpm   Float? /// q_flow_gpm
+  report     EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// Support Vessels — a.json `support_vessels` (offshore only).
+model EntrySupportVessel {
+  id            String      @id @default(cuid())
+  reportId      String
+  order         Int         @default(0)
+  vesselName    String? /// vessel_name
+  vesselType    String? /// vessel_type
+  arrivalDate   String? /// arrival_date, as printed
+  departureDate String? /// departure_date
+  note          String?
+  report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// Formation Integrity Test — a.json `formation_integrity_test`.
+/// An OBJECT in a.json, not a table: at most one FIT/LOT per report, so this is
+/// 1:1 on reportId like EntryMud.
+model EntryFit {
+  id                        String      @id @default(cuid())
+  reportId                  String      @unique
+  testType                  String? /// test_type — FIT or LOT
+  testDate                  String? /// test_date, as printed
+  lastCasingStringRun       String? /// last_casing_string_run
+  depthMkb                  Float? /// depth_mkb
+  tvdMkb                    Float? /// tvd_mkb
+  appliedSurfacePressurePsi Float? /// applied_surface_pressure_psi
+  fluidDensityPpg           Float? /// fluid_density_ppg
+  volumePumpedBbl           Float? /// volume_pumped_bbl
+  leakOffPressurePsi        Float? /// leak_off_pressure_psi
+  leakOffEqDensityPpg       Float? /// leak_off_equivalent_fluid_density_ppg
+  report                    EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+}
+
+/// Marine Conditions — a.json `marine_conditions` (offshore only), 1:1 per report.
+///
+/// TYPED fields, deliberately. The DR.xls sheet crams these into two free-text
+/// cells (EntryReport.windSpeedDir "12 kt NW" and waveVisible), which makes wind
+/// speed impossible to chart or filter. Those two stay for the office sheet; this
+/// block is the structured version.
+model EntryMarine {
+  id           String      @id @default(cuid())
+  reportId     String      @unique
+  swellHtM     Float? /// swell_ht_m
+  visibilityKm Float? /// visibility_km
+  windDir      String? /// wind_dir
+  windSpdKnots Float? /// wind_spd_knots
+  tHighC       Float? /// t_high_c
+  waveHtM      Float? /// wave_ht_m
+  com          String?
+  report       EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 }

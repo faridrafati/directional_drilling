@@ -3,9 +3,11 @@
  *
  * The office's read-only view puts the whole DR.xls sheet on one page. For DATA
  * ENTRY that is a wall of inputs, so each part of the sheet is its own subform,
- * picked from the strip of tabs: Well / Operations · Bit runs · Bottom hole
+ * picked from the strip of tabs: Well / Operations · Bit runs · Drilling
+ * parameters (a.json per-interval WOB/RPM/flow/SPP) · Bottom hole
  * assembly · Drill string & tools · Mud properties · Solid control · Chemicals ·
- * Casing · Formation tops · Surveys · Time breakdown · Operations log · Summary.
+ * Casing · Formation tops · Surveys · Time breakdown · Operations log · Summary ·
+ * Crew & companies · HSE & bulk · Wellhead & SCR · FIT/LOT · Marine & vessels.
  *
  * All subforms share ONE draft object, so switching between them never loses
  * anything typed, and Save posts the complete sheet in a single PUT (the API
@@ -24,6 +26,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   entryApi, type ReportBody, type ReportDetail, type ToolItem, type SolidControlRow,
+  type HseDrillRow,
 } from "../../entry/client.js";
 import { Section, TextField, NumField, StaticField, RowTable, type Col } from "./fields.js";
 
@@ -33,20 +36,31 @@ const TOOL_KINDS: { kind: ToolItem["kind"]; label: string }[] = [
   { kind: "dhMotor", label: "DH motor" },
 ];
 const SC_UNITS = ["Clay Jactor", "Mud Cleaner", "Shaker"];
+/**
+ * a.json `hse_drill_schedule` — a FIXED four-row set, keyed by type and printed
+ * even when blank, exactly like the tool kinds and the solid-control units.
+ */
+const HSE_TYPES = ["BOP Test", "H2S Drill", "Fire Drill", "Abandon Drill"];
 
 /** Strip the server-only fields — what's left is exactly what PUT accepts. */
 function toBody(r: ReportDetail): ReportBody {
   return {
     morningDepth: r.morningDepth, midnightDepth: r.midnightDepth, previousDepth: r.previousDepth,
+    endDepthTvd: r.endDepthTvd,
     drillingTime: r.drillingTime, cumDrillingTime: r.cumDrillingTime,
+    cumTimeLogDays: r.cumTimeLogDays, daysLti: r.daysLti, headCount: r.headCount, hazards: r.hazards,
     holeSize: r.holeSize, formation: r.formation, lithology: r.lithology,
     lastCasing: r.lastCasing, linerLap: r.linerLap, kop: r.kop,
     wellSiteSupt: r.wellSiteSupt, opnSupt: r.opnSupt, progEng: r.progEng,
     geologist: r.geologist, toolPusher1: r.toolPusher1, toolPusher2: r.toolPusher2,
     formationLoss: r.formationLoss, mudLossUnit: r.mudLossUnit, mudGains: r.mudGains,
+    // a.json `operations`: at_report_time / summary / next_report_period. The
+    // middle one IS the existing `description` — it is not duplicated here.
+    opsAtReportTime: r.opsAtReportTime, opsNextPeriod: r.opsNextPeriod,
     description: r.description, windSpeedDir: r.windSpeedDir, waveVisible: r.waveVisible,
     freshWater: r.freshWater, fuel: r.fuel,
     bitRuns: r.bitRuns ?? [], bha: r.bha ?? [], drillString: r.drillString ?? [],
+    drillingParameters: r.drillingParameters ?? [],
     // The three tool rows and three solid-control units are always on the sheet,
     // present or not in the stored data.
     tools: TOOL_KINDS.map(({ kind }) =>
@@ -56,6 +70,17 @@ function toBody(r: ReportDetail): ReportBody {
       r.solidControl?.find((s) => s.unit === unit) ?? { unit, hours: null, underFlow: null, overFlow: null, feed: null, cons: null, fprs: null }),
     chemicals: r.chemicals ?? [], casing: r.casing ?? [], formationTops: r.formationTops ?? [],
     surveys: r.surveys ?? [], timeBreakdown: r.timeBreakdown ?? [], operations: r.operations ?? [],
+    supervisors: r.supervisors ?? [], companies: r.companies ?? [],
+    // Same fixed-shape treatment as tools / solidControl: all four drills exist
+    // on the sheet whether or not the day stored any of them.
+    hseDrills: HSE_TYPES.map((type) =>
+      r.hseDrills?.find((h) => h.type === type) ?? { type, date: null, daysToNextCheck: null }),
+    bulkMaterials: r.bulkMaterials ?? [],
+    // a.json wellhead_component / well_control_scr / support_vessels are arrays;
+    // formation_integrity_test and marine_conditions are single OBJECTS, so they
+    // carry over exactly like `mud` — one block per day, or none at all.
+    wellheads: r.wellheads ?? [], scrRates: r.scrRates ?? [], supportVessels: r.supportVessels ?? [],
+    fit: r.fit ?? null, marine: r.marine ?? null,
   };
 }
 
@@ -70,23 +95,43 @@ const filledRows = (rows: object[], skip?: string[]) => rows.filter((r) => fille
  * The tables keep a blank row on screen so a subform doesn't look empty
  * (`minRows`), and touching any cell materialises the whole visible set — so
  * without this a save would persist all-null bit runs / operations. The fixed
- * tool and solid-control rows are exempt: they are part of the sheet's shape and
- * are keyed by kind / unit.
+ * tool, solid-control and HSE-drill rows are exempt: they are part of the
+ * sheet's shape and are keyed by kind / unit / type.
  */
 function prune(body: ReportBody): ReportBody {
-  const mudFilled = body.mud && filled(body.mud, []);
+  // The 1:1 blocks arrive from the GET carrying Prisma's own `id`/`reportId`,
+  // which are non-null strings — counting them would make `filled` true forever,
+  // so a block the user blanked would keep re-saving as an all-null row (and its
+  // tab would keep its ✓). Skip the server-side keys and judge the data only.
+  const OWN = ["id", "reportId"];
+  const mudFilled = body.mud && filled(body.mud, OWN);
+  // The FIT and marine blocks are 1:1 like the mud: an untouched block posts as
+  // null rather than as an all-null row the office would have to read past.
+  const fitFilled = body.fit && filled(body.fit, OWN);
+  const marineFilled = body.marine && filled(body.marine, OWN);
   return {
     ...body,
     bitRuns: body.bitRuns.filter((r) => filled(r)),
     bha: body.bha.filter((r) => filled(r)),
     drillString: body.drillString.filter((r) => filled(r)),
+    drillingParameters: body.drillingParameters.filter((r) => filled(r)),
     chemicals: body.chemicals.filter((r) => filled(r)),
     casing: body.casing.filter((r) => filled(r)),
     formationTops: body.formationTops.filter((r) => filled(r)),
     surveys: body.surveys.filter((r) => filled(r)),
     timeBreakdown: body.timeBreakdown.filter((r) => filled(r)),
     operations: body.operations.filter((r) => filled(r)),
+    supervisors: body.supervisors.filter((r) => filled(r)),
+    companies: body.companies.filter((r) => filled(r)),
+    bulkMaterials: body.bulkMaterials.filter((r) => filled(r)),
+    wellheads: body.wellheads.filter((r) => filled(r)),
+    scrRates: body.scrRates.filter((r) => filled(r)),
+    supportVessels: body.supportVessels.filter((r) => filled(r)),
+    // hseDrills is deliberately NOT filtered — a.json prints all four rows even
+    // when blank, and they are keyed by `type`, not by having been typed into.
     mud: mudFilled ? body.mud : null,
+    fit: fitFilled ? body.fit : null,
+    marine: marineFilled ? body.marine : null,
   };
 }
 
@@ -96,6 +141,26 @@ const EMPTY_MUD: NonNullable<ReportBody["mud"]> = {
   ph: null, alkalinity: null, waterLoss: null, hpht: null, airFoam: null, oilPct: null,
   oilWaterRatio: null, eStability: null, kcl: null, mbt: null, pf: null, mf: null,
   chloride: null, calcium: null, solidsPct: null, tempF: null,
+  // a.json mud_information — kept alongside the DR.xls fields, not instead of them
+  depthMkb: null, densityPpg: null, tFlowlineC: null, filtrateMl: null,
+  vis3rpm: null, vis6rpm: null, percentWater: null, lowGravitySolidsPct: null,
+  hardnessCaPpm: null, mudLostBbl: null, activeMudVolBbl: null, volMudResBbl: null,
+};
+
+/**
+ * a.json `formation_integrity_test` and `marine_conditions` are OBJECTS, not
+ * arrays — one block per report, exactly like the mud. These are the "nothing
+ * recorded yet" shapes their subforms edit into before the block exists.
+ */
+const EMPTY_FIT: NonNullable<ReportBody["fit"]> = {
+  testType: null, testDate: null, lastCasingStringRun: null, depthMkb: null, tvdMkb: null,
+  appliedSurfacePressurePsi: null, fluidDensityPpg: null, volumePumpedBbl: null,
+  leakOffPressurePsi: null, leakOffEqDensityPpg: null,
+};
+
+const EMPTY_MARINE: NonNullable<ReportBody["marine"]> = {
+  swellHtM: null, visibilityKm: null, windDir: null, windSpdKnots: null,
+  tHighC: null, waveHtM: null, com: null,
 };
 
 // ── shared prop shapes for the subforms ─────────────────────────────────────
@@ -108,14 +173,27 @@ interface SubformProps {
 
 /** The subforms, in the order the sheet is normally worked through. */
 const SECTIONS = [
+  // a.json puts the three narrative lines at the very top of the sheet, above
+  // the header grid — so the day starts by saying what is going on, and the
+  // numbers follow. NOTE: its middle field and the "summary" tab below edit the
+  // SAME `description` column; that is a.json's `operations.summary` appearing
+  // in both places, not two fields.
+  { id: "narrative", label: "Operations narrative", count: (d: ReportBody) => filled({
+      at: d.opsAtReportTime, sum: d.description, next: d.opsNextPeriod,
+    }, []) ? 1 : 0, unit: "" },
   { id: "well", label: "Well / Operations", count: (d: ReportBody) => filled({
       morningDepth: d.morningDepth, midnightDepth: d.midnightDepth, previousDepth: d.previousDepth,
+      endDepthTvd: d.endDepthTvd,
       drillingTime: d.drillingTime, cumDrillingTime: d.cumDrillingTime, holeSize: d.holeSize,
       formation: d.formation, lithology: d.lithology, lastCasing: d.lastCasing, linerLap: d.linerLap,
       kop: d.kop, wellSiteSupt: d.wellSiteSupt, opnSupt: d.opnSupt, progEng: d.progEng,
       geologist: d.geologist, toolPusher1: d.toolPusher1, toolPusher2: d.toolPusher2,
+      // The rig-status block lives on this tab too, so it has to count towards the ✓.
+      cumTimeLogDays: d.cumTimeLogDays, daysLti: d.daysLti, headCount: d.headCount, hazards: d.hazards,
     }, []) ? 1 : 0, unit: "" },
   { id: "bit", label: "Bit runs", count: (d: ReportBody) => filledRows(d.bitRuns), unit: "row" },
+  // Straight after the bit: a drilled interval belongs next to the bit that drilled it.
+  { id: "params", label: "Drilling parameters", count: (d: ReportBody) => filledRows(d.drillingParameters), unit: "row" },
   { id: "bha", label: "Bottom hole assembly", count: (d: ReportBody) => filledRows(d.bha), unit: "row" },
   { id: "string", label: "Drill string & tools", count: (d: ReportBody) => filledRows(d.drillString) + filledRows(d.tools, ["kind"]), unit: "row" },
   { id: "mud", label: "Mud properties", count: (d: ReportBody) => (d.mud && filled(d.mud, []) ? 1 : 0) + (filled({ a: d.formationLoss, b: d.mudLossUnit, c: d.mudGains }, []) ? 1 : 0), unit: "" },
@@ -130,6 +208,25 @@ const SECTIONS = [
       description: d.description, windSpeedDir: d.windSpeedDir, waveVisible: d.waveVisible,
       freshWater: d.freshWater, fuel: d.fuel,
     }, []) ? 1 : 0, unit: "" },
+  // The two people-and-stores tabs sit at the END: they are filled once a day at
+  // most, and putting them mid-list would break the daily drilling flow above.
+  { id: "crew", label: "Crew & companies", count: (d: ReportBody) =>
+      filledRows(d.supervisors) + filledRows(d.companies), unit: "row" },
+  { id: "hse", label: "HSE & bulk", count: (d: ReportBody) =>
+      d.hseDrills.filter((h) => (h.date != null && h.date !== "") || h.daysToNextCheck != null).length
+      + filledRows(d.bulkMaterials), unit: "row" },
+  // The last three are filled RARELY — the wellhead when a spool goes on, the FIT
+  // right after a shoe is drilled out, marine only offshore. They are appended
+  // here so the daily flow above keeps the tab positions the crew already knows.
+  { id: "wellhead", label: "Wellhead & SCR", count: (d: ReportBody) =>
+      filledRows(d.wellheads) + filledRows(d.scrRates), unit: "row" },
+  // `filled` skips Prisma's id/reportId here too, or a saved-then-blanked block
+  // would keep its ✓ forever.
+  { id: "fit", label: "FIT / LOT", count: (d: ReportBody) => (d.fit && filled(d.fit, ["id", "reportId"]) ? 1 : 0), unit: "" },
+  // unit "row": the count sums the vessel rows, and the badge only prints a
+  // number for "row" units — with "" it would collapse four vessels to a bare ✓.
+  { id: "marine", label: "Marine & vessels", count: (d: ReportBody) =>
+      (d.marine && filled(d.marine, ["id", "reportId"]) ? 1 : 0) + filledRows(d.supportVessels), unit: "row" },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -154,11 +251,22 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
   const setMud = <K extends keyof NonNullable<ReportBody["mud"]>>(key: K, value: NonNullable<ReportBody["mud"]>[K]) => {
     setDraft((d) => ({ ...d, mud: { ...(d.mud ?? EMPTY_MUD), [key]: value } })); setDirty(true);
   };
+  // Same 1:1 shape as the mud: the block is created on the first keystroke and
+  // pruned back to null on save if it is still blank.
+  const setFit = <K extends keyof NonNullable<ReportBody["fit"]>>(key: K, value: NonNullable<ReportBody["fit"]>[K]) => {
+    setDraft((d) => ({ ...d, fit: { ...(d.fit ?? EMPTY_FIT), [key]: value } })); setDirty(true);
+  };
+  const setMarine = <K extends keyof NonNullable<ReportBody["marine"]>>(key: K, value: NonNullable<ReportBody["marine"]>[K]) => {
+    setDraft((d) => ({ ...d, marine: { ...(d.marine ?? EMPTY_MARINE), [key]: value } })); setDirty(true);
+  };
   const setTool = (kind: ToolItem["kind"], key: keyof ToolItem, value: string | number | null) => {
     setDraft((d) => ({ ...d, tools: d.tools.map((t) => (t.kind === kind ? { ...t, [key]: value } : t)) })); setDirty(true);
   };
   const setSc = (unit: string, key: keyof SolidControlRow, value: number | null) => {
     setDraft((d) => ({ ...d, solidControl: d.solidControl.map((s) => (s.unit === unit ? { ...s, [key]: value } : s)) })); setDirty(true);
+  };
+  const setHse = (type: string, key: keyof HseDrillRow, value: string | number | null) => {
+    setDraft((d) => ({ ...d, hseDrills: d.hseDrills.map((h) => (h.type === type ? { ...h, [key]: value } : h)) })); setDirty(true);
   };
 
   // METERAGE is derived exactly as the office form derives it (midnight − previous).
@@ -166,6 +274,14 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
     const { midnightDepth: a, previousDepth: b } = draft;
     return a != null && b != null ? Number((a - b).toFixed(2)) : null;
   }, [draft.midnightDepth, draft.previousDepth]);
+
+  // AVG ROP (a.json avg_rop_m_hr) is derived from the same two figures rather
+  // than stored, so it can never drift from the depths or the drilling hours.
+  // No drilling time (or a zero-hour day: tripping, waiting) means no rate.
+  const avgRop = useMemo(() => {
+    const t = draft.drillingTime;
+    return t != null && t > 0 && meterage != null ? meterage / t : null;
+  }, [meterage, draft.drillingTime]);
 
   async function save(): Promise<ReportDetail | null> {
     setBusy("save"); setError(null);
@@ -201,33 +317,33 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden text-gray-800">
-      {/* Title bar + actions */}
-      <div className="flex items-center justify-between gap-3 px-3 py-1.5 bg-blue-700 text-white flex-wrap">
-        <div className="font-semibold text-sm truncate">
+      {/* Title bar + actions — stacked on a phone, one flowing line from sm: up */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between sm:flex-wrap gap-2 sm:gap-3 px-3 py-2 sm:py-1.5 bg-blue-700 text-white">
+        <div className="font-semibold text-sm leading-snug min-w-0 sm:truncate">
           {w.name} — Daily Drilling Report
           <span className="font-normal opacity-80"> · #{report.serialNo} · {report.reportDate}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap gap-2">
           {report.status === "submitted"
-            ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/90 uppercase tracking-wide">Submitted</span>
-            : <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/90 text-amber-950 uppercase tracking-wide">Draft</span>}
-          {dirty && <span className="text-[10px] opacity-90">unsaved changes</span>}
-          {!dirty && savedAt && <span className="text-[10px] opacity-90">saved {savedAt}</span>}
+            ? <span className="text-[11px] sm:text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/90 uppercase tracking-wide">Submitted</span>
+            : <span className="text-[11px] sm:text-[10px] px-1.5 py-0.5 rounded bg-amber-400/90 text-amber-950 uppercase tracking-wide">Draft</span>}
+          {dirty && <span className="text-[11px] sm:text-[10px] opacity-90">unsaved changes</span>}
+          {!dirty && savedAt && <span className="text-[11px] sm:text-[10px] opacity-90">saved {savedAt}</span>}
           {!locked && (
             <button onClick={save} disabled={!!busy}
-              className="h-7 px-3 text-xs rounded-md bg-white/15 hover:bg-white/25 transition-colors duration-150 disabled:opacity-50">
+              className="h-11 sm:h-7 px-4 sm:px-3 text-sm sm:text-xs rounded-md bg-white/15 hover:bg-white/25 transition-colors duration-150 disabled:opacity-50">
               {busy === "save" ? "Saving…" : "Save"}
             </button>
           )}
           {report.status === "draft" && (
             <button onClick={submit} disabled={!!busy}
-              className="h-7 px-3 text-xs rounded-md bg-emerald-500 hover:bg-emerald-600 transition-colors duration-150 disabled:opacity-50">
+              className="h-11 sm:h-7 px-4 sm:px-3 text-sm sm:text-xs rounded-md bg-emerald-500 hover:bg-emerald-600 transition-colors duration-150 disabled:opacity-50">
               {busy === "submit" ? "Submitting…" : "Submit"}
             </button>
           )}
           {report.status === "submitted" && isAdmin && (
             <button onClick={reopen} disabled={!!busy}
-              className="h-7 px-3 text-xs rounded-md bg-white/15 hover:bg-white/25 transition-colors duration-150 disabled:opacity-50">
+              className="h-11 sm:h-7 px-4 sm:px-3 text-sm sm:text-xs rounded-md bg-white/15 hover:bg-white/25 transition-colors duration-150 disabled:opacity-50">
               {busy === "reopen" ? "Reopening…" : "Reopen"}
             </button>
           )}
@@ -251,28 +367,40 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
           <StaticField label="Op. type" value={w.wellType} />
           <StaticField label="Well prof." value={w.profile} />
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-5 border-t border-gray-200">
+        {/* Two extra cells only — the coordinates are combined, as R.T.E / W.depth
+            already is, so the band still falls into two readable columns at 375px. */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 border-t border-gray-200">
           <StaticField label="Rig no." value={w.rig?.name} />
+          <StaticField label="Client" value={w.client} />
           <StaticField label="Spud date" value={w.spudDate} />
           <StaticField label="Release date" value={w.rigReleasedDate} />
           <StaticField label="Resv" value={w.reservoir} />
           <StaticField label="R.T.E / W.depth" value={`${w.rtElevation ?? "—"} / ${w.waterDepth ?? "—"}`} />
+          <StaticField label="Lat / Long" value={w.latitude || w.longitude ? `${w.latitude ?? "—"} / ${w.longitude ?? "—"}` : null} />
         </div>
+        {/* Air gap and leg penetration are long free text — a full-width line
+            rather than a truncating cell, and only when the well carries them. */}
+        {(w.elevationNote || w.comment) && (
+          <div className="border-t border-gray-200 px-2 py-1.5 sm:py-1 text-[12px] sm:text-[10px] text-gray-600 leading-snug">
+            {[w.elevationNote, w.comment].filter(Boolean).join("  ·  ")}
+          </div>
+        )}
       </div>
 
-      {/* Subform picker */}
-      <div className="flex flex-wrap gap-1 px-2 py-1.5 border-b border-gray-200 bg-gray-50">
+      {/* Subform picker wrap into a screen-eating block on a phone, so
+          below sm: they are one snap-scrolling row instead; they wrap from sm: up. */}
+      <div className="flex flex-nowrap overflow-x-auto snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible gap-2 sm:gap-1 px-2 py-2 sm:py-1.5 border-b border-gray-200 bg-gray-50">
         {SECTIONS.map((s) => {
           const n = s.count(draft);
           const active = s.id === section;
           return (
             <button key={s.id} onClick={() => setSection(s.id)}
-              className={`h-7 px-2.5 text-[11px] rounded-md border transition-colors duration-150 ${
+              className={`shrink-0 snap-start whitespace-nowrap h-11 sm:h-7 px-3 sm:px-2.5 text-[13px] sm:text-[11px] rounded-md border transition-colors duration-150 ${
                 active ? "bg-blue-600 border-blue-600 text-white"
                        : "bg-white border-gray-300 text-gray-600 hover:bg-gray-100"}`}>
               {s.label}
               {n > 0 && (
-                <span className={`ml-1.5 px-1 rounded text-[9px] tabular-nums ${
+                <span className={`ml-1.5 px-1 rounded text-[11px] sm:text-[9px] tabular-nums ${
                   active ? "bg-white/25" : "bg-emerald-100 text-emerald-700"}`}>
                   {s.unit === "row" ? n : "✓"}
                 </span>
@@ -284,8 +412,10 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
 
       {/* The active subform */}
       <div className="min-h-[220px]">
-        {section === "well" && <WellOperations {...props} well={w} meterage={meterage} />}
+        {section === "narrative" && <OperationsNarrative {...props} />}
+        {section === "well" && <WellOperations {...props} well={w} meterage={meterage} avgRop={avgRop} />}
         {section === "bit" && <BitRuns {...props} />}
+        {section === "params" && <DrillingParameters {...props} />}
         {section === "bha" && <BhaSubform {...props} />}
         {section === "string" && <DrillStringAndTools {...props} setTool={setTool} />}
         {section === "mud" && <MudSubform {...props} setMud={setMud} />}
@@ -297,33 +427,40 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
         {section === "time" && <TimeBreakdown {...props} />}
         {section === "ops" && <OperationsLog {...props} />}
         {section === "summary" && <SummaryWeather {...props} />}
+        {section === "crew" && <CrewAndCompanies {...props} />}
+        {section === "hse" && <HseAndBulk {...props} setHse={setHse} />}
+        {section === "wellhead" && <WellheadAndScr {...props} />}
+        {section === "fit" && <FitSubform {...props} setFit={setFit} />}
+        {section === "marine" && <MarineAndVessels {...props} setMarine={setMarine} />}
       </div>
 
       {/* Step through the subforms + the persistent Save / Submit */}
-      <div className="px-3 py-2 border-t border-gray-200 bg-gray-50 flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
+      <div className="px-3 py-3 sm:py-2 border-t border-gray-200 bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between sm:flex-wrap gap-3">
+        <div className="flex items-center justify-between sm:justify-start gap-2">
           <button disabled={idx === 0} onClick={() => setSection(SECTIONS[idx - 1].id)}
-            className="h-8 px-3 text-xs rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150 disabled:opacity-40">← Previous</button>
-          <span className="text-[11px] text-gray-500 tabular-nums">{idx + 1} / {SECTIONS.length}</span>
+            className="h-11 sm:h-8 px-4 sm:px-3 text-sm sm:text-xs rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150 disabled:opacity-40">← Previous</button>
+          <span className="text-[13px] sm:text-[11px] text-gray-500 tabular-nums">{idx + 1} / {SECTIONS.length}</span>
           <button disabled={idx === SECTIONS.length - 1} onClick={() => setSection(SECTIONS[idx + 1].id)}
-            className="h-8 px-3 text-xs rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150 disabled:opacity-40">Next →</button>
+            className="h-11 sm:h-8 px-4 sm:px-3 text-sm sm:text-xs rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150 disabled:opacity-40">Next →</button>
         </div>
         {!locked && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {/* min-h rather than a fixed h- so a wrapped label grows the button
+                instead of spilling out of it on a narrow phone. */}
             <button onClick={save} disabled={!!busy}
-              className="h-8 px-4 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-150 disabled:bg-gray-300">
+              className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0 sm:h-8 py-2 sm:py-0 px-4 text-sm sm:text-xs leading-tight rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-150 disabled:bg-gray-300">
               {busy === "save" ? "Saving…" : "Save report"}
             </button>
             {report.status === "draft" && (
               <button onClick={submit} disabled={!!busy}
-                className="h-8 px-4 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors duration-150 disabled:bg-gray-300">
+                className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0 sm:h-8 py-2 sm:py-0 px-4 text-sm sm:text-xs leading-tight rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors duration-150 disabled:bg-gray-300">
                 {busy === "submit" ? "Submitting…" : "Submit for the office"}
               </button>
             )}
           </div>
         )}
       </div>
-      <div className="px-3 py-1.5 border-t border-gray-200 text-[11px] text-gray-500">
+      <div className="px-3 py-2 sm:py-1.5 border-t border-gray-200 text-[12px] sm:text-[11px] text-gray-500">
         Filed by {report.user.fullName} ({report.user.username}) · last saved {new Date(report.updatedAt).toLocaleString()}
         {dirty && <span className="text-amber-700"> · unsaved changes on this sheet</span>}
       </div>
@@ -334,28 +471,76 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
 // ══ subforms ═══════════════════════════════════════════════════════════════
 // Each one owns a single part of the sheet; they all write into the same draft.
 
-function WellOperations({ draft, set, disabled, well, meterage }: SubformProps & {
-  well: ReportDetail["well"]; meterage: number | null;
+/**
+ * A read-only row for a figure the sheet DERIVES (meterage, average ROP).
+ *
+ * Same rhythm as NumField so the column reads as one list, but there is no
+ * input: these are recomputed from the depths and hours on every keystroke and
+ * are never stored, so they cannot drift from the numbers they come from.
+ */
+function DerivedField({ label, value, unit, caption }: {
+  label: string; value: string | number | null; unit: string; caption: string;
+}) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-stretch border-b border-gray-100">
+      <div className="shrink-0 bg-gray-50 px-2 pt-1.5 pb-0.5 text-[11px] uppercase tracking-wide text-gray-500 sm:w-[44%] sm:px-1.5 sm:py-0.5 sm:text-[10px] sm:border-r sm:border-gray-100">{label}</div>
+      <div className="flex-1 min-w-0 px-2 pb-1.5 sm:px-1.5 sm:py-0.5 text-[15px] sm:text-[11px] font-semibold tabular-nums">
+        {value ?? "—"}
+        <span className="text-[11px] sm:text-[9px] font-normal text-gray-400"> {unit} {caption}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * a.json `operations` — the three narrative lines that head the sheet: what the
+ * rig is doing right now, what it did over the 24 hours, what comes next.
+ *
+ * The middle one is bound to `description`, the SAME column the "Summary &
+ * weather" tab edits — a.json's `operations.summary` and the DR.xls summary box
+ * are one field, so typing in either place updates the other. That is
+ * deliberate; it is not a duplicated column.
+ */
+function OperationsNarrative({ draft, set, disabled }: SubformProps) {
+  return (
+    <>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">midnight to midnight</span>}>Operations narrative</Section>
+      <TextField label="At report time" multiline value={draft.opsAtReportTime} disabled={disabled}
+        onChange={(v) => set("opsAtReportTime", v)} placeholder='RIH 24" H.S. BHA at 21m.' />
+      <TextField label="Summary (24 hr)" multiline value={draft.description} disabled={disabled}
+        onChange={(v) => set("description", v)}
+        placeholder="The day's narrative — what was drilled, what happened." />
+      <TextField label="Next report period" multiline value={draft.opsNextPeriod} disabled={disabled}
+        onChange={(v) => set("opsNextPeriod", v)} placeholder="Continue drilling 12-1/4in hole to casing point." />
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        The 24-hour summary is the same text as the one on the "Summary &amp; weather" tab — one field,
+        shown in both places.
+      </p>
+    </>
+  );
+}
+
+function WellOperations({ draft, set, disabled, well, meterage, avgRop }: SubformProps & {
+  well: ReportDetail["well"]; meterage: number | null; avgRop: number | null;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2">
       <div className="md:border-r border-gray-200">
         <Section>Depths &amp; progress</Section>
-        <div className="flex items-stretch border-b border-gray-100 bg-gray-50/40">
-          <div className="w-[44%] shrink-0 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500 border-r border-gray-100">Contractor · Proj. TD · Rig days</div>
-          <div className="flex-1 px-1.5 py-0.5 text-[11px] truncate">
+        {/* Same label-above-on-phone rhythm as TextField / NumField. */}
+        <div className="flex flex-col sm:flex-row sm:items-stretch border-b border-gray-100 bg-gray-50/40">
+          <div className="shrink-0 px-2 pt-1.5 pb-0.5 text-[11px] uppercase tracking-wide text-gray-500 sm:w-[44%] sm:px-1.5 sm:py-0.5 sm:text-[10px] sm:border-r sm:border-gray-100">Contractor · Proj. TD · Rig days</div>
+          <div className="flex-1 min-w-0 px-2 pb-1.5 sm:px-1.5 sm:py-0.5 text-[13px] sm:text-[11px] truncate">
             {well.contractor ?? "—"} · {well.finalForecastDepth ?? "—"} m · {well.forecastDays ?? "—"} d
           </div>
         </div>
         <NumField label="Morning depth" unit="m" value={draft.morningDepth} onChange={(v) => set("morningDepth", v)} disabled={disabled} />
         <NumField label="Midnight depth" unit="m" value={draft.midnightDepth} onChange={(v) => set("midnightDepth", v)} disabled={disabled} />
+        {/* The day's end depth on the other scale — kept beside the measured one. */}
+        <NumField label="End depth (TVD)" unit="mKB" value={draft.endDepthTvd} onChange={(v) => set("endDepthTvd", v)} disabled={disabled} />
         <NumField label="Previous depth" unit="m" value={draft.previousDepth} onChange={(v) => set("previousDepth", v)} disabled={disabled} />
-        <div className="flex items-stretch border-b border-gray-100">
-          <div className="w-[44%] shrink-0 bg-gray-50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500 border-r border-gray-100">Meterage</div>
-          <div className="flex-1 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums">
-            {meterage ?? "—"}<span className="text-[9px] text-gray-400"> m (midnight − previous)</span>
-          </div>
-        </div>
+        <DerivedField label="Meterage" value={meterage} unit="m" caption="(midnight − previous)" />
+        <DerivedField label="Avg ROP" value={avgRop?.toFixed(1) ?? null} unit="m/hr" caption="(progress ÷ drilling hours)" />
         <NumField label="Drilling time" unit="h" value={draft.drillingTime} onChange={(v) => set("drillingTime", v)} disabled={disabled} />
         <NumField label="Cum. drlg time" unit="h" value={draft.cumDrillingTime} onChange={(v) => set("cumDrillingTime", v)} disabled={disabled} />
         <TextField label="Hole size" value={draft.holeSize} onChange={(v) => set("holeSize", v)} disabled={disabled} placeholder='12-1/4"' />
@@ -373,8 +558,20 @@ function WellOperations({ draft, set, disabled, well, meterage }: SubformProps &
         <TextField label="Geologist" value={draft.geologist} onChange={(v) => set("geologist", v)} disabled={disabled} />
         <TextField label="Tool pusher 1" value={draft.toolPusher1} onChange={(v) => set("toolPusher1", v)} disabled={disabled} />
         <TextField label="Tool pusher 2" value={draft.toolPusher2} onChange={(v) => set("toolPusher2", v)} disabled={disabled} />
-        <p className="px-2 py-2 text-[10px] text-gray-400 leading-snug">
-          Depths drive the meterage on the office side; the crew names print on the DR sheet header.
+
+        <Section>Rig status</Section>
+        <NumField label="Cum. time log" unit="days" value={draft.cumTimeLogDays} onChange={(v) => set("cumTimeLogDays", v)} disabled={disabled} />
+        <p className="px-2 pt-1 pb-1.5 sm:pt-0.5 text-xs sm:text-[10px] text-gray-400 leading-snug">
+          Elapsed DAYS on the well (e.g. 3.13) — not drilling hours. Cumulative drilling time is the
+          separate figure on the left, in hours.
+        </p>
+        <NumField label="Days since LTI" unit="days" value={draft.daysLti} onChange={(v) => set("daysLti", v)} disabled={disabled} />
+        <NumField label="Head count" unit="POB" value={draft.headCount} onChange={(v) => set("headCount", v)} disabled={disabled} />
+        <TextField label="Hazards" value={draft.hazards} onChange={(v) => set("hazards", v)} disabled={disabled} placeholder="STOP CARD: 12" />
+
+        <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+          Depths drive the meterage and average ROP on the office side; the crew names print on the
+          DR sheet header.
         </p>
       </div>
     </div>
@@ -384,7 +581,7 @@ function WellOperations({ draft, set, disabled, well, meterage }: SubformProps &
 function BitRuns({ draft, set, disabled }: SubformProps) {
   return (
     <>
-      <Section right={<span className="font-normal normal-case text-[9px] opacity-70">one row per bit run — a bit-change day has two</span>}>Bit</Section>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">one row per bit run — a bit-change day has two</span>}>Bit</Section>
       <RowTable
         cols={[
           { key: "bitNo", label: "Bit no.", width: "w-16" },
@@ -421,8 +618,49 @@ function BitRuns({ draft, set, disabled }: SubformProps) {
           washAndRun: null, bitChangeIn: null, bitChangeOut: null,
         })}
       />
-      <p className="px-2 pb-2 text-[10px] text-gray-400">
+      <p className="px-2 pb-2 text-xs sm:text-[10px] text-gray-400">
         Bit ROP is derived by the office from meterage ÷ hours, so leave it out here.
+      </p>
+    </>
+  );
+}
+
+/**
+ * a.json `drilling_parameters` — the interval-by-interval record of how the hole
+ * was made: depths in, times, and the parameters held over that interval.
+ * Sits next to the bit runs because the two describe the same drilling.
+ */
+function DrillingParameters({ draft, set, disabled }: SubformProps) {
+  const drilled = draft.drillingParameters.reduce((a, r) => a + (r.drillTimeHr ?? 0), 0);
+  return (
+    <>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">
+        {drilled > 0 ? `${drilled.toFixed(1)} h drilling` : "one row per drilled interval"}
+      </span>}>Drilling parameters</Section>
+      <RowTable
+        cols={[
+          { key: "startMkb", label: "Start (mKB)", type: "num", width: "w-24" },
+          { key: "endDepthMkb", label: "End (mKB)", type: "num", width: "w-24" },
+          { key: "drillTimeHr", label: "Drill (hr)", type: "num", width: "w-20" },
+          { key: "slideTimeHr", label: "Slide (hr)", type: "num", width: "w-20" },
+          { key: "circTimeHr", label: "Circ (hr)", type: "num", width: "w-20" },
+          { key: "intRopMHr", label: "Int. ROP (m/hr)", type: "num", width: "w-24" },
+          { key: "drillTq", label: "Torque", type: "num", width: "w-20" },
+          { key: "rpm", label: "RPM", type: "num", width: "w-16" },
+          { key: "qFlowGpm", label: "Flow (gpm)", type: "num", width: "w-24" },
+          { key: "sppPsi", label: "SPP (psi)", type: "num", width: "w-20" },
+          { key: "wob1000Lbf", label: "WOB (1000 lbf)", type: "num", width: "w-24" },
+        ] as Col<ReportBody["drillingParameters"][number]>[]}
+        rows={draft.drillingParameters} onChange={(v) => set("drillingParameters", v)} disabled={disabled} minRows={1}
+        addLabel="interval"
+        blank={() => ({
+          order: 0, startMkb: null, endDepthMkb: null, drillTimeHr: null, slideTimeHr: null,
+          circTimeHr: null, intRopMHr: null, drillTq: null, rpm: null, qFlowGpm: null,
+          sppPsi: null, wob1000Lbf: null,
+        })}
+      />
+      <p className="px-2 pb-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        A last row carrying only circulating time and no depths is normal — that is circulating without making hole.
       </p>
     </>
   );
@@ -432,7 +670,7 @@ function BhaSubform({ draft, set, disabled }: SubformProps) {
   const total = draft.bha.reduce((a, b) => a + (b.lengthM ?? 0), 0);
   return (
     <>
-      <Section right={<span className="font-normal normal-case text-[9px] opacity-70">
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">
         {total > 0 ? `${total.toFixed(1)} m total` : "top → bottom"}
       </span>}>Bottom hole assembly</Section>
       <RowTable
@@ -444,7 +682,7 @@ function BhaSubform({ draft, set, disabled }: SubformProps) {
         rows={draft.bha} onChange={(v) => set("bha", v)} disabled={disabled} minRows={2}
         addLabel="BHA component" blank={() => ({ order: 0, assemblyNo: null, lengthM: null, specification: null })}
       />
-      <p className="px-2 pb-2 text-[10px] text-gray-400">
+      <p className="px-2 pb-2 text-xs sm:text-[10px] text-gray-400">
         List the assembly as it is run — bit, motor, subs, stabilisers, collars. The specification column is free text,
         exactly as it prints on the DR sheet.
       </p>
@@ -455,7 +693,12 @@ function BhaSubform({ draft, set, disabled }: SubformProps) {
 function DrillStringAndTools({ draft, set, setTool, disabled }: SubformProps & {
   setTool: (kind: ToolItem["kind"], key: keyof ToolItem, value: string | number | null) => void;
 }) {
-  const cell = "w-full px-1.5 py-0.5 text-[11px] bg-transparent border-0 focus:outline-none focus:bg-blue-50";
+  // Matches the INPUT rhythm of the fields.tsx primitives: 44px/16px on a phone,
+  // dense from sm: up. This table is fixed-shape (3 tools), so it scrolls
+  // sideways on a phone rather than becoming cards like RowTable.
+  const cell =
+    "w-full min-w-0 bg-transparent border-0 text-base min-h-[44px] px-2 py-2 " +
+    "sm:text-[13px] sm:min-h-[32px] sm:px-1.5 sm:py-1 focus:outline-none focus:bg-blue-50";
   return (
     <>
       <Section>Drill string</Section>
@@ -469,28 +712,30 @@ function DrillStringAndTools({ draft, set, setTool, disabled }: SubformProps & {
         addLabel="pipe section" blank={() => ({ order: 0, size: null, grade: null, lengthM: null })}
       />
       <Section>Drilling tools</Section>
-      <table className="w-full text-[11px] border-collapse">
-        <thead>
-          <tr>{["Tool", "Type", "Size", "Serial no.", "Hours"].map((h) => (
-            <th key={h} className="bg-gray-50 border border-gray-200 px-1.5 py-1 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500">{h}</th>
-          ))}</tr>
-        </thead>
-        <tbody>
-          {TOOL_KINDS.map(({ kind, label }) => {
-            const t = draft.tools.find((x) => x.kind === kind)!;
-            return (
-              <tr key={kind}>
-                <td className="border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] uppercase text-gray-600 font-medium whitespace-nowrap">{label}</td>
-                <td className="border border-gray-200 p-0"><input disabled={disabled} className={cell} value={t.type ?? ""} onChange={(e) => setTool(kind, "type", e.target.value || null)} /></td>
-                <td className="border border-gray-200 p-0"><input disabled={disabled} className={cell} value={t.size ?? ""} onChange={(e) => setTool(kind, "size", e.target.value || null)} /></td>
-                <td className="border border-gray-200 p-0"><input disabled={disabled} className={cell} value={t.serialNo ?? ""} onChange={(e) => setTool(kind, "serialNo", e.target.value || null)} /></td>
-                <td className="border border-gray-200 p-0"><input type="number" step="any" disabled={disabled} className={`${cell} tabular-nums`} value={t.hours ?? ""} onChange={(e) => setTool(kind, "hours", e.target.value === "" ? null : Number(e.target.value))} /></td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <p className="px-2 py-2 text-[10px] text-gray-400">Leave a tool row blank when it isn't in the string.</p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[34rem] sm:min-w-0 text-[13px] border-collapse">
+          <thead>
+            <tr>{["Tool", "Type", "Size", "Serial no.", "Hours"].map((h) => (
+              <th key={h} className="bg-gray-50 border border-gray-200 px-2 sm:px-1.5 py-1.5 sm:py-1 text-left text-[11px] sm:text-[10px] font-medium uppercase tracking-wide text-gray-500 whitespace-nowrap">{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {TOOL_KINDS.map(({ kind, label }) => {
+              const t = draft.tools.find((x) => x.kind === kind)!;
+              return (
+                <tr key={kind}>
+                  <td className="border border-gray-200 bg-gray-50 px-2 sm:px-1.5 py-2 sm:py-0.5 text-[12px] sm:text-[10px] uppercase text-gray-600 font-medium whitespace-nowrap">{label}</td>
+                  <td className="border border-gray-200 p-0"><input disabled={disabled} className={cell} value={t.type ?? ""} onChange={(e) => setTool(kind, "type", e.target.value || null)} /></td>
+                  <td className="border border-gray-200 p-0"><input disabled={disabled} className={cell} value={t.size ?? ""} onChange={(e) => setTool(kind, "size", e.target.value || null)} /></td>
+                  <td className="border border-gray-200 p-0"><input disabled={disabled} className={cell} value={t.serialNo ?? ""} onChange={(e) => setTool(kind, "serialNo", e.target.value || null)} /></td>
+                  <td className="border border-gray-200 p-0"><input type="number" inputMode="decimal" step="any" disabled={disabled} className={`${cell} tabular-nums`} value={t.hours ?? ""} onChange={(e) => setTool(kind, "hours", e.target.value === "" ? null : Number(e.target.value))} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400">Leave a tool row blank when it isn't in the string.</p>
     </>
   );
 }
@@ -505,39 +750,52 @@ function MudSubform({ draft, set, setMud, disabled }: SubformProps & {
         <Section>Mud properties</Section>
         <TextField label="Mud system" value={m.mudSystem} onChange={(v) => setMud("mudSystem", v)} disabled={disabled} placeholder="KCl-Polymer" />
         <TextField label="Rep. time" value={m.reportTime} onChange={(v) => setMud("reportTime", v)} disabled={disabled} placeholder="06:00" />
+        {/* The check's own depth / density / flowline temperature head the block. */}
+        <NumField label="Check depth" unit="mKB" value={m.depthMkb} onChange={(v) => setMud("depthMkb", v)} disabled={disabled} />
+        <NumField label="Density" unit="ppg" value={m.densityPpg} onChange={(v) => setMud("densityPpg", v)} disabled={disabled} />
         <NumField label="MW max" unit="sg" value={m.maxWeight} onChange={(v) => setMud("maxWeight", v)} disabled={disabled} />
         <NumField label="MW min" unit="sg" value={m.minWeight} onChange={(v) => setMud("minWeight", v)} disabled={disabled} />
-        <NumField label="Funnel visc" unit="s" value={m.funnelVisc} onChange={(v) => setMud("funnelVisc", v)} disabled={disabled} />
-        <NumField label="PV" value={m.pv} onChange={(v) => setMud("pv", v)} disabled={disabled} />
-        <NumField label="YP" value={m.yp} onChange={(v) => setMud("yp", v)} disabled={disabled} />
-        <NumField label="Gel initial" value={m.gelInitial} onChange={(v) => setMud("gelInitial", v)} disabled={disabled} />
-        <NumField label="Gel 10 min" value={m.gel10min} onChange={(v) => setMud("gel10min", v)} disabled={disabled} />
+        <NumField label="T flowline" unit="°C" value={m.tFlowlineC} onChange={(v) => setMud("tFlowlineC", v)} disabled={disabled} />
+        <NumField label="Funnel visc" unit="s/qt" value={m.funnelVisc} onChange={(v) => setMud("funnelVisc", v)} disabled={disabled} />
+        <NumField label="PV" unit="cp" value={m.pv} onChange={(v) => setMud("pv", v)} disabled={disabled} />
+        <NumField label="YP" unit="lbf/100ft²" value={m.yp} onChange={(v) => setMud("yp", v)} disabled={disabled} />
+        <NumField label="Gel initial" unit="lbf/100ft²" value={m.gelInitial} onChange={(v) => setMud("gelInitial", v)} disabled={disabled} />
+        <NumField label="Gel 10 min" unit="lbf/100ft²" value={m.gel10min} onChange={(v) => setMud("gel10min", v)} disabled={disabled} />
         <NumField label="Fan 600" value={m.fan600} onChange={(v) => setMud("fan600", v)} disabled={disabled} />
         <NumField label="Fan 300" value={m.fan300} onChange={(v) => setMud("fan300", v)} disabled={disabled} />
+        <NumField label="Vis 3 rpm" value={m.vis3rpm} onChange={(v) => setMud("vis3rpm", v)} disabled={disabled} />
+        <NumField label="Vis 6 rpm" value={m.vis6rpm} onChange={(v) => setMud("vis6rpm", v)} disabled={disabled} />
         <NumField label="pH" value={m.ph} onChange={(v) => setMud("ph", v)} disabled={disabled} />
         <NumField label="ALK" value={m.alkalinity} onChange={(v) => setMud("alkalinity", v)} disabled={disabled} />
         <NumField label="Water loss" value={m.waterLoss} onChange={(v) => setMud("waterLoss", v)} disabled={disabled} />
+        <NumField label="Filtrate" unit="ml/30min" value={m.filtrateMl} onChange={(v) => setMud("filtrateMl", v)} disabled={disabled} />
       </div>
       <div>
         <Section>Mud chemistry</Section>
         <NumField label="HPHT" value={m.hpht} onChange={(v) => setMud("hpht", v)} disabled={disabled} />
         <NumField label="Air / foam" unit="CFM" value={m.airFoam} onChange={(v) => setMud("airFoam", v)} disabled={disabled} />
         <NumField label="Oil %" value={m.oilPct} onChange={(v) => setMud("oilPct", v)} disabled={disabled} />
+        <NumField label="Water %" value={m.percentWater} onChange={(v) => setMud("percentWater", v)} disabled={disabled} />
         <TextField label="O:W ratio" value={m.oilWaterRatio} onChange={(v) => setMud("oilWaterRatio", v)} disabled={disabled} placeholder="70/30" />
         <NumField label="E-stability" unit="V" value={m.eStability} onChange={(v) => setMud("eStability", v)} disabled={disabled} />
-        <NumField label="KCl" unit="ppb" value={m.kcl} onChange={(v) => setMud("kcl", v)} disabled={disabled} />
-        <NumField label="MBT" value={m.mbt} onChange={(v) => setMud("mbt", v)} disabled={disabled} />
+        <NumField label="KCl" unit="lb/bbl" value={m.kcl} onChange={(v) => setMud("kcl", v)} disabled={disabled} />
+        <NumField label="MBT" unit="lb/bbl" value={m.mbt} onChange={(v) => setMud("mbt", v)} disabled={disabled} />
         <NumField label="PF" value={m.pf} onChange={(v) => setMud("pf", v)} disabled={disabled} />
         <NumField label="MF" value={m.mf} onChange={(v) => setMud("mf", v)} disabled={disabled} />
-        <NumField label="Chloride" unit="ppm" value={m.chloride} onChange={(v) => setMud("chloride", v)} disabled={disabled} />
+        <NumField label="Chloride" unit="mg/l" value={m.chloride} onChange={(v) => setMud("chloride", v)} disabled={disabled} />
         <NumField label="Calcium" unit="ppm" value={m.calcium} onChange={(v) => setMud("calcium", v)} disabled={disabled} />
+        <NumField label="Hardness (Ca)" unit="ppm" value={m.hardnessCaPpm} onChange={(v) => setMud("hardnessCaPpm", v)} disabled={disabled} />
         <NumField label="Retort solids" unit="%" value={m.solidsPct} onChange={(v) => setMud("solidsPct", v)} disabled={disabled} />
+        <NumField label="Low-gravity solids" unit="%" value={m.lowGravitySolidsPct} onChange={(v) => setMud("lowGravitySolidsPct", v)} disabled={disabled} />
         <NumField label="Temp" unit="°F" value={m.tempF} onChange={(v) => setMud("tempF", v)} disabled={disabled} />
 
         <Section>Mud volume balance</Section>
         <NumField label="Formation loss" unit="bbl" value={draft.formationLoss} onChange={(v) => set("formationLoss", v)} disabled={disabled} />
         <NumField label="Loss @ units" unit="bbl" value={draft.mudLossUnit} onChange={(v) => set("mudLossUnit", v)} disabled={disabled} />
         <NumField label="Mud gains" unit="bbl" value={draft.mudGains} onChange={(v) => set("mudGains", v)} disabled={disabled} />
+        <NumField label="Mud lost to hole" unit="bbl" value={m.mudLostBbl} onChange={(v) => setMud("mudLostBbl", v)} disabled={disabled} />
+        <NumField label="Active volume" unit="bbl" value={m.activeMudVolBbl} onChange={(v) => setMud("activeMudVolBbl", v)} disabled={disabled} />
+        <NumField label="Reserve volume" unit="bbl" value={m.volMudResBbl} onChange={(v) => setMud("volMudResBbl", v)} disabled={disabled} />
       </div>
     </div>
   );
@@ -550,32 +808,36 @@ function SolidControlSubform({ draft, setSc, disabled }: SubformProps & {
   return (
     <>
       <Section>Solid control</Section>
-      <table className="w-full text-[11px] border-collapse">
-        <thead>
-          <tr>{["Unit", "HRS", "U.F.", "O.F.", "FEED", "CONS", "F.PRS."].map((h) => (
-            <th key={h} className="bg-gray-50 border border-gray-200 px-1.5 py-1 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500">{h}</th>
-          ))}</tr>
-        </thead>
-        <tbody>
-          {SC_UNITS.map((unit) => {
-            const r = draft.solidControl.find((s) => s.unit === unit)!;
-            return (
-              <tr key={unit}>
-                <td className="border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] uppercase text-gray-600 font-medium whitespace-nowrap">{unit}</td>
-                {keys.map((k) => (
-                  <td key={k} className="border border-gray-200 p-0">
-                    <input type="number" step="any" disabled={disabled}
-                      className="w-full px-1.5 py-0.5 text-[11px] tabular-nums bg-transparent border-0 focus:outline-none focus:bg-blue-50"
-                      value={(r[k] as number | null) ?? ""}
-                      onChange={(e) => setSc(unit, k, e.target.value === "" ? null : Number(e.target.value))} />
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <p className="px-2 py-2 text-[10px] text-gray-400">
+      {/* Seven fixed columns: scrolls sideways on a phone rather than crushing
+          the number inputs below the 44px / 16px minimums. */}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[40rem] sm:min-w-0 text-[13px] border-collapse">
+          <thead>
+            <tr>{["Unit", "HRS", "U.F.", "O.F.", "FEED", "CONS", "F.PRS."].map((h) => (
+              <th key={h} className="bg-gray-50 border border-gray-200 px-2 sm:px-1.5 py-1.5 sm:py-1 text-left text-[11px] sm:text-[10px] font-medium uppercase tracking-wide text-gray-500 whitespace-nowrap">{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {SC_UNITS.map((unit) => {
+              const r = draft.solidControl.find((s) => s.unit === unit)!;
+              return (
+                <tr key={unit}>
+                  <td className="border border-gray-200 bg-gray-50 px-2 sm:px-1.5 py-2 sm:py-0.5 text-[12px] sm:text-[10px] uppercase text-gray-600 font-medium whitespace-nowrap">{unit}</td>
+                  {keys.map((k) => (
+                    <td key={k} className="border border-gray-200 p-0">
+                      <input type="number" inputMode="decimal" step="any" disabled={disabled}
+                        className="w-full min-w-0 bg-transparent border-0 tabular-nums text-base min-h-[44px] px-2 py-2 sm:text-[13px] sm:min-h-[32px] sm:px-1.5 sm:py-1 focus:outline-none focus:bg-blue-50"
+                        value={(r[k] as number | null) ?? ""}
+                        onChange={(e) => setSc(unit, k, e.target.value === "" ? null : Number(e.target.value))} />
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400">
         The three units are fixed on the DR sheet — leave a row blank when the unit didn't run.
       </p>
     </>
@@ -612,30 +874,54 @@ function CasingSubform({ draft, set, disabled }: SubformProps) {
       <RowTable
         cols={[
           { key: "casing", label: "Casing" },
-          { key: "depth", label: "Depth (m)", type: "num", width: "w-28" },
+          { key: "runDate", label: "Run date", width: "w-28", title: "The date the string was run, as it prints on the sheet" },
+          { key: "topMkb", label: "Top (mKB)", type: "num", width: "w-28", title: "Top of the string — 0 for a casing, the hanger depth for a liner" },
+          // a.json set_depth_mkb — the shoe. This is the existing `depth` column,
+          // relabelled: a string has a top AND a set depth, so "Depth" alone was
+          // ambiguous once the top column arrived.
+          { key: "depth", label: "Set depth (mKB)", type: "num", width: "w-28", title: "Shoe depth" },
           { key: "joints", label: "Joints", type: "num", width: "w-24" },
+          { key: "com", label: "Com" },
         ] as Col<ReportBody["casing"][number]>[]}
         rows={draft.casing} onChange={(v) => set("casing", v)} disabled={disabled} minRows={1}
-        addLabel="casing run" blank={() => ({ order: 0, casing: null, depth: null, joints: null })}
+        addLabel="casing run"
+        blank={() => ({ order: 0, casing: null, runDate: null, topMkb: null, depth: null, joints: null, com: null })}
       />
-      <p className="px-2 pb-2 text-[10px] text-gray-400">Only the strings run on this day — the office carries the deepest one forward as "last casing".</p>
+      <p className="px-2 pb-2 text-xs sm:text-[10px] text-gray-400">Only the strings run on this day — the office carries the deepest one forward as "last casing".</p>
     </>
   );
 }
 
+/**
+ * a.json `formations` — prognosed top against the top that actually came in.
+ *
+ * The two depths are the whole point of the block, so they sit side by side:
+ * `progTopMd` is what the drilling programme forecast, and the existing `depth`
+ * column IS `final_top_md_mkb`, where the formation was really picked. Never
+ * write one into the other.
+ */
 function FormationTops({ draft, set, disabled }: SubformProps) {
   return (
     <>
-      <Section>Formation tops</Section>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">prognosed vs actual</span>}>Formation tops</Section>
       <RowTable
         cols={[
           { key: "formation", label: "Formation" },
-          { key: "depth", label: "Depth (m)", type: "num", width: "w-28" },
+          { key: "progTopMd", label: "Prog. top MD (mKB)", type: "num", width: "w-28", title: "Prognosed top from the drilling programme" },
+          { key: "depth", label: "Final top MD (mKB)", type: "num", width: "w-28", title: "Where the top actually came in" },
+          { key: "finalTopTvd", label: "Final top TVD (mKB)", type: "num", width: "w-28" },
+          { key: "thickM", label: "Thick (m)", type: "num", width: "w-24" },
+          { key: "drilledRopMHr", label: "Drilled ROP (m/hr)", type: "num", width: "w-28" },
+          { key: "lithDes", label: "Lith. des", width: "w-32", title: "Comma-separated lithology codes, e.g. Lst,Mrl,Clst,Gyp" },
           { key: "secondDepth", label: "Second depth", type: "num", width: "w-28" },
           { key: "type", label: "Type", width: "w-32" },
         ] as Col<ReportBody["formationTops"][number]>[]}
         rows={draft.formationTops} onChange={(v) => set("formationTops", v)} disabled={disabled} minRows={1}
-        addLabel="formation top" blank={() => ({ order: 0, formation: null, depth: null, secondDepth: null, type: null })}
+        addLabel="formation top"
+        blank={() => ({
+          order: 0, formation: null, progTopMd: null, depth: null, finalTopTvd: null,
+          thickM: null, drilledRopMHr: null, lithDes: null, secondDepth: null, type: null,
+        })}
       />
     </>
   );
@@ -644,20 +930,22 @@ function FormationTops({ draft, set, disabled }: SubformProps) {
 function Surveys({ draft, set, disabled }: SubformProps) {
   return (
     <>
-      <Section right={<span className="font-normal normal-case text-[9px] opacity-70">deepest station last</span>}>Last survey data</Section>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">deepest station last</span>}>Last survey data</Section>
       <RowTable
         cols={[
-          { key: "md", label: "MD (m)", type: "num" },
-          { key: "inc", label: "Inc (°)", type: "num" },
-          { key: "azi", label: "Azi (°)", type: "num" },
-          { key: "tvd", label: "TVD (m)", type: "num" },
-          { key: "ns", label: "N/S", type: "num" },
-          { key: "ew", label: "E/W", type: "num" },
-          { key: "dls", label: "DLS", type: "num" },
+          { key: "md", label: "MD (mKB)", type: "num" },
+          { key: "inc", label: "Incl (°)", type: "num" },
+          { key: "azi", label: "Azm (°)", type: "num" },
+          { key: "tvd", label: "TVD (mKB)", type: "num" },
+          { key: "ns", label: "NS (m)", type: "num", signed: true },
+          { key: "ew", label: "EW (m)", type: "num", signed: true },
+          { key: "vs", label: "VS (m)", type: "num", signed: true, title: "Vertical section — negative behind the VS reference azimuth" },
+          { key: "dls", label: "DLS (°/30m)", type: "num" },
+          { key: "build", label: "Build (°/30m)", type: "num", signed: true },
         ] as Col<ReportBody["surveys"][number]>[]}
         rows={draft.surveys} onChange={(v) => set("surveys", v)} disabled={disabled} minRows={2}
         addLabel="survey station"
-        blank={() => ({ order: 0, md: null, inc: null, azi: null, tvd: null, ns: null, ew: null, dls: null })}
+        blank={() => ({ order: 0, md: null, inc: null, azi: null, tvd: null, ns: null, ew: null, vs: null, dls: null, build: null })}
       />
     </>
   );
@@ -668,7 +956,7 @@ function TimeBreakdown({ draft, set, disabled }: SubformProps) {
   const off = Math.abs(total - 24) > 0.01 && total > 0;
   return (
     <>
-      <Section right={<span className={`font-normal normal-case text-[9px] ${off ? "text-amber-700" : "opacity-70"}`}>
+      <Section right={<span className={`font-normal normal-case text-[11px] sm:text-[9px] ${off ? "text-amber-700" : "opacity-70"}`}>
         {total.toFixed(1)} h of 24{off ? " — doesn't add up to the day" : ""}
       </span>}>Time breakdown</Section>
       <RowTable
@@ -688,7 +976,7 @@ function TimeBreakdown({ draft, set, disabled }: SubformProps) {
 function OperationsLog({ draft, set, disabled }: SubformProps) {
   return (
     <>
-      <Section right={<span className="font-normal normal-case text-[9px] opacity-70">midnight to midnight</span>}>Operations log</Section>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">midnight to midnight</span>}>Operations log</Section>
       <RowTable
         cols={[
           { key: "opCode", label: "Op", width: "w-24" },
@@ -710,7 +998,7 @@ function SummaryWeather({ draft, set, disabled }: SubformProps) {
       <textarea rows={8} disabled={disabled} value={draft.description ?? ""}
         onChange={(e) => set("description", e.target.value || null)}
         placeholder="The day's narrative — what was drilled, what happened, what is planned next."
-        className="w-full px-2 py-1.5 text-[11px] border-0 focus:outline-none focus:bg-blue-50 resize-y" />
+        className="w-full px-3 sm:px-2 py-2 sm:py-1.5 text-base sm:text-[13px] leading-relaxed sm:leading-normal border-0 focus:outline-none focus:bg-blue-50 focus:ring-1 focus:ring-inset focus:ring-blue-400 resize-y" />
       <Section>Weather &amp; consumables</Section>
       <div className="grid grid-cols-1 md:grid-cols-2">
         <div className="md:border-r border-gray-200">
@@ -722,6 +1010,252 @@ function SummaryWeather({ draft, set, disabled }: SubformProps) {
           <NumField label="Fuel" unit="L" value={draft.fuel} onChange={(v) => set("fuel", v)} disabled={disabled} />
         </div>
       </div>
+    </>
+  );
+}
+
+/**
+ * a.json `supervisors_contact` + `onboard_companies` — who to ring, and who is
+ * on board. The company counts add up to the day's POB, so the total is derived
+ * here rather than typed a second time (the head-count field on the Well tab is
+ * the rig's own figure and is left alone).
+ */
+function CrewAndCompanies({ draft, set, disabled }: SubformProps) {
+  const pob = draft.companies.reduce((a, c) => a + (c.count ?? 0), 0);
+  return (
+    <>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">who to call from the rig</span>}>Supervisors contact</Section>
+      <RowTable
+        cols={[
+          { key: "jobContact", label: "Job contact" },
+          { key: "position", label: "Position" },
+        ] as Col<ReportBody["supervisors"][number]>[]}
+        rows={draft.supervisors} onChange={(v) => set("supervisors", v)} disabled={disabled} minRows={2}
+        addLabel="contact" blank={() => ({ order: 0, jobContact: null, position: null })}
+      />
+      <Section>On-board companies</Section>
+      <RowTable
+        cols={[
+          { key: "company", label: "Company" },
+          { key: "count", label: "Count", type: "int", width: "w-20", title: "Persons from this company (whole number)" },
+          { key: "note", label: "Note", title: "Role, e.g. Client / Operator / Drilling Unit Service" },
+        ] as Col<ReportBody["companies"][number]>[]}
+        rows={draft.companies} onChange={(v) => set("companies", v)} disabled={disabled} minRows={3}
+        addLabel="company" blank={() => ({ order: 0, company: null, count: null, note: null })}
+      />
+      <DerivedField label="Total POB" value={pob > 0 ? pob : null} unit="persons" caption="(sum of the company counts)" />
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        Counts are whole people — the total here is what the sheet prints as personnel on board.
+      </p>
+    </>
+  );
+}
+
+/**
+ * a.json `hse_drill_schedule` + `bulk_material`.
+ *
+ * The drill schedule is a FIXED four-row set keyed by type, rendered like the
+ * solid-control table (label cell, then the inputs) because the rows are part of
+ * the sheet's shape: they print blank when the drill wasn't held, and a blank
+ * one is a real statement, not a missing row.
+ */
+function HseAndBulk({ draft, set, setHse, disabled }: SubformProps & {
+  setHse: (type: string, key: keyof HseDrillRow, value: string | number | null) => void;
+}) {
+  const cell =
+    "w-full min-w-0 bg-transparent border-0 text-base min-h-[44px] px-2 py-2 " +
+    "sm:text-[13px] sm:min-h-[32px] sm:px-1.5 sm:py-1 focus:outline-none focus:bg-blue-50";
+  return (
+    <>
+      <Section>HSE drill schedule</Section>
+      {/* Three fixed columns — scrolls sideways on a phone rather than crushing
+          the inputs below the 44px / 16px minimums. */}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[28rem] sm:min-w-0 text-[13px] border-collapse">
+          <thead>
+            <tr>{["Drill", "Date", "Days to next check"].map((h) => (
+              <th key={h} className="bg-gray-50 border border-gray-200 px-2 sm:px-1.5 py-1.5 sm:py-1 text-left text-[11px] sm:text-[10px] font-medium uppercase tracking-wide text-gray-500 whitespace-nowrap">{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {HSE_TYPES.map((type) => {
+              const h = draft.hseDrills.find((x) => x.type === type)!;
+              return (
+                <tr key={type}>
+                  <td className="border border-gray-200 bg-gray-50 px-2 sm:px-1.5 py-2 sm:py-0.5 text-[12px] sm:text-[10px] uppercase text-gray-600 font-medium whitespace-nowrap">{type}</td>
+                  <td className="border border-gray-200 p-0">
+                    <input disabled={disabled} className={cell} placeholder="4/30/2026"
+                      value={h.date ?? ""} onChange={(e) => setHse(type, "date", e.target.value || null)} />
+                  </td>
+                  <td className="border border-gray-200 p-0">
+                    <input type="number" inputMode="decimal" step="any" disabled={disabled} className={`${cell} tabular-nums`}
+                      value={h.daysToNextCheck ?? ""}
+                      onChange={(e) => setHse(type, "daysToNextCheck", e.target.value === "" ? null : Number(e.target.value))} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        The four drills are fixed on the sheet — leave a row blank when the drill wasn't due. The date is
+        the last one held; days to next check counts down from it.
+      </p>
+      <Section>Bulk material</Section>
+      <RowTable
+        cols={[
+          { key: "supplyItemDes", label: "Supply item" },
+          { key: "unitLabel", label: "Unit", width: "w-20", title: "MT, liter, m3" },
+          { key: "consumed", label: "Consumed", type: "num", width: "w-24" },
+          { key: "received", label: "Received", type: "num", width: "w-24" },
+          { key: "returned", label: "Returned", type: "num", width: "w-24" },
+          { key: "onLoc", label: "On loc", type: "num", width: "w-24" },
+          { key: "note", label: "Note" },
+        ] as Col<ReportBody["bulkMaterials"][number]>[]}
+        rows={draft.bulkMaterials} onChange={(v) => set("bulkMaterials", v)} disabled={disabled} minRows={3}
+        addLabel="bulk item"
+        blank={() => ({
+          order: 0, supplyItemDes: null, unitLabel: null, consumed: null, received: null,
+          returned: null, onLoc: null, note: null,
+        })}
+      />
+    </>
+  );
+}
+
+/**
+ * a.json `wellhead_component` + `well_control_scr`.
+ *
+ * Two unrelated tables share a tab because both are written the same way: the
+ * wellhead grows a row each time a spool or a head is landed, and the slow
+ * circulation rates are re-taken at the same milestones (a new section, a new
+ * mud weight). Neither is a daily entry, so neither earns a tab of its own.
+ */
+function WellheadAndScr({ draft, set, disabled }: SubformProps) {
+  return (
+    <>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">one row per component landed</span>}>Wellhead component</Section>
+      <RowTable
+        cols={[
+          { key: "installDate", label: "Install date", width: "w-28", title: "As printed on the sheet, e.g. 4/30/2026" },
+          { key: "sizeIn", label: "Size (in)", type: "num", width: "w-24" },
+          { key: "type", label: "Type", width: "w-32", title: "Casing head, casing spool, tubing head, BOP…" },
+          { key: "make", label: "Make", width: "w-28" },
+          { key: "wpPsi", label: "WP (psi)", type: "num", width: "w-28", title: "Working pressure" },
+          { key: "com", label: "Com" },
+        ] as Col<ReportBody["wellheads"][number]>[]}
+        rows={draft.wellheads} onChange={(v) => set("wellheads", v)} disabled={disabled} minRows={2}
+        addLabel="wellhead component"
+        blank={() => ({ order: 0, installDate: null, sizeIn: null, type: null, make: null, wpPsi: null, com: null })}
+      />
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">slow circulation rates</span>}>Well control — SCR</Section>
+      <RowTable
+        cols={[
+          { key: "pumpNo", label: "Pump #", width: "w-20" },
+          { key: "depthMkb", label: "Depth (mKB)", type: "num", width: "w-28", title: "Depth the rate was taken at" },
+          { key: "strokesSpm", label: "Strokes (spm)", type: "num", width: "w-28" },
+          { key: "effPct", label: "Eff (%)", type: "num", width: "w-24", title: "Volumetric efficiency" },
+          { key: "pPsi", label: "P (psi)", type: "num", width: "w-24", title: "Circulating pressure at that rate" },
+          { key: "qFlowGpm", label: "Q flow (gpm)", type: "num", width: "w-28" },
+        ] as Col<ReportBody["scrRates"][number]>[]}
+        rows={draft.scrRates} onChange={(v) => set("scrRates", v)} disabled={disabled} minRows={2}
+        addLabel="SCR rate"
+        blank={() => ({ order: 0, pumpNo: null, depthMkb: null, strokesSpm: null, effPct: null, pPsi: null, qFlowGpm: null })}
+      />
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        One SCR row per pump and rate — the pressures are what a kill sheet is worked from, so record the
+        depth they were taken at, not the depth at midnight.
+      </p>
+    </>
+  );
+}
+
+/**
+ * a.json `formation_integrity_test` — an OBJECT, not a list: one test block per
+ * report, filled on the day the shoe is tested and blank on every other day.
+ *
+ * Rendered as a label/value block rather than a table for exactly that reason —
+ * it is one reading, the way the mud check is, and it prints on the sheet as two
+ * rows of labelled values.
+ */
+function FitSubform({ draft, setFit, disabled }: SubformProps & {
+  setFit: <K extends keyof NonNullable<ReportBody["fit"]>>(key: K, value: NonNullable<ReportBody["fit"]>[K]) => void;
+}) {
+  const f = draft.fit ?? EMPTY_FIT;
+  return (
+    <>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">one test — leave blank on days with none</span>}>Formation integrity test</Section>
+      <div className="grid grid-cols-1 md:grid-cols-2">
+        <div className="md:border-r border-gray-200">
+          <TextField label="Test type" value={f.testType} onChange={(v) => setFit("testType", v)} disabled={disabled} placeholder="FIT / LOT" />
+          <TextField label="Test date" value={f.testDate} onChange={(v) => setFit("testDate", v)} disabled={disabled} placeholder="4/30/2026" />
+          <TextField label="Last casing string run" value={f.lastCasingStringRun} onChange={(v) => setFit("lastCasingStringRun", v)} disabled={disabled} placeholder='13-3/8" @ 2105' />
+          <NumField label="Depth" unit="mKB" value={f.depthMkb} onChange={(v) => setFit("depthMkb", v)} disabled={disabled} />
+          <NumField label="TVD" unit="mKB" value={f.tvdMkb} onChange={(v) => setFit("tvdMkb", v)} disabled={disabled} />
+        </div>
+        <div>
+          <NumField label="Applied surface pressure" unit="psi" value={f.appliedSurfacePressurePsi} onChange={(v) => setFit("appliedSurfacePressurePsi", v)} disabled={disabled} />
+          <NumField label="Fluid density" unit="lb/gal" value={f.fluidDensityPpg} onChange={(v) => setFit("fluidDensityPpg", v)} disabled={disabled} />
+          <NumField label="Volume pumped" unit="bbl" value={f.volumePumpedBbl} onChange={(v) => setFit("volumePumpedBbl", v)} disabled={disabled} />
+          <NumField label="Leak-off pressure" unit="psi" value={f.leakOffPressurePsi} onChange={(v) => setFit("leakOffPressurePsi", v)} disabled={disabled} />
+          <NumField label="Leak-off equivalent density" unit="lb/gal" value={f.leakOffEqDensityPpg} onChange={(v) => setFit("leakOffEqDensityPpg", v)} disabled={disabled} />
+        </div>
+      </div>
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        The test is recorded on the day it is performed and left blank afterwards — it is not carried
+        forward. The equivalent density is what the office uses as the section's fracture gradient.
+      </p>
+    </>
+  );
+}
+
+/**
+ * a.json `marine_conditions` (an OBJECT, like the FIT block) + `support_vessels`.
+ *
+ * Offshore-only: on a land rig the whole tab stays blank and nothing is posted.
+ * These are the TYPED weather values — the "Wind speed/dir" and "Wave / vis"
+ * boxes on the Summary tab are the DR.xls free-text equivalents of the same
+ * readings, kept because the office sheet prints them as written.
+ */
+function MarineAndVessels({ draft, set, setMarine, disabled }: SubformProps & {
+  setMarine: <K extends keyof NonNullable<ReportBody["marine"]>>(key: K, value: NonNullable<ReportBody["marine"]>[K]) => void;
+}) {
+  const m = draft.marine ?? EMPTY_MARINE;
+  return (
+    <>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">offshore only</span>}>Marine conditions</Section>
+      <div className="grid grid-cols-1 md:grid-cols-2">
+        <div className="md:border-r border-gray-200">
+          <NumField label="Swell ht" unit="m" value={m.swellHtM} onChange={(v) => setMarine("swellHtM", v)} disabled={disabled} />
+          <NumField label="Wave ht" unit="m" value={m.waveHtM} onChange={(v) => setMarine("waveHtM", v)} disabled={disabled} />
+          <NumField label="Visibility" unit="km" value={m.visibilityKm} onChange={(v) => setMarine("visibilityKm", v)} disabled={disabled} />
+          <NumField label="T high" unit="°C" signed value={m.tHighC} onChange={(v) => setMarine("tHighC", v)} disabled={disabled} />
+        </div>
+        <div>
+          <TextField label="Wind dir" value={m.windDir} onChange={(v) => setMarine("windDir", v)} disabled={disabled} placeholder="NW" />
+          <NumField label="Wind spd" unit="knots" value={m.windSpdKnots} onChange={(v) => setMarine("windSpdKnots", v)} disabled={disabled} />
+          <TextField label="Com" multiline value={m.com} onChange={(v) => setMarine("com", v)} disabled={disabled} />
+        </div>
+      </div>
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        These are the typed values. The DR.xls "Wind speed/dir" and "Wave / vis" boxes on the
+        Summary &amp; weather tab are the office sheet's free-text equivalents of the same readings — fill
+        whichever the office asks for, or both.
+      </p>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">alongside or on standby</span>}>Support vessels</Section>
+      <RowTable
+        cols={[
+          { key: "vesselName", label: "Vessel name" },
+          { key: "vesselType", label: "Type", width: "w-32", title: "Supply, anchor handler, standby, crew boat…" },
+          { key: "arrivalDate", label: "Arrival", width: "w-28", title: "As printed on the sheet" },
+          { key: "departureDate", label: "Departure", width: "w-28" },
+          { key: "note", label: "Note" },
+        ] as Col<ReportBody["supportVessels"][number]>[]}
+        rows={draft.supportVessels} onChange={(v) => set("supportVessels", v)} disabled={disabled} minRows={2}
+        addLabel="vessel"
+        blank={() => ({ order: 0, vesselName: null, vesselType: null, arrivalDate: null, departureDate: null, note: null })}
+      />
     </>
   );
 }
