@@ -132,19 +132,25 @@ export function JalaliDatePicker({ value, onChange, placeholder, className }: {
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
-        className="w-full h-9 border border-gray-300 rounded px-2 text-sm"
+        // 16px text on mobile stops iOS Safari zooming the page on focus; the
+        // dense 36px/14px field returns from `sm:` up for the DDR sidebars.
+        className="w-full min-h-[44px] sm:min-h-[36px] border border-gray-300 rounded-md px-2 text-base sm:text-sm"
       />
       {open && pos && createPortal(
-        <div ref={popupRef} style={{ position: "fixed", left: pos.left, top: pos.top }} className="z-50 w-60 bg-white border border-gray-300 rounded shadow-lg p-2 text-xs">
+        <div ref={popupRef} style={{ position: "fixed", left: pos.left, top: pos.top }} className="z-50 w-[17rem] sm:w-60 bg-white border border-gray-300 rounded-md shadow-lg p-2 text-sm sm:text-xs">
           <div className="flex items-center justify-between gap-1 mb-1">
-            <button type="button" onClick={() => setMonth(-1)} className="px-2 py-0.5 rounded hover:bg-gray-100 text-gray-600">‹</button>
+            <button type="button" aria-label="Previous month" onClick={() => setMonth(-1)}
+              className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 px-2 py-0.5 rounded hover:bg-gray-100 text-gray-600 transition-colors duration-100">‹</button>
             <div className="flex items-center gap-1">
-              <select value={view.jm} onChange={(e) => setView((v) => ({ ...v, jm: +e.target.value }))} className="border border-gray-300 rounded px-1 py-0.5">
+              <select aria-label="Month" value={view.jm} onChange={(e) => setView((v) => ({ ...v, jm: +e.target.value }))}
+                className="min-h-[40px] sm:min-h-0 border border-gray-300 rounded px-1 py-0.5 text-base sm:text-xs">
                 {MONTHS.map((mn, i) => <option key={i} value={i + 1}>{mn}</option>)}
               </select>
-              <input type="number" value={view.jy} onChange={(e) => setView((v) => ({ ...v, jy: +e.target.value || v.jy }))} className="w-16 border border-gray-300 rounded px-1 py-0.5" />
+              <input type="number" inputMode="numeric" aria-label="Year" value={view.jy} onChange={(e) => setView((v) => ({ ...v, jy: +e.target.value || v.jy }))}
+                className="w-20 sm:w-16 min-h-[40px] sm:min-h-0 border border-gray-300 rounded px-1 py-0.5 text-base sm:text-xs" />
             </div>
-            <button type="button" onClick={() => setMonth(1)} className="px-2 py-0.5 rounded hover:bg-gray-100 text-gray-600">›</button>
+            <button type="button" aria-label="Next month" onClick={() => setMonth(1)}
+              className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 px-2 py-0.5 rounded hover:bg-gray-100 text-gray-600 transition-colors duration-100">›</button>
           </div>
           <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] text-gray-400 mb-0.5">
             {WD.map((d) => <div key={d}>{d}</div>)}
@@ -159,7 +165,7 @@ export function JalaliDatePicker({ value, onChange, placeholder, className }: {
                   type="button"
                   key={d}
                   onClick={() => { onChange(`${view.jy}/${pad(view.jm)}/${pad(d)}`); setOpen(false); }}
-                  className={`h-6 rounded ${isSel ? "bg-blue-600 text-white" : "hover:bg-blue-50 text-gray-700"}`}
+                  className={`h-9 sm:h-6 text-sm sm:text-xs rounded transition-colors duration-100 ${isSel ? "bg-blue-600 text-white" : "hover:bg-blue-50 text-gray-700"}`}
                 >
                   {d}
                 </button>

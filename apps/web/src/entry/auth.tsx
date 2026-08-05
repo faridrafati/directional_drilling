@@ -95,16 +95,16 @@ export function SignInCard() {
         <label className="block mb-3">
           <span className="text-xs text-gray-600">User name</span>
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus autoComplete="username"
-            className="mt-1 w-full h-9 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="mt-1 w-full min-h-[44px] sm:min-h-[36px] px-2 text-base sm:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </label>
         <label className="block mb-4">
           <span className="text-xs text-gray-600">Password</span>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password"
-            className="mt-1 w-full h-9 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="mt-1 w-full min-h-[44px] sm:min-h-[36px] px-2 text-base sm:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </label>
         {error && <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">{error}</div>}
         <button type="submit" disabled={busy || !username || !password}
-          className="w-full h-9 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 transition-colors duration-150 disabled:bg-gray-300">
+          className="w-full min-h-[44px] sm:min-h-[36px] rounded-md bg-blue-600 text-white text-base sm:text-sm hover:bg-blue-700 transition-colors duration-150 disabled:bg-gray-300">
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
@@ -133,7 +133,8 @@ export function ChangePasswordCard({ forced, onDone }: { forced?: boolean; onDon
     finally { setBusy(false); }
   }
 
-  const input = "mt-1 w-full h-9 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500";
+  // 16px text on mobile: anything smaller makes iOS Safari zoom the page on focus.
+  const input = "mt-1 w-full min-h-[44px] sm:min-h-[36px] px-2 text-base sm:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500";
   return (
     <form onSubmit={submit} className="w-full max-w-sm bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
       <h3 className="text-base font-semibold text-gray-900">{forced ? "Set a new password" : "Change password"}</h3>
@@ -149,10 +150,10 @@ export function ChangePasswordCard({ forced, onDone }: { forced?: boolean; onDon
       {error && <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">{error}</div>}
       <div className="flex gap-2">
         <button type="submit" disabled={busy || !current || next.length < 6}
-          className="flex-1 h-9 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 transition-colors duration-150 disabled:bg-gray-300">
+          className="flex-1 min-h-[44px] sm:min-h-[36px] rounded-md bg-blue-600 text-white text-base sm:text-sm hover:bg-blue-700 transition-colors duration-150 disabled:bg-gray-300">
           {busy ? "Saving…" : "Save password"}
         </button>
-        {!forced && <button type="button" onClick={onDone} className="h-9 px-3 rounded-md border border-gray-300 bg-white text-gray-700 text-sm hover:bg-gray-50 transition-colors duration-150">Cancel</button>}
+        {!forced && <button type="button" onClick={onDone} className="min-h-[44px] sm:min-h-[36px] px-4 sm:px-3 rounded-md border border-gray-300 bg-white text-gray-700 text-base sm:text-sm hover:bg-gray-50 transition-colors duration-150">Cancel</button>}
       </div>
     </form>
   );
