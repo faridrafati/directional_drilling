@@ -52,7 +52,8 @@ async function main() {
   await registerWellRoutes(app, prisma);
   await registerCalculationRoutes(app, prisma);
   await registerGridRoutes(app, prisma);
-  await registerDdrRoutes(app);
+  // Prisma: the ROP-optimization endpoint blends in rig-entered drilling parameters.
+  await registerDdrRoutes(app, prisma);
   await registerAirmudRoutes(app);
   // Rig-side report entry (the only authenticated part of the API).
   await registerEntryRoutes(app, prisma);

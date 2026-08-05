@@ -51,6 +51,9 @@ interface RopPoint {
   dullInner: number | null; dullOuter: number | null; bitHour: number | null;
   dullGrade: string | null; dullTitle: string | null;
   reasonCode: string | null; reasonLabel: string | null;
+  // Where the operating point came from: the legacy bit archive (default) or a
+  // drilling-parameter row typed on the rig in the entry module.
+  source?: "legacy" | "entered";
 }
 interface RopData {
   points: RopPoint[]; bitSizes: string[]; truncated?: boolean; total?: number; note?: string;
@@ -788,24 +791,47 @@ function VoxelScene({ lattice }: { lattice: Lattice }) {
 
 // ── Scatters: ROP vs WOB and ROP vs RPM, split by bit size ───────────────────
 
+// Points typed on the rig (entry module) are drawn as a hollow ring in their bit
+// size's colour, so they read as the same series but are told apart at a glance
+// from the filled legacy-archive dots.
+const renderEnteredRing = (props: { cx?: number; cy?: number; fill?: string }) => (
+  <circle cx={props.cx} cy={props.cy} r={4} fill="none" stroke={props.fill ?? "#111827"} strokeWidth={1.6} strokeOpacity={0.95} />
+);
+
 function ScatterView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
   const series = useMemo(() => {
-    const m = new Map<string, RopPoint[]>();
-    for (const p of points) { const a = m.get(p.bitSize); if (a) a.push(p); else m.set(p.bitSize, [p]); }
-    return bitSizes.filter((b) => m.has(b)).map((b) => ({ size: b, data: m.get(b)! }));
+    const m = new Map<string, { legacy: RopPoint[]; entered: RopPoint[] }>();
+    for (const p of points) {
+      let e = m.get(p.bitSize);
+      if (!e) { e = { legacy: [], entered: [] }; m.set(p.bitSize, e); }
+      (p.source === "entered" ? e.entered : e.legacy).push(p);
+    }
+    return bitSizes.filter((b) => m.has(b)).map((b) => ({ size: b, ...m.get(b)! }));
   }, [points, bitSizes]);
+  const enteredCount = useMemo(() => points.filter((p) => p.source === "entered").length, [points]);
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
       <ScatterPanel title="ROP vs Weight on bit" xKey="wob" xLabel="WOB (klb)" series={series} bitSizes={bitSizes} />
       <ScatterPanel title="ROP vs RPM" xKey="rpm" xLabel="RPM" series={series} bitSizes={bitSizes} />
+      {enteredCount > 0 && (
+        <div className="xl:col-span-2 flex items-center gap-1.5 text-[11px] text-gray-600">
+          <svg width={13} height={13} className="shrink-0" aria-hidden>
+            <circle cx={6.5} cy={6.5} r={4} fill="none" stroke="#334155" strokeWidth={1.6} />
+          </svg>
+          <span>
+            <b>{enteredCount}</b> of {points.length} point{points.length === 1 ? "" : "s"} entered on the rig
+            (drilling parameters, one per drilled interval) — hollow rings; filled dots are legacy archive bit records.
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
 function ScatterPanel({ title, xKey, xLabel, series, bitSizes }: {
   title: string; xKey: "wob" | "rpm"; xLabel: string;
-  series: { size: string; data: RopPoint[] }[]; bitSizes: string[];
+  series: { size: string; legacy: RopPoint[]; entered: RopPoint[] }[]; bitSizes: string[];
 }) {
   return (
     <div className="border border-gray-200 rounded p-2">
@@ -820,8 +846,22 @@ function ScatterPanel({ title, xKey, xLabel, series, bitSizes }: {
           <ZAxis range={[28, 28]} />
           <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<ScatterTip xKey={xKey} xLabel={xLabel} />} />
           <Legend {...LEGEND_TOP} />
-          {series.map((s) => (
-            <Scatter key={s.size} name={s.size} data={s.data} fill={colorForSize(bitSizes, s.size)} fillOpacity={0.6} />
+          {/* One legend entry per bit size (the archive dots), plus the same-colour
+              rings for that size's rig-entered points. */}
+          {/* Only sizes that actually have archive points get a filled-dot series:
+              a size present solely in rig-entered data would otherwise contribute an
+              empty series whose legend swatch (a filled dot) contradicts every mark
+              on the plot — the normal case when the legacy DB is absent. */}
+          {series.filter((s) => s.legacy.length).map((s) => (
+            <Scatter key={s.size} name={s.size} data={s.legacy} fill={colorForSize(bitSizes, s.size)} fillOpacity={0.6} />
+          ))}
+          {series.filter((s) => s.entered.length).map((s) => (
+            <Scatter key={`${s.size}-entered`} name={`${s.size} · rig entry`} data={s.entered}
+              fill={colorForSize(bitSizes, s.size)}
+              shape={renderEnteredRing}
+              // Sizes with no archive points have no other legend entry, so this
+              // ring series must carry one; otherwise the size is unlabelled.
+              legendType={s.legacy.length ? "none" : "circle"} />
           ))}
         </ScatterChart>
       </ResponsiveContainer>
@@ -838,6 +878,7 @@ function ScatterTip({ active, payload, xKey, xLabel }: any) {
       <div>{xLabel}: {fmt1(xKey === "wob" ? p.wob : p.rpm)}</div>
       <div>ROP: {p.rop} m/hr</div>
       {p.date && <div className="text-gray-300">{p.date}</div>}
+      {p.source === "entered" && <div className="text-amber-300">rig entry · drilling parameters</div>}
     </div>
   );
 }
@@ -1247,8 +1288,19 @@ function aggregateBySize(points: RopPoint[], bitSizes: string[]): SizeAgg[] {
  *  companion to aggregateBySize. */
 function aggregateByFormation(points: RopPoint[]): SizeAgg[] {
   const m = new Map<string, RopPoint[]>();
-  for (const p of points) { const k = p.topFormation ?? "—"; const a = m.get(k); if (a) a.push(p); else m.set(k, [p]); }
-  return [...m.entries()].map(([k, ps]) => rollupAgg(k, ps)).sort((a, b) => b.meters - a.meters || b.meanRop - a.meanRop);
+  // Group case-insensitively, display the first spelling seen. The archive
+  // resolves a D07 lookup ("Gachsaran") while the rig types the name free-hand
+  // ("GACHSARAN"); keyed verbatim these split into two rows and the footage of
+  // one formation is reported twice, half each.
+  const label = new Map<string, string>();
+  for (const p of points) {
+    const shown = p.topFormation ?? "—";
+    const k = shown.trim().toLowerCase();
+    if (!label.has(k)) label.set(k, shown);
+    const a = m.get(k); if (a) a.push(p); else m.set(k, [p]);
+  }
+  // rollupAgg is labelled with the spelling first seen, not the folded key.
+  return [...m.entries()].map(([k, ps]) => rollupAgg(label.get(k) ?? k, ps)).sort((a, b) => b.meters - a.meters || b.meanRop - a.meanRop);
 }
 
 interface ReasonAgg { reason: string; n: number; meters: number; meanRop: number; }
