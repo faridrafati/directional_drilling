@@ -221,6 +221,24 @@ const txt = (v: unknown): string => String(v ?? "").trim();
 const lc = (v: unknown): string => txt(v).toLowerCase();
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
+/**
+ * Sidetrack family key. The legacy side runs every picked well through
+ * expandSidetracks() (ddr/db.ts), which groups A01 codes by the base left after
+ * stripping the trailing Leg/ST suffixes — so AB-011, AB-011Leg1 and AB-011ST1
+ * are ONE physical well. Matching EntryWell.legacyWellCode exactly would drop
+ * every rig sheet filed against a sidetrack of the picked well.
+ *
+ * Same rule, applied by base instead of by A01 lookup: the entered points must
+ * still resolve when the legacy archive isn't on this machine (the /ddr/rop-
+ * optimization route serves them with no DDR database at all), and comparing
+ * bases is exactly what family membership means. `|| c` mirrors wellFamilies()'
+ * guard for a code that is nothing but a suffix.
+ */
+const wellFamilyKey = (v: unknown): string => {
+  const c = lc(v);
+  return c.replace(/(?:(?:leg|st)\d+)+$/i, "") || c;
+};
+
 // Hole/bit-size normalisation — a local mirror of ddr/db.ts's (private) one, so
 // an entered "12 1/4" lands on the same `12-1/4"` series as the archive points.
 function gcd(a: number, b: number): number { return b === 0 ? a : gcd(b, a % b); }
@@ -258,6 +276,8 @@ async function enteredRopPoints(
 ): Promise<Record<string, unknown>[]> {
   const clean = (a?: string[]) => (a ?? []).map(lc).filter(Boolean);
   const wells = new Set(clean(f.wells));      // legacy well codes
+  // Compared by sidetrack family, not literally — see wellFamilyKey.
+  const wellKeys = new Set([...wells].map(wellFamilyKey));
   const fields = new Set(clean(f.fields));
   // "Nothing selected" must mean the same thing on both sides. resolveWellSet()
   // resolves a well set from mud types too, so bailing on well/field alone would
@@ -274,7 +294,7 @@ async function enteredRopPoints(
     select: { id: true, name: true, field: true, legacyWellCode: true },
   });
   const matched = entryWells.filter((w) =>
-    (!wells.size || wells.has(lc(w.legacyWellCode))) &&
+    (!wellKeys.size || wellKeys.has(wellFamilyKey(w.legacyWellCode))) &&
     (!fields.size || fields.has(lc(w.field))));
   if (!matched.length) return [];
 
@@ -336,6 +356,10 @@ async function enteredRopPoints(
     // The value itself is emitted as typed.
     const formation = txt(r.formation) || null;
     if (formationFilter.size && !formationFilter.has(lc(formation))) continue;
+    // Bit-class evidence for this report's day: only the classifier's real
+    // inputs count. No bit run, or a run with neither field filled in, ⇒ null.
+    const iadcCode = txt(r.bitRuns[0]?.iadcCode), bitType = txt(r.bitRuns[0]?.type);
+    const cls = iadcCode || bitType ? bitClass({ iadc: iadcCode, type: bitType }) : null;
     for (const d of r.drillingParameters) {
       const wob = num(d.wob1000Lbf), rpm = num(d.rpm), rop = num(d.intRopMHr);
       // A contour point needs all three axes; same magnitude guard as the archive.
@@ -378,10 +402,15 @@ async function enteredRopPoints(
         // keeps these out of the per-IADC economics and the Bit Advisor: a
         // drilled interval is ~20 m against a legacy bit run's ~300 m, so mixing
         // them would collapse avgMeters and blow up the modelled cost/metre that
-        // drives the ranking. bitClass is still derived (the scatter filters on
-        // it, and a null would drop the point from the chart entirely).
+        // drives the ranking.
         iadc: null,
-        bitClass: bitClass({ iadc: r.bitRuns[0]?.iadcCode, type: r.bitRuns[0]?.type }),
+        // Tri-state. bitClass() defaults to "roller" when it is given nothing,
+        // so a report with NO bit run at all (or one carrying neither an IADC
+        // code nor a type) would be charted and counted as roller-cone — which
+        // is the PDC-vs-roller comparison this tab exists for. Only classify on
+        // real evidence; null means "unclassified", and the viewer gives those
+        // points their own facet option rather than dropping them.
+        bitClass: cls,
         make: null, diaIn: null,
         mse: null, mseEstimated: false, hsi: null, hsiSource: null,
         tfa: null, nozzles: null, flow: null, spp: null, mudWeight: null,

@@ -344,7 +344,7 @@ model EntryReport {
   well          EntryWell           @relation(fields: [wellId], references: [id], onDelete: Cascade)
   user          EntryUser           @relation(fields: [userId], references: [id])
   bitRuns       EntryBitRun[]
-  bha           EntryBhaItem[]
+  drillStrings  EntryDrillString[]
   drillString   EntryDrillPipe[]
   tools         EntryTool[]
   mud           EntryMud?
@@ -383,6 +383,10 @@ model EntryBitRun {
   iadcCode        String?
   nozzles         String?
   tfa             Float?
+  // ── a.json drill_strings[].bit additions ──
+  make            String? /// make, e.g. CST
+  model           String? /// model
+  bitRevs         Float? /// bit_revs
   meterage        Float?
   hours           Float?
   wob             Float?
@@ -400,18 +404,6 @@ model EntryBitRun {
   bitChangeIn     String?
   bitChangeOut    String?
   report          EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
-
-  @@index([reportId, order])
-}
-
-model EntryBhaItem {
-  id            String      @id @default(cuid())
-  reportId      String
-  order         Int         @default(0)
-  assemblyNo    String?
-  lengthM       Float?
-  specification String?
-  report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
 }
@@ -456,13 +448,16 @@ model EntryMud {
   id            String      @id @default(cuid())
   reportId      String      @unique
   mudSystem     String? /// a.json: type
-  maxWeight     Float?
-  minWeight     Float?
+  /// Mud weight RANGE in ppg. a.json carries a single density_ppg, DR.xls a
+  /// min/max pair — 91% of the 62k archive checks record the range, which one
+  /// value cannot express, so the range wins and is stated in a.json's unit.
+  /// A PEDC report giving a single density fills both ends.
+  densityMinPpg Float?
+  densityMaxPpg Float?
   reportTime    String?
   funnelVisc    Float? /// a.json: funnel_viscosity_s_qt
   // ── a.json mud_information additions ──
   depthMkb      Float? /// depth_mkb — depth the sample was taken at
-  densityPpg    Float? /// density_ppg
   tFlowlineC    Float? /// t_flowline_c
   filtrateMl    Float? /// filtrate_ml_30min
   vis3rpm       Float? /// vis_3rpm
@@ -481,7 +476,6 @@ model EntryMud {
   fan300        Float?
   ph            Float?
   alkalinity    Float?
-  waterLoss     Float?
   hpht          Float?
   airFoam       Float?
   oilPct        Float?
@@ -492,9 +486,7 @@ model EntryMud {
   pf            Float?
   mf            Float?
   chloride      Float?
-  calcium       Float?
   solidsPct     Float?
-  tempF         Float?
   report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 }
 
@@ -805,4 +797,54 @@ model EntryMarine {
   waveHtM      Float? /// wave_ht_m
   com          String?
   report       EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+}
+
+/// Drill string — a.json `drill_strings`: one entry PER BHA run in the day.
+///
+/// This replaces the flat EntryBhaItem list. a.json nests the component list
+/// inside each string precisely because a day can run two BHAs; with a flat list
+/// there is no way to say which components made up which string once the second
+/// one goes in the hole, and the per-BHA header figures (depth in, date in,
+/// objective, its own drilling/circulating/rotating/sliding hours) have nowhere
+/// to live at all.
+model EntryDrillString {
+  id                String                    @id @default(cuid())
+  reportId          String
+  order             Int                       @default(0)
+  name              String? /// drill_string_name, e.g. 24" Clean-out BHA
+  bhaNo             Int? /// bha_no
+  depthInMkb        Float? /// depth_in_mkb
+  dateIn            String? /// date_in, as printed
+  objective         String? /// bha_objective
+  depthDrilledM     Float? /// depth_drilled_m
+  drillingTimeHr    Float? /// drilling_time_hr — this BHA's own hours, not the day's
+  circulatingTimeHr Float? /// circulating_time_hr
+  rotatingTimeHr    Float? /// rotating_time_hr
+  slidingTimeHr     Float? /// sliding_time_hr
+  note              String?
+  report            EntryReport               @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  components        EntryDrillStringComponent[]
+
+  @@index([reportId, order])
+}
+
+/// One item in a drill string's make-up — a.json `drill_strings[].components`.
+/// `cumLenM` is the running total the sheet prints; it is stored as recorded
+/// rather than derived, because the printed sheet is the record of truth.
+model EntryDrillStringComponent {
+  id            String           @id @default(cuid())
+  drillStringId String
+  order         Int              @default(0)
+  itemDes       String? /// item_des
+  serv          String? /// serv — owning service company
+  sn            String? /// sn
+  odIn          Float? /// od_in
+  idIn          Float? /// id_in
+  jts           Int? /// jts
+  lenM          Float? /// len_m
+  cumLenM       Float? /// cum_len_m
+  com           String?
+  drillString   EntryDrillString @relation(fields: [drillStringId], references: [id], onDelete: Cascade)
+
+  @@index([drillStringId, order])
 }

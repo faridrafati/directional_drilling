@@ -44,7 +44,11 @@ interface RopPoint {
   // Drilling-engineering metrics (added by the backend) for the MSE / Hydraulics
   // / Economics / Advisor views. Any of these may be null when the source row
   // lacks the inputs (e.g. no torque, no hydraulics, unparseable bit size).
-  iadc: string | null; bitClass: "PDC" | "roller"; make: string | null; diaIn: number | null;
+  // bitClass is TRI-STATE: null = no bit evidence on the source row (an entered
+  // report with no bit run, or one carrying neither an IADC code nor a type).
+  // Never fold those into "roller" — the PDC-vs-roller split is what this tab is
+  // for. They reach the charts through the "Unclassified" bit-type facet.
+  iadc: string | null; bitClass: "PDC" | "roller" | null; make: string | null; diaIn: number | null;
   mse: number | null; mseEstimated: boolean;
   hsi: number | null; hsiSource: "reported" | "computed" | null;
   tfa: number | null; nozzles: number[] | null; flow: number | null; spp: number | null; mudWeight: number | null;
@@ -58,6 +62,10 @@ interface RopPoint {
 interface RopData {
   points: RopPoint[]; bitSizes: string[]; truncated?: boolean; total?: number; note?: string;
 }
+
+/** Bit-type facet selection. "" = every class; "none" = points whose source row
+ *  carried no bit evidence (RopPoint.bitClass === null). */
+type ClassSel = "" | "PDC" | "roller" | "none";
 
 type View = "summary" | "contour" | "voxel" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
 const VIEWS: { key: View; label: string }[] = [
@@ -185,7 +193,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
   // Bit-type / IADC-series facet — purely client-side over the loaded points.
   // "" = all classes; selPdcSeries / selConeSeries hold the picked leading IADC
   // digits within each class (empty = all series of that class).
-  const [selClass, setSelClass] = useState<"" | "PDC" | "roller">("");
+  const [selClass, setSelClass] = useState<ClassSel>("");
   const [selPdcSeries, setSelPdcSeries] = useState<string[]>([]);
   const [selConeSeries, setSelConeSeries] = useState<string[]>([]);
 
@@ -210,7 +218,14 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
     setError(null);
     try {
       const body = { fields: selFields, wells: selWells, holeSizes: selHole, mudTypes: selMud, formations: selForm, depthFrom, depthTo, dateFrom, dateTo };
-      setData(await api.post<RopData>("/ddr/rop-optimization", body));
+      const next = await api.post<RopData>("/ddr/rop-optimization", body);
+      // The class tabs are rendered from what the CURRENT result contains, so a
+      // selection the new result can't offer would leave every view empty with no
+      // tab lit — and if the whole facet unmounts, no control left to clear it.
+      const has = (c: ClassSel) => c === "" ||
+        next.points.some((p) => (c === "none" ? p.bitClass == null : p.bitClass === c));
+      setSelClass((c) => (has(c) ? c : ""));
+      setData(next);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
   function clearAll() {
@@ -223,13 +238,17 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
   // class/series filtering), so each list shows the series actually present.
   const seriesOpts = useMemo(() => {
     const pdc = new Set<string>(), cone = new Set<string>();
+    let unclassified = 0;
     for (const p of data?.points ?? []) {
+      // An unclassified point has no class to file a series under — count it so
+      // the facet can offer the third tab, and never let it land in `cone`.
+      if (p.bitClass == null) { unclassified++; continue; }
       const sNum = iadcSeries(p.iadc);
       if (sNum == null) continue;
       (p.bitClass === "PDC" ? pdc : cone).add(sNum);
     }
     const sort = (s: Set<string>) => [...s].sort((a, b) => Number(a) - Number(b));
-    return { pdc: sort(pdc), cone: sort(cone) };
+    return { pdc: sort(pdc), cone: sort(cone), unclassified };
   }, [data]);
 
   // Bit-class + IADC-series gate, applied before outlier screening so all views
@@ -237,7 +256,11 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
   const classFiltered = useMemo(() => {
     const raw = data?.points ?? [];
     if (!selClass) return raw;
+    // "none" = the unclassified bucket; it has no IADC series to narrow by.
+    if (selClass === "none") return raw.filter((p) => p.bitClass == null);
     const series = new Set(selClass === "PDC" ? selPdcSeries : selConeSeries);
+    // `=== selClass` already excludes the nulls — they are only ever reachable
+    // through the "none" tab, never as a silent member of PDC or roller.
     return raw.filter((p) => p.bitClass === selClass && (!series.size || (() => {
       const sNum = iadcSeries(p.iadc); return sNum != null && series.has(sNum);
     })()));
@@ -271,7 +294,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
         <MultiSelect title="Bit sizes" items={sizeOptions.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
         <BitTypeFilter
           selClass={selClass} onClass={setSelClass}
-          pdcSeries={seriesOpts.pdc} coneSeries={seriesOpts.cone}
+          pdcSeries={seriesOpts.pdc} coneSeries={seriesOpts.cone} unclassified={seriesOpts.unclassified}
           selPdcSeries={selPdcSeries} onPdcSeries={setSelPdcSeries}
           selConeSeries={selConeSeries} onConeSeries={setSelConeSeries}
         />
@@ -352,27 +375,36 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
 // client-side over the already-loaded points, so it applies instantly.
 
 function BitTypeFilter({
-  selClass, onClass, pdcSeries, coneSeries,
+  selClass, onClass, pdcSeries, coneSeries, unclassified,
   selPdcSeries, onPdcSeries, selConeSeries, onConeSeries,
 }: {
-  selClass: "" | "PDC" | "roller";
-  onClass: (c: "" | "PDC" | "roller") => void;
+  selClass: ClassSel;
+  onClass: (c: ClassSel) => void;
   pdcSeries: string[]; coneSeries: string[];
+  /** How many loaded points carry no bit class — gates the third tab. */
+  unclassified: number;
   selPdcSeries: string[]; onPdcSeries: (s: string[]) => void;
   selConeSeries: string[]; onConeSeries: (s: string[]) => void;
 }) {
   // Nothing to offer until a fetch has populated the class options.
-  if (!pdcSeries.length && !coneSeries.length) return null;
+  if (!pdcSeries.length && !coneSeries.length && !unclassified) return null;
 
   const series = selClass === "PDC" ? pdcSeries : selClass === "roller" ? coneSeries : [];
   const sel = selClass === "PDC" ? selPdcSeries : selConeSeries;
   const setSel = selClass === "PDC" ? onPdcSeries : onConeSeries;
   const toggle = (v: string) => setSel(sel.includes(v) ? sel.filter((x) => x !== v) : [...sel, v]);
 
-  const TABS: { key: "" | "roller" | "PDC"; label: string }[] = [
+  const TABS: { key: ClassSel; label: string; title?: string }[] = [
     { key: "", label: "All" },
     { key: "roller", label: "Cone" },
     { key: "PDC", label: "PDC" },
+    // Only offered when such points are loaded — without it they would be
+    // unreachable from the sidebar, which is how they used to be miscounted as
+    // cone instead.
+    ...(unclassified
+      ? [{ key: "none" as const, label: "Unclassified",
+           title: `${unclassified} point${unclassified === 1 ? "" : "s"} whose report carries no bit run (or no IADC code / bit type) — class unknown.` }]
+      : []),
   ];
 
   return (
@@ -380,13 +412,14 @@ function BitTypeFilter({
       <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1">Bit type</div>
       <div className="inline-flex rounded border border-gray-300 overflow-hidden">
         {TABS.map((t) => (
-          <button key={t.key} onClick={() => onClass(t.key)}
+          <button key={t.key} onClick={() => onClass(t.key)} title={t.title}
             className={`px-2.5 h-7 text-xs ${selClass === t.key ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
             {t.label}
           </button>
         ))}
       </div>
-      {selClass && (
+      {/* Unclassified points have no IADC code by construction — no series chips. */}
+      {selClass && selClass !== "none" && (
         <div className="mt-2">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] uppercase tracking-wide text-gray-500" title="Leading IADC digit — the cutter series.">
@@ -1131,7 +1164,7 @@ const TABLE_COLS: { key: string; label: string; align: "left" | "right"; get: (p
   { key: "bitSize", label: "Bit size", align: "right", get: (p) => p.bitSize },
   { key: "topFormation", label: "Top formation", align: "left", get: (p) => p.topFormation ?? "—" },
   { key: "iadc", label: "IADC", align: "left", get: (p) => p.iadc ?? "—" },
-  { key: "bitClass", label: "Class", align: "left", get: (p) => p.bitClass },
+  { key: "bitClass", label: "Class", align: "left", get: (p) => p.bitClass ?? "—" },
   { key: "make", label: "Make", align: "left", get: (p) => p.make ?? "—" },
   { key: "from", label: "From (m)", align: "right", get: (p) => (p.from != null ? Math.round(p.from) : "—") },
   { key: "to", label: "To (m)", align: "right", get: (p) => (p.to != null ? Math.round(p.to) : "—") },
@@ -1333,11 +1366,18 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
     const totalHr = points.reduce((a, p) => a + (p.bitHour ?? 0), 0);
     const mses = points.map((p) => p.mse).filter((v): v is number => v != null && v > 0);
     const wells = new Set(points.map((p) => p.wellCode)).size;
+    // PDC share is computed over the CLASSIFIED points only — both numerator and
+    // denominator. Points with no bit evidence (bitClass null) are neither PDC
+    // nor roller; charging them to "roller" via `n - pdc` would have overstated
+    // roller-cone usage by exactly the number of rig reports missing a bit run.
+    const classified = points.filter((p) => p.bitClass != null).length;
     const pdc = points.filter((p) => p.bitClass === "PDC").length;
+    const roller = classified - pdc;
+    const unclassified = n - classified;
     // Overall realised pace = total metres ÷ total rotating hours (footage-weighted,
     // not the simple per-run mean — what a manager actually cares about).
     const overallRop = totalHr > 0 ? totalM / totalHr : meanRop;
-    return { n, meanRop, medRop, best, worst, totalM, totalHr, medMse: median(mses), wells, pdc, overallRop };
+    return { n, meanRop, medRop, best, worst, totalM, totalHr, medMse: median(mses), wells, pdc, roller, unclassified, overallRop };
   }, [points]);
 
   const sizeAgg = useMemo(() => aggregateBySize(points, bitSizes), [points, bitSizes]);
@@ -1372,7 +1412,7 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
         <KpiCard label="Total footage" value={intc(kpi.totalM)} unit="m" accent="#0d9488"
           sub={<>across {kpi.wells} well{kpi.wells === 1 ? "" : "s"}</>} />
         <KpiCard label="Bit runs" value={intc(kpi.n)} accent="#7c3aed"
-          sub={<>{kpi.pdc} PDC · {kpi.n - kpi.pdc} roller</>} />
+          sub={<>{kpi.pdc} PDC · {kpi.roller} roller{kpi.unclassified ? <span title="Reports with no bit run (or no IADC code / bit type) — bit class unknown, so they count towards neither share."> · {kpi.unclassified} unclassified</span> : null}</>} />
         <KpiCard label="Rotating hours" value={intc(kpi.totalHr)} unit="hr" accent="#d97706"
           sub={<>{(kpi.totalHr / 24).toFixed(0)} rig-days on bottom</>} />
         <KpiCard label="Median MSE" value={kpi.medMse != null ? intc(kpi.medMse) : "—"} unit={kpi.medMse != null ? "psi" : undefined} accent="#0891b2"
@@ -1525,7 +1565,7 @@ function SummaryView({ points, bitSizes, onOpenReport, onView }: {
                     <td className="border border-gray-300 px-2 py-0.5 text-left font-semibold text-gray-800 whitespace-nowrap">{p.name || p.wellCode}</td>
                     <td className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">{p.date ?? "—"}</td>
                     <td className="border border-gray-300 px-2 py-0.5 text-left" style={{ color: colorForSize(bitSizes, p.bitSize) }}>{p.bitSize}</td>
-                    <td className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">{p.iadc ? p.iadc : "—"} · {p.bitClass}</td>
+                    <td className="border border-gray-300 px-2 py-0.5 text-left whitespace-nowrap">{p.iadc ? p.iadc : "—"} · {p.bitClass ?? "—"}</td>
                     <BarCell text={<b>{p.rop}</b>} frac={p.rop / maxRop} color="#16a34a" />
                     <BarCell text={intc(p.meters)} frac={(p.meters ?? 0) / maxM} color="#0d9488" />
                     <td className="border border-gray-300 px-2 py-0.5 text-right">{p.bitHour != null ? fmt1(p.bitHour) : "—"}</td>
@@ -1741,12 +1781,22 @@ function groupByIadc(points: RopPoint[]): IadcGroup[] {
     const hours = pick(ps.map((p) => (p.bitHour != null && p.bitHour > 0 ? p.bitHour : null)));
     const depths = pick(ps.map(runDepth)).filter((d) => d > 0);
     const mses = pick(ps.map((p) => (p.mse != null && p.mse > 0 ? p.mse : null)));
+    // Majority class over the CLASSIFIED members only, so unclassified points
+    // can't tip a PDC group to "roller" (and with it the priced bit tier).
+    const classified = ps.filter((p) => p.bitClass != null).length;
     const pdc = ps.filter((p) => p.bitClass === "PDC").length;
     const sizeCount = new Map<string, number>();
     for (const p of ps) sizeCount.set(p.bitSize, (sizeCount.get(p.bitSize) ?? 0) + 1);
     const bitSize = [...sizeCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
+    // Nothing classified ⇒ nothing to price. The majority test would answer
+    // "roller" here (`0 > 0` is false), quietly charging the roller-cone tier in
+    // the cost/m ranking to a group whose bit is entirely unknown — so the group
+    // is left out of the economics instead of being guessed at. Unreachable while
+    // entered points carry iadc:null, but the guard must hold if that changes.
+    if (classified === 0) continue;
     groups.push({
-      iadc, bitClass: pdc > ps.length / 2 ? "PDC" : "roller", bitSize, n: ps.length, pts: ps,
+      iadc, bitClass: pdc > classified / 2 ? "PDC" : "roller",
+      bitSize, n: ps.length, pts: ps,
       avgRop: mean(ps.map((p) => p.rop)) ?? 0,
       avgMeters: mean(meters) ?? 0, avgHours: mean(hours) ?? 0,
       avgDepth: mean(depths) ?? 0, medMse: median(mses),

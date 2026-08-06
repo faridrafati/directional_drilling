@@ -98,36 +98,88 @@ export interface ReportListItem {
 export interface BitRun {
   order: number; bitNo: string | null; bitSerialNo: string | null; size: string | null;
   type: string | null; iadcCode: string | null; nozzles: string | null; tfa: number | null;
+  // ── a.json drill_strings[].bit additions ──
+  /** Bit manufacturer, e.g. "CST". */
+  make: string | null;
+  model: string | null;
+  /** a.json bit_revs — total revolutions turned by this bit. */
+  bitRevs: number | null;
   meterage: number | null; hours: number | null; wob: number | null; rpm: number | null;
   torque: string | null; dullGrade: string | null; reasonPulled: string | null;
   pumpType: string | null; pumpOutput: number | null; pumpPressure: number | null;
   annularVelocity: number | null; hsi: number | null; cmtDrilled: string | null;
   washAndRun: string | null; bitChangeIn: string | null; bitChangeOut: string | null;
 }
-export interface BhaItem { order: number; assemblyNo: string | null; lengthM: number | null; specification: string | null }
+/**
+ * One item in a string's make-up — a.json `drill_strings[].components`.
+ *
+ * `cumLenM` is the running total as PRINTED, stored rather than derived: the
+ * printed sheet is the record of truth.
+ */
+export interface DrillStringComponentRow {
+  order: number; itemDes: string | null;
+  /** Owning service company. */
+  serv: string | null;
+  sn: string | null; odIn: number | null; idIn: number | null; jts: number | null;
+  lenM: number | null; cumLenM: number | null; com: string | null;
+}
+/**
+ * One drill string — a.json `drill_strings`, one entry PER BHA run in the day.
+ *
+ * Replaces the old flat BHA list. A day can run two BHAs; with a flat list there
+ * is no way to say which components made up which string, and the per-BHA header
+ * figures below have nowhere to live. The four hour fields are THIS string's own,
+ * not the day's totals.
+ */
+export interface DrillStringRow {
+  order: number; name: string | null; bhaNo: number | null; depthInMkb: number | null;
+  dateIn: string | null; objective: string | null; depthDrilledM: number | null;
+  drillingTimeHr: number | null; circulatingTimeHr: number | null;
+  rotatingTimeHr: number | null; slidingTimeHr: number | null; note: string | null;
+  components: DrillStringComponentRow[];
+}
 export interface DrillPipe { order: number; size: string | null; grade: string | null; lengthM: number | null }
 export interface ToolItem { kind: "jar" | "mwd" | "dhMotor"; type: string | null; size: string | null; serialNo: string | null; hours: number | null }
 /**
- * Mud check — the union of the DR.xls block and a.json `mud_information`.
+ * Mud check — the DR.xls block and a.json `mud_information`, de-duplicated.
  *
  * The two standards overlap but neither is a superset, so both are kept: the
  * office sheet still prints its own fields, and the PEDC/POGC DDR adds the
- * sample depth, ppg density, flowline temperature, low-shear-rate viscosities
- * and the three mud volumes.
+ * sample depth, low-shear-rate viscosities and the three mud volumes.
+ *
+ * Four pairs measured the SAME quantity twice and were collapsed onto the a.json
+ * name and unit — the duplicates (maxWeight, minWeight, densityPpg, tempF,
+ * waterLoss, calcium) are gone:
+ *
+ * - `densityMinPpg` / `densityMaxPpg` replace maxWeight + minWeight (sg) and the
+ *   single densityPpg. The RANGE beat the single value: 91% of the 62k archive
+ *   checks record a min and a max, which one density field cannot express, while
+ *   the reverse is lossless — a PEDC report giving one density fills both ends.
+ *   The unit is a.json's ppg, so the two standards no longer disagree on scale.
+ * - `tFlowlineC` replaces tempF — same measurement, °C instead of °F.
+ * - `filtrateMl` replaces waterLoss — a.json filtrate_ml_30min.
+ * - `hardnessCaPpm` replaces calcium — identical quantity AND unit (ppm).
  */
 export interface MudProps {
-  mudSystem: string | null; maxWeight: number | null; minWeight: number | null;
+  mudSystem: string | null;
+  /** Mud-weight range in ppg; a single recorded density fills both ends. */
+  densityMinPpg: number | null; densityMaxPpg: number | null;
   reportTime: string | null; funnelVisc: number | null; pv: number | null; yp: number | null;
   gelInitial: number | null; gel10min: number | null; fan600: number | null; fan300: number | null;
-  ph: number | null; alkalinity: number | null; waterLoss: number | null; hpht: number | null;
+  ph: number | null; alkalinity: number | null; hpht: number | null;
   airFoam: number | null; oilPct: number | null; oilWaterRatio: string | null;
   eStability: number | null; kcl: number | null; mbt: number | null; pf: number | null;
-  mf: number | null; chloride: number | null; calcium: number | null;
-  solidsPct: number | null; tempF: number | null;
+  mf: number | null; chloride: number | null; solidsPct: number | null;
   // ── a.json mud_information additions ──
-  depthMkb: number | null; densityPpg: number | null; tFlowlineC: number | null;
-  filtrateMl: number | null; vis3rpm: number | null; vis6rpm: number | null;
-  percentWater: number | null; lowGravitySolidsPct: number | null; hardnessCaPpm: number | null;
+  depthMkb: number | null;
+  /** Flowline temperature in °C (was tempF). */
+  tFlowlineC: number | null;
+  /** API filtrate, mL/30 min (was waterLoss). */
+  filtrateMl: number | null;
+  vis3rpm: number | null; vis6rpm: number | null;
+  percentWater: number | null; lowGravitySolidsPct: number | null;
+  /** Calcium hardness in ppm (was calcium — same unit). */
+  hardnessCaPpm: number | null;
   mudLostBbl: number | null; activeMudVolBbl: number | null; volMudResBbl: number | null;
 }
 export interface SolidControlRow { unit: string; hours: number | null; underFlow: number | null; overFlow: number | null; feed: number | null; cons: number | null; fprs: number | null }
@@ -264,7 +316,7 @@ export interface ReportBody {
   opsNextPeriod: string | null;
   windSpeedDir: string | null; waveVisible: string | null;
   freshWater: number | null; fuel: number | null;
-  bitRuns: BitRun[]; bha: BhaItem[]; drillString: DrillPipe[]; tools: ToolItem[];
+  bitRuns: BitRun[]; drillStrings: DrillStringRow[]; drillString: DrillPipe[]; tools: ToolItem[];
   drillingParameters: DrillingParameterRow[];
   mud: MudProps | null; solidControl: SolidControlRow[]; chemicals: ChemicalRow[];
   casing: CasingRow[]; formationTops: FormationTopRow[]; surveys: SurveyRow[];

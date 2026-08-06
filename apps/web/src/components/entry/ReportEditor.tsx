@@ -4,8 +4,9 @@
  * The office's read-only view puts the whole DR.xls sheet on one page. For DATA
  * ENTRY that is a wall of inputs, so each part of the sheet is its own subform,
  * picked from the strip of tabs: Well / Operations · Bit runs · Drilling
- * parameters (a.json per-interval WOB/RPM/flow/SPP) · Bottom hole
- * assembly · Drill string & tools · Mud properties · Solid control · Chemicals ·
+ * parameters (a.json per-interval WOB/RPM/flow/SPP) · Drill strings (a.json
+ * drill_string: a header per BHA + its components) ·
+ * Drill string & tools · Mud properties · Solid control · Chemicals ·
  * Casing · Formation tops · Surveys · Time breakdown · Operations log · Summary ·
  * Crew & companies · HSE & bulk · Wellhead & SCR · FIT/LOT · Marine & vessels.
  *
@@ -59,7 +60,7 @@ function toBody(r: ReportDetail): ReportBody {
     opsAtReportTime: r.opsAtReportTime, opsNextPeriod: r.opsNextPeriod,
     description: r.description, windSpeedDir: r.windSpeedDir, waveVisible: r.waveVisible,
     freshWater: r.freshWater, fuel: r.fuel,
-    bitRuns: r.bitRuns ?? [], bha: r.bha ?? [], drillString: r.drillString ?? [],
+    bitRuns: r.bitRuns ?? [], drillStrings: r.drillStrings ?? [], drillString: r.drillString ?? [],
     drillingParameters: r.drillingParameters ?? [],
     // The three tool rows and three solid-control units are always on the sheet,
     // present or not in the stored data.
@@ -89,6 +90,30 @@ const filled = (row: object, skip: string[] = ["order"]) =>
   Object.entries(row).some(([k, v]) => !skip.includes(k) && v !== null && v !== "");
 const filledRows = (rows: object[], skip?: string[]) => rows.filter((r) => filled(r, skip)).length;
 
+// ── drill strings (a.json drill_string: a header per BHA + its components) ────
+// Structural aliases rather than imported names: the row shapes belong to the
+// client's ReportBody, and taking them from it keeps this file honest if a
+// column is added there.
+type DrillStringRow = ReportBody["drillStrings"][number];
+type DrillStringComponentRow = DrillStringRow["components"][number];
+
+/**
+ * Keys that are never null and so would make `filled` true forever: the row
+ * index, the nested array (an array is never null), and the keys the GET serves
+ * from Prisma — a saved-then-blanked string must be prunable, exactly as the
+ * 1:1 mud / FIT / marine blocks are.
+ */
+const DS_SKIP = ["order", "components", "id", "reportId"];
+const DS_ITEM_SKIP = ["order", "id", "drillStringId"];
+const componentFilled = (c: DrillStringComponentRow) => filled(c, DS_ITEM_SKIP);
+/**
+ * A drill string counts as filled when ANY header field is typed OR it carries
+ * at least one filled component — a string whose header is still blank but
+ * whose component table is half-typed is real work and must not be pruned.
+ */
+const drillStringFilled = (s: DrillStringRow) =>
+  filled(s, DS_SKIP) || s.components.some(componentFilled);
+
 /**
  * Drop the rows the user never typed into before posting.
  *
@@ -112,7 +137,11 @@ function prune(body: ReportBody): ReportBody {
   return {
     ...body,
     bitRuns: body.bitRuns.filter((r) => filled(r)),
-    bha: body.bha.filter((r) => filled(r)),
+    // Two levels: prune each string's blank component rows first (the table keeps
+    // spare ones on screen), then drop the strings that are empty either way.
+    drillStrings: body.drillStrings
+      .map((s) => ({ ...s, components: s.components.filter(componentFilled) }))
+      .filter(drillStringFilled),
     drillString: body.drillString.filter((r) => filled(r)),
     drillingParameters: body.drillingParameters.filter((r) => filled(r)),
     chemicals: body.chemicals.filter((r) => filled(r)),
@@ -135,17 +164,36 @@ function prune(body: ReportBody): ReportBody {
   };
 }
 
+/**
+ * The mud check, after the four duplicate pairs were collapsed onto a.json's
+ * name and unit: the mud-weight RANGE is densityMin/MaxPpg in ppg (the old sg
+ * maxWeight/minWeight and the single densityPpg are gone), flowline temperature
+ * is tFlowlineC in °C (not tempF), water loss is filtrateMl and calcium is
+ * hardnessCaPpm. A report quoting one density fills BOTH ends of the range.
+ */
 const EMPTY_MUD: NonNullable<ReportBody["mud"]> = {
-  mudSystem: null, maxWeight: null, minWeight: null, reportTime: null, funnelVisc: null,
+  mudSystem: null, reportTime: null, funnelVisc: null,
   pv: null, yp: null, gelInitial: null, gel10min: null, fan600: null, fan300: null,
-  ph: null, alkalinity: null, waterLoss: null, hpht: null, airFoam: null, oilPct: null,
+  ph: null, alkalinity: null, hpht: null, airFoam: null, oilPct: null,
   oilWaterRatio: null, eStability: null, kcl: null, mbt: null, pf: null, mf: null,
-  chloride: null, calcium: null, solidsPct: null, tempF: null,
+  chloride: null, solidsPct: null,
   // a.json mud_information — kept alongside the DR.xls fields, not instead of them
-  depthMkb: null, densityPpg: null, tFlowlineC: null, filtrateMl: null,
+  depthMkb: null, densityMinPpg: null, densityMaxPpg: null, tFlowlineC: null, filtrateMl: null,
   vis3rpm: null, vis6rpm: null, percentWater: null, lowGravitySolidsPct: null,
   hardnessCaPpm: null, mudLostBbl: null, activeMudVolBbl: null, volMudResBbl: null,
 };
+
+/** A component row the user hasn't typed into yet. */
+const emptyComponent = (): DrillStringComponentRow => ({
+  order: 0, itemDes: null, serv: null, sn: null, odIn: null, idIn: null,
+  jts: null, lenM: null, cumLenM: null, com: null,
+});
+/** A whole new string — header blank, no components until one is added. */
+const emptyDrillString = (): DrillStringRow => ({
+  order: 0, name: null, bhaNo: null, depthInMkb: null, dateIn: null, objective: null,
+  depthDrilledM: null, drillingTimeHr: null, circulatingTimeHr: null,
+  rotatingTimeHr: null, slidingTimeHr: null, note: null, components: [],
+});
 
 /**
  * a.json `formation_integrity_test` and `marine_conditions` are OBJECTS, not
@@ -194,7 +242,9 @@ const SECTIONS = [
   { id: "bit", label: "Bit runs", count: (d: ReportBody) => filledRows(d.bitRuns), unit: "row" },
   // Straight after the bit: a drilled interval belongs next to the bit that drilled it.
   { id: "params", label: "Drilling parameters", count: (d: ReportBody) => filledRows(d.drillingParameters), unit: "row" },
-  { id: "bha", label: "Bottom hole assembly", count: (d: ReportBody) => filledRows(d.bha), unit: "row" },
+  // The tab id stays "bha" so every other tab keeps the position the crew knows;
+  // what it edits is now the drill-string blocks (header + components).
+  { id: "bha", label: "Drill strings", count: (d: ReportBody) => d.drillStrings.filter(drillStringFilled).length, unit: "row" },
   { id: "string", label: "Drill string & tools", count: (d: ReportBody) => filledRows(d.drillString) + filledRows(d.tools, ["kind"]), unit: "row" },
   { id: "mud", label: "Mud properties", count: (d: ReportBody) => (d.mud && filled(d.mud, []) ? 1 : 0) + (filled({ a: d.formationLoss, b: d.mudLossUnit, c: d.mudGains }, []) ? 1 : 0), unit: "" },
   { id: "solid", label: "Solid control", count: (d: ReportBody) => filledRows(d.solidControl, ["unit"]), unit: "row" },
@@ -416,7 +466,7 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
         {section === "well" && <WellOperations {...props} well={w} meterage={meterage} avgRop={avgRop} />}
         {section === "bit" && <BitRuns {...props} />}
         {section === "params" && <DrillingParameters {...props} />}
-        {section === "bha" && <BhaSubform {...props} />}
+        {section === "bha" && <DrillStrings {...props} />}
         {section === "string" && <DrillStringAndTools {...props} setTool={setTool} />}
         {section === "mud" && <MudSubform {...props} setMud={setMud} />}
         {section === "solid" && <SolidControlSubform {...props} setSc={setSc} />}
@@ -588,11 +638,16 @@ function BitRuns({ draft, set, disabled }: SubformProps) {
           { key: "bitSerialNo", label: "Ser. no.", width: "w-24" },
           { key: "size", label: "Size", width: "w-20" },
           { key: "type", label: "Type", width: "w-20" },
+          // Who made the bit and which product it is — the IADC code classifies
+          // the cutting structure, it does not identify the bit.
+          { key: "make", label: "Make", width: "w-24", title: "Bit manufacturer, e.g. Smith / Baker Hughes" },
+          { key: "model", label: "Model", width: "w-24", title: "Manufacturer's bit model" },
           { key: "iadcCode", label: "IADC", width: "w-20" },
           { key: "nozzles", label: "Nozzles", width: "w-20" },
           { key: "tfa", label: "TFA", type: "num", width: "w-16" },
           { key: "meterage", label: "Meterage", type: "num", width: "w-20" },
           { key: "hours", label: "Hours", type: "num", width: "w-16" },
+          { key: "bitRevs", label: "Bit revs", type: "num", width: "w-24", title: "Total revolutions turned on the run" },
           { key: "wob", label: "WOB (klb)", type: "num", width: "w-20" },
           { key: "rpm", label: "RPM", type: "num", width: "w-16" },
           { key: "torque", label: "Torque on/off", width: "w-24" },
@@ -611,7 +666,8 @@ function BitRuns({ draft, set, disabled }: SubformProps) {
         rows={draft.bitRuns} onChange={(v) => set("bitRuns", v)} disabled={disabled} minRows={1}
         addLabel="bit run"
         blank={() => ({
-          order: 0, bitNo: null, bitSerialNo: null, size: null, type: null, iadcCode: null,
+          order: 0, bitNo: null, bitSerialNo: null, size: null, type: null,
+          make: null, model: null, bitRevs: null, iadcCode: null,
           nozzles: null, tfa: null, meterage: null, hours: null, wob: null, rpm: null,
           torque: null, dullGrade: null, reasonPulled: null, pumpType: null, pumpOutput: null,
           pumpPressure: null, annularVelocity: null, hsi: null, cmtDrilled: null,
@@ -666,25 +722,137 @@ function DrillingParameters({ draft, set, disabled }: SubformProps) {
   );
 }
 
-function BhaSubform({ draft, set, disabled }: SubformProps) {
-  const total = draft.bha.reduce((a, b) => a + (b.lengthM ?? 0), 0);
+/** The component columns, in the order they print on the drill-string sheet. */
+const DS_COMPONENT_COLS: Col<DrillStringComponentRow>[] = [
+  { key: "itemDes", label: "Item des", title: "Bit, motor, MWD, stabiliser, drill collar, HWDP, drill pipe…" },
+  { key: "serv", label: "Serv", width: "w-24", title: "Service company that supplied the item" },
+  { key: "sn", label: "SN", width: "w-28", title: "Serial number" },
+  { key: "odIn", label: "OD (in)", type: "num", width: "w-20" },
+  { key: "idIn", label: "ID (in)", type: "num", width: "w-20" },
+  { key: "jts", label: "Jts", type: "int", width: "w-16", title: "Joints — a whole number" },
+  { key: "lenM", label: "Len (m)", type: "num", width: "w-24", title: "Length of this item" },
+  { key: "cumLenM", label: "Cum len (m)", type: "num", width: "w-28", title: "Running total from the bit up" },
+  { key: "com", label: "Com" },
+];
+
+/**
+ * The arithmetic the printed sheet asserts: the components' own lengths must add
+ * up to the last cumulative length in the column. When they don't, one of the
+ * two was mistyped — flagged in amber rather than corrected, because only the
+ * driller knows which number is the wrong one.
+ */
+function StringLengthCheck({ components }: { components: DrillStringComponentRow[] }) {
+  const rows = components.filter(componentFilled);
+  const sum = rows.reduce((a, c) => a + (c.lenM ?? 0), 0);
+  const cum = [...rows].reverse().find((c) => c.cumLenM != null)?.cumLenM ?? null;
+  // 5 cm of slack: the lengths are tallied to the centimetre, so anything under
+  // that is rounding, not a typo.
+  const off = sum > 0 && cum != null && Math.abs(sum - cum) > 0.05;
+  // Three states, not two: with no item lengths typed there is nothing to check,
+  // and saying "agrees" there is a green all-clear on an assembly whose per-item
+  // lengths are entirely missing — the opposite of what the check is for.
+  const detail = cum == null
+    ? "no cum len typed yet"
+    : sum === 0
+      ? `last cum len ${cum.toFixed(2)} m — no item lengths typed, nothing to check`
+      : `last cum len ${cum.toFixed(2)} m${off ? ` — off by ${Math.abs(sum - cum).toFixed(2)} m` : " — agrees"}`;
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-stretch border-b border-gray-100">
+      <div className="shrink-0 bg-gray-50 px-2 pt-1.5 pb-0.5 text-[11px] uppercase tracking-wide text-gray-500 sm:w-[44%] sm:px-1.5 sm:py-0.5 sm:text-[10px] sm:border-r sm:border-gray-100">
+        Length check
+      </div>
+      <div className={`flex-1 min-w-0 px-2 pb-1.5 sm:px-1.5 sm:py-0.5 text-[15px] sm:text-[11px] font-semibold tabular-nums ${off ? "text-amber-700" : ""}`}>
+        {sum > 0 ? `${sum.toFixed(2)} m` : "—"}
+        <span className={`text-[11px] sm:text-[9px] font-normal ${off ? "text-amber-700" : "text-gray-400"}`}> Σ len · {detail}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One drill string: the header that names and dates the run, then the itemised
+ * assembly. Module scope like every other helper here — declared inside the
+ * subform it would remount on each keystroke and drop focus.
+ */
+function DrillStringBlock({ string: s, index, disabled, onPatch, onRemove }: {
+  string: DrillStringRow;
+  index: number;
+  disabled: boolean;
+  onPatch: (patch: Partial<DrillStringRow>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="border-b-4 border-gray-100 last:border-b-0">
+      <Section right={!disabled && (
+        <button type="button" onClick={onRemove}
+          className="min-h-[32px] sm:min-h-0 px-2 py-0.5 text-[11px] sm:text-[10px] normal-case font-normal rounded border border-gray-300 bg-white text-gray-600 hover:text-red-600 hover:border-red-300 hover:bg-red-50 transition-colors duration-150">
+          Remove string
+        </button>
+      )}>
+        {s.name?.trim() ? s.name : `Drill string ${index + 1}`}
+        {s.bhaNo != null ? ` · BHA #${s.bhaNo}` : ""}
+      </Section>
+      <div className="grid grid-cols-1 md:grid-cols-2">
+        <div className="md:border-r border-gray-200">
+          <TextField label="Name" value={s.name} onChange={(v) => onPatch({ name: v })} disabled={disabled} placeholder='12-1/4" directional BHA' />
+          {/* BHA # is a whole number in the database — rounded here so a stray
+              decimal can't 400 the whole sheet on save. */}
+          <NumField label="BHA #" step="1" value={s.bhaNo} disabled={disabled}
+            onChange={(v) => onPatch({ bhaNo: v == null ? null : Math.round(v) })} />
+          <NumField label="Depth in" unit="mKB" value={s.depthInMkb} onChange={(v) => onPatch({ depthInMkb: v })} disabled={disabled} />
+          <TextField label="Date in" value={s.dateIn} onChange={(v) => onPatch({ dateIn: v })} disabled={disabled} placeholder="4/30/2026" />
+          <TextField label="Objective" value={s.objective} onChange={(v) => onPatch({ objective: v })} disabled={disabled} placeholder="Drill 12-1/4in hole to casing point" />
+          <NumField label="Depth drilled" unit="m" value={s.depthDrilledM} onChange={(v) => onPatch({ depthDrilledM: v })} disabled={disabled} />
+        </div>
+        <div>
+          <NumField label="Drilling time" unit="hr" value={s.drillingTimeHr} onChange={(v) => onPatch({ drillingTimeHr: v })} disabled={disabled} />
+          <NumField label="Circulating time" unit="hr" value={s.circulatingTimeHr} onChange={(v) => onPatch({ circulatingTimeHr: v })} disabled={disabled} />
+          <NumField label="Rotating time" unit="hr" value={s.rotatingTimeHr} onChange={(v) => onPatch({ rotatingTimeHr: v })} disabled={disabled} />
+          <NumField label="Sliding time" unit="hr" value={s.slidingTimeHr} onChange={(v) => onPatch({ slidingTimeHr: v })} disabled={disabled} />
+          <TextField label="Note" multiline value={s.note} onChange={(v) => onPatch({ note: v })} disabled={disabled} />
+        </div>
+      </div>
+      <RowTable
+        cols={DS_COMPONENT_COLS}
+        rows={s.components}
+        onChange={(rows) => onPatch({ components: rows })}
+        disabled={disabled} minRows={3} addLabel="component" blank={emptyComponent}
+      />
+      <StringLengthCheck components={s.components} />
+    </div>
+  );
+}
+
+/**
+ * a.json `drill_string` — one block per assembly run in the day, each with its
+ * own header and its own itemised components, bit first.
+ *
+ * A bit change means a second block, not more rows in the first: the header
+ * (depth in, date in, objective, the four time tallies) belongs to ONE run, and
+ * flattening two runs into one table loses which items were in the hole when.
+ */
+function DrillStrings({ draft, set, disabled }: SubformProps) {
+  // Same trick as RowTable's minRows: a blank string is shown so the tab never
+  // looks empty, and it only becomes real data once something is typed into it
+  // (prune drops it again if it is still blank at save).
+  const shown = draft.drillStrings.length > 0 ? draft.drillStrings : [emptyDrillString()];
+  const write = (list: DrillStringRow[]) => set("drillStrings", list.map((s, i) => ({ ...s, order: i })));
   return (
     <>
-      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">
-        {total > 0 ? `${total.toFixed(1)} m total` : "top → bottom"}
-      </span>}>Bottom hole assembly</Section>
-      <RowTable
-        cols={[
-          { key: "assemblyNo", label: "BHA #", width: "w-20" },
-          { key: "lengthM", label: "Length (m)", type: "num", width: "w-28" },
-          { key: "specification", label: "Specification" },
-        ] as Col<ReportBody["bha"][number]>[]}
-        rows={draft.bha} onChange={(v) => set("bha", v)} disabled={disabled} minRows={2}
-        addLabel="BHA component" blank={() => ({ order: 0, assemblyNo: null, lengthM: null, specification: null })}
-      />
-      <p className="px-2 pb-2 text-xs sm:text-[10px] text-gray-400">
-        List the assembly as it is run — bit, motor, subs, stabilisers, collars. The specification column is free text,
-        exactly as it prints on the DR sheet.
+      {shown.map((s, i) => (
+        <DrillStringBlock key={i} string={s} index={i} disabled={disabled}
+          onPatch={(patch) => write(shown.map((x, j) => (j === i ? { ...x, ...patch } : x)))}
+          onRemove={() => write(shown.filter((_, j) => j !== i))} />
+      ))}
+      {!disabled && (
+        <button type="button" onClick={() => write([...shown, emptyDrillString()])}
+          className="mt-2 mb-2 mx-2 sm:mx-1 min-h-[44px] sm:min-h-[28px] px-3 text-sm sm:text-[11px] rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150">
+          + Add drill string
+        </button>
+      )}
+      <p className="px-2 pb-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        List each assembly as it is run, bit first. Cum len is the running total from the bit up, so the
+        last one is the string length — the check line above compares it against the sum of the item lengths.
       </p>
     </>
   );
@@ -750,11 +918,12 @@ function MudSubform({ draft, set, setMud, disabled }: SubformProps & {
         <Section>Mud properties</Section>
         <TextField label="Mud system" value={m.mudSystem} onChange={(v) => setMud("mudSystem", v)} disabled={disabled} placeholder="KCl-Polymer" />
         <TextField label="Rep. time" value={m.reportTime} onChange={(v) => setMud("reportTime", v)} disabled={disabled} placeholder="06:00" />
-        {/* The check's own depth / density / flowline temperature head the block. */}
+        {/* The check's own depth / mud-weight range / flowline temperature head the
+            block. The weight is ONE range in ppg: a report quoting a single
+            density fills both ends with it. */}
         <NumField label="Check depth" unit="mKB" value={m.depthMkb} onChange={(v) => setMud("depthMkb", v)} disabled={disabled} />
-        <NumField label="Density" unit="ppg" value={m.densityPpg} onChange={(v) => setMud("densityPpg", v)} disabled={disabled} />
-        <NumField label="MW max" unit="sg" value={m.maxWeight} onChange={(v) => setMud("maxWeight", v)} disabled={disabled} />
-        <NumField label="MW min" unit="sg" value={m.minWeight} onChange={(v) => setMud("minWeight", v)} disabled={disabled} />
+        <NumField label="MW min" unit="ppg" value={m.densityMinPpg} onChange={(v) => setMud("densityMinPpg", v)} disabled={disabled} />
+        <NumField label="MW max" unit="ppg" value={m.densityMaxPpg} onChange={(v) => setMud("densityMaxPpg", v)} disabled={disabled} />
         <NumField label="T flowline" unit="°C" value={m.tFlowlineC} onChange={(v) => setMud("tFlowlineC", v)} disabled={disabled} />
         <NumField label="Funnel visc" unit="s/qt" value={m.funnelVisc} onChange={(v) => setMud("funnelVisc", v)} disabled={disabled} />
         <NumField label="PV" unit="cp" value={m.pv} onChange={(v) => setMud("pv", v)} disabled={disabled} />
@@ -767,7 +936,7 @@ function MudSubform({ draft, set, setMud, disabled }: SubformProps & {
         <NumField label="Vis 6 rpm" value={m.vis6rpm} onChange={(v) => setMud("vis6rpm", v)} disabled={disabled} />
         <NumField label="pH" value={m.ph} onChange={(v) => setMud("ph", v)} disabled={disabled} />
         <NumField label="ALK" value={m.alkalinity} onChange={(v) => setMud("alkalinity", v)} disabled={disabled} />
-        <NumField label="Water loss" value={m.waterLoss} onChange={(v) => setMud("waterLoss", v)} disabled={disabled} />
+        {/* Filtrate IS the water loss — one field, under a.json's name and unit. */}
         <NumField label="Filtrate" unit="ml/30min" value={m.filtrateMl} onChange={(v) => setMud("filtrateMl", v)} disabled={disabled} />
       </div>
       <div>
@@ -783,11 +952,11 @@ function MudSubform({ draft, set, setMud, disabled }: SubformProps & {
         <NumField label="PF" value={m.pf} onChange={(v) => setMud("pf", v)} disabled={disabled} />
         <NumField label="MF" value={m.mf} onChange={(v) => setMud("mf", v)} disabled={disabled} />
         <NumField label="Chloride" unit="mg/l" value={m.chloride} onChange={(v) => setMud("chloride", v)} disabled={disabled} />
-        <NumField label="Calcium" unit="ppm" value={m.calcium} onChange={(v) => setMud("calcium", v)} disabled={disabled} />
+        {/* Hardness (Ca) IS the calcium reading, in the same ppm; the flowline
+            temperature above is the day's mud temperature, in °C. */}
         <NumField label="Hardness (Ca)" unit="ppm" value={m.hardnessCaPpm} onChange={(v) => setMud("hardnessCaPpm", v)} disabled={disabled} />
         <NumField label="Retort solids" unit="%" value={m.solidsPct} onChange={(v) => setMud("solidsPct", v)} disabled={disabled} />
         <NumField label="Low-gravity solids" unit="%" value={m.lowGravitySolidsPct} onChange={(v) => setMud("lowGravitySolidsPct", v)} disabled={disabled} />
-        <NumField label="Temp" unit="°F" value={m.tempF} onChange={(v) => setMud("tempF", v)} disabled={disabled} />
 
         <Section>Mud volume balance</Section>
         <NumField label="Formation loss" unit="bbl" value={draft.formationLoss} onChange={(v) => set("formationLoss", v)} disabled={disabled} />

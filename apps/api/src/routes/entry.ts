@@ -46,22 +46,56 @@ const jalali = z.string().regex(/^\d{3,4}\/\d{1,2}\/\d{1,2}$/, "date must be Jal
 
 const bitRunSchema = z.object({
   order: int0, bitNo: str, bitSerialNo: str, size: str, type: str, iadcCode: str,
-  nozzles: str, tfa: num, meterage: num, hours: num, wob: num, rpm: num, torque: str,
+  nozzles: str, tfa: num,
+  // ── a.json drill_strings[].bit additions ──
+  make: str, model: str, bitRevs: num,
+  meterage: num, hours: num, wob: num, rpm: num, torque: str,
   dullGrade: str, reasonPulled: str, pumpType: str, pumpOutput: num, pumpPressure: num,
   annularVelocity: num, hsi: num, cmtDrilled: str, washAndRun: str,
   bitChangeIn: str, bitChangeOut: str,
 });
-const bhaSchema = z.object({ order: int0, assemblyNo: str, lengthM: num, specification: str });
+/** One item in a string's make-up — a.json `drill_strings[].components`. */
+const drillStringComponentSchema = z.object({
+  order: int0, itemDes: str, serv: str, sn: str, odIn: num, idIn: num,
+  jts: intOrNull, lenM: num, cumLenM: num, com: str,
+});
+/**
+ * a.json `drill_strings` — one entry per BHA run in the day, components nested.
+ *
+ * Replaces the flat BHA list: a day can run two BHAs, and a flat list cannot say
+ * which components made up which string, nor carry the per-BHA header figures
+ * (depth in, date in, objective, its own drilling/circulating/rotating/sliding
+ * hours). Those hours are this string's own — not the day's.
+ */
+const drillStringSchema = z.object({
+  order: int0, name: str, bhaNo: intOrNull, depthInMkb: num, dateIn: str,
+  objective: str, depthDrilledM: num, drillingTimeHr: num, circulatingTimeHr: num,
+  rotatingTimeHr: num, slidingTimeHr: num, note: str,
+  components: z.array(drillStringComponentSchema).default([]),
+});
 const drillPipeSchema = z.object({ order: int0, size: str, grade: str, lengthM: num });
 const toolSchema = z.object({ kind: z.enum(["jar", "mwd", "dhMotor"]), type: str, size: str, serialNo: str, hours: num });
+/**
+ * Mud check — the DR.xls block and a.json `mud_information`, de-duplicated.
+ *
+ * Four pairs measured the same thing twice and were collapsed onto the a.json
+ * name + unit:
+ *   maxWeight/minWeight (sg) + densityPpg (single) → densityMinPpg/densityMaxPpg
+ *     The RANGE won: 91% of the 62k archive checks record min and max, which a
+ *     single density cannot express. It is carried in a.json's unit (ppg), and a
+ *     PEDC report giving one density simply fills both ends.
+ *   tempF → tFlowlineC (°C) · waterLoss → filtrateMl · calcium → hardnessCaPpm
+ * Every other DR.xls-only field stays — neither standard is a superset.
+ */
 const mudSchema = z.object({
-  mudSystem: str, maxWeight: num, minWeight: num, reportTime: str, funnelVisc: num,
+  mudSystem: str, densityMinPpg: num, densityMaxPpg: num,
+  reportTime: str, funnelVisc: num,
   pv: num, yp: num, gelInitial: num, gel10min: num, fan600: num, fan300: num,
-  ph: num, alkalinity: num, waterLoss: num, hpht: num, airFoam: num, oilPct: num,
+  ph: num, alkalinity: num, hpht: num, airFoam: num, oilPct: num,
   oilWaterRatio: str, eStability: num, kcl: num, mbt: num, pf: num, mf: num,
-  chloride: num, calcium: num, solidsPct: num, tempF: num,
+  chloride: num, solidsPct: num,
   // ── a.json mud_information additions (all numeric) ──
-  depthMkb: num, densityPpg: num, tFlowlineC: num, filtrateMl: num,
+  depthMkb: num, tFlowlineC: num, filtrateMl: num,
   vis3rpm: num, vis6rpm: num, percentWater: num, lowGravitySolidsPct: num,
   hardnessCaPpm: num, mudLostBbl: num, activeMudVolBbl: num, volMudResBbl: num,
 }).nullable().default(null);
@@ -151,7 +185,7 @@ const reportSaveSchema = z.object({
   opsAtReportTime: str, description: str, opsNextPeriod: str,
   windSpeedDir: str, waveVisible: str, freshWater: num, fuel: num,
   bitRuns: z.array(bitRunSchema).default([]),
-  bha: z.array(bhaSchema).default([]),
+  drillStrings: z.array(drillStringSchema).default([]),
   drillString: z.array(drillPipeSchema).default([]),
   tools: z.array(toolSchema).default([]),
   mud: mudSchema,
@@ -188,7 +222,10 @@ const wellSchema = z.object({
 /** Every child relation, in the shape the detail endpoint returns. */
 const REPORT_INCLUDE = {
   bitRuns: { orderBy: { order: "asc" } },
-  bha: { orderBy: { order: "asc" } },
+  drillStrings: {
+    orderBy: { order: "asc" },
+    include: { components: { orderBy: { order: "asc" } } },
+  },
   drillString: { orderBy: { order: "asc" } },
   tools: true,
   mud: true,
@@ -357,7 +394,7 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
       let body: z.infer<typeof reportSaveSchema>;
       try { body = reportSaveSchema.parse(req.body); } catch (e) { return badReq(reply, e); }
 
-      const { bitRuns, bha, drillString, tools, mud, solidControl, chemicals,
+      const { bitRuns, drillStrings, drillString, tools, mud, solidControl, chemicals,
         casing, wellheads, scrRates, supportVessels, fit, marine,
         formationTops, surveys, drillingParameters, timeBreakdown,
         operations, supervisors, companies, hseDrills, bulkMaterials,
@@ -368,7 +405,8 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
       await prisma.$transaction([
         prisma.entryReport.update({ where: { id }, data: header }),
         prisma.entryBitRun.deleteMany({ where: { reportId: id } }),
-        prisma.entryBhaItem.deleteMany({ where: { reportId: id } }),
+        // Components hang off the string, not the report — they cascade with it.
+        prisma.entryDrillString.deleteMany({ where: { reportId: id } }),
         prisma.entryDrillPipe.deleteMany({ where: { reportId: id } }),
         prisma.entryTool.deleteMany({ where: { reportId: id } }),
         prisma.entryMud.deleteMany({ where: { reportId: id } }),
@@ -390,7 +428,11 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
         prisma.entryHseDrill.deleteMany({ where: { reportId: id } }),
         prisma.entryBulkMaterial.deleteMany({ where: { reportId: id } }),
         prisma.entryBitRun.createMany({ data: bitRuns.map((r) => ({ ...r, reportId: id })) }),
-        prisma.entryBhaItem.createMany({ data: bha.map((r) => ({ ...r, reportId: id })) }),
+        // Nested children rule out a flat createMany — one create per string.
+        ...drillStrings.map(({ components, ...s }) =>
+          prisma.entryDrillString.create({
+            data: { ...s, reportId: id, components: { create: components } },
+          })),
         prisma.entryDrillPipe.createMany({ data: drillString.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryTool.createMany({ data: tools.map((r) => ({ ...r, reportId: id })) }),
         ...(mud ? [prisma.entryMud.create({ data: { ...mud, reportId: id } })] : []),
