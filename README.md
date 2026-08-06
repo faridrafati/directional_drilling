@@ -1,14 +1,11 @@
 # MIXED — Directional Drilling
 
-Modern web-based replacement for the legacy Delphi **MIXED** directional drilling
-application. A complete TypeScript port of ~19,000 lines of Pascal trajectory
-math + UI, rebuilt as a multi-package monorepo with React + Fastify + Prisma.
+Web application for planning and verifying directional wells, and for capturing
+and analysing daily drilling reports. Built as a multi-package TypeScript
+monorepo with React + Fastify + Prisma.
 
-The original Pascal sources live read-only under
-[`old_delphi_code/`](old_delphi_code/); every TypeScript file that ports Pascal
-code cites the source unit and line number in a comment so the lineage stays
-auditable. The complete port-status audit is in
-[`PORT_AUDIT.md`](PORT_AUDIT.md).
+Trajectory math lives in one shared package so the browser can preview a design
+locally while the API recomputes it on save — the two can never drift.
 
 ---
 
@@ -27,11 +24,11 @@ Plan and verify directional wells:
   place wells by clicking on the map, lasso a polygon to clip the grid, compute
   reservoir volumes between two horizons.
 - **Export** — landscape A4 PDF reports (pdfmake) and `.xlsx` workbooks
-  (SheetJS) matching the original Delphi `Unit10.RvSystem1Print` column layout.
+  (SheetJS) in the company's standard survey-report column layout.
 
-The app also absorbs four sibling Delphi programs: the **DDR** report browser,
-**Air & Gas** underbalanced hydraulics, **EMI/FMI** log analysis, and the
-rig-side **Daily Report Entry** module described below.
+Alongside the trajectory tools the app carries four more modules: the **DDR**
+report browser, **Air & Gas** underbalanced hydraulics, **EMI/FMI** log
+analysis, and the rig-side **Daily Report Entry** described below.
 
 ---
 
@@ -82,26 +79,20 @@ every report route re-checks that assignment.
 
 ---
 
-## Coverage vs. the original Delphi app
-
-Audited 27 Pascal units (`MIXED.dpr` direct dependencies). Per-procedure
-results in [`PORT_AUDIT.md`](PORT_AUDIT.md).
+## Feature coverage
 
 | Category | Status | Notes |
 |---|---|---|
-| **Trajectory builders (Unit02.pas)** | ✅ 100% | All 30+ profile codes: `hold`, `c3`, `sursta`, `hoctt`, `hc3dtft`, `ch3dffk`, `ch`, `hch`, `ch2dc1`, `ch2dc2`, `cc2d`, `curveEoc` (E1–E5), `flyto` (1–5), `mcombo` (61–103) |
-| **VSEC / TF / BR / TR** | ✅ Computed | Post-passes in the dispatcher ported from Unit02.pas:2578–2624 |
+| **Trajectory builders** | ✅ Complete | All 30+ profile codes: `hold`, `c3`, `sursta`, `hoctt`, `hc3dtft`, `ch3dffk`, `ch`, `hch`, `ch2dc1`, `ch2dc2`, `cc2d`, `curveEoc` (E1–E5), `flyto` (1–5), `mcombo` (61–103) |
+| **VSEC / TF / BR / TR** | ✅ Computed | Post-passes in the dispatcher |
 | **DLS sign handling** | ✅ Auto | Dispatcher tries both signs (and both quadratic branches for CH2DC1/2) so drop curves "just work" |
-| **Field map (Unit21.pas)** | ✅ + extras | 2D raster + contours + colour ramp + click-to-place-wells + polygon clip + cross-section line picker |
-| **3D viewer (Unit03, Unit25, Unit35)** | ✅ Mesh + wells | Three.js / R3F. Stereo anaglyph and voxel-cube modes deferred (cosmetic) |
-| **Reporting (Unit10.pas)** | ✅ PDF + XLSX | Column layout matches Pascal `RvSystem1Print` |
-| **Casing / BHA / Mud / Hydraulics (Unit41)** | ❌ Empty in original Pascal too | All `CREATE TABLE`s for these are commented out in Unit01.pas:940-1210 |
-| **`.mdb` import (Unit01.Load1Click)** | ❌ Replaced with CSV importer | ODBC isn't feasible server-side; bulk CSV import covers the data flow |
-| **Per-well snapshot list (Unit02.SURVEYCOPY)** | ❌ Architectural | TS app uses one canonical Calculation per well — would need a Versions model |
-| **Unit-preset modal (Unit42)** | ❌ Conversion math present, no UI | `@dd/shared/units` has the conversions; just no preset picker |
-
-Detailed list of every remaining file/line with reasons is in
-[`PORT_AUDIT.md`](PORT_AUDIT.md).
+| **Field map** | ✅ | 2D raster + contours + colour ramp + click-to-place-wells + polygon clip + cross-section line picker |
+| **3D viewer** | ✅ Mesh + wells | Three.js / R3F. Stereo anaglyph and voxel-cube modes deferred (cosmetic) |
+| **Reporting** | ✅ PDF + XLSX | |
+| **DDR archive + rig-side entry** | ✅ | See the section above |
+| **Casing / BHA / Mud / Hydraulics designers** | ❌ Not implemented | Net-new features, not yet scoped |
+| **Per-well snapshot list** | ❌ Architectural | One canonical Calculation per well — versioning would need its own model |
+| **Unit-preset modal** | ❌ Math present, no UI | `@dd/shared/units` has the conversions; just no preset picker |
 
 ---
 
@@ -141,6 +132,9 @@ lazy-loaded). Dev startup: ~2s.
 │  Fastify + Prisma. Routes:                                       │
 │  /projects /countries /fields /wells /calculations               │
 │  /grids /grids/:id/volume /grids/upload                          │
+│  /ddr/*    read-only archive reader (node:sqlite)                │
+│  /entry/*  rig-side report entry — the only authenticated part   │
+│  /airmud/* Air & Gas sample wells                                │
 │                                                                  │
 │  POST /calculations/:id/calculate                                │
 │   1. Load segments from Prisma                                   │
@@ -169,9 +163,8 @@ lazy-loaded). Dev startup: ~2s.
   same `@dd/shared/math/dispatcher`. There is no possibility of drift.
 - **Angles always in radians; distances always in the project's unit.**
   Conversion happens only at the UI / CSV import boundaries.
-- **Pascal traceability.** Every ported file references the Pascal unit and
-  line range it was ported from. Grep the codebase for `Unit02.pas` to find
-  the audit trail.
+- **One source of truth per concern.** The legacy DDR archive is read-only and
+  reached through a single reader; everything writable goes through Prisma.
 
 ---
 
@@ -179,23 +172,21 @@ lazy-loaded). Dev startup: ~2s.
 
 ### Trajectory editor
 
-- **Profile picker modal** ports `Form04` / `Form05` / `Form06`. 30+ profile
-  types organized by family (standard / hold / single-curve / multi-curve).
-- **Per-profile editable-cell mask** ports `Unit02.pas:rowcolor`. Yellow cells
-  are user inputs; gray cells are computed. Each profile spawns the exact set
-  of milestone rows (KOP / EOC / Target / EOC #1 / KOP #2 / ...) Pascal would.
+- **Profile picker modal** — 30+ profile types organized by family
+  (standard / hold / single-curve / multi-curve).
+- **Per-profile editable-cell mask** — yellow cells are user inputs, gray cells
+  are computed. Each profile spawns its own set of milestone rows
+  (KOP / EOC / Target / EOC #1 / KOP #2 / ...).
 - **Exact algebraic keypoints** — every milestone (KOP, EOC, Target) lands at
   its exact analytic MD instead of being snapped to the nearest 100-ft densified
-  station. Pascal does the same in `Form02.cellfill`.
+  station.
 - **Auto DLS sign flip** — enter `+5` for a drop curve and the dispatcher tries
-  the negative sign internally. Output displays magnitude only (per Pascal's
-  `wlpt2[1].dls := abs(...)` convention).
-- **Quadratic branch selection** — CH2DC1 / CH2DC2 try both quadratic roots
-  and pick the feasible one. Pascal's fixed `|tgtx| > |r1|` heuristic was a
-  bug for chained CH→D3DS profiles.
+  the negative sign internally. Output displays magnitude only.
+- **Quadratic branch selection** — CH2DC1 / CH2DC2 try both quadratic roots and
+  pick the feasible one; a fixed `|tgtx| > |r1|` heuristic is wrong for chained
+  CH→D3DS profiles.
 - **Min-DLS hints on failure** — when CH or HCH can't reach the target, the
   error message includes the minimum DLS that would solve the geometry.
-  Ported from `Unit02.pas:3134-3138`.
 - **Smart-diff segment saves** — adding a row to the grid no longer wipes
   previously-calculated stations. Only changed/added/removed orders and rows
   after them are invalidated.
@@ -209,16 +200,16 @@ lazy-loaded). Dev startup: ~2s.
 - **`.grd` parser** — ASCII grid format (FSASCI header + `!` metadata +
   column-major floats). Verified against a 1.15 MB `TOP_HITH_DEPTH.grd`
   Petrel export.
-- **Coloured raster** — spectrum / warm / grayscale ramps via the Pascal
-  `Form23.Degrade` algorithm. Hover tooltip shows cell value.
+- **Coloured raster** — spectrum / warm / grayscale ramps. Hover tooltip shows
+  the cell value.
 - **Marching-squares contours** — extract iso-lines at user-suggested levels;
   draw on overlay canvas.
 - **Cross-section line picker** — click point A, click point B, see the
   elevation profile chart along the line (Recharts).
-- **Click-to-place wells** — Pascal `Form21.Image2MouseDown` ported with a
-  modal asking for the well name; POST `/wells` and the new pin shows up.
-- **Polygon clip** — lasso a region, double-click to finish, cells outside
-  become null. Pascal `Form21.Button3Click`.
+- **Click-to-place wells** — click the map, name the well in the modal; it
+  POSTs `/wells` and the new pin appears.
+- **Polygon clip** — lasso a region, double-click to finish; cells outside
+  become null.
 - **Volume calculator** — sum-method volume between two horizons. Verified
   to give 0 when comparing a grid to itself.
 
@@ -233,13 +224,11 @@ lazy-loaded). Dev startup: ~2s.
 
 ### Reports & export
 
-- **PDF** — landscape A4 multi-page table via `pdfmake`. Column layout
-  matches `Unit10.RvSystem1Print`: Comment, MD, Incl, Azm, TVD, VSEC, NS, EW,
-  DLS, TF, BR, TR, DMD.
+- **PDF** — landscape A4 multi-page table via `pdfmake`. Columns: Comment, MD,
+  Incl, Azm, TVD, VSEC, NS, EW, DLS, TF, BR, TR, DMD.
 - **XLSX** — `.xlsx` workbook via SheetJS. Same column order.
 - **CSV import** — bulk-load `countries.csv` + `fields.csv` + `wells.csv` +
-  `calculations.csv` + `segments.csv` in one transaction. Column names match
-  Pascal `CREATE TABLE` statements.
+  `calculations.csv` + `segments.csv` in one transaction.
 
 ---
 
@@ -267,10 +256,11 @@ On Windows, double-click `run.bat` (or run it from a terminal). Both scripts:
   install instructions;
 - create `apps/api/.env` from the example and generate `ENTRY_TOKEN_SECRET`
   into it, so rig logins survive a server restart;
-- locate the legacy DDR databases — first of `sqlite_DB/`,
-  `old/old_report_code/`, `old_report_code/` that holds `new.sqlite` — and
-  export `DDR_DB_DIR` / `AIRMUD_DB_DIR`. Those files are gitignored
-  (`new.sqlite` alone is ~430 MB), so each machine keeps its own copy;
+- locate the DDR archive databases — they look for the folder holding
+  `new.sqlite`, `sqlite_DB/` by default — and export `DDR_DB_DIR` /
+  `AIRMUD_DB_DIR`. Those files are gitignored (`new.sqlite` alone is ~430 MB),
+  so each machine keeps its own copy; set `DDR_DB_DIR` yourself to point
+  somewhere else;
 - print a clear warning, not a stack trace, when any of that is missing.
 
 To run the halves separately:
@@ -335,13 +325,9 @@ and the .grd parser/contour/volume code.
   /grd              .grd parser + volume + contours + colour ramps +
                     line sampler + polygon clip
 /e2e                Playwright happy-path tests
-/old_delphi_code    Reference (read-only)
 /sqlite_DB          Legacy DDR databases — gitignored, per machine (~430 MB)
 a.json              PEDC/POGC DDR JSON Schema — canonical field names + units
 run.sh / run.bat    Dev launchers (Node check, DB autodetect, env, migrate, run)
-PORT_AUDIT.md       Full audit of every Pascal unit + procedure
-PHASE5_NOTES.md     Why .mdb importer + casing/BHA/mud are deferred
-REACT_CONVERSION_PROMPT.md   Original specification
 ```
 
 ## Architecture rules
@@ -351,11 +337,8 @@ REACT_CONVERSION_PROMPT.md   Original specification
 - All angles stored in **radians**; all distances in the project's storage
   length unit. Convert only at the UI / import boundaries.
 - TypeScript strict mode throughout; no `any` outside narrow interop spots.
-- The Delphi sources are the source of truth for algorithm behaviour. When
-  porting, cite `Unit##.pas:###` in a code comment so the lineage stays
-  auditable.
 - DLS is stored signed internally (the dispatcher uses sign to encode build
-  vs. drop direction); always displayed as a magnitude per Pascal convention.
+  vs. drop direction); always displayed as a magnitude.
 - The legacy DDR databases are **read-only**. Anything writable belongs in the
   Prisma store; nothing opens the Access conversions for writing.
 - Report-entry saves post the **whole sheet** in one `PUT`; the API replaces the
@@ -375,37 +358,31 @@ REACT_CONVERSION_PROMPT.md   Original specification
 
 Phase 6 polish is complete. Items deferred for later, ordered by user impact:
 
-1. **Form07 azimuth-disambiguation modal** — proper popup with both candidates
-   shown. Current behaviour: global Branch 1 / Branch 2 selector persisted in
+1. **Azimuth-disambiguation modal** — a proper popup showing both candidates.
+   Current behaviour: a global Branch 1 / Branch 2 selector persisted in
    localStorage.
 2. **Unit-preset modal** (Imperial / Metric / API / SI) — `@dd/shared/units`
    has the conversion math; just no UI to bulk-pick a preset.
-3. **Form24 raw .grd header viewer** — needs `Grid.metadata` Prisma field to
-   persist the raw `!`-prefixed lines.
-4. **Volume methods 1–4** (Simpson + biquadratic surface fit) from
-   `Unit30.pas`. Currently only the sum method is in `@dd/grd/volume`.
-5. **3D viewer extras** — voxel-cube render mode and red/green anaglyph
-   stereo from `Unit35.pas`. Both are cosmetic alternatives to the smooth-mesh
-   path.
-6. **Captured fixtures from MIXED.exe** to pin numerical fidelity at ±1e-6
-   (the test harness in `packages/shared/test/fixtures/` is ready to receive
-   them).
+3. **Raw .grd header viewer** — needs a `Grid.metadata` Prisma field to persist
+   the raw `!`-prefixed lines.
+4. **Volume methods 1–4** (Simpson + biquadratic surface fit). Currently only
+   the sum method is in `@dd/grd/volume`.
+5. **3D viewer extras** — voxel-cube render mode and red/green anaglyph stereo.
+   Both are cosmetic alternatives to the smooth-mesh path.
+6. **Numerical fixtures** to pin fidelity at ±1e-6 (the harness in
+   `packages/shared/test/fixtures/` is ready to receive them).
 7. **CI** wiring for Vitest + Playwright + the fixture suite.
 8. **PostgreSQL** deployment target (Prisma makes this a one-line swap).
 
-Documented as not-feasible-here:
+Out of scope for now:
 
-- Casing / BHA / Mud / Hydraulics designers — never finished in the original
-  Pascal either (all `CREATE TABLE` statements commented out in Unit01.pas);
-  these would be net-new features rather than a port.
-- Legacy `.mdb` importer — ODBC isn't practical server-side; CSV importer is
+- Casing / BHA / Mud / Hydraulics designers — net-new features that need
+  scoping before they are worth building.
+- Legacy `.mdb` import — ODBC isn't practical server-side; the CSV importer is
   the substitute.
-- `ProEffectImage.pas` (1,238 lines of bitmap effects) — modern browsers do
-  this via CSS `filter:`.
 
 ---
 
 ## License
 
-Internal project. The reference Pascal sources under `old_delphi_code/` retain
-their original author's copyright.
+Internal project.
