@@ -29,6 +29,57 @@ Plan and verify directional wells:
 - **Export** — landscape A4 PDF reports (pdfmake) and `.xlsx` workbooks
   (SheetJS) matching the original Delphi `Unit10.RvSystem1Print` column layout.
 
+The app also absorbs four sibling Delphi programs: the **DDR** report browser,
+**Air & Gas** underbalanced hydraulics, **EMI/FMI** log analysis, and the
+rig-side **Daily Report Entry** module described below.
+
+---
+
+## Daily Drilling Reports — two halves, on purpose
+
+DDR lives in two deliberately separate places:
+
+| | Reads | Writes | Route |
+|---|---|---|---|
+| **Daily Drilling Reports** | the office's historical Access→SQLite archive, via `node:sqlite`, **read-only** | never | `/ddr` |
+| **Daily Report Entry** | the app's own SQLite, via Prisma | company men on the rig | `/ddr-entry` |
+
+The archive is a converted Access database of ~62,000 mud checks and decades of
+bit records; nothing in this app opens it for writing. New reports are born in
+the entry module instead, and the one place the two meet is the **ROP
+Optimization** tab, where rig-entered drilling parameters are blended into the
+scatter as hollow rings beside the archive's filled dots.
+
+### Two report standards
+
+Entry implements **both** DDR forms the company uses:
+
+- **DR.xls** — the office sheet the archive is built from.
+- **PEDC/POGC** — specified by [`a.json`](a.json), a JSON Schema of all 21 form
+  sections. Treat its field names and units as canonical.
+
+Neither is a superset, so overlapping blocks (mud, casing, formation tops) store
+the **union** of both. Where the two genuinely measured the same quantity twice,
+the duplicate was collapsed onto a.json's name and unit — mud weight is a
+min/max **range in ppg** (91% of archive checks record a range, which a single
+`density_ppg` cannot express), flowline temperature is °C, filtrate replaces
+water loss, and hardness replaces calcium.
+
+Domain units are fixed: depths **mKB**, mud density **lb/gal (ppg)**, flow
+**gpm**, pressure **psi**, IADC dull grade as the 8-position code, log times as
+`HH:MM`. Dates are Jalali (Shamsi) `YYYY/MM/DD` on the DR.xls side, and as
+printed on the PEDC side.
+
+### Signing in
+
+The rest of the API is unauthenticated; only `/entry/*` has a session (scrypt
+password hashes and HMAC-signed tokens, both from `node:crypto` — no new
+dependencies). On first run the server seeds an **`admin` / `admin`** account
+that must change its password immediately; `ENTRY_ADMIN_USER` /
+`ENTRY_ADMIN_PASSWORD` override it while the user table is still empty. An admin
+registers rigs and wells, then ticks which wells each company man may report on —
+every report route re-checks that assignment.
+
 ---
 
 ## Coverage vs. the original Delphi app
@@ -194,46 +245,44 @@ lazy-loaded). Dev startup: ~2s.
 
 ## Prerequisites
 
-- Node 20+
+- **Node 22.13+** — the DDR and Air/Gas modules read the legacy `.sqlite` files
+  through the built-in `node:sqlite`, which is only unflagged from 22.13 / 23.4.
+  On Node 20 the API exits at import with `ERR_UNKNOWN_BUILTIN_MODULE` before it
+  binds a port.
 - npm 10+ (workspaces support)
-
-## First-time setup
-
-```bash
-# 1. Install all workspace dependencies
-npm install
-
-# 2. Set up the API database (SQLite by default)
-cd apps/api
-cp .env.example .env
-npx prisma generate
-npx prisma migrate dev --name init
-cd ../..
-
-# 3. Build the shared package (web and api import from its dist/)
-npm run build:shared
-```
 
 ## Running
 
-In one terminal:
+The launchers do the whole first-time setup themselves — dependency install,
+`apps/api/.env`, Prisma client + migrations, the shared package builds — then
+start both servers:
+
+```bash
+./run.sh
+```
+
+On Windows, double-click `run.bat` (or run it from a terminal). Both scripts:
+
+- check the Node version and try to switch via `nvm` before failing with
+  install instructions;
+- create `apps/api/.env` from the example and generate `ENTRY_TOKEN_SECRET`
+  into it, so rig logins survive a server restart;
+- locate the legacy DDR databases — first of `sqlite_DB/`,
+  `old/old_report_code/`, `old_report_code/` that holds `new.sqlite` — and
+  export `DDR_DB_DIR` / `AIRMUD_DB_DIR`. Those files are gitignored
+  (`new.sqlite` alone is ~430 MB), so each machine keeps its own copy;
+- print a clear warning, not a stack trace, when any of that is missing.
+
+To run the halves separately:
 
 ```bash
 npm run dev:api      # → http://localhost:4000  (health check: /health)
+npm run dev:web      # → http://localhost:5173  (Vite proxies /api → :4000)
+npm run dev          # both at once
 ```
 
-In another:
-
-```bash
-npm run dev:web      # → http://localhost:5173
-                     #   Vite proxies /api → http://localhost:4000
-```
-
-Or both at once:
-
-```bash
-npm run dev
-```
+Note that `npm run dev` on its own does **not** export `DDR_DB_DIR`, so the DDR
+tabs will report the database as missing — use `./run.sh` or export it yourself.
 
 ## Tests
 
@@ -259,11 +308,18 @@ and the .grd parser/contour/volume code.
       /export       PDF + XLSX generators (lazy-loaded)
       /hooks        useHistoryState (undo/redo)
       /import       CSV → import-payload converter
-      /pages        CalculationPage, FieldMapPage, ProjectsPage, etc.
+      /entry        Report-entry session + typed /entry/* client
+      /pages        CalculationPage, FieldMapPage, ProjectsPage,
+                    DdrReportsPage (archive), ReportEntryPage (rig), etc.
       /shell        App shell / nav
+      /components
+        /ddr        Archive viewer tabs (search, formations, mud, ROP…)
+        /entry      The fillable sheet: 20 subforms + input primitives
   /api              Fastify backend (port 4000)
     /prisma         schema.prisma + migrations
     /src
+      /ddr          Legacy Access→SQLite reader (node:sqlite, READ-ONLY)
+      /entry        scrypt + HMAC auth for /entry/*
       /routes       REST endpoints
 /packages
   /shared           Types, zod schemas, units, trajectory math
@@ -280,6 +336,9 @@ and the .grd parser/contour/volume code.
                     line sampler + polygon clip
 /e2e                Playwright happy-path tests
 /old_delphi_code    Reference (read-only)
+/sqlite_DB          Legacy DDR databases — gitignored, per machine (~430 MB)
+a.json              PEDC/POGC DDR JSON Schema — canonical field names + units
+run.sh / run.bat    Dev launchers (Node check, DB autodetect, env, migrate, run)
 PORT_AUDIT.md       Full audit of every Pascal unit + procedure
 PHASE5_NOTES.md     Why .mdb importer + casing/BHA/mud are deferred
 REACT_CONVERSION_PROMPT.md   Original specification
@@ -297,6 +356,18 @@ REACT_CONVERSION_PROMPT.md   Original specification
   auditable.
 - DLS is stored signed internally (the dispatcher uses sign to encode build
   vs. drop direction); always displayed as a magnitude per Pascal convention.
+- The legacy DDR databases are **read-only**. Anything writable belongs in the
+  Prisma store; nothing opens the Access conversions for writing.
+- Report-entry saves post the **whole sheet** in one `PUT`; the API replaces the
+  child rows inside a single transaction, which keeps a save atomic and
+  idempotent. Add a new block by following that pattern, not around it.
+- Entry form primitives live in `components/entry/fields.tsx` and are
+  mobile-first: 16px inputs (anything smaller makes iOS Safari zoom on focus),
+  44px touch targets, wide tables becoming one card per row on phones. Reuse
+  them rather than hand-rolling inputs.
+- React components are declared at **module scope**. A component defined inside
+  another is a new type on every render, so React remounts its inputs and drops
+  focus after each keystroke.
 
 ---
 
