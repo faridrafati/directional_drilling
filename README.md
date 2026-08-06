@@ -47,26 +47,6 @@ the entry module instead, and the one place the two meet is the **ROP
 Optimization** tab, where rig-entered drilling parameters are blended into the
 scatter as hollow rings beside the archive's filled dots.
 
-### Two report standards
-
-Entry implements **both** DDR forms the company uses:
-
-- **DR.xls** — the office sheet the archive is built from.
-- **PEDC/POGC** — specified by [`a.json`](a.json), a JSON Schema of all 21 form
-  sections. Treat its field names and units as canonical.
-
-Neither is a superset, so overlapping blocks (mud, casing, formation tops) store
-the **union** of both. Where the two genuinely measured the same quantity twice,
-the duplicate was collapsed onto a.json's name and unit — mud weight is a
-min/max **range in ppg** (91% of archive checks record a range, which a single
-`density_ppg` cannot express), flowline temperature is °C, filtrate replaces
-water loss, and hardness replaces calcium.
-
-Domain units are fixed: depths **mKB**, mud density **lb/gal (ppg)**, flow
-**gpm**, pressure **psi**, IADC dull grade as the 8-position code, log times as
-`HH:MM`. Dates are Jalali (Shamsi) `YYYY/MM/DD` on the DR.xls side, and as
-printed on the PEDC side.
-
 ### Signing in
 
 The rest of the API is unauthenticated; only `/entry/*` has a session (scrypt
