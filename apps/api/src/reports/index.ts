@@ -19,6 +19,7 @@ import { mayUseWell } from "../entry/access.js";
 import { buildReport01 } from "./01-afe-vs-field-est.js";
 import { buildDailyReport } from "./daily.js";
 import { buildReport02, buildReport03 } from "./bha.js";
+import { buildReport10, buildReport11 } from "./phases.js";
 
 /** How a report is parameterized — the picker builds itself from this. */
 export type ReportParam = "well" | "job" | "date" | "dateRange" | "bhaRun" | "wells";
@@ -54,8 +55,8 @@ export const REPORT_CATALOG: CatalogEntry[] = [
   { type: "07", title: "Daily Drilling — Detail", category: "Daily", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "The legal-size daily report: problems, lessons, kicks, losses, incidents." },
   { type: "08", title: "Directional Plot — Plan vs Actual", category: "Engineering", params: ["well"], exports: ["pdf"], available: false, blurb: "Plan and vertical-section plots with the station table. Exists today on the calculation page." },
   { type: "09", title: "Drilling Summary 1", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "The one-sheet dashboard: cost, time, NPT and depth-vs-days." },
-  { type: "10", title: "Phases — Plan vs Actual", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "Each phase planned against actual, with the days-and-cost graph." },
-  { type: "11", title: "Phase Summary Graph", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "Phase durations and costs as bars." },
+  { type: "10", title: "Phases — Plan vs Actual", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "Each phase planned against actual, with the days-and-cost graph." },
+  { type: "11", title: "Phase Summary Graph", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "Phase durations and costs as bars." },
   { type: "12", title: "Daily Drilling Summary 2", category: "Cost & Multi-well", params: ["wells", "date"], exports: ["pdf"], available: false, blurb: "One block per well for a single day." },
   { type: "13", title: "Drilling KPIs", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf", "xlsx"], available: false, blurb: "The KPI pivot." },
   { type: "14", title: "Drilling Offsets", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf"], available: false, blurb: "Days-vs-depth and cost curves for offset wells." },
@@ -91,6 +92,8 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
 
       switch (type) {
         case "01": return jobReport(req, reply, (jobId) => buildReport01(prisma, jobId));
+        case "10": return jobReport(req, reply, (jobId) => buildReport10(prisma, jobId));
+        case "11": return jobReport(req, reply, (jobId) => buildReport11(prisma, jobId));
         case "06": return dayReport(req, reply, (id) => buildDailyReport(prisma, id, false));
         case "07": return dayReport(req, reply, (id) => buildDailyReport(prisma, id, true));
         case "02": {

@@ -335,6 +335,43 @@ export interface BitSummaryRow {
 }
 export interface Report03Payload extends ReportEnvelope { bits: BitSummaryRow[] }
 
+// ── reports 10 / 11 ─────────────────────────────────────────────────────────
+export interface PhaseRow {
+  phaseType1: string | null; phaseType2: string | null;
+  plannedStartDepth: number | null; plannedEndDepth: number | null;
+  durMlDays: number | null; cumDurMlDays: number | null;
+  plannedCost: number | null; cumPlannedCost: number | null;
+  planCostPerDepth: number | null;
+  actualStartDate: string | null; actualEndDate: string | null;
+  actualDurDays: number | null; cumActualDurDays: number | null;
+  actualStartDepth: number | null; actualEndDepth: number | null;
+  actualCost: number | null; cumActualCost: number | null;
+  costPerDepth: number | null;
+}
+export interface PhaseChartPoint {
+  days: number | null; planDays: number | null;
+  actualEndDepth: number | null; actualCumCost: number | null;
+  plannedCumCost: number | null; plannedEndDepth: number | null;
+  label: string;
+}
+export interface Report10Payload extends ReportEnvelope {
+  jobHeader: HeaderRow;
+  phases: PhaseRow[];
+  totals: HeaderRow;
+  chart: PhaseChartPoint[];
+}
+export interface Report11Payload extends ReportEnvelope {
+  wellRow: HeaderRow;
+  jobRow: HeaderRow;
+  planRow: HeaderRow;
+  bars: {
+    label: string;
+    shortLabel: string;
+    plannedDurDays: number | null; actualDurDays: number | null;
+    plannedCost: number | null; actualCost: number | null;
+  }[];
+}
+
 export interface BhaRunListItem {
   id: string; bhaNo: number | null; name: string | null;
   depthInMkb: number | null; depthOutMkb: number | null;

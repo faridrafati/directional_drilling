@@ -20,10 +20,12 @@ import {
   wellviewApi,
   type CatalogEntry, type DailyPayload, type JobListItem,
   type Report01Payload, type Report02Payload, type Report03Payload,
+  type Report10Payload, type Report11Payload,
 } from "../entry/wellview.js";
 import { Report01Preview } from "../components/wellview/ReportPreview.js";
 import { DailyPreview } from "../components/wellview/DailyPreview.js";
 import { Report02Preview, Report03Preview } from "../components/wellview/BhaPreview.js";
+import { Report10Preview, Report11Preview } from "../components/wellview/PhasePreview.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -298,6 +300,24 @@ function Inner() {
                         render={(p) => <Report03Preview payload={p} />}
                         exporter={async (p) => (await import("../export/wellview/bha.js")).exportReport03Pdf(p)}
                         empty="Pick a well above."
+                      />
+                    ) : entry.type === "10" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "10", jobId]}
+                        enabled={!!jobId}
+                        load={() => wellviewApi.reportData<Report10Payload>("10", { jobId })}
+                        render={(p) => <Report10Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/phases.js")).exportReport10Pdf(p)}
+                        empty="Pick a job above."
+                      />
+                    ) : entry.type === "11" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "11", jobId]}
+                        enabled={!!jobId}
+                        load={() => wellviewApi.reportData<Report11Payload>("11", { jobId })}
+                        render={(p) => <Report11Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/phases.js")).exportReport11Pdf(p)}
+                        empty="Pick a job above."
                       />
                     ) : (
                       <Pending entry={entry} />

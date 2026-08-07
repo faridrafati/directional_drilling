@@ -27,7 +27,7 @@ const PASSWORD = process.env.ENTRY_PASSWORD ?? "admin";
 const DEMO_WELL = "Sample 11 - Full Data";
 
 /** The reports with an assembler today; the rest still carry a "soon" badge. */
-const BUILT = ["01", "02", "03", "06", "07"] as const;
+const BUILT = ["01", "02", "03", "06", "07", "10", "11"] as const;
 
 /** The four totals report 01 computes, exactly as the sample prints them. */
 const EXPECTED_TOTALS = [
@@ -216,6 +216,59 @@ test.describe("Well Reports", () => {
       await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
       const { statSync, readFileSync } = await import("node:fs");
       expect(statSync(path).size).toBeGreaterThan(5_000);
+      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    });
+  }
+
+  // Reports 10 and 11 read the phase spine. The durations asserted here are the
+  // ones the SAMPLE prints for the same phase boundaries — 09:00 → 21:45 the
+  // next day is 1.53 days, and the eight of them cumulate to 25.46 (not 25.47,
+  // which is what re-summing the rounded column would give).
+  test("report 10 previews the phase arithmetic the sample prints", async ({ page }) => {
+    await page.getByTestId("report-10").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Phases", { exact: true })).toBeVisible({ timeout: 15_000 });
+    for (const value of ["1.53", "1.38", "2.91", "25.46", "19.20"]) {
+      await expect(page.getByText(value, { exact: true }).first()).toBeVisible();
+    }
+    // The graph is a live chart, not a picture — the export rasterizes this SVG.
+    await expect(page.locator("#wellview-phase-chart svg").first()).toBeVisible();
+  });
+
+  test("report 11 previews the job header and its bars", async ({ page }) => {
+    await page.getByTestId("report-11").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Duration and cost by phase")).toBeVisible({ timeout: 15_000 });
+    for (const label of ["Planned Start Date", "Planned Most Likely End Date", "Target Formation"]) {
+      await expect(page.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(page.locator("#wellview-phase-bars svg").first()).toBeVisible();
+  });
+
+  for (const [type, chartId] of [
+    ["10", "#wellview-phase-chart"],
+    ["11", "#wellview-phase-bars"],
+  ] as const) {
+    test(`report ${type} exports a PDF with its chart`, async ({ page }, testInfo) => {
+      await page.getByTestId(`report-${type}`).click();
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      // The chart must have DRAWN before the export runs — it rasterizes the
+      // live SVG and throws rather than printing a blank panel.
+      await expect(page.locator(`${chartId} svg`).first()).toBeVisible({ timeout: 20_000 });
+      await page.waitForTimeout(600);
+
+      const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 30_000 }),
+        page.getByRole("button", { name: "PDF" }).click(),
+      ]);
+      const path = join(dir, download.suggestedFilename());
+      await download.saveAs(path);
+      await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
+      const { statSync, readFileSync } = await import("node:fs");
+      // A rasterized chart makes the file substantially bigger than a table-only
+      // report — a thin file here means the image never made it in.
+      expect(statSync(path).size).toBeGreaterThan(20_000);
       expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
     });
   }

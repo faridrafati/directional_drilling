@@ -56,8 +56,8 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | 05 | Casing Summary | — | — | — | — | — | — | — |
 | 08 | Directional Plot | — | n/a | n/a | — | exists | exists | — |
 | 09 | Drilling Summary 1 | — | — | — | — | — | — | — |
-| 10 | Phases - Plan vs Actual | 2026-08-07 | — | — | — | — | — | — |
-| 11 | Phase Summary Graph | 2026-08-07 | — | — | — | — | — | — |
+| 10 | Phases - Plan vs Actual | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
+| 11 | Phase Summary Graph | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 
 ## Tier 3 — cost & multi-well
 
@@ -169,6 +169,23 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   the preview and the PDF say so in place of it rather than leaving a silent gap.
 - **2026-08-07 — component mass is stored in kg/m, not lb/ft.** The samples print lb/ft, but the
   lengths beside it are metres; mixing the two silently scales a string weight by 3.28.
+- **2026-08-07 — cumulative columns accumulate UNROUNDED values.** Report 10's own sample settles it:
+  its eight per-phase durations printed to 2 dp add to 25.47, but its last cumulative cell reads
+  25.46 — which is what rounding the true sum gives. Every running total in the suite now follows
+  that rule, and a totals row reads the last cumulative cell rather than re-summing the rounded
+  column, so the two can never disagree.
+- **2026-08-07 — report 10's planned series get their own day axis.** The planned depth and cost are
+  plotted against PLANNED cumulative days, the actuals against elapsed days, over one shared range.
+  Sharing a single axis silently drew the plan at the actual's positions, which makes a late job look
+  on schedule.
+- **2026-08-07 — charts are captured from the live Recharts surface.** Reports 10 and 11 rasterize
+  the very SVG on screen through `svgRaster.ts`, the pattern the directional-plot export set, and
+  throw a user-facing error rather than printing a blank panel when the chart is not mounted. Their
+  legends are read off the DOM and redrawn as vectors, so the printed key names the series the chart
+  actually has.
+- **2026-08-07 — report 11 labels its bars with the phase's SECOND type.** "Drill-Vertical", not
+  "Production · Drill-Vertical" — the pair does not fit on the axis, which is why the sample does the
+  same. The full name is in the tooltip and in report 10's table.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.
