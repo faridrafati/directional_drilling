@@ -14,7 +14,7 @@ model Project {
   id        String    @id @default(cuid())
   name      String
   // UnitSystem stored as JSON-encoded string (SQLite has no JSON type).
-  units     String    // JSON: { length, angle, dls }
+  units     String // JSON: { length, angle, dls }
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   countries Country[]
@@ -66,7 +66,7 @@ model Calculation {
   id        String     @id @default(cuid())
   wellId    String
   name      String
-  type      String     // "WellDesign" | "SurveyEditor" (SQLite has no enum)
+  type      String // "WellDesign" | "SurveyEditor" (SQLite has no enum)
   well      Well       @relation(fields: [wellId], references: [id], onDelete: Cascade)
   segments  Segment[]
   stations  Station[]
@@ -79,100 +79,100 @@ model Calculation {
 // One Keypoint per role row of each profile group. These come from the
 // builder's analytic equations, NOT by sampling the densified path.
 model Keypoint {
-  id             String      @id @default(cuid())
-  calculationId  String
+  id            String      @id @default(cuid())
+  calculationId String
   // segmentOrder of the LAST row in the group (the dispatcher's target).
-  segmentOrder   Int
+  segmentOrder  Int
   // 0..N-1 position within the group; row k of the group reads keypoint k.
-  roleIndex      Int
-  comment        String?
-  md             Float
-  inc            Float
-  azm            Float
-  tvd            Float
-  vsec           Float
-  ns             Float
-  ew             Float
-  dls            Float
-  tf             Float
-  br             Float
-  tr             Float
-  dmd            Float
-  calculation    Calculation @relation(fields: [calculationId], references: [id], onDelete: Cascade)
+  roleIndex     Int
+  comment       String?
+  md            Float
+  inc           Float
+  azm           Float
+  tvd           Float
+  vsec          Float
+  ns            Float
+  ew            Float
+  dls           Float
+  tf            Float
+  br            Float
+  tr            Float
+  dmd           Float
+  calculation   Calculation @relation(fields: [calculationId], references: [id], onDelete: Cascade)
 
   @@index([calculationId, segmentOrder, roleIndex])
 }
 
 model Segment {
-  id             String      @id @default(cuid())
-  calculationId  String
-  order          Int
-  profileType    Int
+  id            String      @id @default(cuid())
+  calculationId String
+  order         Int
+  profileType   Int
   // Pascal-style milestone role: KOP / EOC / Target / etc. Null for START.
   // Each profile spawns N rows (one per role); see profileRoles in the web app.
-  milestoneRole  String?
-  comment        String?
-  md             Float
-  inc            Float
-  azm            Float
-  tvd            Float
-  vsec           Float
-  ns             Float
-  ew             Float
-  dls            Float
-  tf             Float
-  br             Float
-  tr             Float
-  dmd            Float
-  surveyTools    String?
-  calculation    Calculation @relation(fields: [calculationId], references: [id], onDelete: Cascade)
+  milestoneRole String?
+  comment       String?
+  md            Float
+  inc           Float
+  azm           Float
+  tvd           Float
+  vsec          Float
+  ns            Float
+  ew            Float
+  dls           Float
+  tf            Float
+  br            Float
+  tr            Float
+  dmd           Float
+  surveyTools   String?
+  calculation   Calculation @relation(fields: [calculationId], references: [id], onDelete: Cascade)
 
   @@index([calculationId, order])
 }
 
 model Station {
-  id             String      @id @default(cuid())
-  calculationId  String
+  id            String      @id @default(cuid())
+  calculationId String
   // Position in the densified trajectory (0..N-1, sortable).
-  order          Int
+  order         Int
   // The Segment.order this station belongs to (the dispatcher target row).
-  segmentOrder   Int         @default(0)
-  comment        String?
-  md             Float
-  inc            Float
-  azm            Float
-  tvd            Float
-  vsec           Float
-  ns             Float
-  ew             Float
-  dls            Float
-  tf             Float
-  br             Float
-  tr             Float
-  dmd            Float
-  calculation    Calculation @relation(fields: [calculationId], references: [id], onDelete: Cascade)
+  segmentOrder  Int         @default(0)
+  comment       String?
+  md            Float
+  inc           Float
+  azm           Float
+  tvd           Float
+  vsec          Float
+  ns            Float
+  ew            Float
+  dls           Float
+  tf            Float
+  br            Float
+  tr            Float
+  dmd           Float
+  calculation   Calculation @relation(fields: [calculationId], references: [id], onDelete: Cascade)
 
   @@index([calculationId, order])
   @@index([calculationId, segmentOrder])
 }
 
 model GridFile {
-  id        String @id @default(cuid())
-  fieldId   String
-  name      String
-  filename  String
-  xmin      Float
-  xmax      Float
-  ymin      Float
-  ymax      Float
-  xinc      Float
-  yinc      Float
-  ncol      Int
-  nrow      Int
-  units     String
-  errorVal  Float
-  data      Bytes
-  field     Field  @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  fieldId  String
+  name     String
+  filename String
+  xmin     Float
+  xmax     Float
+  ymin     Float
+  ymax     Float
+  xinc     Float
+  yinc     Float
+  ncol     Int
+  nrow     Int
+  units    String
+  errorVal Float
+  data     Bytes
+  field    Field  @relation(fields: [fieldId], references: [id], onDelete: Cascade)
 
   @@index([fieldId])
 }
@@ -216,45 +216,64 @@ model EntryRig {
 /// A well being drilled now — the DR.xls header band is well-level, so it lives
 /// here and is filled once instead of on every daily report.
 model EntryWell {
-  id                 String            @id @default(cuid())
-  rigId              String
-  name               String
-  field              String?
+  id                     String            @id @default(cuid())
+  rigId                  String
+  name                   String
+  field                  String?
   /// Optional link to the legacy A01 WellCode, so an entered well can later be
   /// lined up with its historical reports.
-  legacyWellCode     String?
-  location           String?
-  wellType           String?
-  profile            String?
-  reservoir          String?
-  contractor         String?
-  spudDate           String?
-  rigReleasedDate    String?
+  legacyWellCode         String?
+  location               String?
+  wellType               String?
+  profile                String?
+  reservoir              String?
+  contractor             String?
+  spudDate               String?
+  rigReleasedDate        String?
   /// a.json report_header: original_kb_elevation_m. RT and KB are the same datum
   /// on these rigs; the label reads "R.T. / KB elevation" in the UI.
-  rtElevation        Float?
-  waterDepth         Float?
-  finalForecastDepth Float?
-  forecastDays       Float?
+  rtElevation            Float?
+  waterDepth             Float?
+  finalForecastDepth     Float?
+  forecastDays           Float?
   // ── a.json report_header — well-level identification (typed once) ──
   /// client — the operator the report is filed for, e.g. POGC.
-  client             String?
+  client                 String?
   /// latitude / longitude as PRINTED (DMS text, e.g. 26° 46' 39.11" N).
   /// Kept as text on purpose: the source is a formatted string and round-tripping
   /// it through a decimal would lose the exact printed form the report must show.
-  latitude           String?
-  longitude          String?
+  latitude               String?
+  longitude              String?
   /// other_elevation_note — free text, usually "Air Gap(m): 18".
-  elevationNote      String?
+  elevationNote          String?
   /// comment — free text; on jack-ups the leg penetration
   /// ("Leg Pen.(m): FWD: 1.92/STBD: 1.86/PORT: 1.68").
-  comment            String?
-  active             Boolean           @default(true)
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  rig                EntryRig          @relation(fields: [rigId], references: [id], onDelete: Cascade)
-  assignments        EntryAssignment[]
-  reports            EntryReport[]
+  comment                String?
+  // ── WellView well-header block (reports 01, 03, 04, 05, 06, 07, 22, 30 …) ──
+  /// API / UWI as printed, e.g. "100/02-02-050-20W5/00". NOT legacyWellCode,
+  /// which is the archive's A01 link — a different identifier entirely.
+  apiUwi                 String?
+  /// "License #" on the well-header block.
+  licenseNo              String?
+  /// "State/Province". `location` stays the block/area free text it already is.
+  stateProvince          String?
+  /// Ground elevation, metres (the samples print ft — we print our own unit).
+  groundElevation        Float?
+  /// Casing-flange elevation, metres.
+  casingFlangeElevation  Float?
+  /// KB–Ground distance, metres. STORED, never derived from rtElevation −
+  /// groundElevation: the sample prints the casing-flange distance while BOTH
+  /// ground figures are blank, which proves the four are independent entries.
+  kbGroundDistance       Float?
+  /// KB–Casing flange distance, metres.
+  kbCasingFlangeDistance Float?
+  active                 Boolean           @default(true)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  rig                    EntryRig          @relation(fields: [rigId], references: [id], onDelete: Cascade)
+  assignments            EntryAssignment[]
+  reports                EntryReport[]
+  jobs                   Job[]
 
   @@unique([rigId, name])
   @@index([rigId])
@@ -276,7 +295,7 @@ model EntryAssignment {
 /// One daily drilling report — the L04-equivalent header plus every section of
 /// the DR.xls sheet as child rows.
 model EntryReport {
-  id         String @id @default(cuid())
+  id         String  @id @default(cuid())
   wellId     String
   /// Author (the company man who filed it).
   userId     String
@@ -285,7 +304,15 @@ model EntryReport {
   /// Jalali (Shamsi) "YYYY/MM/DD", the same shape the legacy DBs store.
   reportDate String
   /// "draft" — still editable by its author | "submitted" — locked.
-  status     String @default("draft")
+  status     String  @default("draft")
+  /// The job this day belongs to (WellView reports are job-centric, this store
+  /// is day-centric — this is the bridge). Nullable and SetNull: deleting a job
+  /// must never delete the crew's daily reports, and a well with no job at all
+  /// still files reports exactly as it does today.
+  jobId      String?
+  /// Optional day → phase attribution, stamped by an admin action rather than
+  /// derived on read (phase boundaries are datetimes, days are dates).
+  phaseId    String?
 
   // ── Well / Operations ──
   morningDepth    Float?
@@ -326,50 +353,54 @@ model EntryReport {
 
   // ── Summary / weather ──
   /// a.json operations.summary — the day's narrative.
-  description  String?
+  description     String?
   /// a.json operations.at_report_time — where the rig is RIGHT NOW, e.g.
   /// "RIH 24" H.S. BHA at 21m." a.json marks the `operations` block required.
   opsAtReportTime String?
   /// a.json operations.next_report_period — what is planned next.
   opsNextPeriod   String?
-  windSpeedDir String?
-  waveVisible  String?
-  freshWater   Float?
-  fuel         Float?
+  windSpeedDir    String?
+  waveVisible     String?
+  freshWater      Float?
+  fuel            Float?
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   submittedAt DateTime?
 
-  well          EntryWell           @relation(fields: [wellId], references: [id], onDelete: Cascade)
-  user          EntryUser           @relation(fields: [userId], references: [id])
-  bitRuns       EntryBitRun[]
-  drillStrings  EntryDrillString[]
-  drillString   EntryDrillPipe[]
-  tools         EntryTool[]
-  mud           EntryMud?
-  solidControl  EntrySolidControl[]
-  chemicals     EntryChemical[]
-  casing        EntryCasingRun[]
-  formationTops EntryFormationTop[]
-  supervisors   EntrySupervisor[]
-  companies     EntryOnboardCompany[]
-  hseDrills     EntryHseDrill[]
-  bulkMaterials EntryBulkMaterial[]
-  wellheads     EntryWellheadComponent[]
-  scrRates      EntryScrRate[]
-  supportVessels EntrySupportVessel[]
-  fit           EntryFit?
-  marine        EntryMarine?
-  surveys       EntrySurvey[]
+  well               EntryWell                @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  user               EntryUser                @relation(fields: [userId], references: [id])
+  job                Job?                     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  phase              JobPhase?                @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  bitRuns            EntryBitRun[]
+  drillStrings       EntryDrillString[]
+  drillString        EntryDrillPipe[]
+  tools              EntryTool[]
+  mud                EntryMud?
+  solidControl       EntrySolidControl[]
+  chemicals          EntryChemical[]
+  casing             EntryCasingRun[]
+  formationTops      EntryFormationTop[]
+  supervisors        EntrySupervisor[]
+  companies          EntryOnboardCompany[]
+  hseDrills          EntryHseDrill[]
+  bulkMaterials      EntryBulkMaterial[]
+  wellheads          EntryWellheadComponent[]
+  scrRates           EntryScrRate[]
+  supportVessels     EntrySupportVessel[]
+  fit                EntryFit?
+  marine             EntryMarine?
+  surveys            EntrySurvey[]
   drillingParameters EntryDrillingParameter[]
-  timeBreakdown EntryTimeEntry[]
-  operations    EntryOperation[]
+  timeBreakdown      EntryTimeEntry[]
+  operations         EntryOperation[]
 
   @@unique([wellId, reportDate])
   @@unique([wellId, serialNo])
   @@index([wellId, status])
   @@index([userId])
+  @@index([jobId, serialNo])
+  @@index([phaseId])
 }
 
 model EntryBitRun {
@@ -445,49 +476,49 @@ model EntryTool {
 /// a.json exactly would lose data the legacy form captures, so both live here and
 /// the subform groups them.
 model EntryMud {
-  id            String      @id @default(cuid())
-  reportId      String      @unique
-  mudSystem     String? /// a.json: type
+  id                  String      @id @default(cuid())
+  reportId            String      @unique
+  mudSystem           String? /// a.json: type
   /// Mud weight RANGE in ppg. a.json carries a single density_ppg, DR.xls a
   /// min/max pair — 91% of the 62k archive checks record the range, which one
   /// value cannot express, so the range wins and is stated in a.json's unit.
   /// A PEDC report giving a single density fills both ends.
-  densityMinPpg Float?
-  densityMaxPpg Float?
-  reportTime    String?
-  funnelVisc    Float? /// a.json: funnel_viscosity_s_qt
+  densityMinPpg       Float?
+  densityMaxPpg       Float?
+  reportTime          String?
+  funnelVisc          Float? /// a.json: funnel_viscosity_s_qt
   // ── a.json mud_information additions ──
-  depthMkb      Float? /// depth_mkb — depth the sample was taken at
-  tFlowlineC    Float? /// t_flowline_c
-  filtrateMl    Float? /// filtrate_ml_30min
-  vis3rpm       Float? /// vis_3rpm
-  vis6rpm       Float? /// vis_6rpm
-  percentWater  Float? /// percent_water
+  depthMkb            Float? /// depth_mkb — depth the sample was taken at
+  tFlowlineC          Float? /// t_flowline_c
+  filtrateMl          Float? /// filtrate_ml_30min
+  vis3rpm             Float? /// vis_3rpm
+  vis6rpm             Float? /// vis_6rpm
+  percentWater        Float? /// percent_water
   lowGravitySolidsPct Float? /// low_gravity_solids_pct
-  hardnessCaPpm Float? /// hardness_ca_ppm
-  mudLostBbl    Float? /// mud_lost_to_hole_bbl
-  activeMudVolBbl Float? /// active_mud_volume_bbl
-  volMudResBbl  Float? /// vol_mud_res_bbl
-  pv            Float?
-  yp            Float?
-  gelInitial    Float?
-  gel10min      Float?
-  fan600        Float?
-  fan300        Float?
-  ph            Float?
-  alkalinity    Float?
-  hpht          Float?
-  airFoam       Float?
-  oilPct        Float?
-  oilWaterRatio String?
-  eStability    Float?
-  kcl           Float?
-  mbt           Float?
-  pf            Float?
-  mf            Float?
-  chloride      Float?
-  solidsPct     Float?
-  report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  hardnessCaPpm       Float? /// hardness_ca_ppm
+  mudLostBbl          Float? /// mud_lost_to_hole_bbl
+  activeMudVolBbl     Float? /// active_mud_volume_bbl
+  volMudResBbl        Float? /// vol_mud_res_bbl
+  pv                  Float?
+  yp                  Float?
+  gelInitial          Float?
+  gel10min            Float?
+  fan600              Float?
+  fan300              Float?
+  ph                  Float?
+  alkalinity          Float?
+  hpht                Float?
+  airFoam             Float?
+  oilPct              Float?
+  oilWaterRatio       String?
+  eStability          Float?
+  kcl                 Float?
+  mbt                 Float?
+  pf                  Float?
+  mf                  Float?
+  chloride            Float?
+  solidsPct           Float?
+  report              EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 }
 
 /// Clay Jactor / Mud Cleaner / Shaker — HRS, U.F., O.F., FEED, CONS, F.PRS.
@@ -547,14 +578,14 @@ model EntryCasingRun {
 /// geologist expected the top, `depth` (final_top_md_mkb) is where it came in.
 /// A single depth column cannot express that, which is why both exist.
 model EntryFormationTop {
-  id          String      @id @default(cuid())
-  reportId    String
-  order       Int         @default(0)
-  formation   String? /// formation_name
+  id            String      @id @default(cuid())
+  reportId      String
+  order         Int         @default(0)
+  formation     String? /// formation_name
   /// final_top_md_mkb — where the top ACTUALLY came in.
-  depth       Float?
-  secondDepth Float?
-  type        String?
+  depth         Float?
+  secondDepth   Float?
+  type          String?
   // ── a.json formations additions ──
   progTopMd     Float? /// prog_top_md_mkb — prognosed top
   finalTopTvd   Float? /// final_top_tvd_mkb
@@ -562,7 +593,7 @@ model EntryFormationTop {
   drilledRopMHr Float? /// drilled_rop_m_hr
   /// lith_des — comma-separated lithology codes, e.g. "Lst,Mrl,Clst,Gyp".
   lithDes       String?
-  report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
 }
@@ -616,27 +647,52 @@ model EntryDrillingParameter {
 }
 
 model EntryTimeEntry {
-  id       String      @id @default(cuid())
-  reportId String
-  order    Int         @default(0)
-  group    String?
-  type     String?
-  activity String?
-  hours    Float?
-  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  id            String      @id @default(cuid())
+  reportId      String
+  order         Int         @default(0)
+  group         String?
+  type          String?
+  activity      String?
+  hours         Float?
+  // ── OIEC / WellView activity coding (see the Wv* lookup tables below) ──
+  //
+  // PLAIN nullable strings with NO foreign key, on purpose. The code system is
+  // advisory: an entry whose letter/detail pair is not in the Time Breakdown
+  // Matrix raises an amber warning in the editor and saves unchanged. A real FK
+  // would reject the row, and every existing free-text entry must keep loading.
+  /// Main Operation letter — WvMainOperation.code, "A".."U".
+  opLetter      String?
+  /// Operation Detail — WvOperationDetail.code, zero-padded "01".."33".
+  opDetail      String?
+  /// Time-classification indicator — WvTimeIndicator.code, P/U/T/X/N.
+  timeIndicator String?
+  /// Which phase this interval was charged to (report 11's day-centric fallback
+  /// for actual phase duration when phase datetimes were never entered).
+  phaseId       String?
+  report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  phase         JobPhase?   @relation(fields: [phaseId], references: [id], onDelete: SetNull)
 
   @@index([reportId, order])
+  @@index([phaseId])
 }
 
 model EntryOperation {
-  id       String      @id @default(cuid())
-  reportId String
-  order    Int         @default(0)
-  opCode   String?
-  fromTime String?
-  toTime   String?
-  remarks  String?
-  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  id            String      @id @default(cuid())
+  reportId      String
+  order         Int         @default(0)
+  /// The composite code as printed, e.g. "E3-P" — or a legacy numeric code, or
+  /// the literal "INACTIVE". Stays free text; the three parsed parts below are
+  /// filled alongside it, never instead of it.
+  opCode        String?
+  /// Parsed from opCode when it matches {letter}{detail}-{indicator}; see the
+  /// EntryTimeEntry note above for why these carry no foreign key.
+  opLetter      String?
+  opDetail      String?
+  timeIndicator String?
+  fromTime      String?
+  toTime        String?
+  remarks       String?
+  report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
 }
@@ -679,14 +735,14 @@ model EntryOnboardCompany {
 /// solid-control block. a.json is explicit that the rows print even when blank,
 /// so an undrilled type is stored as a row with null date, never omitted.
 model EntryHseDrill {
-  id               String      @id @default(cuid())
-  reportId         String
+  id              String      @id @default(cuid())
+  reportId        String
   /// "BOP Test" | "H2S Drill" | "Fire Drill" | "Abandon Drill"
-  type             String
+  type            String
   /// date as PRINTED (the PEDC sheet uses Gregorian M/D/YYYY here, not Jalali).
-  date             String?
-  daysToNextCheck  Float? /// days_to_next_check
-  report           EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  date            String?
+  daysToNextCheck Float? /// days_to_next_check
+  report          EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@unique([reportId, type])
 }
@@ -808,9 +864,9 @@ model EntryMarine {
 /// objective, its own drilling/circulating/rotating/sliding hours) have nowhere
 /// to live at all.
 model EntryDrillString {
-  id                String                    @id @default(cuid())
+  id                String                      @id @default(cuid())
   reportId          String
-  order             Int                       @default(0)
+  order             Int                         @default(0)
   name              String? /// drill_string_name, e.g. 24" Clean-out BHA
   bhaNo             Int? /// bha_no
   depthInMkb        Float? /// depth_in_mkb
@@ -822,7 +878,7 @@ model EntryDrillString {
   rotatingTimeHr    Float? /// rotating_time_hr
   slidingTimeHr     Float? /// sliding_time_hr
   note              String?
-  report            EntryReport               @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  report            EntryReport                 @relation(fields: [reportId], references: [id], onDelete: Cascade)
   components        EntryDrillStringComponent[]
 
   @@index([reportId, order])
@@ -847,4 +903,370 @@ model EntryDrillStringComponent {
   drillString   EntryDrillString @relation(fields: [drillStringId], references: [id], onDelete: Cascade)
 
   @@index([drillStringId, order])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  WellView report suite — Tier 0 foundation
+//
+//  The Entry* block above is DAY-CENTRIC: everything hangs off one EntryReport
+//  per well-day. The 30 WellView reports in Wellview/ are JOB-CENTRIC — they
+//  print AFE numbers, phase plan-vs-actual and cumulative cost for a drilling
+//  campaign, none of which a day can own. This block is that missing spine,
+//  bridged onto the daily store by the nullable EntryReport.jobId / .phaseId
+//  above.
+//
+//  Two naming families:
+//    Wv*   — seeded code tables from the OIEC "Time Distribution Procedure"
+//            and the one-page Wellview code sheet. Read-only to users.
+//    Job / Afe / CostItem / … — the campaign spine. Clean domain names, never
+//            Entry*-prefixed: they are not per-day records.
+//
+//  See docs/wellview-tier0-tier1-plan.md.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Wellview Code 1 — the 21 Main-Operation letters. Indexes the rows of the
+/// Time Breakdown Matrix (Tab. 7-1) and is the pick-list behind
+/// EntryTimeEntry.opLetter / EntryOperation.opLetter.
+model WvMainOperation {
+  /// "A".."U", the one-page sheet's letters.
+  code        String         @id
+  /// Verbatim sheet wording — including its typos ("Slike Line"): the printed
+  /// report has to match the sheet the crew codes from.
+  name        String
+  order       Int
+  /// The Tab. 7-1 row label where it differs from the sheet (C, F, G, H, O, P).
+  matrixLabel String?
+  /// False for U only: the sheet splits Wellhead (C) from BOP (U), the matrix
+  /// folds them into one row C — so U has no matrix row to validate against.
+  onMatrix    Boolean        @default(true)
+  /// R / S / T — "shall be used only for rig less operations" (matrix footnote).
+  riglessOnly Boolean        @default(false)
+  /// Source errata worth surfacing next to the code.
+  note        String?
+  cells       WvMatrixCell[]
+
+  @@index([order])
+}
+
+/// Wellview Code 2 — the 33 Operation-Detail numbers; the matrix columns.
+model WvOperationDetail {
+  /// Zero-padded exactly as printed: "01".."33".
+  code       String         @id
+  /// 1..33 — the matrix column index and the join key for WvMatrixCell.
+  num        Int            @unique
+  name       String
+  /// The procedure §6 definition, verbatim.
+  definition String?
+  /// False for 33 (Well Control) only — on the sheet, but no matrix column.
+  onMatrix   Boolean        @default(true)
+  note       String?
+  cells      WvMatrixCell[]
+}
+
+/// The Time Breakdown Matrix (Tab. 7-1) as ONE ROW PER MARKED CELL — exactly
+/// 437 rows. This is the SQLite encoding of the letter × detail validity
+/// matrix, and it drives a WARNING, never a constraint: the matrix's own
+/// footnote says "any other combination is possible".
+model WvMatrixCell {
+  /// WvMainOperation.code — rows A..T (U has no matrix row).
+  letter    String
+  /// WvOperationDetail.num — columns 1..32 (33 has no column).
+  detailNum Int
+  /// Provenance for a corrected cell, e.g. row A column 9, printed "A4".
+  note      String?
+  operation WvMainOperation   @relation(fields: [letter], references: [code], onDelete: Cascade)
+  detail    WvOperationDetail @relation(fields: [detailNum], references: [num], onDelete: Cascade)
+
+  /// The composite key IS the validation lookup, and its prefix serves
+  /// "which details are valid for letter X".
+  @@id([letter, detailNum])
+  @@index([detailNum])
+}
+
+/// Time-classification indicator (procedure §3) — appended to every activity
+/// code and what drives the planned / unplanned / trouble statistics.
+model WvTimeIndicator {
+  /// "P" | "U" | "T" | "X" | "N"
+  code       String  @id
+  name       String
+  definition String?
+  order      Int
+}
+
+/// The one-page sheet's own 4-entry "Report Code" list.
+///
+/// A SEPARATE table from WvTimeIndicator deliberately: the letters collide with
+/// different meanings — sheet P = Productive, procedure P = Planned; sheet U =
+/// Un-Planned, procedure U = Unplanned but T/N differ too. Merging the two
+/// vocabularies would silently mis-classify time (spec errata 5).
+model WvReportCode {
+  /// "P" | "N" | "T" | "U"
+  code  String @id
+  name  String
+  order Int
+}
+
+/// Working Phases (Tab. 4-1) — the OIEC roll-up target that Main Operations
+/// aggregate into. Soft-tagged from JobPhase.workingPhaseCode.
+model WvWorkingPhase {
+  /// Slug, e.g. "DRILLING" | "WELL_ABANDONING" | "PRODUCTION_MAINTENANCE".
+  code     String  @id
+  name     String
+  purpose  String?
+  /// The "STARTING PHASE" trigger, verbatim. Null where the source prints "—".
+  startsAt String?
+  /// The "END PHASE" trigger, verbatim.
+  endsAt   String?
+  order    Int
+
+  @@index([order])
+}
+
+/// One JOB on a well — the campaign reports 01, 10, 11, 12 and 22 are scoped
+/// to. A well can carry several (report 22 prints "Drilling - original" and
+/// "Completion" for one well).
+model Job {
+  id                       String   @id @default(cuid())
+  wellId                   String
+  /// Print order when a well has several jobs; 0 = the current/primary job.
+  order                    Int      @default(0)
+  /// Internal label, not printed on any sample.
+  name                     String?
+  /// "Drilling" | "Completion" | "Workover" | "Abandonment"
+  category                 String?
+  /// "Drilling" | "Drilling - original" | "Drilling - sidetrack" | "Re-entry" | "Completion"
+  primaryJobType           String?
+  /// Blank in every sample, but report 10 always prints the label.
+  secondaryJobType         String?
+  /// "Job Complete" | "In Progress" | "Planned" | "Suspended"
+  status1                  String?
+  /// Jalali "YYYY/MM/DD" (or "YYYY/MM/DD HH:mm" where the sample prints a time).
+  plannedStartDate         String?
+  startDate                String?
+  minPlannedEndDate        String?
+  mostLikelyPlannedEndDate String?
+  maxPlannedEndDate        String?
+  endDate                  String?
+  /// mKB. The samples print ftKB — layout is reproduced, units are ours.
+  targetDepth              Float?
+  targetFormation          String?
+  /// The JOB narrative (report 01's "Summary"). NOT EntryReport.description,
+  /// which is the per-DAY summary — the two are different texts.
+  summary                  String?
+  // ── report 22's job savings/problem block ──
+  possCostSave             Float?
+  possTimeSaveHr           Float?
+  estProblemCost           Float?
+  estLostTimeHr            Float?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  well      EntryWell     @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  phases    JobPhase[]
+  afes      Afe[]
+  costItems CostItem[]
+  reports   EntryReport[]
+
+  @@index([wellId, order])
+}
+
+/// One ACTUAL phase of a job — report 10's table rows, report 11's bar groups.
+///
+/// Phase boundaries land at arbitrary times of day (the sample's are 09:00,
+/// 21:45, 06:45, 12:15 …), so they cannot be recovered from the day-centric
+/// EntryReport store and are stored here as date+time.
+model JobPhase {
+  id               String   @id @default(cuid())
+  jobId            String
+  /// Chronological sequence — also the running-sum order for every cumulative
+  /// column on reports 10 and 11.
+  order            Int      @default(0)
+  /// "Mob and Rig up" | "Surface" | "Intermediate" | "Production" | "Mob"
+  phaseType1       String?
+  /// "Drill-Vertical" | "Drill-Deviation Control" | "Run and Cement Casing" |
+  /// "Log" | "Log & Core" | "NU" | "Test and Drill Out" | "Demob"
+  phaseType2       String?
+  /// Jalali "YYYY/MM/DD HH:mm" — date AND time; a date alone makes the printed
+  /// Actual Dur unreproducible.
+  actualStartDate  String?
+  actualEndDate    String?
+  /// mKB at full precision, never the printed 1 dp: row 1's printed Cost/Depth
+  /// of 576.17 only comes out of 321.52, not 321.5.
+  actualStartDepth Float?
+  actualEndDepth   Float?
+  /// Soft tag onto WvWorkingPhase.code — a plain string, no FK. WellView's
+  /// "Phase Type 1" and the OIEC working phases are different vocabularies.
+  workingPhaseCode String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  job         Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  plan        JobPhasePlan?
+  costItems   CostItem[]
+  reports     EntryReport[]
+  timeEntries EntryTimeEntry[]
+
+  @@index([jobId, order])
+}
+
+/// The PLANNED half of a phase, 1:1 with JobPhase.
+///
+/// Kept in its own row rather than as nullable columns on JobPhase so that a
+/// plan can exist before any actuals, and so a phase with no plan contributes
+/// nothing to report 10's planned cumulative columns instead of contributing a
+/// fabricated zero.
+model JobPhasePlan {
+  id                String @id @default(cuid())
+  jobPhaseId        String @unique
+  /// mKB.
+  startDepth        Float?
+  endDepth          Float?
+  /// Report 10 "Dur ML (days)" / report 11 "Planned Likely Duration".
+  durMostLikelyDays Float?
+  /// Report 10 "Planned Likely Phase Cost".
+  costMostLikely    Float?
+
+  jobPhase JobPhase @relation(fields: [jobPhaseId], references: [id], onDelete: Cascade)
+}
+
+/// The authorization document for a job. Normally one; several are allowed (a
+/// re-AFE'd sidetrack, report 22's separate completion AFE "1234567C").
+model Afe {
+  id           String   @id @default(cuid())
+  jobId        String
+  /// 0 = the primary AFE, the one reports 01 / 10 / 11 print.
+  order        Int      @default(0)
+  /// As PRINTED — TEXT, never numeric: "1234567C" is a real AFE number.
+  afeNumber    String?
+  description  String?
+  /// The approval document's CONTROL total. The reports print the SUM of the
+  /// cost rows, not this; it is kept for the reconciliation warning and as the
+  /// last-resort fallback when no cost row carries an AFE amount.
+  amount       Float?
+  approvedDate String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  job         Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  lines       AfeLine[]
+  supplements AfeSupplement[]
+
+  @@index([jobId, order])
+}
+
+/// An approved supplement — the "+ Supp" half of "Total AFE + Supp Amount".
+/// Individual rows, not one total column: report 01 prints them per cost line
+/// (50,000 + 75,000 = the 125,000 the totals block shows).
+model AfeSupplement {
+  id           String  @id @default(cuid())
+  afeId        String
+  order        Int     @default(0)
+  number       String?
+  amount       Float?
+  approvedDate String?
+
+  afe       Afe        @relation(fields: [afeId], references: [id], onDelete: Cascade)
+  costItems CostItem[]
+
+  @@index([afeId, order])
+}
+
+/// One authorized budget line of an AFE.
+///
+/// NOT the same thing as CostItem: this is what finance signed, CostItem is the
+/// job cost-sheet row report 01 prints. Keeping them apart is what lets a cost
+/// row exist with no AFE line (a field estimate nobody authorized) and an AFE
+/// line exist with no spend yet.
+model AfeLine {
+  id          String  @id @default(cuid())
+  afeId       String
+  /// Nullable: a line may be typed before its code exists in the chart.
+  costCodeId  String?
+  order       Int     @default(0)
+  /// Free-text description when there is no cost code yet.
+  description String?
+  amount      Float?
+
+  afe       Afe        @relation(fields: [afeId], references: [id], onDelete: Cascade)
+  costCode  CostCode?  @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  costItems CostItem[]
+
+  @@index([afeId, order])
+  @@index([costCodeId])
+}
+
+/// The company's two-level chart of accounts — report 01's "Code 1" / "Code 2"
+/// / "Cost Des" columns. Company-wide, not per job or per well.
+///
+/// Ships EMPTY. The sample's 1200/1210 … 7000/7602 are the vendor's demo
+/// accounts; seeding them would put fictional codes in front of the finance
+/// team. They exist only as a dev fixture for the report-01 layout test.
+model CostCode {
+  id           String   @id @default(cuid())
+  /// Major account as printed, e.g. "1200". TEXT so leading zeros survive.
+  code1        String
+  /// Sub-account as printed, e.g. "1210".
+  code2        String
+  /// Report 01's "Cost Des", e.g. "Subsea wellhead equipment".
+  description  String
+  /// Optional grouping ("Drilling" / "Completion"); not printed.
+  projectScope String?
+  /// Retire a code without deleting the rows that reference it.
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  afeLines  AfeLine[]
+  costItems CostItem[]
+
+  @@unique([code1, code2])
+}
+
+/// ONE PRINTED ROW of report 01's "Job Cost Summary" — and the single source of
+/// every money figure on reports 01, 06, 07, 10, 11 and 12.
+///
+/// There is deliberately NO unique constraint on (jobId, costCodeId): the
+/// sample prints 7000/7602 twice, once as an AFE+supplement row and once as a
+/// field-estimate-only row with a negative variance. A code pair MUST be able
+/// to repeat as separate rows.
+model CostItem {
+  id            String   @id @default(cuid())
+  jobId         String
+  /// Phase attribution. Without it, report 10's "Actual Phase Field Est" column
+  /// and report 11's actual-cost line cannot be produced at all.
+  phaseId       String?
+  /// Nullable: an uncoded row prints blank code cells, as the sample does.
+  costCodeId    String?
+  /// The AFE line that authorized this row, when it came from the AFE.
+  afeLineId     String?
+  /// The supplement this row's suppAmount belongs to.
+  supplementId  String?
+  /// Source insertion order — breaks ties in the printed code1/code2 sort.
+  order         Int      @default(0)
+  /// Overrides CostCode.description when set (the "Cost Des" of an uncoded row).
+  description   String?
+  afeAmount     Float?
+  suppAmount    Float?
+  fieldEstimate Float?
+  finalInvoice  Float?
+  /// The bucket the daily header's mud roll-up filters on:
+  /// "mud" | "rig" | "tubulars" | "services" | "logistics" | "other".
+  category      String?
+  /// Jalali "YYYY/MM/DD" — lets reports 06 / 07 / 14 slice cost by day without
+  /// a second per-report cost table that would have to agree with this one.
+  costDate      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  job        Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  /// SetNull, never Cascade — deleting a phase must not delete the cost.
+  phase      JobPhase?      @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  costCode   CostCode?      @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  afeLine    AfeLine?       @relation(fields: [afeLineId], references: [id], onDelete: SetNull)
+  supplement AfeSupplement? @relation(fields: [supplementId], references: [id], onDelete: SetNull)
+
+  @@index([jobId, order])
+  @@index([phaseId])
+  @@index([costCodeId])
+  @@index([jobId, costDate])
 }

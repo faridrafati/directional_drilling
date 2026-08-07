@@ -11,6 +11,7 @@ import { registerDdrRoutes } from "./routes/ddr.js";
 import { registerAirmudRoutes } from "./routes/airmud.js";
 import { registerEntryRoutes } from "./routes/entry.js";
 import { seedAdmin } from "./entry/auth.js";
+import { seedWellviewCodes } from "./wellview/codes.js";
 
 const prisma = new PrismaClient();
 
@@ -58,6 +59,9 @@ async function main() {
   // Rig-side report entry (the only authenticated part of the API).
   await registerEntryRoutes(app, prisma);
   await seedAdmin(prisma, (msg) => app.log.info(msg));
+  // The WellView operation-code tables. Idempotent upserts, same bootstrap
+  // pattern as the admin account — no separate seed step to forget.
+  await seedWellviewCodes(prisma, (msg) => app.log.info(msg));
 
   const port = Number(process.env.PORT ?? 4000);
   await app.listen({ port, host: "0.0.0.0" });
