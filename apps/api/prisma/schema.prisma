@@ -206,17 +206,18 @@ model EntryUser {
 }
 
 model EntryRig {
-  id         String      @id @default(cuid())
-  name       String      @unique
+  id         String         @id @default(cuid())
+  name       String         @unique
   contractor String?
-  createdAt  DateTime    @default(now())
+  createdAt  DateTime       @default(now())
   wells      EntryWell[]
+  mudPumps   EntryMudPump[]
 }
 
 /// A well being drilled now — the DR.xls header band is well-level, so it lives
 /// here and is filled once instead of on every daily report.
 model EntryWell {
-  id                     String            @id @default(cuid())
+  id                     String                 @id @default(cuid())
   rigId                  String
   name                   String
   field                  String?
@@ -267,13 +268,17 @@ model EntryWell {
   kbGroundDistance       Float?
   /// KB–Casing flange distance, metres.
   kbCasingFlangeDistance Float?
-  active                 Boolean           @default(true)
-  createdAt              DateTime          @default(now())
-  updatedAt              DateTime          @updatedAt
-  rig                    EntryRig          @relation(fields: [rigId], references: [id], onDelete: Cascade)
+  active                 Boolean                @default(true)
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  rig                    EntryRig               @relation(fields: [rigId], references: [id], onDelete: Cascade)
   assignments            EntryAssignment[]
   reports                EntryReport[]
   jobs                   Job[]
+  wellbores              EntryWellbore[]
+  lessons                EntryIntervalLesson[]
+  kicks                  EntryKick[]
+  lostCirculation        EntryLostCirculation[]
 
   @@unique([rigId, name])
   @@index([rigId])
@@ -363,6 +368,21 @@ model EntryReport {
   waveVisible     String?
   freshWater      Float?
   fuel            Float?
+  // ── reports 06 / 07 header cells ──
+  /// Weather, road and hole condition — free text, as the sheet prints them.
+  weather         String?
+  roadCondition   String?
+  holeCondition   String?
+  /// Air temperature in °C (the samples print °F; we print our own unit).
+  temperatureC    Float?
+  /// Start depth on the TVD scale. `endDepthTvd` above is its other half —
+  /// report 07 prints both, report 06 neither.
+  startDepthTvd   Float?
+  /// Report 07's free-text "Remarks", distinct from `description` (the 24-hour
+  /// summary) and from `opsAtReportTime`.
+  remarks         String?
+  /// Days since the last recordable incident. `daysLti` above is lost-time.
+  daysRi          Float?
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -394,6 +414,10 @@ model EntryReport {
   drillingParameters EntryDrillingParameter[]
   timeBreakdown      EntryTimeEntry[]
   operations         EntryOperation[]
+  mudVolumes         EntryMudVolume[]
+  safetyChecks       EntrySafetyCheck[]
+  safetyIncidents    EntrySafetyIncident[]
+  intervalProblems   EntryIntervalProblem[]
 
   @@unique([wellId, reportDate])
   @@unique([wellId, serialNo])
@@ -430,6 +454,8 @@ model EntryBitRun {
   pumpPressure    Float?
   annularVelocity Float?
   hsi             Float?
+  /// Report 06's "Length (ft)" on the drill-string block — the bit's length.
+  lengthM         Float?
   cmtDrilled      String?
   washAndRun      String?
   bitChangeIn     String?
@@ -518,6 +544,14 @@ model EntryMud {
   mf                  Float?
   chloride            Float?
   solidsPct           Float?
+  // ── reports 06 / 07 mud-check cells ──
+  filterCake32nds     Float? /// Filter Cake (1/32")
+  sandPct             Float? /// Sand (%)
+  gel30min            Float? /// Gel 30 min
+  pm                  Float? /// Pm (mL/mL) — `pf` is above
+  potassiumMgL        Float? /// Potassium (mg/L)
+  wholeMudAddedBbl    Float? /// Whole Mud Added (bbl)
+  mudLostSurfBbl      Float? /// Mud Lost to Surface (bbl) — `mudLostBbl` is to hole
   report              EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 }
 
@@ -627,23 +661,43 @@ model EntrySurvey {
 /// This is a finer granularity than the bit record: a single bit run covers many
 /// intervals, each with its own WOB / RPM / flow / SPP.
 model EntryDrillingParameter {
-  id          String      @id @default(cuid())
-  reportId    String
-  order       Int         @default(0)
-  startMkb    Float? /// start_mkb
-  endDepthMkb Float? /// end_depth_mkb
-  drillTimeHr Float? /// drill_time_hr
-  slideTimeHr Float? /// slide_time_hr
-  circTimeHr  Float? /// circ_time_hr
-  intRopMHr   Float? /// int_rop_m_hr
-  drillTq     Float? /// drill_tq
-  rpm         Float? /// rpm
-  qFlowGpm    Float? /// q_flow_gpm
-  sppPsi      Float? /// spp_psi
-  wob1000Lbf  Float? /// wob_1000lbf
-  report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  id              String         @id @default(cuid())
+  reportId        String
+  order           Int            @default(0)
+  startMkb        Float? /// start_mkb
+  endDepthMkb     Float? /// end_depth_mkb
+  drillTimeHr     Float? /// drill_time_hr
+  slideTimeHr     Float? /// slide_time_hr
+  circTimeHr      Float? /// circ_time_hr
+  intRopMHr       Float? /// int_rop_m_hr
+  drillTq         Float? /// drill_tq
+  rpm             Float? /// rpm
+  qFlowGpm        Float? /// q_flow_gpm
+  sppPsi          Float? /// spp_psi
+  wob1000Lbf      Float? /// wob_1000lbf
+  // ── reports 06 / 07 columns ──
+  /// Which hole this interval was drilled in (reports 02, 06 and 07 all print a
+  /// wellbore name). Nullable; the assembler falls back to the well's first.
+  wellboreId      String?
+  drillStrWtKlbf  Float? /// Drill Str Wt (1000lbf)
+  puStrWtKlbf     Float? /// PU Str Wt (1000lbf)
+  soStrWtKlbf     Float? /// SO Str Wt (1000lbf) — report 07 only
+  offBottomTorque Float? /// Off Bottom Torque — report 07 only
+  // Report 07's underbalanced / air-drilling row. Blank on a mud well, but the
+  // sheet prints the labels, so there has to be somewhere to put them.
+  qGasInjM3Min    Float? /// Q Gas Inj
+  tInjC           Float? /// T Inj
+  pBhAnnPsi       Float? /// P BH Ann
+  tBhC            Float? /// T BH
+  pSurfAnnulusPsi Float? /// P Surf Annulus
+  tSurfAnnulusC   Float? /// T Surf Annulus
+  qLiqReturnGpm   Float? /// Q Liq Return
+  qGasReturnM3Min Float? /// Q Gas Return
+  report          EntryReport    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  wellbore        EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
 
   @@index([reportId, order])
+  @@index([wellboreId])
 }
 
 model EntryTimeEntry {
@@ -689,6 +743,18 @@ model EntryOperation {
   opLetter      String?
   opDetail      String?
   timeIndicator String?
+  /// Reports 06 / 07's "Code 2" — the alpha activity code printed beside the
+  /// numeric one (CSG, RR, DRLCMT, DRLG on the sample).
+  opCode2       String?
+  /// Report 07's "Problem?" / "Prob Hrs" pair: was this interval trouble, and
+  /// how much of it was.
+  isProblem     Boolean     @default(false)
+  probHr        Float?
+  /// "Prob Ref #" — the 1-BASED ORDINAL (order + 1) of the EntryIntervalProblem
+  /// row in this day's list, NOT a foreign key. The daily PUT replaces child
+  /// rows wholesale, so every save mints new ids and a real FK would dangle;
+  /// the ordinal is also exactly what the report prints.
+  problemRef    Int?
   fromTime      String?
   toTime        String?
   remarks       String?
@@ -710,6 +776,8 @@ model EntrySupervisor {
   order      Int         @default(0)
   jobContact String? /// job_contact
   position   String? /// position
+  /// Reports 06 and 07 print this list as "Daily Contacts — Job Contact, Mobile".
+  mobile     String?
   report     EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
@@ -718,13 +786,19 @@ model EntrySupervisor {
 /// On-Board Companies — a.json `onboard_companies`. The POB breakdown behind
 /// the header's head_count.
 model EntryOnboardCompany {
-  id       String      @id @default(cuid())
-  reportId String
-  order    Int         @default(0)
-  company  String? /// company
-  count    Int? /// count — persons from that company
-  note     String? /// note — role, e.g. Client / Operator / Drilling Unit Service
-  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  id            String      @id @default(cuid())
+  reportId      String
+  order         Int         @default(0)
+  company       String? /// company
+  count         Int? /// count — persons from that company
+  note          String? /// note — role, e.g. Client / Operator / Drilling Unit Service
+  /// Report 07's "Personnel Log" groups the day's people by this:
+  /// "Contractor" | "Service" | "Operator". Distinct from `company`, which
+  /// names the firm — several companies can share one type.
+  personnelType String?
+  /// Total worked hours for this group — the log's third column.
+  totWorkTimeHr Float?
+  report        EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
 }
@@ -788,18 +862,23 @@ model EntryWellheadComponent {
 /// Well Control — SCR (slow circulation rates), a.json `well_control_scr`.
 /// One row per pump / rate; these are the kill-sheet numbers.
 model EntryScrRate {
-  id         String      @id @default(cuid())
+  id         String        @id @default(cuid())
   reportId   String
-  order      Int         @default(0)
+  order      Int           @default(0)
   pumpNo     String? /// pump_no
   depthMkb   Float? /// depth_mkb
   strokesSpm Float? /// strokes_spm
   effPct     Float? /// eff_pct
   pPsi       Float? /// p_psi
   qFlowGpm   Float? /// q_flow_gpm
-  report     EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  /// The rig pump this reading belongs to, so reports 06 and 07 can print one
+  /// block per pump with its plant data beside the day's numbers.
+  mudPumpId  String?
+  report     EntryReport   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  mudPump    EntryMudPump? @relation(fields: [mudPumpId], references: [id], onDelete: SetNull)
 
   @@index([reportId, order])
+  @@index([mudPumpId])
 }
 
 /// Support Vessels — a.json `support_vessels` (offshore only).
@@ -877,6 +956,9 @@ model EntryDrillString {
   circulatingTimeHr Float? /// circulating_time_hr
   rotatingTimeHr    Float? /// rotating_time_hr
   slidingTimeHr     Float? /// sliding_time_hr
+  /// Report 07's "String Wt (1000lbf)". Stored, not derived: the hook load is
+  /// read off the weight indicator, not computed from the tally.
+  stringWtKlbf      Float?
   note              String?
   report            EntryReport                 @relation(fields: [reportId], references: [id], onDelete: Cascade)
   components        EntryDrillStringComponent[]
@@ -899,6 +981,8 @@ model EntryDrillStringComponent {
   jts           Int? /// jts
   lenM          Float? /// len_m
   cumLenM       Float? /// cum_len_m
+  /// Report 07's "Top Thread" column, e.g. IF, API REG, 4.5IF.
+  topThread     String?
   com           String?
   drillString   EntryDrillString @relation(fields: [drillStringId], references: [id], onDelete: Cascade)
 
@@ -1269,4 +1353,223 @@ model CostItem {
   @@index([phaseId])
   @@index([costCodeId])
   @@index([jobId, costDate])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  WellView report suite — Tier 1 (reports 06, 07, 02, 03)
+//
+//  Reports 06 and 07 print mostly from the daily sheet the crew already fills.
+//  These are the things it has no home for: the well's holes, the rig's pumps,
+//  and the EVENTS — problems, lessons, kicks, losses, incidents.
+//
+//  Where an event lives is decided by the sample, not by taste:
+//    • a row with a TIME and no date cannot outlive the day → per report
+//      (EntryIntervalProblem, EntrySafetyCheck, EntrySafetyIncident);
+//    • a row with TWO dates is a register entry the daily report reprints on
+//      every day its range covers → per well (EntryIntervalLesson, EntryKick,
+//      EntryLostCirculation). The sample's lesson runs eight days.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A hole in the well. Reports 02, 06 and 07 all print a wellbore name, and the
+/// Entry* block had no such concept (one EntryWell implied one hole).
+/// Well-level, not per-day: "Original Hole / KO MD 1,381.2" is the same row on
+/// every report day.
+model EntryWellbore {
+  id        String   @id @default(cuid())
+  wellId    String
+  order     Int      @default(0)
+  name      String? /// e.g. "Original Hole", "ST-1"
+  /// "Original Hole" | "Sidetrack" | "Re-drill" | "Lateral"
+  kind      String?
+  /// Kick-off measured depth, mKB. EntryReport.kop stays the DR.xls per-day
+  /// free text and is NOT migrated into this column.
+  koMdMkb   Float?
+  createdAt DateTime @default(now())
+
+  well               EntryWell                @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  drillingParameters EntryDrillingParameter[]
+
+  @@index([wellId, order])
+}
+
+/// A mud pump on the rig — reports 06 and 07 print one block per pump.
+///
+/// RIG-constant: the sample prints the same three pumps on every report day, so
+/// this is the plant. The day's readings (pressure, slow speed, strokes,
+/// efficiency) stay on EntryScrRate, which is already per-report and per-pump.
+model EntryMudPump {
+  id           String   @id @default(cuid())
+  rigId        String
+  order        Int      @default(0)
+  pumpNo       String? /// as printed: "1", "2", "3" — what EntryScrRate.pumpNo matches
+  manufacturer String? /// e.g. OILWELL
+  model        String? /// e.g. A 1700-PT
+  ratingHp     Float? /// "Pump Rating (hp)" on 07, "Pwr (hp)" on 06
+  rodDiaIn     Float?
+  strokeIn     Float?
+  /// TEXT, not a number: the page prints the fraction "6 1/2".
+  linerSizeIn  String?
+  /// "Vol/Stk OR (bbl/stk)" — the OR is Override. Blank means the report falls
+  /// back to the swept volume of the liner and stroke.
+  volPerStkBbl Float?
+  createdAt    DateTime @default(now())
+
+  rig      EntryRig       @relation(fields: [rigId], references: [id], onDelete: Cascade)
+  scrRates EntryScrRate[]
+
+  @@index([rigId, order])
+}
+
+/// Report 07's "Drilling Mud Volumes" movement ledger.
+///
+/// Not a duplicate of EntryMud's volumes: those are the pit STATE at check time
+/// (active / reserve / lost), this is what MOVED. The printed Cum columns are
+/// running totals down the day's table and are computed, never stored.
+model EntryMudVolume {
+  id          String      @id @default(cuid())
+  reportId    String
+  order       Int         @default(0)
+  action      String? /// e.g. "Mixed new mud", "Transferred to reserve"
+  toWellBbl   Float?
+  fromWellBbl Float?
+  report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// Report 06's "Safety Checks" sidebar — one row per check, drill or meeting.
+///
+/// A SEPARATE model from EntryHseDrill, which is the fixed four-row recurring
+/// SCHEDULE keyed by type and so cannot hold two safety meetings on one day.
+/// Report 07's "Safety Check Summary" prints the schedule; this prints the day.
+model EntrySafetyCheck {
+  id       String      @id @default(cuid())
+  reportId String
+  order    Int         @default(0)
+  time     String? /// HH:MM as printed
+  /// "Safety Meeting" | "BOP Drill" | "Choke Drill" | "H2S Drill" | "Fire Drill"
+  type     String?
+  des      String? /// what the check covered
+  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// Report 07 page 2's "Safety Incidents". Per-day: the row carries a time and
+/// no date at all, so the day is the report's. Feeds report 17 unchanged.
+model EntrySafetyIncident {
+  id       String      @id @default(cuid())
+  reportId String
+  order    Int         @default(0)
+  time     String? /// HH:MM as printed
+  /// "Near Miss" | "Incident" | "Accident"
+  category String?
+  type     String?
+  subType  String? /// printed "SubTyp"
+  cause    String?
+  /// "Lost time?" — prints Yes / No. Nullable rather than defaulting to false:
+  /// unanswered is not the same as answered "no".
+  lostTime Boolean?
+  severity String?
+  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// Report 07 page 2's "Interval Problems", and the target of the time log's
+/// "Prob Ref #" ordinal.
+///
+/// PER-DAY, from the sample: the row carries a start date and NO end date, its
+/// start and end depths are identical, its estimated lost time equals the day's
+/// problem-time total, and the day's 18:15–18:45 log row references it.
+model EntryIntervalProblem {
+  id               String      @id @default(cuid())
+  reportId         String
+  /// The report prints `order + 1` as "Prob Ref #".
+  order            Int         @default(0)
+  /// "Equipment Trouble" | "Hole Trouble" | "Rig Failure" | "Logistical" |
+  /// "Weather" | "Well Control" | "Other"
+  problemType      String?
+  problemSubType   String? /// the specific problem, e.g. ROV
+  startDate        String? /// Jalali "YYYY/MM/DD"
+  startTime        String? /// HH:MM
+  startDepthMkb    Float?
+  endDepthMkb      Float?
+  /// Who the cost is charged to: "Operator" | "Contractor" | a service company.
+  /// Report 15 pivots problem cost on exactly this, and nothing else in the
+  /// Entry* block names a party.
+  accountableParty String?
+  estCost          Float?
+  estLostTimeHr    Float?
+  comment          String? /// prints as a full-width sub-row
+  report           EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// Report 07 page 2's "Interval Lessons".
+///
+/// WELL-level: the sample's lesson runs 2000-02-21 → 2000-02-28 over 1,000 →
+/// 2,650 ftKB. It is a register entry the daily report reprints on every day its
+/// range covers, not a datum of any one day.
+model EntryIntervalLesson {
+  id              String    @id @default(cuid())
+  wellId          String
+  order           Int       @default(0)
+  /// "Drilling" | "Casing" | "Cementing" | "Completion" | "HSE" | "Other"
+  lessonType      String?
+  startDate       String? /// Jalali "YYYY/MM/DD"
+  endDate         String? /// the presence of BOTH dates is what proves it outlives a day
+  startDepthMkb   Float?
+  endDepthMkb     Float?
+  estCostSaving   Float?
+  estTimeSavingHr Float?
+  comment         String?
+  createdAt       DateTime  @default(now())
+  well            EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
+/// Report 07's "Kicks" well-control table. Well-level by the same two-date test
+/// as the lessons: a kick taken at 23:00 and killed the next morning would
+/// otherwise need two rows or a reopened report.
+model EntryKick {
+  id              String    @id @default(cuid())
+  wellId          String
+  order           Int       @default(0)
+  kickDate        String? /// Jalali "YYYY/MM/DD"
+  kickTime        String? /// HH:MM
+  kickDepthMkb    Float?
+  controlDate     String?
+  controlTime     String?
+  controlDepthMkb Float?
+  /// "Gas" | "Oil" | "Water" | "Mixed"
+  kickClass       String?
+  killNotes       String? /// prints as a full-width sub-row under the table
+  createdAt       DateTime  @default(now())
+  well            EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
+/// Report 07's "Lost Circulation" table. Well-level for the same reason — start
+/// and end date are both printed columns.
+///
+/// Distinct from EntryMud.mudLostBbl and EntryReport.formationLoss, which are
+/// the DAY's lost volume; this is the EVENT, with its own interval and total.
+model EntryLostCirculation {
+  id             String    @id @default(cuid())
+  wellId         String
+  order          Int       @default(0)
+  startDate      String? /// Jalali "YYYY/MM/DD"
+  topDepthMkb    Float?
+  bottomDepthMkb Float?
+  opsInProg      String? /// what was being done when losses started
+  volLostTotBbl  Float? /// the event total, not the day's
+  endDate        String?
+  createdAt      DateTime  @default(now())
+  well           EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
 }

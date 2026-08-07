@@ -15,11 +15,13 @@
 import { useEffect, useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EntryAuthProvider, useEntryAuth, SignInCard } from "../entry/auth.js";
+import { entryApi } from "../entry/client.js";
 import {
   wellviewApi,
-  type CatalogEntry, type JobListItem, type Report01Payload,
+  type CatalogEntry, type DailyPayload, type JobListItem, type Report01Payload,
 } from "../entry/wellview.js";
 import { Report01Preview } from "../components/wellview/ReportPreview.js";
+import { DailyPreview } from "../components/wellview/DailyPreview.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -35,6 +37,7 @@ function Inner() {
   const { user, wells, loading, signOut } = useEntryAuth();
   const [wellId, setWellId] = useState<string>("");
   const [jobId, setJobId] = useState<string>("");
+  const [date, setDate] = useState<string>("");
   const [selected, setSelected] = useState<string>("01");
 
   const catalogQ = useQuery({
@@ -47,6 +50,12 @@ function Inner() {
     queryFn: () => wellviewApi.jobsForWell(wellId),
     enabled: !!user && !!wellId,
   });
+  // The day list for the date picker — the same endpoint the daily editor uses.
+  const daysQ = useQuery({
+    queryKey: ["entry", "days", wellId],
+    queryFn: () => entryApi.get<{ id: string; reportDate: string; serialNo: number }[]>(`/wells/${wellId}/reports`),
+    enabled: !!user && !!wellId,
+  });
 
   // Pick the first well as soon as the session knows about one, so the page is
   // never a set of empty dropdowns on arrival.
@@ -54,15 +63,23 @@ function Inner() {
     if (!wellId && wells.length) setWellId(wells[0].id);
   }, [wells, wellId]);
   // A well change invalidates the job — never carry another well's job across.
-  useEffect(() => { setJobId(""); }, [wellId]);
+  useEffect(() => { setJobId(""); setDate(""); }, [wellId]);
   useEffect(() => {
     const list = jobsQ.data ?? [];
     if (!jobId && list.length) setJobId(list[0].id);
   }, [jobsQ.data, jobId]);
+  useEffect(() => {
+    const list = daysQ.data ?? [];
+    if (!date && list.length) {
+      setDate([...list].sort((a, b) => b.serialNo - a.serialNo)[0].reportDate);
+    }
+  }, [daysQ.data, date]);
 
   const catalog = catalogQ.data ?? [];
   const entry = catalog.find((c) => c.type === selected) ?? null;
   const jobs = jobsQ.data ?? [];
+  // Newest first: a report is nearly always wanted for the most recent day.
+  const days = [...(daysQ.data ?? [])].sort((a, b) => b.serialNo - a.serialNo);
   const wellName = wells.find((w) => w.id === wellId)?.name ?? "";
 
   return (
@@ -150,6 +167,26 @@ function Inner() {
                             )}
                           </Picker>
                         )}
+                        {entry.params.includes("date") && (
+                          <Picker label="Date">
+                            {(id) => (
+                            <select
+                              id={id}
+                              value={date}
+                              onChange={(e) => setDate(e.target.value)}
+                              disabled={days.length === 0}
+                              className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white min-w-[150px] disabled:bg-gray-50 disabled:text-gray-400"
+                            >
+                              {days.length === 0 && <option value="">— no days —</option>}
+                              {days.map((r) => (
+                                <option key={r.id} value={r.reportDate}>
+                                  {r.reportDate} · #{r.serialNo}
+                                </option>
+                              ))}
+                            </select>
+                            )}
+                          </Picker>
+                        )}
                         {entry.params.includes("job") && (
                           <Picker label="Job">
                             {(id) => (
@@ -190,8 +227,18 @@ function Inner() {
                           well above if one is already set up.
                         </div>
                       </Notice>
+                    ) : entry.params.includes("date") && !daysQ.isLoading && days.length === 0 ? (
+                      <Notice>
+                        <span className="font-medium text-gray-700">{wellName || "This well"}</span> has no
+                        daily reports filed yet, and this report covers one day.
+                        <div className="mt-1.5 text-xs text-gray-400">
+                          Days are filed under Daily Report Entry.
+                        </div>
+                      </Notice>
                     ) : entry.type === "01" ? (
                       <Report01Panel jobId={jobId} />
+                    ) : entry.type === "06" || entry.type === "07" ? (
+                      <DailyPanel type={entry.type} wellId={wellId} date={date} />
                     ) : (
                       <Pending entry={entry} />
                     )}
@@ -239,6 +286,7 @@ function CatalogCard({ entry, active, onClick }: {
   return (
     <button
       onClick={onClick}
+      data-testid={`report-${entry.type}`}
       className={`w-full text-left px-2 py-1.5 rounded-md border transition-colors duration-150 ${
         active
           ? "border-blue-500 bg-blue-50"
@@ -324,6 +372,53 @@ function Report01Panel({ jobId }: { jobId: string }) {
         </button>
       </div>
       <Report01Preview payload={q.data} />
+    </div>
+  );
+}
+
+/** Reports 06 and 07 — one panel, since they differ only by the payload. */
+function DailyPanel({ type, wellId, date }: { type: string; wellId: string; date: string }) {
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const q = useQuery({
+    queryKey: ["wellview", "report", type, wellId, date],
+    queryFn: () => wellviewApi.reportData<DailyPayload>(type, { wellId, date }),
+    enabled: !!wellId && !!date,
+  });
+
+  const onExport = async () => {
+    if (!q.data) return;
+    setExporting(true);
+    setError(null);
+    try {
+      const { exportDailyPdf } = await import("../export/wellview/daily.js");
+      await exportDailyPdf(q.data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (!date) return <Notice>Pick a day above. This report covers one well-day.</Notice>;
+  if (q.isLoading) return <Notice>Assembling the report…</Notice>;
+  if (q.error) return <Notice tone="error">{(q.error as Error).message}</Notice>;
+  if (!q.data) return <Notice>Nothing to show.</Notice>;
+
+  return (
+    <div>
+      <div className="flex items-center justify-end gap-2 mb-3">
+        {error && <span className="text-xs text-red-600 mr-auto">{error}</span>}
+        <button
+          onClick={() => void onExport()}
+          disabled={exporting}
+          className="h-8 px-3 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors duration-150"
+        >
+          {exporting ? "Generating…" : "PDF"}
+        </button>
+      </div>
+      <DailyPreview payload={q.data} />
     </div>
   );
 }

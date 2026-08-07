@@ -58,6 +58,9 @@ function toBody(r: ReportDetail): ReportBody {
     // a.json `operations`: at_report_time / summary / next_report_period. The
     // middle one IS the existing `description` — it is not duplicated here.
     opsAtReportTime: r.opsAtReportTime, opsNextPeriod: r.opsNextPeriod,
+    // ── reports 06 / 07 header cells ──
+    weather: r.weather, roadCondition: r.roadCondition, holeCondition: r.holeCondition,
+    temperatureC: r.temperatureC, startDepthTvd: r.startDepthTvd, remarks: r.remarks, daysRi: r.daysRi,
     description: r.description, windSpeedDir: r.windSpeedDir, waveVisible: r.waveVisible,
     freshWater: r.freshWater, fuel: r.fuel,
     bitRuns: r.bitRuns ?? [], drillStrings: r.drillStrings ?? [], drillString: r.drillString ?? [],
@@ -77,6 +80,11 @@ function toBody(r: ReportDetail): ReportBody {
     hseDrills: HSE_TYPES.map((type) =>
       r.hseDrills?.find((h) => h.type === type) ?? { type, date: null, daysToNextCheck: null }),
     bulkMaterials: r.bulkMaterials ?? [],
+    // ── reports 06 / 07 ──
+    mudVolumes: r.mudVolumes ?? [],
+    safetyChecks: r.safetyChecks ?? [],
+    safetyIncidents: r.safetyIncidents ?? [],
+    intervalProblems: r.intervalProblems ?? [],
     // a.json wellhead_component / well_control_scr / support_vessels are arrays;
     // formation_integrity_test and marine_conditions are single OBJECTS, so they
     // carry over exactly like `mud` — one block per day, or none at all.
@@ -149,10 +157,16 @@ function prune(body: ReportBody): ReportBody {
     formationTops: body.formationTops.filter((r) => filled(r)),
     surveys: body.surveys.filter((r) => filled(r)),
     timeBreakdown: body.timeBreakdown.filter((r) => filled(r)),
-    operations: body.operations.filter((r) => filled(r)),
+    operations: body.operations.filter((r) => filled(r, ["order", "isProblem"])),
     supervisors: body.supervisors.filter((r) => filled(r)),
     companies: body.companies.filter((r) => filled(r)),
     bulkMaterials: body.bulkMaterials.filter((r) => filled(r)),
+    mudVolumes: body.mudVolumes.filter((r) => filled(r)),
+    safetyChecks: body.safetyChecks.filter((r) => filled(r)),
+    // `isProblem`/`lostTime` are booleans: `false` is neither null nor "", so a
+    // spare row would look filled forever. They are skipped, like `order`.
+    safetyIncidents: body.safetyIncidents.filter((r) => filled(r, ["order", "lostTime"])),
+    intervalProblems: body.intervalProblems.filter((r) => filled(r)),
     wellheads: body.wellheads.filter((r) => filled(r)),
     scrRates: body.scrRates.filter((r) => filled(r)),
     supportVessels: body.supportVessels.filter((r) => filled(r)),
@@ -277,6 +291,10 @@ const SECTIONS = [
   // number for "row" units — with "" it would collapse four vessels to a bare ✓.
   { id: "marine", label: "Marine & vessels", count: (d: ReportBody) =>
       (d.marine && filled(d.marine, ["id", "reportId"]) ? 1 : 0) + filledRows(d.supportVessels), unit: "row" },
+  // Reports 06 and 07 print these; the DR.xls sheet had nowhere for them.
+  { id: "events", label: "Events & HSE", count: (d: ReportBody) =>
+      filledRows(d.intervalProblems) + filledRows(d.safetyChecks)
+      + filledRows(d.safetyIncidents, ["order", "lostTime"]) + filledRows(d.mudVolumes), unit: "row" },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -476,6 +494,7 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
         {section === "survey" && <Surveys {...props} />}
         {section === "time" && <TimeBreakdown {...props} />}
         {section === "ops" && <OperationsLog {...props} />}
+        {section === "events" && <EventsAndHse {...props} />}
         {section === "summary" && <SummaryWeather {...props} />}
         {section === "crew" && <CrewAndCompanies {...props} />}
         {section === "hse" && <HseAndBulk {...props} setHse={setHse} />}
@@ -1148,14 +1167,134 @@ function OperationsLog({ draft, set, disabled }: SubformProps) {
       <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">midnight to midnight</span>}>Operations log</Section>
       <RowTable
         cols={[
-          { key: "opCode", label: "Op", width: "w-24" },
-          { key: "fromTime", label: "From", width: "w-24" },
-          { key: "toTime", label: "To", width: "w-24" },
+          { key: "fromTime", label: "From", width: "w-20", placeholder: "00:00" },
+          { key: "toTime", label: "To", width: "w-20", placeholder: "01:45" },
+          { key: "opCode", label: "Op code", width: "w-20", title: "The composite code as printed, e.g. E3-P" },
+          { key: "opLetter", label: "Letter", width: "w-16", title: "Main operation A–U (advisory — an unlisted code still saves)" },
+          { key: "opDetail", label: "Detail", width: "w-16", title: "Operation detail 01–33" },
+          { key: "timeIndicator", label: "P/U/T/X/N", width: "w-16", title: "Time-classification indicator" },
+          { key: "opCode2", label: "Code 2", width: "w-20", title: "The alpha code printed beside the numeric one, e.g. CSG" },
+          { key: "isProblem", label: "Problem?", type: "bool", width: "w-16" },
+          { key: "probHr", label: "Prob hrs", type: "num", width: "w-20" },
+          { key: "problemRef", label: "Prob ref #", type: "int", width: "w-20",
+            title: "Which Interval Problem row this belongs to — 1 is the first row on the Events tab" },
           { key: "remarks", label: "Remarks" },
         ] as Col<ReportBody["operations"][number]>[]}
         rows={draft.operations} onChange={(v) => set("operations", v)} disabled={disabled} minRows={3}
-        addLabel="operation" blank={() => ({ order: 0, opCode: null, fromTime: null, toTime: null, remarks: null })}
+        addLabel="operation" testId="op"
+        blank={() => ({
+          order: 0, opCode: null, opLetter: null, opDetail: null, timeIndicator: null,
+          opCode2: null, isProblem: null, probHr: null, problemRef: null,
+          fromTime: null, toTime: null, remarks: null,
+        })}
       />
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        Durations are not typed: the report derives each row&rsquo;s hours from its own From and To,
+        and the cumulative column from the rows above it. A row whose two times are equal counts as
+        no duration at all rather than as zero hours.
+      </p>
+    </>
+  );
+}
+
+/**
+ * Events & HSE — what reports 06 and 07 print that the DR.xls sheet never had a
+ * place for: the day's problems, its safety checks and incidents, and the mud
+ * that moved.
+ *
+ * The problems come first because the operations log points AT them: a log row's
+ * "Prob ref #" is the 1-based position of a row in this table.
+ */
+function EventsAndHse({ draft, set, disabled }: SubformProps) {
+  return (
+    <>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">report 07 · the operations log references these by row number</span>}>
+        Interval problems
+      </Section>
+      <RowTable
+        cols={[
+          { key: "problemType", label: "Problem type", type: "select", width: "w-40",
+            options: ["Equipment Trouble", "Hole Trouble", "Rig Failure", "Logistical", "Weather", "Well Control", "Other"]
+              .map((v) => ({ value: v, label: v })) },
+          { key: "problemSubType", label: "Sub type", width: "w-32" },
+          { key: "startDate", label: "Start date", width: "w-28", placeholder: "1405/02/11" },
+          { key: "startTime", label: "Start time", width: "w-20", placeholder: "18:15" },
+          { key: "startDepthMkb", label: "Start depth (mKB)", type: "num", width: "w-24" },
+          { key: "endDepthMkb", label: "End depth (mKB)", type: "num", width: "w-24" },
+          { key: "accountableParty", label: "Accountable party", width: "w-32",
+            title: "Who the cost is charged to — report 15 pivots problem cost on this" },
+          { key: "estCost", label: "Est cost", type: "num", width: "w-24" },
+          { key: "estLostTimeHr", label: "Est lost time (hr)", type: "num", width: "w-24" },
+          { key: "comment", label: "Comment" },
+        ] as Col<ReportBody["intervalProblems"][number]>[]}
+        rows={draft.intervalProblems} onChange={(v) => set("intervalProblems", v)}
+        disabled={disabled} minRows={2} addLabel="problem" testId="problem"
+        blank={() => ({
+          order: 0, problemType: null, problemSubType: null, startDate: null, startTime: null,
+          startDepthMkb: null, endDepthMkb: null, accountableParty: null,
+          estCost: null, estLostTimeHr: null, comment: null,
+        })}
+      />
+
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">report 06 sidebar</span>}>
+        Safety checks
+      </Section>
+      <RowTable
+        cols={[
+          { key: "time", label: "Time", width: "w-20", placeholder: "02:15" },
+          { key: "type", label: "Type", type: "select", width: "w-36",
+            options: ["Safety Meeting", "BOP Drill", "Choke Drill", "H2S Drill", "Fire Drill", "Abandon Drill"]
+              .map((v) => ({ value: v, label: v })) },
+          { key: "des", label: "Description" },
+        ] as Col<ReportBody["safetyChecks"][number]>[]}
+        rows={draft.safetyChecks} onChange={(v) => set("safetyChecks", v)}
+        disabled={disabled} minRows={2} addLabel="check" testId="check"
+        blank={() => ({ order: 0, time: null, type: null, des: null })}
+      />
+      <p className="px-2 py-1.5 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        These are the checks that happened TODAY. The recurring drill schedule — BOP test, H2S, fire,
+        abandon — stays on the HSE &amp; bulk tab; report 07 prints that as its Safety Check Summary.
+      </p>
+
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">report 07 page 2</span>}>
+        Safety incidents
+      </Section>
+      <RowTable
+        cols={[
+          { key: "time", label: "Time", width: "w-20", placeholder: "18:20" },
+          { key: "category", label: "Category", type: "select", width: "w-28",
+            options: ["Near Miss", "Incident", "Accident"].map((v) => ({ value: v, label: v })) },
+          { key: "type", label: "Type", width: "w-28" },
+          { key: "subType", label: "Sub type", width: "w-28" },
+          { key: "cause", label: "Cause" },
+          { key: "lostTime", label: "Lost time?", type: "bool", width: "w-20" },
+          { key: "severity", label: "Severity", width: "w-24" },
+        ] as Col<ReportBody["safetyIncidents"][number]>[]}
+        rows={draft.safetyIncidents} onChange={(v) => set("safetyIncidents", v)}
+        disabled={disabled} minRows={2} addLabel="incident" testId="incident"
+        blank={() => ({
+          order: 0, time: null, category: null, type: null, subType: null,
+          cause: null, lostTime: null, severity: null,
+        })}
+      />
+
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">report 07 · what MOVED, not the pit state</span>}>
+        Drilling mud volumes
+      </Section>
+      <RowTable
+        cols={[
+          { key: "action", label: "Action", title: "e.g. Mixed new mud, Transferred to reserve" },
+          { key: "toWellBbl", label: "To well (bbl)", type: "num", width: "w-28" },
+          { key: "fromWellBbl", label: "From well (bbl)", type: "num", width: "w-28" },
+        ] as Col<ReportBody["mudVolumes"][number]>[]}
+        rows={draft.mudVolumes} onChange={(v) => set("mudVolumes", v)}
+        disabled={disabled} minRows={2} addLabel="movement" testId="mudvol"
+        blank={() => ({ order: 0, action: null, toWellBbl: null, fromWellBbl: null })}
+      />
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        The running totals the report prints are derived down this table — only the movements are typed.
+        The active, reserve and lost volumes are the pit STATE and stay on the mud tab.
+      </p>
     </>
   );
 }
@@ -1173,10 +1312,14 @@ function SummaryWeather({ draft, set, disabled }: SubformProps) {
         <div className="md:border-r border-gray-200">
           <TextField label="Wind speed/dir" value={draft.windSpeedDir} onChange={(v) => set("windSpeedDir", v)} disabled={disabled} placeholder="12 kt NW" />
           <TextField label="Wave / vis" value={draft.waveVisible} onChange={(v) => set("waveVisible", v)} disabled={disabled} />
+          <TextField label="Weather" value={draft.weather} onChange={(v) => set("weather", v)} disabled={disabled} placeholder="Clear" />
+          <NumField label="Temperature" unit="°C" value={draft.temperatureC} onChange={(v) => set("temperatureC", v)} disabled={disabled} signed />
         </div>
         <div>
           <NumField label="Fresh water" unit="bbl" value={draft.freshWater} onChange={(v) => set("freshWater", v)} disabled={disabled} />
           <NumField label="Fuel" unit="L" value={draft.fuel} onChange={(v) => set("fuel", v)} disabled={disabled} />
+          <TextField label="Road condition" value={draft.roadCondition} onChange={(v) => set("roadCondition", v)} disabled={disabled} placeholder="Dry" />
+          <TextField label="Hole condition" value={draft.holeCondition} onChange={(v) => set("holeCondition", v)} disabled={disabled} placeholder="Good" />
         </div>
       </div>
     </>
@@ -1198,9 +1341,10 @@ function CrewAndCompanies({ draft, set, disabled }: SubformProps) {
         cols={[
           { key: "jobContact", label: "Job contact" },
           { key: "position", label: "Position" },
+          { key: "mobile", label: "Mobile", width: "w-36", title: "Reports 06 and 07 print this as the Daily Contacts list" },
         ] as Col<ReportBody["supervisors"][number]>[]}
         rows={draft.supervisors} onChange={(v) => set("supervisors", v)} disabled={disabled} minRows={2}
-        addLabel="contact" blank={() => ({ order: 0, jobContact: null, position: null })}
+        addLabel="contact" blank={() => ({ order: 0, jobContact: null, position: null, mobile: null })}
       />
       <Section>On-board companies</Section>
       <RowTable
@@ -1208,9 +1352,14 @@ function CrewAndCompanies({ draft, set, disabled }: SubformProps) {
           { key: "company", label: "Company" },
           { key: "count", label: "Count", type: "int", width: "w-20", title: "Persons from this company (whole number)" },
           { key: "note", label: "Note", title: "Role, e.g. Client / Operator / Drilling Unit Service" },
+          { key: "personnelType", label: "Personnel type", type: "select", width: "w-32",
+            options: ["Contractor", "Service", "Operator"].map((v) => ({ value: v, label: v })),
+            title: "Report 07's Personnel Log groups the day's people by this" },
+          { key: "totWorkTimeHr", label: "Tot work time (hr)", type: "num", width: "w-24" },
         ] as Col<ReportBody["companies"][number]>[]}
         rows={draft.companies} onChange={(v) => set("companies", v)} disabled={disabled} minRows={3}
-        addLabel="company" blank={() => ({ order: 0, company: null, count: null, note: null })}
+        addLabel="company"
+        blank={() => ({ order: 0, company: null, count: null, note: null, personnelType: null, totWorkTimeHr: null })}
       />
       <DerivedField label="Total POB" value={pob > 0 ? pob : null} unit="persons" caption="(sum of the company counts)" />
       <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">

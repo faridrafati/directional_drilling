@@ -26,12 +26,22 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | Demo seed (`scripts/seed-wellview-demo.mts`) | 2026-08-07 |
 | Entry UI — Well Data workspace (Job, Phases, AFE & supplements, Cost sheet, Cost codes) | 2026-08-07 |
 
+## Tier 1 — foundation
+
+| Item | Status |
+|---|---|
+| `EntryWellbore` · `EntryMudPump` · the per-day and well-level event models | 2026-08-07 |
+| Daily columns: weather / conditions / TVD / remarks, op codes and problem columns, mud-check cells, string weight, top thread, bit length, the parameter columns | 2026-08-07 |
+| Entry UI — daily "Events & HSE" tab, extended operations log, contacts, personnel log | 2026-08-07 |
+| Entry UI — Well registers panel (wellbores, mud pumps, lessons, kicks, lost circulation) | 2026-08-07 |
+| `Col` gains a tri-state `bool` cell (Yes / No / unanswered) | 2026-08-07 |
+
 ## Tier 1 — daily drilling
 
 | # | Report | Spec read | Schema | Entry | Assembler | Preview | PDF | Verified |
 |---|---|---|---|---|---|---|---|---|
-| 06 | Daily Drilling | 2026-08-07 | — | — | — | — | — | — |
-| 07 | Daily Drilling - Detail | 2026-08-07 | — | — | — | — | — | — |
+| 06 | Daily Drilling | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
+| 07 | Daily Drilling - Detail | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 | 02 | BHA Detail | 2026-08-07 | — | — | — | — | — | — |
 | 03 | Bit Summary | 2026-08-07 | — | — | — | — | — | — |
 
@@ -125,6 +135,23 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   well picker announced as "Well Dehloran-099 — PDX-555").
 - **2026-08-07 — E2E runs with one worker.** Every spec drives the same database through the UI;
   two in parallel let one test's job appear inside another's assertions.
+- **2026-08-07 — reports 06 and 07 share one assembler.** 07 is 06 plus its detail sections, and the
+  two print the same time log with the same durations; separate assemblers would eventually disagree
+  about a rounding rule. `detail: true` is what switches the extra sections on.
+- **2026-08-07 — an interval with equal start and end times contributes NO duration.** The archive
+  writes 00:00→00:00 when the clock was never filled in, and printing 0.00 there would make the day
+  look accounted for when it is not. Same rule the DDR viewer already applies.
+- **2026-08-07 — report 07 runs to three pages where the sample runs to two.** The layout, section
+  order and page-break behaviour are the sample's (headers repeat, the problems/lessons/incidents
+  block starts a fresh page), but the demo day fills every section — including the lost-circulation
+  table, which is empty in the sample — so the body is genuinely longer. Report 06 fits one page, as
+  the sample does.
+- **2026-08-07 — "Prob Ref #" is an ordinal, not a foreign key.** The daily save replaces child rows
+  wholesale, so every save mints new ids and a real reference would dangle. The number the report
+  prints is the 1-based position of the row in the day's Interval Problems table.
+- **2026-08-07 — the day's cost comes from the job's `CostItem` rows, sliced by `costDate`.** There
+  is no second per-day cost table; report 06's Day Total and report 01's Job Cost Summary add up the
+  same rows.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

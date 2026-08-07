@@ -256,6 +256,50 @@ async function main() {
     });
   }
 
+  // ── the well's holes and the rig's pumps (reports 06 / 07) ──────────────
+  const holes = [{ name: "Original Hole", kind: "Original Hole", koMdMkb: 421.0 }];
+  await prisma.entryWellbore.deleteMany({ where: { wellId: well.id } });
+  const wellbores = [];
+  for (const [i, h] of holes.entries()) {
+    wellbores.push(await prisma.entryWellbore.create({ data: { wellId: well.id, order: i, ...h } }));
+  }
+
+  const pumpPlant = [
+    { pumpNo: "1", manufacturer: "OILWELL", model: "A 1700-PT", ratingHp: 1700, rodDiaIn: 2.2441, strokeIn: 18, linerSizeIn: "6 1/2", volPerStkBbl: 0.159 },
+    { pumpNo: "2", manufacturer: "OILWELL", model: "A 1700-PT", ratingHp: 1700, rodDiaIn: 2.2441, strokeIn: 18, linerSizeIn: "6 1/2", volPerStkBbl: 0.159 },
+    { pumpNo: "3", manufacturer: "OILWELL", model: "A 1700-PT", ratingHp: 1700, rodDiaIn: 2.2441, strokeIn: 18, linerSizeIn: "6 1/2", volPerStkBbl: 0.159 },
+  ];
+  await prisma.entryMudPump.deleteMany({ where: { rigId: rig.id } });
+  const pumps = [];
+  for (const [i, p] of pumpPlant.entries()) {
+    pumps.push(await prisma.entryMudPump.create({ data: { rigId: rig.id, order: i, ...p } }));
+  }
+
+  // ── the well-level registers reports 07 reprints per day ────────────────
+  await prisma.entryIntervalLesson.deleteMany({ where: { wellId: well.id } });
+  await prisma.entryKick.deleteMany({ where: { wellId: well.id } });
+  await prisma.entryLostCirculation.deleteMany({ where: { wellId: well.id } });
+  await prisma.entryIntervalLesson.create({
+    data: {
+      wellId: well.id, order: 0, lessonType: "Drilling",
+      startDate: day(0), endDate: day(7),
+      startDepthMkb: 300, endDepthMkb: 810,
+      estCostSaving: 625, estTimeSavingHr: 8,
+      comment: "Using a shock sub with this bit yielded slower than normal ROP.",
+    },
+  });
+  await prisma.entryLostCirculation.create({
+    data: {
+      wellId: well.id, order: 0, startDate: day(1), endDate: day(3),
+      topDepthMkb: 240, bottomDepthMkb: 268, opsInProg: "Drilling 17-1/2\" hole",
+      volLostTotBbl: 86,
+    },
+  });
+
+  // ── one fully-filled day, so reports 06 and 07 have something to print ──
+  const admin = await prisma.entryUser.findFirst({ where: { role: "admin" }, orderBy: { createdAt: "asc" } });
+  if (admin) await seedDay(well.id, admin.id, job.id, wellbores[0]?.id ?? null, pumps);
+
   // Attach any daily reports already filed on this well, so the day-scoped
   // reports have a job to hang off.
   const attached = await prisma.entryReport.updateMany({
@@ -283,6 +327,198 @@ async function main() {
   check("Total AFE Supplemental", totalSupp, 125_000);
   check("Total Field Estimate", totalFld, 10_127_291.47);
   check("AFE-Field Estimate", Number((totalAfe + totalSupp - totalFld).toFixed(2)), 215_708.53);
+}
+
+/**
+ * One complete well-day — day 2 of the job, mirroring the sample's shape: a
+ * 24-hour time log, a mud check, one BHA with its make-up, a drilled interval,
+ * contacts, a safety meeting, a problem the log references, and an incident.
+ *
+ * The time log is built so its durations sum to exactly 24.00, which is what
+ * report 06's "hr of 24" and report 07's problem percentage are checked against.
+ */
+async function seedDay(
+  wellId: string, userId: string, jobId: string,
+  wellboreId: string | null,
+  pumps: { id: string; pumpNo: string | null }[],
+) {
+  const reportDate = day(1);
+  const existing = await prisma.entryReport.findUnique({
+    where: { wellId_reportDate: { wellId, reportDate } },
+  });
+  // Re-seeding replaces the demo day wholesale; a crew-entered day is never
+  // touched because it would have a different date.
+  if (existing) await prisma.entryReport.delete({ where: { id: existing.id } });
+
+  //  start   end    hr   code1 code2   problem  remark
+  const log: [string, string, string, string, boolean, string][] = [
+    ["00:00", "01:45", "04", "CSG", false, "POOH and rack back 26\" BHA"],
+    ["01:45", "02:15", "01", "CSG", false, "Prepare to run 20\" casing"],
+    ["02:15", "02:30", "01", "CSG", false, "Safety meeting, then run 20\" casing"],
+    ["02:30", "06:15", "04", "CSG", false, "Run casing and make up wellhead"],
+    ["06:15", "07:00", "05", "CSG", false, "Rig down casing equipment, run cement string"],
+    ["07:00", "08:45", "04", "CSG", false, "Finish running cement string, fill casing"],
+    ["08:45", "10:30", "04", "CSG", false, "Land casing"],
+    ["10:30", "10:45", "05", "CSG", false, "Rig up cementing hose"],
+    ["10:45", "11:15", "07", "CSG", false, "Circulate hole clean"],
+    ["11:15", "12:45", "09", "CMT", false, "Cement 20\" casing"],
+    ["12:45", "15:00", "04", "CMT", false, "POOH with running tools"],
+    ["15:00", "15:15", "20", "CMT", false, "Clear rig floor"],
+    ["15:15", "16:15", "05", "CMT", false, "Lay down 26\" drilling assembly"],
+    ["16:15", "18:15", "05", "DRL", false, "Make up 17-1/2\" BHA"],
+    ["18:15", "18:45", "25", "RR", true, "ROV trouble"],
+    ["18:45", "20:45", "04", "DRLCMT", false, "RIH to top of cement"],
+    ["20:45", "22:00", "14", "DRLCMT", false, "Drill cement and floats"],
+    ["22:00", "00:00", "03", "DRLG", false, "Drill 17-1/2\" hole"],
+  ];
+
+  const report = await prisma.entryReport.create({
+    data: {
+      wellId, userId, jobId, serialNo: 2, reportDate, status: "submitted",
+      previousDepth: 195.0, midnightDepth: 299.0, morningDepth: 240.0,
+      startDepthTvd: 194.8, endDepthTvd: 298.6,
+      drillingTime: 2.0, cumDrillingTime: 6.5, cumTimeLogDays: 2, daysLti: 132, daysRi: 41,
+      headCount: 46, hazards: "STOP CARD: 12",
+      holeSize: "17-1/2\" H.S.", formation: "Aghar", lithology: "Lst, Mrl",
+      weather: "Clear", temperatureC: 31, roadCondition: "Dry", holeCondition: "Good",
+      opsAtReportTime: "DRILLING 17-1/2\" HOLE",
+      opsNextPeriod: "CONTINUE DRILLING 17-1/2\" HOLE",
+      description: "Ran and cemented 20\" casing, made up 17-1/2\" BHA, drilled out floats and began drilling.",
+      remarks: "ROV control signal lost for 30 minutes; switched to the backup system.",
+      wellSiteSupt: "Sam White",
+      solidControl: { create: ["Clay Jactor", "Mud Cleaner", "Shaker"].map((unit) => ({ unit })) },
+      hseDrills: {
+        create: [
+          { type: "BOP Test", date: day(0), daysToNextCheck: 14 },
+          { type: "H2S Drill", date: day(1), daysToNextCheck: 7 },
+          { type: "Fire Drill", date: day(1), daysToNextCheck: 7 },
+          { type: "Abandon Drill", date: day(0), daysToNextCheck: 14 },
+        ],
+      },
+      operations: {
+        create: log.map(([from, to, detail, code2, problem, remark], i) => ({
+          order: i, fromTime: from, toTime: to,
+          opCode: `G${Number(detail)}-P`, opLetter: "G", opDetail: detail,
+          timeIndicator: problem ? "T" : "P", opCode2: code2,
+          isProblem: problem, probHr: problem ? 0.5 : null, problemRef: problem ? 1 : null,
+          remarks: remark,
+        })),
+      },
+      intervalProblems: {
+        create: [{
+          order: 0, problemType: "Equipment Trouble", problemSubType: "ROV",
+          startDate: reportDate, startTime: "18:15",
+          startDepthMkb: 299.0, endDepthMkb: 299.0,
+          accountableParty: "Contractor", estCost: 2500, estLostTimeHr: 0.5,
+          comment: "Primary control signal to ROV was lost. Switched to backup system.",
+        }],
+      },
+      safetyChecks: {
+        create: [{ order: 0, time: "02:15", type: "Safety Meeting", des: "Safety meeting to run 20\" casing" }],
+      },
+      safetyIncidents: {
+        create: [{ order: 0, time: "18:20", category: "Near Miss", cause: "Loss of ROV control signal", lostTime: false }],
+      },
+      mudVolumes: {
+        create: [
+          { order: 0, action: "Mixed new mud", toWellBbl: 120 },
+          { order: 1, action: "Transferred to reserve", fromWellBbl: 45 },
+        ],
+      },
+      supervisors: {
+        create: [
+          { order: 0, jobContact: "Sam White", position: "Rig Supervisor", mobile: "0917-300-3991" },
+          { order: 1, jobContact: "Tom Black", position: "Night Drilling Sup.", mobile: "0917-133-9427" },
+          { order: 2, jobContact: "Jim Green", position: "POGC Rep.", mobile: "0917-029-9115" },
+        ],
+      },
+      companies: {
+        create: [
+          { order: 0, company: "NABORS", count: 22, note: "Drilling Unit", personnelType: "Contractor", totWorkTimeHr: 264 },
+          { order: 1, company: "Service companies", count: 18, note: "Service", personnelType: "Service", totWorkTimeHr: 198 },
+          { order: 2, company: "POGC", count: 6, note: "Client", personnelType: "Operator", totWorkTimeHr: 72 },
+        ],
+      },
+      mud: {
+        create: {
+          mudSystem: "KCl-Polymer", reportTime: "12:00", depthMkb: 299.0,
+          densityMinPpg: 9.2, densityMaxPpg: 9.4, funnelVisc: 46,
+          pv: 14, yp: 18, gelInitial: 6, gel10min: 11, gel30min: 14,
+          filtrateMl: 5.6, filterCake32nds: 2, ph: 9.5, sandPct: 0.25, solidsPct: 9.5,
+          mbt: 12.5, alkalinity: 0.7, chloride: 32000, hardnessCaPpm: 320,
+          pf: 0.4, pm: 0.9, potassiumMgL: 18000, eStability: 0,
+          percentWater: 88, oilPct: 0,
+          wholeMudAddedBbl: 120, mudLostBbl: 34, mudLostSurfBbl: 8,
+          activeMudVolBbl: 980, volMudResBbl: 1132.2,
+        },
+      },
+      chemicals: {
+        create: [
+          { order: 0, material: "Barite", unit: "MT", used: 12, received: 40, stock: 128 },
+          { order: 1, material: "KCl", unit: "MT", used: 4.5, received: 0, stock: 36 },
+        ],
+      },
+      casing: {
+        create: [{ order: 0, casing: "20\" Surface Casing", runDate: reportDate, depth: 298.5, joints: 26 }],
+      },
+      formationTops: {
+        create: [
+          { order: 0, formation: "Aghajari", progTopMd: 120, depth: 118.4 },
+          { order: 1, formation: "Mishan", progTopMd: 245, depth: 248.2 },
+        ],
+      },
+      surveys: {
+        create: [
+          { order: 0, md: 150, inc: 0.4, azi: 118, tvd: 149.98 },
+          { order: 1, md: 270, inc: 0.9, azi: 122, tvd: 269.9 },
+        ],
+      },
+      drillingParameters: {
+        create: [{
+          order: 0, wellboreId,
+          startMkb: 195.0, endDepthMkb: 299.0, drillTimeHr: 2.0,
+          intRopMHr: 52.0, qFlowGpm: 786, wob1000Lbf: 22, rpm: 120, sppPsi: 2100,
+          drillStrWtKlbf: 148, puStrWtKlbf: 162, soStrWtKlbf: 138,
+          drillTq: 9.2, offBottomTorque: 6.4,
+        }],
+      },
+      scrRates: {
+        create: pumps.map((p, i) => ({
+          order: i, mudPumpId: p.id, pumpNo: p.pumpNo,
+          depthMkb: 299.0, strokesSpm: 30, effPct: 95, pPsi: 620, qFlowGpm: 262,
+        })),
+      },
+      bitRuns: {
+        create: [{
+          order: 0, bitNo: "2", bitSerialNo: "456789", size: "17 1/2", type: "SS33SGJ4",
+          make: "Security", iadcCode: "115", nozzles: "18/18/18/18/18/18", tfa: 1.9,
+          lengthM: 0.38, dullGrade: "1-1-NO-A-2-0-NO-TD",
+          meterage: 104, hours: 2.0, wob: 22, rpm: 120,
+        }],
+      },
+      drillStrings: {
+        create: [{
+          order: 0, name: "17-1/2\" Drilling Assy", bhaNo: 2,
+          depthInMkb: 195.0, dateIn: reportDate, objective: "Drill 17-1/2\" hole to 810 m",
+          depthDrilledM: 104, drillingTimeHr: 2.0, circulatingTimeHr: 1.5,
+          rotatingTimeHr: 2.0, slidingTimeHr: 0, stringWtKlbf: 148,
+          note: "Made up per programme; jar placed 9 stands above the collars.",
+          components: {
+            create: [
+              { order: 0, itemDes: "17-1/2\" Bit", odIn: 17.5, idIn: null, jts: 1, lenM: 0.38, cumLenM: 0.38, topThread: "6 5/8 REG" },
+              { order: 1, itemDes: "Float Sub", odIn: 9.5, idIn: 3.0, jts: 1, lenM: 0.85, cumLenM: 1.23, topThread: "6 5/8 REG" },
+              { order: 2, itemDes: "Near Bit Stabilizer", odIn: 17.375, idIn: 3.0, jts: 1, lenM: 2.1, cumLenM: 3.33, topThread: "6 5/8 REG" },
+              { order: 3, itemDes: "Drill Collar", odIn: 9.5, idIn: 3.0, jts: 6, lenM: 55.4, cumLenM: 58.73, topThread: "6 5/8 REG" },
+              { order: 4, itemDes: "Drilling Jar", odIn: 9.5, idIn: 3.0, jts: 1, lenM: 9.8, cumLenM: 68.53, topThread: "6 5/8 REG" },
+              { order: 5, itemDes: "Heavy Weight Drill Pipe", odIn: 5, idIn: 3.0, jts: 15, lenM: 138.5, cumLenM: 207.03, topThread: "4 1/2 IF" },
+              { order: 6, itemDes: "Drill Pipe", odIn: 5, idIn: 4.276, jts: 10, lenM: 92.0, cumLenM: 299.03, topThread: "4 1/2 IF" },
+            ],
+          },
+        }],
+      },
+    },
+  });
+  return report;
 }
 
 main()

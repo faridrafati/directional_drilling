@@ -28,7 +28,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   wellviewApi, newRowId,
   type AfeRow, type CostCode, type CostItemRow, type JobBody, type JobDetail,
-  type JobListItem, type JobPhaseRow, type WvCodeTables,
+  type JobListItem, type JobPhaseRow, type KickRow, type LessonRow,
+  type LostCirculationRow, type MudPumpRow, type WellRegisters, type WellboreRow,
+  type WvCodeTables,
 } from "../../entry/wellview.js";
 import { Section, TextField, NumField, RowTable, type Col } from "./fields.js";
 
@@ -148,6 +150,12 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
    * before the first cost line can be typed.
    */
   const [showCodes, setShowCodes] = useState(false);
+  /**
+   * The well's holes, the rig's pumps and the event registers reports 06 / 07
+   * print. Well-level like the cost codes, so they sit beside the job sheet
+   * rather than inside it — they exist whether or not a job does.
+   */
+  const [showRegisters, setShowRegisters] = useState(false);
   // Associated by htmlFor rather than by wrapping: a <label> around a <select>
   // absorbs the selected option into the field's accessible name.
   const jobPickerId = useId();
@@ -234,6 +242,16 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
               Delete job
             </button>
           )}
+          <button
+            type="button" onClick={() => setShowRegisters((v) => !v)}
+            className={`h-9 px-3 text-xs rounded-md border transition-colors duration-150 ${
+              showRegisters
+                ? "border-blue-500 bg-blue-50 text-blue-800"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            Well registers
+          </button>
           {isAdmin && (
             <button
               type="button" onClick={() => setShowCodes((v) => !v)}
@@ -249,6 +267,12 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
         </div>
         {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
       </div>
+
+      {showRegisters && (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden shrink-0">
+          <RegistersPanel wellId={wellId} />
+        </div>
+      )}
 
       {showCodes && isAdmin && (
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden shrink-0">
@@ -737,6 +761,198 @@ function Total({ label, value, accent }: { label: string; value: number | null; 
         {value === null
           ? <span className="text-gray-300">—</span>
           : value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Well registers (wellbores, pumps, lessons, kicks, losses) ────────────── */
+
+/**
+ * Everything reports 06 and 07 need that is neither a day nor a job: the well's
+ * holes, the rig's pumps, and the three event registers whose rows carry TWO
+ * dates and so outlive the day they started on.
+ *
+ * Wellbores and pumps save id-stable — the daily drilling intervals and slow-
+ * circulation readings point at them, and re-minting the ids each save would
+ * silently unlink every one. The registers have nothing pointing into them and
+ * save replace-all, like a daily child table.
+ */
+function RegistersPanel({ wellId }: { wellId: string }) {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["wellview", "registers", wellId],
+    queryFn: () => wellviewApi.registers(wellId),
+    enabled: !!wellId,
+  });
+  const [draft, setDraft] = useState<WellRegisters | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  useEffect(() => { if (q.data) { setDraft(q.data); setDirty(false); } }, [q.data]);
+
+  const set = <K extends keyof WellRegisters>(key: K, value: WellRegisters[K]) => {
+    setDraft((d) => (d ? { ...d, [key]: value } : d));
+    setDirty(true);
+    setSavedAt(null);
+  };
+
+  async function save() {
+    if (!draft) return;
+    setBusy(true); setError(null);
+    try {
+      // Prune the grids' spare blanks, exactly as the daily editor does.
+      const filledRows = <T extends object>(rows: T[], skip: string[] = ["order", "id"]) =>
+        rows.filter((r) => filled(r, skip)).map((r, i) => ({ ...r, order: i }));
+      await wellviewApi.saveRegisters(wellId, {
+        wellbores: filledRows(draft.wellbores),
+        lessons: filledRows(draft.lessons),
+        kicks: filledRows(draft.kicks),
+        lostCirculation: filledRows(draft.lostCirculation),
+      });
+      await wellviewApi.saveMudPumps(draft.rigId, filledRows(draft.mudPumps));
+      await qc.invalidateQueries({ queryKey: ["wellview", "registers", wellId] });
+      setDirty(false);
+      setSavedAt(new Date().toLocaleTimeString());
+    } catch (e) { setError(String((e as Error).message)); }
+    finally { setBusy(false); }
+  }
+
+  if (!draft) return <div className="px-2 py-3 text-[11px] text-gray-400">Loading registers…</div>;
+
+  return (
+    <div>
+      <Section right={
+        <div className="flex items-center gap-2 font-normal normal-case">
+          {error && <span className="text-red-600 max-w-[320px] truncate" title={error}>{error}</span>}
+          {savedAt && !dirty && <span className="text-green-700">Saved {savedAt}</span>}
+          {dirty && <span className="text-amber-600">Unsaved changes</span>}
+          <button type="button" onClick={() => void save()} disabled={busy || !dirty}
+            className="min-h-[28px] px-2.5 text-[11px] rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 transition-colors duration-150">
+            {busy ? "Saving…" : "Save registers"}
+          </button>
+        </div>
+      }>
+        Well registers
+      </Section>
+
+      <div className="bg-gray-50 text-gray-500 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border-y border-gray-200">
+        Wellbores — the well&rsquo;s holes
+      </div>
+      <RowTable
+        cols={[
+          { key: "name", label: "Wellbore name", width: "w-48", placeholder: "Original Hole" },
+          { key: "kind", label: "Kind", type: "select", width: "w-32",
+            options: ["Original Hole", "Sidetrack", "Re-drill", "Lateral"].map((v) => ({ value: v, label: v })) },
+          { key: "koMdMkb", label: "KO MD (mKB)", type: "num", width: "w-28" },
+        ] as Col<WellboreRow>[]}
+        rows={draft.wellbores}
+        onChange={(rows) => set("wellbores", rows.map((r) => (r.id ? r : { ...r, id: newRowId("wb") })))}
+        blank={() => ({ id: newRowId("wb"), order: 0, name: null, kind: null, koMdMkb: null })}
+        addLabel="Wellbore" minRows={2} testId="wellbore"
+      />
+
+      <div className="bg-gray-50 text-gray-500 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border-y border-gray-200">
+        Mud pumps — the RIG&rsquo;s plant, shared by every well on it
+      </div>
+      <RowTable
+        cols={[
+          { key: "pumpNo", label: "Pump #", width: "w-20" },
+          { key: "manufacturer", label: "Manufacturer", width: "w-32" },
+          { key: "model", label: "Model", width: "w-32" },
+          { key: "ratingHp", label: "Rating (hp)", type: "num", width: "w-24" },
+          { key: "rodDiaIn", label: "Rod dia (in)", type: "num", width: "w-24" },
+          { key: "strokeIn", label: "Stroke (in)", type: "num", width: "w-24" },
+          { key: "linerSizeIn", label: "Liner size (in)", width: "w-24", placeholder: "6 1/2",
+            title: "Text, because the sheet prints the fraction" },
+          { key: "volPerStkBbl", label: "Vol/stk OR (bbl/stk)", type: "num", width: "w-28" },
+        ] as Col<MudPumpRow>[]}
+        rows={draft.mudPumps}
+        onChange={(rows) => set("mudPumps", rows.map((r) => (r.id ? r : { ...r, id: newRowId("mp") })))}
+        blank={() => ({
+          id: newRowId("mp"), order: 0, pumpNo: null, manufacturer: null, model: null,
+          ratingHp: null, rodDiaIn: null, strokeIn: null, linerSizeIn: null, volPerStkBbl: null,
+        })}
+        addLabel="Pump" minRows={2} testId="pump"
+      />
+
+      <div className="bg-gray-50 text-gray-500 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border-y border-gray-200">
+        Interval lessons — reprinted on every day their range covers
+      </div>
+      <RowTable
+        cols={[
+          { key: "lessonType", label: "Lesson type", type: "select", width: "w-32",
+            options: ["Drilling", "Casing", "Cementing", "Completion", "HSE", "Logistics", "Other"]
+              .map((v) => ({ value: v, label: v })) },
+          { key: "startDate", label: "Start date", width: "w-28", placeholder: "1405/02/10" },
+          { key: "endDate", label: "End date", width: "w-28", placeholder: "1405/02/17" },
+          { key: "startDepthMkb", label: "Start depth (mKB)", type: "num", width: "w-24" },
+          { key: "endDepthMkb", label: "End depth (mKB)", type: "num", width: "w-24" },
+          { key: "estCostSaving", label: "Est cost saving", type: "num", width: "w-24" },
+          { key: "estTimeSavingHr", label: "Est time saving (hr)", type: "num", width: "w-24" },
+          { key: "comment", label: "Comment" },
+        ] as Col<LessonRow>[]}
+        rows={draft.lessons}
+        onChange={(rows) => set("lessons", rows)}
+        blank={() => ({
+          order: 0, lessonType: null, startDate: null, endDate: null,
+          startDepthMkb: null, endDepthMkb: null, estCostSaving: null,
+          estTimeSavingHr: null, comment: null,
+        })}
+        addLabel="Lesson" minRows={2} testId="lesson"
+      />
+
+      <div className="bg-gray-50 text-gray-500 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border-y border-gray-200">
+        Kicks
+      </div>
+      <RowTable
+        cols={[
+          { key: "kickDate", label: "Kick date", width: "w-28", placeholder: "1405/02/11" },
+          { key: "kickTime", label: "Kick time", width: "w-20", placeholder: "23:10" },
+          { key: "kickDepthMkb", label: "Kick depth (mKB)", type: "num", width: "w-24" },
+          { key: "controlDate", label: "Control date", width: "w-28" },
+          { key: "controlTime", label: "Control time", width: "w-20" },
+          { key: "controlDepthMkb", label: "Control depth (mKB)", type: "num", width: "w-24" },
+          { key: "kickClass", label: "Kick class", type: "select", width: "w-24",
+            options: ["Gas", "Oil", "Water", "Mixed"].map((v) => ({ value: v, label: v })) },
+          { key: "killNotes", label: "Kill notes" },
+        ] as Col<KickRow>[]}
+        rows={draft.kicks}
+        onChange={(rows) => set("kicks", rows)}
+        blank={() => ({
+          order: 0, kickDate: null, kickTime: null, kickDepthMkb: null,
+          controlDate: null, controlTime: null, controlDepthMkb: null,
+          kickClass: null, killNotes: null,
+        })}
+        addLabel="Kick" minRows={1} testId="kick"
+      />
+
+      <div className="bg-gray-50 text-gray-500 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border-y border-gray-200">
+        Lost circulation — the EVENT, not the day&rsquo;s lost volume
+      </div>
+      <RowTable
+        cols={[
+          { key: "startDate", label: "Start date", width: "w-28", placeholder: "1405/02/11" },
+          { key: "topDepthMkb", label: "Top depth (mKB)", type: "num", width: "w-24" },
+          { key: "bottomDepthMkb", label: "Bottom depth (mKB)", type: "num", width: "w-24" },
+          { key: "opsInProg", label: "Ops in progress" },
+          { key: "volLostTotBbl", label: "Vol lost tot (bbl)", type: "num", width: "w-24" },
+          { key: "endDate", label: "End date", width: "w-28" },
+        ] as Col<LostCirculationRow>[]}
+        rows={draft.lostCirculation}
+        onChange={(rows) => set("lostCirculation", rows)}
+        blank={() => ({
+          order: 0, startDate: null, topDepthMkb: null, bottomDepthMkb: null,
+          opsInProg: null, volLostTotBbl: null, endDate: null,
+        })}
+        addLabel="Loss" minRows={1} testId="loss"
+      />
+      <div className="px-2 py-1.5 text-[11px] text-gray-400 leading-snug border-t border-gray-100">
+        The day&rsquo;s lost volume stays on the daily mud check. These rows are the EVENT — an
+        interval, a total, and the dates it spans — and report 07 reprints one on every day its
+        range covers.
       </div>
     </div>
   );

@@ -41,6 +41,16 @@ const intOrNull = z.preprocess(
   (v) => (blank(v) ? null : String(v).trim() === "" ? null : Number(v)),
   z.number().int().nullable(),
 ).default(null);
+/** A tri-state flag: unanswered stays null — it is not the same as "no". */
+const boolOrNull = z.preprocess(
+  (v) => (blank(v) ? null : typeof v === "string" ? v === "true" || v === "Yes" : !!v),
+  z.boolean().nullable(),
+).default(null);
+/** A flag that is simply on or off; absent means off. */
+const bool0 = z.preprocess(
+  (v) => (blank(v) ? false : typeof v === "string" ? v === "true" : !!v),
+  z.boolean(),
+).default(false);
 
 /** Jalali (Shamsi) date as the legacy DBs store it: "1404/05/09". */
 const jalali = z.string().regex(/^\d{3,4}\/\d{1,2}\/\d{1,2}$/, "date must be Jalali YYYY/MM/DD");
@@ -54,11 +64,13 @@ const bitRunSchema = z.object({
   dullGrade: str, reasonPulled: str, pumpType: str, pumpOutput: num, pumpPressure: num,
   annularVelocity: num, hsi: num, cmtDrilled: str, washAndRun: str,
   bitChangeIn: str, bitChangeOut: str,
+  // Report 06 prints the bit's own length on the drill-string block.
+  lengthM: num,
 });
 /** One item in a string's make-up — a.json `drill_strings[].components`. */
 const drillStringComponentSchema = z.object({
   order: int0, itemDes: str, serv: str, sn: str, odIn: num, idIn: num,
-  jts: intOrNull, lenM: num, cumLenM: num, com: str,
+  jts: intOrNull, lenM: num, cumLenM: num, topThread: str, com: str,
 });
 /**
  * a.json `drill_strings` — one entry per BHA run in the day, components nested.
@@ -71,7 +83,7 @@ const drillStringComponentSchema = z.object({
 const drillStringSchema = z.object({
   order: int0, name: str, bhaNo: intOrNull, depthInMkb: num, dateIn: str,
   objective: str, depthDrilledM: num, drillingTimeHr: num, circulatingTimeHr: num,
-  rotatingTimeHr: num, slidingTimeHr: num, note: str,
+  rotatingTimeHr: num, slidingTimeHr: num, stringWtKlbf: num, note: str,
   components: z.array(drillStringComponentSchema).default([]),
 });
 const drillPipeSchema = z.object({ order: int0, size: str, grade: str, lengthM: num });
@@ -99,6 +111,9 @@ const mudSchema = z.object({
   depthMkb: num, tFlowlineC: num, filtrateMl: num,
   vis3rpm: num, vis6rpm: num, percentWater: num, lowGravitySolidsPct: num,
   hardnessCaPpm: num, mudLostBbl: num, activeMudVolBbl: num, volMudResBbl: num,
+  // ── reports 06 / 07 mud-check cells ──
+  filterCake32nds: num, sandPct: num, gel30min: num, pm: num, potassiumMgL: num,
+  wholeMudAddedBbl: num, mudLostSurfBbl: num,
 }).nullable().default(null);
 const solidControlSchema = z.object({
   unit: z.string().min(1), hours: num, underFlow: num, overFlow: num, feed: num, cons: num, fprs: num,
@@ -118,6 +133,8 @@ const wellheadSchema = z.object({
 /** a.json `well_control_scr` — slow circulation rates, one row per pump / rate. */
 const scrRateSchema = z.object({
   order: int0, pumpNo: str, depthMkb: num, strokesSpm: num, effPct: num, pPsi: num, qFlowGpm: num,
+  // The rig pump this reading belongs to — 06 / 07 print one block per pump.
+  mudPumpId: str,
 });
 /** a.json `support_vessels` — offshore only. */
 const supportVesselSchema = z.object({
@@ -147,9 +164,13 @@ const formationTopSchema = z.object({
   progTopMd: num, finalTopTvd: num, thickM: num, drilledRopMHr: num, lithDes: str,
 });
 /** a.json `supervisors_contact` — whoever is on tour, roles vary per rig. */
-const supervisorSchema = z.object({ order: int0, jobContact: str, position: str });
+const supervisorSchema = z.object({ order: int0, jobContact: str, position: str, mobile: str });
 /** a.json `onboard_companies` — the POB breakdown behind the header head count. */
-const companySchema = z.object({ order: int0, company: str, count: intOrNull, note: str });
+const companySchema = z.object({
+  order: int0, company: str, count: intOrNull, note: str,
+  // Report 07's Personnel Log groups by type and totals the hours worked.
+  personnelType: str, totWorkTimeHr: num,
+});
 /** a.json `hse_drill_schedule` — fixed four-row set, blank rows still print. */
 const hseDrillSchema = z.object({ type: z.string().min(1), date: str, daysToNextCheck: num });
 /** a.json `bulk_material` — rig bulks in MT / liter / m³ (not mud additives). */
@@ -166,9 +187,35 @@ const drillingParameterSchema = z.object({
   order: int0, startMkb: num, endDepthMkb: num, drillTimeHr: num, slideTimeHr: num,
   circTimeHr: num, intRopMHr: num, drillTq: num, rpm: num, qFlowGpm: num,
   sppPsi: num, wob1000Lbf: num,
+  // ── reports 06 / 07 columns ──
+  wellboreId: str,
+  drillStrWtKlbf: num, puStrWtKlbf: num, soStrWtKlbf: num, offBottomTorque: num,
+  qGasInjM3Min: num, tInjC: num, pBhAnnPsi: num, tBhC: num,
+  pSurfAnnulusPsi: num, tSurfAnnulusC: num, qLiqReturnGpm: num, qGasReturnM3Min: num,
 });
 const timeSchema = z.object({ order: int0, group: str, type: str, activity: str, hours: num });
-const operationSchema = z.object({ order: int0, opCode: str, fromTime: str, toTime: str, remarks: str });
+const operationSchema = z.object({
+  order: int0, opCode: str, fromTime: str, toTime: str, remarks: str,
+  // ── OIEC coding (advisory) + report 07's problem columns ──
+  opLetter: str, opDetail: str, timeIndicator: str, opCode2: str,
+  isProblem: bool0, probHr: num, problemRef: intOrNull,
+});
+
+/** Report 07's "Drilling Mud Volumes" — what MOVED, not the pit state. */
+const mudVolumeSchema = z.object({ order: int0, action: str, toWellBbl: num, fromWellBbl: num });
+/** Report 06's "Safety Checks" sidebar — one row per check on the day. */
+const safetyCheckSchema = z.object({ order: int0, time: str, type: str, des: str });
+/** Report 07 page 2's "Safety Incidents". */
+const safetyIncidentSchema = z.object({
+  order: int0, time: str, category: str, type: str, subType: str, cause: str,
+  lostTime: boolOrNull, severity: str,
+});
+/** Report 07 page 2's "Interval Problems"; the time log references these by ordinal. */
+const intervalProblemSchema = z.object({
+  order: int0, problemType: str, problemSubType: str, startDate: str, startTime: str,
+  startDepthMkb: num, endDepthMkb: num, accountableParty: str,
+  estCost: num, estLostTimeHr: num, comment: str,
+});
 
 /** The whole sheet, as the form posts it on save. */
 const reportSaveSchema = z.object({
@@ -181,6 +228,9 @@ const reportSaveSchema = z.object({
   lastCasing: str, linerLap: str, kop: str, wellSiteSupt: str, opnSupt: str,
   progEng: str, geologist: str, toolPusher1: str, toolPusher2: str,
   formationLoss: num, mudLossUnit: num, mudGains: num,
+  // ── reports 06 / 07 header cells ──
+  weather: str, roadCondition: str, holeCondition: str, temperatureC: num,
+  startDepthTvd: num, remarks: str, daysRi: num,
   // The three narrative fields of a.json `operations`: what the rig is doing
   // right now, the 24-hour summary (`description`), and the plan ahead.
   opsAtReportTime: str, description: str, opsNextPeriod: str,
@@ -207,6 +257,10 @@ const reportSaveSchema = z.object({
   companies: z.array(companySchema).default([]),
   hseDrills: z.array(hseDrillSchema).default([]),
   bulkMaterials: z.array(bulkMaterialSchema).default([]),
+  mudVolumes: z.array(mudVolumeSchema).default([]),
+  safetyChecks: z.array(safetyCheckSchema).default([]),
+  safetyIncidents: z.array(safetyIncidentSchema).default([]),
+  intervalProblems: z.array(intervalProblemSchema).default([]),
 });
 
 const wellSchema = z.object({
@@ -247,6 +301,10 @@ const REPORT_INCLUDE = {
   companies: { orderBy: { order: "asc" } },
   hseDrills: { orderBy: { type: "asc" } },   // fixed row set — no order column
   bulkMaterials: { orderBy: { order: "asc" } },
+  mudVolumes: { orderBy: { order: "asc" } },
+  safetyChecks: { orderBy: { order: "asc" } },
+  safetyIncidents: { orderBy: { order: "asc" } },
+  intervalProblems: { orderBy: { order: "asc" } },
   well: { include: { rig: true } },
   user: { select: { id: true, username: true, fullName: true } },
 } as const;
@@ -391,6 +449,7 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
         casing, wellheads, scrRates, supportVessels, fit, marine,
         formationTops, surveys, drillingParameters, timeBreakdown,
         operations, supervisors, companies, hseDrills, bulkMaterials,
+        mudVolumes, safetyChecks, safetyIncidents, intervalProblems,
         ...header } = body;
       const id = existing.id;
 
@@ -420,6 +479,10 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
         prisma.entryOnboardCompany.deleteMany({ where: { reportId: id } }),
         prisma.entryHseDrill.deleteMany({ where: { reportId: id } }),
         prisma.entryBulkMaterial.deleteMany({ where: { reportId: id } }),
+        prisma.entryMudVolume.deleteMany({ where: { reportId: id } }),
+        prisma.entrySafetyCheck.deleteMany({ where: { reportId: id } }),
+        prisma.entrySafetyIncident.deleteMany({ where: { reportId: id } }),
+        prisma.entryIntervalProblem.deleteMany({ where: { reportId: id } }),
         prisma.entryBitRun.createMany({ data: bitRuns.map((r) => ({ ...r, reportId: id })) }),
         // Nested children rule out a flat createMany — one create per string.
         ...drillStrings.map(({ components, ...s }) =>
@@ -447,6 +510,10 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
         prisma.entryOnboardCompany.createMany({ data: companies.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryHseDrill.createMany({ data: hseDrills.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryBulkMaterial.createMany({ data: bulkMaterials.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryMudVolume.createMany({ data: mudVolumes.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entrySafetyCheck.createMany({ data: safetyChecks.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entrySafetyIncident.createMany({ data: safetyIncidents.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryIntervalProblem.createMany({ data: intervalProblems.map((r) => ({ ...r, reportId: id })) }),
       ]);
       return prisma.entryReport.findUnique({ where: { id }, include: REPORT_INCLUDE });
     });

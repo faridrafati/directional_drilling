@@ -253,9 +253,17 @@ export interface FormationTopRow {
   lithDes: string | null;
 }
 /** One line of a.json `supervisors_contact` — who to call, and their position. */
-export interface SupervisorRow { order: number; jobContact: string | null; position: string | null }
+export interface SupervisorRow {
+  order: number; jobContact: string | null; position: string | null;
+  /** Reports 06 / 07 print this list as "Daily Contacts — Job Contact, Mobile". */
+  mobile: string | null;
+}
 /** One line of a.json `onboard_companies`; `note` is the role (Client / Operator / …). */
-export interface OnboardCompanyRow { order: number; company: string | null; count: number | null; note: string | null }
+export interface OnboardCompanyRow {
+  order: number; company: string | null; count: number | null; note: string | null;
+  /** Report 07's Personnel Log groups by this and totals the hours worked. */
+  personnelType: string | null; totWorkTimeHr: number | null;
+}
 /**
  * One HSE drill — a.json `hse_drill_schedule`.
  *
@@ -288,7 +296,34 @@ export interface DrillingParameterRow {
   qFlowGpm: number | null; sppPsi: number | null; wob1000Lbf: number | null;
 }
 export interface TimeRow { order: number; group: string | null; type: string | null; activity: string | null; hours: number | null }
-export interface OperationRow { order: number; opCode: string | null; fromTime: string | null; toTime: string | null; remarks: string | null }
+export interface OperationRow {
+  order: number; opCode: string | null; fromTime: string | null; toTime: string | null; remarks: string | null;
+  // ── OIEC coding (advisory) + report 07's problem columns ──
+  opLetter: string | null; opDetail: string | null; timeIndicator: string | null;
+  opCode2: string | null;
+  isProblem: boolean | null; probHr: number | null; problemRef: number | null;
+}
+
+/** Report 07's "Drilling Mud Volumes" — what MOVED, not the pit state. */
+export interface MudVolumeRow {
+  order: number; action: string | null; toWellBbl: number | null; fromWellBbl: number | null;
+}
+/** Report 06's "Safety Checks" sidebar — one row per check on the day. */
+export interface SafetyCheckRow {
+  order: number; time: string | null; type: string | null; des: string | null;
+}
+/** Report 07 page 2's "Safety Incidents". */
+export interface SafetyIncidentRow {
+  order: number; time: string | null; category: string | null; type: string | null;
+  subType: string | null; cause: string | null; lostTime: boolean | null; severity: string | null;
+}
+/** Report 07 page 2's "Interval Problems"; the time log references these by row. */
+export interface IntervalProblemRow {
+  order: number; problemType: string | null; problemSubType: string | null;
+  startDate: string | null; startTime: string | null;
+  startDepthMkb: number | null; endDepthMkb: number | null; accountableParty: string | null;
+  estCost: number | null; estLostTimeHr: number | null; comment: string | null;
+}
 
 /** The editable body of a report — exactly what PUT /entry/reports/:id accepts. */
 export interface ReportBody {
@@ -323,6 +358,18 @@ export interface ReportBody {
   timeBreakdown: TimeRow[]; operations: OperationRow[];
   supervisors: SupervisorRow[]; companies: OnboardCompanyRow[];
   hseDrills: HseDrillRow[]; bulkMaterials: BulkMaterialRow[];
+  // ── reports 06 / 07 ──
+  mudVolumes: MudVolumeRow[]; safetyChecks: SafetyCheckRow[];
+  safetyIncidents: SafetyIncidentRow[]; intervalProblems: IntervalProblemRow[];
+  /** Weather, road and hole condition as reports 06 / 07 print them. */
+  weather: string | null; roadCondition: string | null; holeCondition: string | null;
+  temperatureC: number | null;
+  /** Start depth on the TVD scale; `endDepthTvd` above is its other half. */
+  startDepthTvd: number | null;
+  /** Report 07's own "Remarks", distinct from the 24-hour summary. */
+  remarks: string | null;
+  /** Days since the last recordable incident (`daysLti` is lost-time). */
+  daysRi: number | null;
   wellheads: WellheadRow[]; scrRates: ScrRateRow[]; supportVessels: SupportVesselRow[];
   fit: FitProps | null; marine: MarineProps | null;
 }

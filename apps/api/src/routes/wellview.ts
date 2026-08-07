@@ -107,6 +107,42 @@ const jobSaveSchema = jobHeaderSchema.extend({
   costItems: z.array(costItemSchema).default([]),
 });
 
+// ── well- and rig-level registers (reports 06 / 07) ─────────────────────────
+/**
+ * The well's holes. Id-stable like the job sheet, not replace-all: the daily
+ * drilling-parameter rows point at these, and re-minting the ids on every save
+ * would silently unlink every interval from its hole.
+ */
+const wellboreSchema = z.object({
+  id: rowId, order: int0, name: str, kind: str, koMdMkb: num,
+});
+/** Reports 07's well-level registers. Nothing points INTO these, so they save
+ *  replace-all, exactly like a daily child table. */
+const lessonSchema = z.object({
+  order: int0, lessonType: str, startDate: str, endDate: str,
+  startDepthMkb: num, endDepthMkb: num, estCostSaving: num, estTimeSavingHr: num, comment: str,
+});
+const kickSchema = z.object({
+  order: int0, kickDate: str, kickTime: str, kickDepthMkb: num,
+  controlDate: str, controlTime: str, controlDepthMkb: num, kickClass: str, killNotes: str,
+});
+const lostCirculationSchema = z.object({
+  order: int0, startDate: str, topDepthMkb: num, bottomDepthMkb: num,
+  opsInProg: str, volLostTotBbl: num, endDate: str,
+});
+const registersSchema = z.object({
+  wellbores: z.array(wellboreSchema).default([]),
+  lessons: z.array(lessonSchema).default([]),
+  kicks: z.array(kickSchema).default([]),
+  lostCirculation: z.array(lostCirculationSchema).default([]),
+});
+/** The rig's mud pumps. Id-stable for the same reason as the wellbores: the
+ *  day's slow-circulation readings hang off them. */
+const mudPumpSchema = z.object({
+  id: rowId, order: int0, pumpNo: str, manufacturer: str, model: str,
+  ratingHp: num, rodDiaIn: num, strokeIn: num, linerSizeIn: str, volPerStkBbl: num,
+});
+
 const costCodeSchema = z.object({
   id: rowId,
   // NOT .min(1): the admin grid keeps spare blank rows on screen like every
@@ -315,6 +351,80 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
         data: { jobId: job.id },
       });
       return { attached: count };
+    });
+
+  // ══ well- and rig-level registers ════════════════════════════════════════
+  app.get<{ Params: { wellId: string } }>(
+    "/entry/wells/:wellId/registers", { preHandler: requireUser }, async (req, reply) => {
+      const { wellId } = req.params;
+      if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+      const well = await prisma.entryWell.findUnique({ where: { id: wellId }, select: { rigId: true } });
+      if (!well) return reply.code(404).send({ error: "not found" });
+      const [wellbores, lessons, kicks, lostCirculation, mudPumps] = await Promise.all([
+        prisma.entryWellbore.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
+        prisma.entryIntervalLesson.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
+        prisma.entryKick.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
+        prisma.entryLostCirculation.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
+        // The pumps belong to the RIG, not the well — served here so the well's
+        // editor can show them without a second round trip.
+        prisma.entryMudPump.findMany({ where: { rigId: well.rigId }, orderBy: { order: "asc" } }),
+      ]);
+      return { wellbores, lessons, kicks, lostCirculation, mudPumps, rigId: well.rigId };
+    });
+
+  app.put<{ Params: { wellId: string }; Body: unknown }>(
+    "/entry/wells/:wellId/registers", { preHandler: requireUser }, async (req, reply) => {
+      const { wellId } = req.params;
+      if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+      let body: z.infer<typeof registersSchema>;
+      try { body = registersSchema.parse(req.body); } catch (e) { return badReq(reply, e); }
+
+      const keptWellbores = body.wellbores.map((w) => w.id).filter((x): x is string => !!x);
+      await prisma.$transaction(async (tx) => {
+        // Wellbores keep their ids; the daily intervals reference them.
+        await tx.entryWellbore.deleteMany({
+          where: { wellId, id: { notIn: keptWellbores.length ? keptWellbores : ["-"] } },
+        });
+        for (const w of body.wellbores) {
+          const { id, ...data } = w;
+          if (id) await tx.entryWellbore.upsert({ where: { id }, create: { id, wellId, ...data }, update: data });
+          else await tx.entryWellbore.create({ data: { wellId, ...data } });
+        }
+        // The registers have no inbound references — replace-all is safe and
+        // keeps them behaving exactly like the daily tables.
+        await tx.entryIntervalLesson.deleteMany({ where: { wellId } });
+        await tx.entryKick.deleteMany({ where: { wellId } });
+        await tx.entryLostCirculation.deleteMany({ where: { wellId } });
+        if (body.lessons.length) await tx.entryIntervalLesson.createMany({ data: body.lessons.map((r) => ({ ...r, wellId })) });
+        if (body.kicks.length) await tx.entryKick.createMany({ data: body.kicks.map((r) => ({ ...r, wellId })) });
+        if (body.lostCirculation.length) await tx.entryLostCirculation.createMany({ data: body.lostCirculation.map((r) => ({ ...r, wellId })) });
+      });
+      return reply.code(204).send();
+    });
+
+  app.put<{ Params: { rigId: string }; Body: unknown }>(
+    "/entry/rigs/:rigId/mud-pumps", { preHandler: requireUser }, async (req, reply) => {
+      const { rigId } = req.params;
+      // A rig is reachable through any well the caller may use.
+      const wells = await prisma.entryWell.findMany({ where: { rigId }, select: { id: true } });
+      const allowed = await Promise.all(wells.map((w) => mayUse(req, w.id)));
+      if (!allowed.some(Boolean)) return reply.code(403).send({ error: "not your rig" });
+
+      let pumps: z.infer<typeof mudPumpSchema>[];
+      try { pumps = z.object({ pumps: z.array(mudPumpSchema).default([]) }).parse(req.body).pumps; }
+      catch (e) { return badReq(reply, e); }
+
+      const kept = pumps.map((p) => p.id).filter((x): x is string => !!x);
+      await prisma.$transaction(async (tx) => {
+        // Id-stable: EntryScrRate rows point at these pumps.
+        await tx.entryMudPump.deleteMany({ where: { rigId, id: { notIn: kept.length ? kept : ["-"] } } });
+        for (const p of pumps) {
+          const { id, ...data } = p;
+          if (id) await tx.entryMudPump.upsert({ where: { id }, create: { id, rigId, ...data }, update: data });
+          else await tx.entryMudPump.create({ data: { rigId, ...data } });
+        }
+      });
+      return prisma.entryMudPump.findMany({ where: { rigId }, orderBy: { order: "asc" } });
     });
 
   // ══ cost codes (admin) ═══════════════════════════════════════════════════

@@ -131,8 +131,12 @@ export interface Col<T> {
    * "select" is a column whose value must be one of a known set — a phase, a
    * cost code, an AFE supplement. Free text there would be a foreign key the
    * user typed, which is not a thing that can work.
+   *
+   * "bool" is a TRI-state Yes / No / blank. Blank means unanswered, which is a
+   * different statement from "no" — report 07 leaves its "Lost time?" cell empty
+   * when nobody has said, and prints "No" when somebody has.
    */
-  type?: "text" | "num" | "int" | "select";
+  type?: "text" | "num" | "int" | "select" | "bool";
   /** Choices for a "select" column. A blank first entry is added automatically. */
   options?: { value: string; label: string }[];
   /** Hint text for a free-text column, e.g. a date format. */
@@ -201,6 +205,14 @@ export function RowTable<T extends { order?: number }>({ cols, rows, onChange, b
       <input {...tid} type="number" inputMode={c.signed ? undefined : "decimal"} step="any" disabled={disabled} className={`${INPUT} tabular-nums`}
         value={(row[c.key] as number | null) ?? ""}
         onChange={(e) => setCell(i, c.key, e.target.value === "" ? null : Number(e.target.value))} />
+    ) : c.type === "bool" ? (
+      <select {...tid} disabled={disabled} className={INPUT}
+        value={row[c.key] === null || row[c.key] === undefined ? "" : row[c.key] ? "true" : "false"}
+        onChange={(e) => setCell(i, c.key, e.target.value === "" ? null : (e.target.value === "true") as unknown as string)}>
+        <option value="">—</option>
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
     ) : c.type === "select" ? (
       // The blank option is not decoration: "no phase yet" is a legitimate
       // answer for a cost line, and it must post as null rather than default to

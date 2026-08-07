@@ -165,6 +165,117 @@ export interface Report01Payload extends ReportEnvelope {
   costRows: CostSummaryRow[];
 }
 
+// ── reports 06 / 07 ─────────────────────────────────────────────────────────
+export interface TimeLogRow {
+  startTime: string | null; endTime: string | null;
+  durHr: number | null; cumDurHr: number | null;
+  code1: string | null; code2: string | null;
+  isProblem: boolean; probHr: number | null; probRef: number | null;
+  com: string | null;
+}
+export interface MudCheckBlock { caption: string; fields: HeaderRow[] }
+export interface DrillStringBlock {
+  caption: string;
+  fields: HeaderRow;
+  components: string | null;
+  comment: string | null;
+  tally: {
+    itemDes: string | null; jts: number | null; odIn: number | null;
+    idIn: number | null; lenM: number | null; topThread: string | null;
+  }[];
+}
+export interface DrillingParamRow {
+  wellbore: string | null;
+  startMkb: number | null; endDepthMkb: number | null; cumDepthM: number | null;
+  drillTimeHr: number | null; cumDrillTimeHr: number | null; intRopMHr: number | null;
+  qFlowGpm: number | null; wob1000Lbf: number | null; rpm: number | null; sppPsi: number | null;
+  drillStrWtKlbf: number | null; puStrWtKlbf: number | null; soStrWtKlbf: number | null;
+  drillTq: number | null; offBottomTorque: number | null;
+}
+export interface PumpBlock { caption: string; fields: HeaderRow[] }
+
+export interface DailyPayload extends ReportEnvelope {
+  titleFields: HeaderRow;
+  operations: HeaderRow[];
+  timeLog: TimeLogRow[];
+  timeLogTotalHr: number | null;
+  mudChecks: MudCheckBlock[];
+  drillStrings: DrillStringBlock[];
+  drillingParameters: DrillingParamRow[];
+  contacts: { jobContact: string | null; mobile: string | null }[];
+  rigs: HeaderRow[];
+  pumps: PumpBlock[];
+  mudAdditives: { des: string | null; fieldEstPerUnit: number | null; consumed: number | null }[];
+  safetyChecks: { time: string | null; type: string | null; des: string | null }[];
+  wellbores: { name: string | null; koMdMkb: number | null }[];
+  /** Present only on report 07. */
+  detail?: {
+    counters: HeaderRow[];
+    personnelLog: { type: string | null; count: number | null; totWorkTimeHr: number | null }[];
+    safetyCheckSummary: { type: string; lastDate: string | null; nextDate: string | null }[];
+    mudVolumes: {
+      action: string | null; toWellBbl: number | null; fromWellBbl: number | null;
+      cumToWellBbl: number | null; cumFromWellBbl: number | null;
+    }[];
+    hydraulics: HeaderRow[];
+    surveys: { mdMkb: number | null; inc: number | null; azm: number | null; tvdMkb: number | null }[];
+    lastFormations: { name: string | null; progTopMd: number | null; drillTopMd: number | null }[];
+    lastCasing: { description: string | null; runDate: string | null; setDepthMkb: number | null }[];
+    kicks: {
+      kickDate: string | null; kickDepthMkb: number | null; controlDate: string | null;
+      controlDepthMkb: number | null; kickClass: string | null; killNotes: string | null;
+    }[];
+    lostCirculation: {
+      startDate: string | null; topDepthMkb: number | null; bottomDepthMkb: number | null;
+      opsInProg: string | null; volLostTotBbl: number | null; endDate: string | null;
+    }[];
+    problems: {
+      problemType: string | null; problemSubType: string | null; startDate: string | null;
+      startDepthMkb: number | null; endDepthMkb: number | null; accountableParty: string | null;
+      estCost: number | null; estLostTimeHr: number | null; comment: string | null;
+    }[];
+    lessons: {
+      lessonType: string | null; startDate: string | null; endDate: string | null;
+      startDepthMkb: number | null; endDepthMkb: number | null;
+      estCostSaving: number | null; estTimeSavingHr: number | null; comment: string | null;
+    }[];
+    incidents: {
+      time: string | null; category: string | null; type: string | null; subType: string | null;
+      cause: string | null; lostTime: boolean | null; severity: string | null;
+    }[];
+  };
+}
+
+// ── well- and rig-level registers ───────────────────────────────────────────
+export interface WellboreRow { id: string | null; order: number; name: string | null; kind: string | null; koMdMkb: number | null }
+export interface LessonRow {
+  order: number; lessonType: string | null; startDate: string | null; endDate: string | null;
+  startDepthMkb: number | null; endDepthMkb: number | null;
+  estCostSaving: number | null; estTimeSavingHr: number | null; comment: string | null;
+}
+export interface KickRow {
+  order: number; kickDate: string | null; kickTime: string | null; kickDepthMkb: number | null;
+  controlDate: string | null; controlTime: string | null; controlDepthMkb: number | null;
+  kickClass: string | null; killNotes: string | null;
+}
+export interface LostCirculationRow {
+  order: number; startDate: string | null; topDepthMkb: number | null; bottomDepthMkb: number | null;
+  opsInProg: string | null; volLostTotBbl: number | null; endDate: string | null;
+}
+export interface MudPumpRow {
+  id: string | null; order: number; pumpNo: string | null; manufacturer: string | null;
+  model: string | null; ratingHp: number | null; rodDiaIn: number | null; strokeIn: number | null;
+  linerSizeIn: string | null; volPerStkBbl: number | null;
+}
+export interface WellRegisters {
+  wellbores: WellboreRow[];
+  lessons: LessonRow[];
+  kicks: KickRow[];
+  lostCirculation: LostCirculationRow[];
+  mudPumps: MudPumpRow[];
+  rigId: string;
+}
+
 export interface CatalogEntry {
   type: string;
   title: string;
@@ -185,6 +296,11 @@ export const wellviewApi = {
   saveJob: (id: string, body: JobBody) => entryApi.put<JobDetail>(`/jobs/${id}`, body),
   deleteJob: (id: string) => entryApi.del<void>(`/jobs/${id}`),
   attachReports: (id: string) => entryApi.post<{ attached: number }>(`/jobs/${id}/attach-reports`),
+  registers: (wellId: string) => entryApi.get<WellRegisters>(`/wells/${wellId}/registers`),
+  saveRegisters: (wellId: string, body: Omit<WellRegisters, "mudPumps" | "rigId">) =>
+    entryApi.put<void>(`/wells/${wellId}/registers`, body),
+  saveMudPumps: (rigId: string, pumps: MudPumpRow[]) =>
+    entryApi.put<MudPumpRow[]>(`/rigs/${rigId}/mud-pumps`, { pumps }),
   costCodes: () => entryApi.get<CostCode[]>("/cost-codes"),
   saveCostCodes: (codes: CostCode[]) => entryApi.put<CostCode[]>("/cost-codes", { codes }),
   reportData: <T>(type: string, params: Record<string, string>) =>

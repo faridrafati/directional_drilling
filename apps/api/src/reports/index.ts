@@ -17,6 +17,7 @@ import type { PrismaClient } from "@prisma/client";
 import { requireUser } from "../entry/auth.js";
 import { mayUseWell } from "../entry/access.js";
 import { buildReport01 } from "./01-afe-vs-field-est.js";
+import { buildDailyReport } from "./daily.js";
 
 /** How a report is parameterized — the picker builds itself from this. */
 export type ReportParam = "well" | "job" | "date" | "dateRange" | "bhaRun" | "wells";
@@ -48,8 +49,8 @@ export const REPORT_CATALOG: CatalogEntry[] = [
   { type: "03", title: "Bit Summary", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "Every bit run on the well, one row each." },
   { type: "04", title: "Casing, Liner and Cement", category: "Engineering", params: ["well"], exports: ["pdf"], available: false, blurb: "One string: tally, cement job, stages, fluids, additives, schematic." },
   { type: "05", title: "Casing Summary", category: "Engineering", params: ["well"], exports: ["pdf"], available: false, blurb: "Every casing string with its component tally." },
-  { type: "06", title: "Daily Drilling", category: "Daily", params: ["well", "date"], exports: ["pdf"], available: false, blurb: "The one-page morning report." },
-  { type: "07", title: "Daily Drilling — Detail", category: "Daily", params: ["well", "date"], exports: ["pdf"], available: false, blurb: "The legal-size daily report: problems, lessons, kicks, losses, incidents." },
+  { type: "06", title: "Daily Drilling", category: "Daily", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "The one-page morning report." },
+  { type: "07", title: "Daily Drilling — Detail", category: "Daily", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "The legal-size daily report: problems, lessons, kicks, losses, incidents." },
   { type: "08", title: "Directional Plot — Plan vs Actual", category: "Engineering", params: ["well"], exports: ["pdf"], available: false, blurb: "Plan and vertical-section plots with the station table. Exists today on the calculation page." },
   { type: "09", title: "Drilling Summary 1", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "The one-sheet dashboard: cost, time, NPT and depth-vs-days." },
   { type: "10", title: "Phases — Plan vs Actual", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "Each phase planned against actual, with the days-and-cost graph." },
@@ -89,9 +90,41 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
 
       switch (type) {
         case "01": return jobReport(req, reply, (jobId) => buildReport01(prisma, jobId));
+        case "06": return dayReport(req, reply, (id) => buildDailyReport(prisma, id, false));
+        case "07": return dayReport(req, reply, (id) => buildDailyReport(prisma, id, true));
         default: return reply.code(501).send({ error: `${entry.title} is not built yet` });
       }
     });
+
+  /**
+   * Shared preamble for a DAY-scoped report. The client may pass the report id
+   * straight through, or a wellId + date pair — the reports page picks a day
+   * from a list, which is the pair.
+   */
+  async function dayReport<T>(
+    req: FastifyRequest<{ Querystring: { wellId?: string; date?: string; reportId?: string } }>,
+    reply: FastifyReply,
+    build: (reportId: string) => Promise<T | null>,
+  ) {
+    const { wellId, date } = req.query;
+    let id = (req.query.reportId ?? "").trim();
+    if (!id) {
+      if (!wellId || !date) return reply.code(400).send({ error: "this report needs a wellId and a date" });
+      const found = await prisma.entryReport.findFirst({
+        where: { wellId, reportDate: date }, select: { id: true },
+      });
+      if (!found) return reply.code(404).send({ error: `no report filed for ${date}` });
+      id = found.id;
+    }
+    const report = await prisma.entryReport.findUnique({ where: { id }, select: { wellId: true } });
+    if (!report) return reply.code(404).send({ error: "no such report" });
+    if (!(await mayUseWell(prisma, req, report.wellId))) {
+      return reply.code(403).send({ error: "not your well" });
+    }
+    const payload = await build(id);
+    if (!payload) return reply.code(404).send({ error: "no such report" });
+    return payload;
+  }
 
   /** Shared preamble for every job-scoped report: resolve, then authorize. */
   async function jobReport<T>(

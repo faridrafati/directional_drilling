@@ -45,7 +45,7 @@ test.describe("Well Reports", () => {
       await page.getByLabel("Password").fill(PASSWORD);
       await signIn.click();
     }
-    await expect(page.getByRole("button", { name: /AFE vs Field Est/ })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("report-01")).toBeVisible({ timeout: 15_000 });
   });
 
   test("the catalog lists every report, grouped, with the unbuilt ones marked", async ({ page }) => {
@@ -59,7 +59,7 @@ test.describe("Well Reports", () => {
   });
 
   test("a well with no job says so instead of asking for a job that isn't there", async ({ page }) => {
-    await page.getByRole("button", { name: /AFE vs Field Est/ }).click();
+    await page.getByTestId("report-01").click();
     const wells = await page.getByLabel("Well", { exact: true }).locator("option").allTextContents();
 
     // Find a well that genuinely has no job, rather than assuming one exists —
@@ -80,7 +80,7 @@ test.describe("Well Reports", () => {
   });
 
   test("report 01 previews the totals the sample prints", async ({ page }) => {
-    await page.getByRole("button", { name: /AFE vs Field Est/ }).click();
+    await page.getByTestId("report-01").click();
     await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
 
     // The pickers are populated, not empty dropdowns.
@@ -118,8 +118,48 @@ test.describe("Well Reports", () => {
     await expect(costTable.getByText("0.00", { exact: true })).toHaveCount(0);
   });
 
+  // Reports 06 and 07 are the same well-day: 07 is 06 plus the detail sections.
+  for (const [type, expected] of [
+    ["06", ["24.00", "104.00", "52.00"]],
+    ["07", ["24.00", "0.50", "2.08"]],
+  ] as const) {
+    test(`report ${type} previews the day's computed figures`, async ({ page }) => {
+      await page.getByTestId(`report-${type}`).click();
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      const dates = await page.getByLabel("Date", { exact: true }).locator("option").allTextContents();
+      test.skip(dates.length === 0, "no day filed on the demo well");
+
+      // The time log must account for the whole 24 hours — that is what the
+      // sample's "Cum Dur" column reaching 24.00 asserts.
+      await expect(page.getByText("hr of 24")).toBeVisible({ timeout: 15_000 });
+      for (const value of expected) {
+        await expect(page.getByText(value, { exact: true }).first()).toBeVisible();
+      }
+      // Depth Progress = End − Start = 299 − 195.
+      await expect(page.getByText("Depth Progress (m)", { exact: true })).toBeVisible();
+    });
+
+    test(`report ${type} exports a PDF`, async ({ page }, testInfo) => {
+      await page.getByTestId(`report-${type}`).click();
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      await expect(page.getByText("hr of 24")).toBeVisible({ timeout: 15_000 });
+
+      const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 30_000 }),
+        page.getByRole("button", { name: "PDF" }).click(),
+      ]);
+      const path = join(dir, download.suggestedFilename());
+      await download.saveAs(path);
+      await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
+      const { statSync, readFileSync } = await import("node:fs");
+      expect(statSync(path).size).toBeGreaterThan(5_000);
+      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    });
+  }
+
   test("the PDF button produces a file", async ({ page }, testInfo) => {
-    await page.getByRole("button", { name: /AFE vs Field Est/ }).click();
+    await page.getByTestId("report-01").click();
     await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
     await expect(page.getByText("10,218,000.00").first()).toBeVisible();
 

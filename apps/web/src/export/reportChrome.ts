@@ -26,8 +26,14 @@ import type { Content, TableCell } from "pdfmake/interfaces";
 // ── geometry, taken from the samples ────────────────────────────────────────
 /** Portrait letter, matching the sample page box. */
 export const LETTER_PORTRAIT: [number, number] = [612, 792];
-/** Body inset. The samples frame the page at 18 pt and start text at ~22 pt. */
-export const PAGE_MARGINS: [number, number, number, number] = [22, 56, 22, 34];
+/**
+ * Body inset. The samples frame the page at 18 pt and start text at ~22 pt.
+ *
+ * The top margin holds the title band — one 11.5 pt line plus its 6 pt gap — and
+ * nothing else, so it is kept tight: the samples fit a whole day on one page,
+ * and generous margins are what push a report onto a second.
+ */
+export const PAGE_MARGINS: [number, number, number, number] = [22, 38, 22, 26];
 /** Live width the body has to work with. */
 export const BODY_WIDTH = LETTER_PORTRAIT[0] - PAGE_MARGINS[0] - PAGE_MARGINS[2];
 
@@ -79,7 +85,7 @@ export function headerValue(
 
 /** The centred report title. Reports that print no title simply omit this. */
 export function titleBand(title: string): Content {
-  return { text: title, style: "reportTitle", alignment: "center", margin: [0, 0, 0, 6] };
+  return { text: title, style: "reportTitle", alignment: "center", margin: [0, 8, 0, 4] };
 }
 
 /**
@@ -90,10 +96,10 @@ export function identityLine(wellName: string, right?: string | null): Content {
   const left: Content = {
     text: [{ text: "Well Name:   ", style: "identity" }, { text: wellName, style: "identity" }],
   };
-  if (!right) return { ...left, margin: [0, 0, 0, 6] } as Content;
+  if (!right) return { ...left, margin: [0, 0, 0, 3] } as Content;
   return {
     columns: [left, { text: right, style: "identity", alignment: "right" }],
-    margin: [0, 0, 0, 6],
+    margin: [0, 0, 0, 3],
   };
 }
 
@@ -126,7 +132,7 @@ export function labelValueGrid(rows: HeaderRow[], opts?: { align?: "left" | "rig
       layout: GRID_LAYOUT,
     });
   }
-  return { stack, margin: [0, 0, 0, 6] };
+  return { stack, margin: [0, 0, 0, 3] };
 }
 
 /** Thin rules on every edge, in the samples' hairline grey. */
@@ -156,7 +162,7 @@ export function sectionBar(caption: string): Content {
       paddingLeft: () => 3,
       paddingRight: () => 3,
     },
-    margin: [0, 4, 0, 0],
+    margin: [0, 2, 0, 0],
   };
 }
 
@@ -171,7 +177,7 @@ export function narrativeBlock(label: string, text: string | null): Content {
       ],
     },
     layout: GRID_LAYOUT,
-    margin: [0, 0, 0, 6],
+    margin: [0, 0, 0, 3],
   };
 }
 
@@ -227,9 +233,9 @@ export function reportTable<T>(columns: ReportColumn<T>[], rows: readonly T[]): 
 export function reportFooter(printedOn: string, left = "") {
   return (currentPage: number, pageCount: number): Content => ({
     columns: [
-      { text: left, alignment: "left", margin: [PAGE_MARGINS[0], 12, 0, 0], style: "footer" },
-      { text: `Page ${currentPage}/${pageCount}`, alignment: "center", margin: [0, 12, 0, 0], style: "footer" },
-      { text: `Report Printed:   ${printedOn}`, alignment: "right", margin: [0, 12, PAGE_MARGINS[2], 0], style: "footer" },
+      { text: left, alignment: "left", margin: [PAGE_MARGINS[0], 8, 0, 0], style: "footer" },
+      { text: `Page ${currentPage}/${pageCount}`, alignment: "center", margin: [0, 8, 0, 0], style: "footer" },
+      { text: `Report Printed:   ${printedOn}`, alignment: "right", margin: [0, 8, PAGE_MARGINS[2], 0], style: "footer" },
     ],
   });
 }
@@ -249,12 +255,15 @@ export const REPORT_STYLES = {
   footer: { fontSize: 7.7, color: "#374151" },
 } as const;
 
-/** The page frame the samples draw — a 0.72 pt near-black rectangle. */
-export function pageFrame(): Content {
+/**
+ * The page frame the samples draw — a 0.72 pt near-black rectangle, 18 pt in
+ * from every edge. Takes the page size because report 07 is legal, not letter.
+ */
+export function pageFrame(size: readonly [number, number] = LETTER_PORTRAIT): Content {
   return {
     canvas: [{
       type: "rect", x: 0, y: 0,
-      w: LETTER_PORTRAIT[0] - 36, h: LETTER_PORTRAIT[1] - 36,
+      w: size[0] - 36, h: size[1] - 36,
       lineWidth: 0.72, lineColor: "#030303",
     }],
     absolutePosition: { x: 18, y: 18 },
