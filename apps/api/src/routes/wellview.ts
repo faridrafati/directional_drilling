@@ -130,8 +130,21 @@ const lostCirculationSchema = z.object({
   order: int0, startDate: str, topDepthMkb: num, bottomDepthMkb: num,
   opsInProg: str, volLostTotBbl: num, endDate: str,
 });
+/**
+ * The run-level facts no day row holds. The run itself is created by the daily
+ * save from the BHA number the crew types, so this NEVER creates or deletes one
+ * — it only fills in what belongs to the run as a whole.
+ */
+const bhaRunSchema = z.object({
+  id: z.string().min(1),
+  wellboreId: str, depthOutMkb: num, dateOut: str, timeOut: str, comment: str,
+  sensors: z.array(z.object({
+    order: int0, sensorType: str, distFromBitM: num, note: str,
+  })).default([]),
+});
 const registersSchema = z.object({
   wellbores: z.array(wellboreSchema).default([]),
+  bhaRuns: z.array(bhaRunSchema).default([]),
   lessons: z.array(lessonSchema).default([]),
   kicks: z.array(kickSchema).default([]),
   lostCirculation: z.array(lostCirculationSchema).default([]),
@@ -360,8 +373,16 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
       if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
       const well = await prisma.entryWell.findUnique({ where: { id: wellId }, select: { rigId: true } });
       if (!well) return reply.code(404).send({ error: "not found" });
-      const [wellbores, lessons, kicks, lostCirculation, mudPumps] = await Promise.all([
+      const [wellbores, bhaRuns, lessons, kicks, lostCirculation, mudPumps] = await Promise.all([
         prisma.entryWellbore.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
+        prisma.entryBhaRun.findMany({
+          where: { wellId }, orderBy: { bhaNo: "asc" },
+          include: {
+            sensors: { orderBy: { order: "asc" } },
+            // The run's name lives on its day rows; the master is thin.
+            drillStrings: { select: { name: true }, take: 1 },
+          },
+        }),
         prisma.entryIntervalLesson.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
         prisma.entryKick.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
         prisma.entryLostCirculation.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
@@ -369,7 +390,18 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
         // editor can show them without a second round trip.
         prisma.entryMudPump.findMany({ where: { rigId: well.rigId }, orderBy: { order: "asc" } }),
       ]);
-      return { wellbores, lessons, kicks, lostCirculation, mudPumps, rigId: well.rigId };
+      return {
+        wellbores,
+        bhaRuns: bhaRuns.map((r) => ({
+          id: r.id, bhaNo: r.bhaNo, name: r.drillStrings[0]?.name ?? null,
+          wellboreId: r.wellboreId, depthOutMkb: r.depthOutMkb,
+          dateOut: r.dateOut, timeOut: r.timeOut, comment: r.comment,
+          sensors: r.sensors.map((s) => ({
+            order: s.order, sensorType: s.sensorType, distFromBitM: s.distFromBitM, note: s.note,
+          })),
+        })),
+        lessons, kicks, lostCirculation, mudPumps, rigId: well.rigId,
+      };
     });
 
   app.put<{ Params: { wellId: string }; Body: unknown }>(
@@ -398,6 +430,19 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
         if (body.lessons.length) await tx.entryIntervalLesson.createMany({ data: body.lessons.map((r) => ({ ...r, wellId })) });
         if (body.kicks.length) await tx.entryKick.createMany({ data: body.kicks.map((r) => ({ ...r, wellId })) });
         if (body.lostCirculation.length) await tx.entryLostCirculation.createMany({ data: body.lostCirculation.map((r) => ({ ...r, wellId })) });
+
+        // The runs themselves come from the daily save; this only fills in the
+        // facts that belong to the run as a whole. Scoped to this well so a
+        // posted id cannot reach another one.
+        for (const r of body.bhaRuns) {
+          const { id, sensors, ...data } = r;
+          const updated = await tx.entryBhaRun.updateMany({ where: { id, wellId }, data });
+          if (!updated.count) continue;
+          await tx.entryBhaSensor.deleteMany({ where: { bhaRunId: id } });
+          if (sensors.length) {
+            await tx.entryBhaSensor.createMany({ data: sensors.map((x) => ({ ...x, bhaRunId: id })) });
+          }
+        }
       });
       return reply.code(204).send();
     });
@@ -425,6 +470,27 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
         }
       });
       return prisma.entryMudPump.findMany({ where: { rigId }, orderBy: { order: "asc" } });
+    });
+
+  /** The well's BHA runs, for report 02's picker. */
+  app.get<{ Params: { wellId: string } }>(
+    "/entry/wells/:wellId/bha-runs", { preHandler: requireUser }, async (req, reply) => {
+      const { wellId } = req.params;
+      if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+      const runs = await prisma.entryBhaRun.findMany({
+        where: { wellId },
+        orderBy: { bhaNo: "asc" },
+        // The run's NAME lives on its day rows, not on the master — the master
+        // is deliberately thin (see apps/api/src/reports/bha.ts).
+        include: { drillStrings: { select: { name: true, depthInMkb: true }, take: 1 } },
+      });
+      return runs.map((r) => ({
+        id: r.id,
+        bhaNo: r.bhaNo,
+        name: r.drillStrings[0]?.name ?? null,
+        depthInMkb: r.drillStrings[0]?.depthInMkb ?? null,
+        depthOutMkb: r.depthOutMkb,
+      }));
     });
 
   // ══ cost codes (admin) ═══════════════════════════════════════════════════

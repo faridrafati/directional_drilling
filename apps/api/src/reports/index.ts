@@ -18,6 +18,7 @@ import { requireUser } from "../entry/auth.js";
 import { mayUseWell } from "../entry/access.js";
 import { buildReport01 } from "./01-afe-vs-field-est.js";
 import { buildDailyReport } from "./daily.js";
+import { buildReport02, buildReport03 } from "./bha.js";
 
 /** How a report is parameterized — the picker builds itself from this. */
 export type ReportParam = "well" | "job" | "date" | "dateRange" | "bhaRun" | "wells";
@@ -45,8 +46,8 @@ export interface CatalogEntry {
  */
 export const REPORT_CATALOG: CatalogEntry[] = [
   { type: "01", title: "AFE vs Field Est vs Final Invoice", category: "Cost & Multi-well", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "Authorized budget against field estimate and final invoice, by cost code." },
-  { type: "02", title: "BHA Detail", category: "Engineering", params: ["well", "bhaRun"], exports: ["pdf"], available: false, blurb: "One page per BHA run: header, bit, components, parameters, nozzles, sensors." },
-  { type: "03", title: "Bit Summary", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "Every bit run on the well, one row each." },
+  { type: "02", title: "BHA Detail", category: "Engineering", params: ["well", "bhaRun"], exports: ["pdf"], available: true, blurb: "One page per BHA run: header, bit, components, parameters, nozzles, sensors." },
+  { type: "03", title: "Bit Summary", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "Every bit run on the well, one row each." },
   { type: "04", title: "Casing, Liner and Cement", category: "Engineering", params: ["well"], exports: ["pdf"], available: false, blurb: "One string: tally, cement job, stages, fluids, additives, schematic." },
   { type: "05", title: "Casing Summary", category: "Engineering", params: ["well"], exports: ["pdf"], available: false, blurb: "Every casing string with its component tally." },
   { type: "06", title: "Daily Drilling", category: "Daily", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "The one-page morning report." },
@@ -79,7 +80,7 @@ export const REPORT_CATALOG: CatalogEntry[] = [
 export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.get("/entry/report-data/catalog", { preHandler: requireUser }, async () => REPORT_CATALOG);
 
-  app.get<{ Params: { type: string }; Querystring: { wellId?: string; jobId?: string; date?: string } }>(
+  app.get<{ Params: { type: string }; Querystring: { wellId?: string; jobId?: string; date?: string; bhaRunId?: string } }>(
     "/entry/report-data/:type", { preHandler: requireUser }, async (req, reply) => {
       const { type } = req.params;
       const entry = REPORT_CATALOG.find((r) => r.type === type);
@@ -92,6 +93,20 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
         case "01": return jobReport(req, reply, (jobId) => buildReport01(prisma, jobId));
         case "06": return dayReport(req, reply, (id) => buildDailyReport(prisma, id, false));
         case "07": return dayReport(req, reply, (id) => buildDailyReport(prisma, id, true));
+        case "02": {
+          const bhaRunId = (req.query.bhaRunId ?? "").trim();
+          if (!bhaRunId) return reply.code(400).send({ error: "this report needs a bhaRunId" });
+          const run = await prisma.entryBhaRun.findUnique({ where: { id: bhaRunId }, select: { wellId: true } });
+          if (!run) return reply.code(404).send({ error: "no such BHA run" });
+          if (!(await mayUseWell(prisma, req, run.wellId))) return reply.code(403).send({ error: "not your well" });
+          return (await buildReport02(prisma, bhaRunId)) ?? reply.code(404).send({ error: "no such BHA run" });
+        }
+        case "03": {
+          const wellId = (req.query.wellId ?? "").trim();
+          if (!wellId) return reply.code(400).send({ error: "this report needs a wellId" });
+          if (!(await mayUseWell(prisma, req, wellId))) return reply.code(403).send({ error: "not your well" });
+          return (await buildReport03(prisma, wellId, req.query.jobId)) ?? reply.code(404).send({ error: "no such well" });
+        }
         default: return reply.code(501).send({ error: `${entry.title} is not built yet` });
       }
     });

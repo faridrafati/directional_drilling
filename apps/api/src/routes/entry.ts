@@ -515,6 +515,51 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
         prisma.entrySafetyIncident.createMany({ data: safetyIncidents.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryIntervalProblem.createMany({ data: intervalProblems.map((r) => ({ ...r, reportId: id })) }),
       ]);
+
+      // ── keep the BHA runs in step with what was just typed ──────────────
+      //
+      // Reports 02 and 03 are scoped to a RUN, but the crew never creates one:
+      // they type a BHA number on the drill-strings tab, day after day. So the
+      // run is derived from that — one per (well, bhaNo) — and the day's string,
+      // its bit and its drilled intervals are pointed at it.
+      //
+      // Upsert, never delete: a run carries its own facts (depth out, the
+      // sensors, the run comment) that no day row holds, and blanking a number
+      // for one day must not throw them away.
+      const strings = await prisma.entryDrillString.findMany({
+        where: { reportId: id }, orderBy: { order: "asc" },
+        select: { id: true, order: true, bhaNo: true },
+      });
+      const runByOrder = new Map<number, string>();
+      for (const st of strings) {
+        if (st.bhaNo === null) continue;
+        const run = await prisma.entryBhaRun.upsert({
+          where: { wellId_bhaNo: { wellId: existing.wellId, bhaNo: st.bhaNo } },
+          create: { wellId: existing.wellId, bhaNo: st.bhaNo },
+          update: {},
+        });
+        await prisma.entryDrillString.update({ where: { id: st.id }, data: { bhaRunId: run.id } });
+        runByOrder.set(st.order, run.id);
+      }
+      if (runByOrder.size) {
+        // A bit row belongs to the string typed beside it — the sheet is filled
+        // top to bottom, so the ordinals line up.
+        const bits = await prisma.entryBitRun.findMany({
+          where: { reportId: id }, select: { id: true, order: true },
+        });
+        for (const b of bits) {
+          const runId = runByOrder.get(b.order) ?? (runByOrder.size === 1 ? [...runByOrder.values()][0] : null);
+          if (runId) await prisma.entryBitRun.update({ where: { id: b.id }, data: { bhaRunId: runId } });
+        }
+        // A drilled interval is only attributed when the day ran ONE assembly;
+        // with two, the daily rows do not record which was in the hole.
+        if (runByOrder.size === 1) {
+          await prisma.entryDrillingParameter.updateMany({
+            where: { reportId: id }, data: { bhaRunId: [...runByOrder.values()][0] },
+          });
+        }
+      }
+
       return prisma.entryReport.findUnique({ where: { id }, include: REPORT_INCLUDE });
     });
 

@@ -28,7 +28,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   wellviewApi, newRowId,
   type AfeRow, type CostCode, type CostItemRow, type JobBody, type JobDetail,
-  type JobListItem, type JobPhaseRow, type KickRow, type LessonRow,
+  type BhaRunRow, type JobListItem, type JobPhaseRow, type KickRow, type LessonRow,
   type LostCirculationRow, type MudPumpRow, type WellRegisters, type WellboreRow,
   type WvCodeTables,
 } from "../../entry/wellview.js";
@@ -808,6 +808,12 @@ function RegistersPanel({ wellId }: { wellId: string }) {
         rows.filter((r) => filled(r, skip)).map((r, i) => ({ ...r, order: i }));
       await wellviewApi.saveRegisters(wellId, {
         wellbores: filledRows(draft.wellbores),
+        // Runs are posted whole: the daily save owns which ones EXIST, this owns
+        // the facts about them. Sensors prune like any other repeating table.
+        bhaRuns: draft.bhaRuns.map((r) => ({
+          ...r,
+          sensors: filledRows(r.sensors, ["order"]),
+        })),
         lessons: filledRows(draft.lessons),
         kicks: filledRows(draft.kicks),
         lostCirculation: filledRows(draft.lostCirculation),
@@ -853,6 +859,55 @@ function RegistersPanel({ wellId }: { wellId: string }) {
         blank={() => ({ id: newRowId("wb"), order: 0, name: null, kind: null, koMdMkb: null })}
         addLabel="Wellbore" minRows={2} testId="wellbore"
       />
+
+      <div className="bg-gray-50 text-gray-500 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border-y border-gray-200">
+        BHA runs — reports 02 and 03
+      </div>
+      {draft.bhaRuns.length === 0 ? (
+        <div className="px-2 py-2 text-[11px] text-gray-400 leading-snug">
+          No BHA run yet. A run appears here as soon as a daily drill string is given a BHA number —
+          it is not created by hand, because the crew already types that number every morning.
+        </div>
+      ) : draft.bhaRuns.map((run, i) => (
+        <div key={run.id} className="border-b-4 border-gray-100 last:border-b-0">
+          <div className="bg-gray-100 text-gray-600 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-1 border-y border-gray-200">
+            {[run.bhaNo !== null ? `BHA #${run.bhaNo}` : "BHA", run.name].filter(Boolean).join(" · ")}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            <div className="md:border-r border-gray-200">
+              <NumField label="Depth out (mKB)" value={run.depthOutMkb}
+                onChange={(v) => set("bhaRuns", draft.bhaRuns.map((r, k) => (k === i ? { ...r, depthOutMkb: v } : r)))} />
+              <TextField label="Date out" value={run.dateOut} placeholder="1405/02/18"
+                onChange={(v) => set("bhaRuns", draft.bhaRuns.map((r, k) => (k === i ? { ...r, dateOut: v } : r)))} />
+              <TextField label="Time out" value={run.timeOut} placeholder="16:45"
+                onChange={(v) => set("bhaRuns", draft.bhaRuns.map((r, k) => (k === i ? { ...r, timeOut: v } : r)))} />
+            </div>
+            <div>
+              <TextField label="Run comment" multiline value={run.comment}
+                onChange={(v) => set("bhaRuns", draft.bhaRuns.map((r, k) => (k === i ? { ...r, comment: v } : r)))} />
+            </div>
+          </div>
+          <div className="px-2 py-1 text-[11px] text-gray-400 leading-snug">
+            Depth IN, the assembly name, its hours and its make-up all come from the daily rows. Only
+            what no day can know — where it came out, and when — is typed here.
+          </div>
+          <div className="bg-gray-50 text-gray-500 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border-y border-gray-200">
+            Sensors
+          </div>
+          <RowTable
+            cols={[
+              { key: "sensorType", label: "Sensor type", width: "w-40", placeholder: "Gamma" },
+              { key: "distFromBitM", label: "Sensor-bit (m)", type: "num", width: "w-28",
+                title: "Distance from the bit — not the same as the tally's cumulative length, which reaches the collar" },
+              { key: "note", label: "Note" },
+            ] as Col<BhaRunRow["sensors"][number]>[]}
+            rows={run.sensors}
+            onChange={(rows) => set("bhaRuns", draft.bhaRuns.map((r, k) => (k === i ? { ...r, sensors: rows } : r)))}
+            blank={() => ({ order: 0, sensorType: null, distFromBitM: null, note: null })}
+            addLabel="Sensor" minRows={1} testId={`sensor${i}`}
+          />
+        </div>
+      ))}
 
       <div className="bg-gray-50 text-gray-500 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border-y border-gray-200">
         Mud pumps — the RIG&rsquo;s plant, shared by every well on it

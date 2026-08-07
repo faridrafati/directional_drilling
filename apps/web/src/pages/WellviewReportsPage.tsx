@@ -18,10 +18,12 @@ import { EntryAuthProvider, useEntryAuth, SignInCard } from "../entry/auth.js";
 import { entryApi } from "../entry/client.js";
 import {
   wellviewApi,
-  type CatalogEntry, type DailyPayload, type JobListItem, type Report01Payload,
+  type CatalogEntry, type DailyPayload, type JobListItem,
+  type Report01Payload, type Report02Payload, type Report03Payload,
 } from "../entry/wellview.js";
 import { Report01Preview } from "../components/wellview/ReportPreview.js";
 import { DailyPreview } from "../components/wellview/DailyPreview.js";
+import { Report02Preview, Report03Preview } from "../components/wellview/BhaPreview.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -38,6 +40,7 @@ function Inner() {
   const [wellId, setWellId] = useState<string>("");
   const [jobId, setJobId] = useState<string>("");
   const [date, setDate] = useState<string>("");
+  const [bhaRunId, setBhaRunId] = useState<string>("");
   const [selected, setSelected] = useState<string>("01");
 
   const catalogQ = useQuery({
@@ -48,6 +51,11 @@ function Inner() {
   const jobsQ = useQuery({
     queryKey: ["wellview", "jobs", wellId],
     queryFn: () => wellviewApi.jobsForWell(wellId),
+    enabled: !!user && !!wellId,
+  });
+  const bhaQ = useQuery({
+    queryKey: ["wellview", "bhaRuns", wellId],
+    queryFn: () => wellviewApi.bhaRuns(wellId),
     enabled: !!user && !!wellId,
   });
   // The day list for the date picker — the same endpoint the daily editor uses.
@@ -63,7 +71,7 @@ function Inner() {
     if (!wellId && wells.length) setWellId(wells[0].id);
   }, [wells, wellId]);
   // A well change invalidates the job — never carry another well's job across.
-  useEffect(() => { setJobId(""); setDate(""); }, [wellId]);
+  useEffect(() => { setJobId(""); setDate(""); setBhaRunId(""); }, [wellId]);
   useEffect(() => {
     const list = jobsQ.data ?? [];
     if (!jobId && list.length) setJobId(list[0].id);
@@ -74,12 +82,17 @@ function Inner() {
       setDate([...list].sort((a, b) => b.serialNo - a.serialNo)[0].reportDate);
     }
   }, [daysQ.data, date]);
+  useEffect(() => {
+    const list = bhaQ.data ?? [];
+    if (!bhaRunId && list.length) setBhaRunId(list[list.length - 1].id);   // the latest run
+  }, [bhaQ.data, bhaRunId]);
 
   const catalog = catalogQ.data ?? [];
   const entry = catalog.find((c) => c.type === selected) ?? null;
   const jobs = jobsQ.data ?? [];
   // Newest first: a report is nearly always wanted for the most recent day.
   const days = [...(daysQ.data ?? [])].sort((a, b) => b.serialNo - a.serialNo);
+  const bhaRuns = bhaQ.data ?? [];
   const wellName = wells.find((w) => w.id === wellId)?.name ?? "";
 
   return (
@@ -187,6 +200,26 @@ function Inner() {
                             )}
                           </Picker>
                         )}
+                        {entry.params.includes("bhaRun") && (
+                          <Picker label="BHA run">
+                            {(id) => (
+                            <select
+                              id={id}
+                              value={bhaRunId}
+                              onChange={(e) => setBhaRunId(e.target.value)}
+                              disabled={bhaRuns.length === 0}
+                              className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white min-w-[180px] disabled:bg-gray-50 disabled:text-gray-400"
+                            >
+                              {bhaRuns.length === 0 && <option value="">— no runs —</option>}
+                              {bhaRuns.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                  {[r.bhaNo !== null ? `BHA #${r.bhaNo}` : "BHA", r.name].filter(Boolean).join(" · ")}
+                                </option>
+                              ))}
+                            </select>
+                            )}
+                          </Picker>
+                        )}
                         {entry.params.includes("job") && (
                           <Picker label="Job">
                             {(id) => (
@@ -235,10 +268,37 @@ function Inner() {
                           Days are filed under Daily Report Entry.
                         </div>
                       </Notice>
+                    ) : entry.params.includes("bhaRun") && !bhaQ.isLoading && bhaRuns.length === 0 ? (
+                      <Notice>
+                        <span className="font-medium text-gray-700">{wellName || "This well"}</span> has no
+                        BHA runs recorded, and this report covers one.
+                        <div className="mt-1.5 text-xs text-gray-400">
+                          A run is created from the daily drill-string rows — give each assembly a BHA
+                          number on the Drill strings tab under Daily Report Entry.
+                        </div>
+                      </Notice>
                     ) : entry.type === "01" ? (
                       <Report01Panel jobId={jobId} />
                     ) : entry.type === "06" || entry.type === "07" ? (
                       <DailyPanel type={entry.type} wellId={wellId} date={date} />
+                    ) : entry.type === "02" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "02", bhaRunId]}
+                        enabled={!!bhaRunId}
+                        load={() => wellviewApi.reportData<Report02Payload>("02", { bhaRunId })}
+                        render={(p) => <Report02Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/bha.js")).exportReport02Pdf(p)}
+                        empty="Pick a BHA run above."
+                      />
+                    ) : entry.type === "03" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "03", wellId, jobId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report03Payload>("03", { wellId, ...(jobId ? { jobId } : {}) })}
+                        render={(p) => <Report03Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/bha.js")).exportReport03Pdf(p)}
+                        empty="Pick a well above."
+                      />
                     ) : (
                       <Pending entry={entry} />
                     )}
@@ -419,6 +479,61 @@ function DailyPanel({ type, wellId, date }: { type: string; wellId: string; date
         </button>
       </div>
       <DailyPreview payload={q.data} />
+    </div>
+  );
+}
+
+/**
+ * A report panel: fetch the payload, preview it, offer the PDF.
+ *
+ * Generic because every report after the first three is the same three steps —
+ * only the query, the preview component and the exporter change.
+ */
+function ReportPanel<T>({ queryKey, enabled, load, render, exporter, empty }: {
+  queryKey: unknown[];
+  enabled: boolean;
+  load: () => Promise<T>;
+  render: (payload: T) => React.ReactNode;
+  exporter: (payload: T) => Promise<void>;
+  empty: string;
+}) {
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const q = useQuery({ queryKey, queryFn: load, enabled });
+
+  const onExport = async () => {
+    if (!q.data) return;
+    setExporting(true);
+    setError(null);
+    try {
+      // pdfmake is imported at click time so the report bundle stays out of the
+      // initial page load — the rule the directional-plot export set.
+      await exporter(q.data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (!enabled) return <Notice>{empty}</Notice>;
+  if (q.isLoading) return <Notice>Assembling the report…</Notice>;
+  if (q.error) return <Notice tone="error">{(q.error as Error).message}</Notice>;
+  if (!q.data) return <Notice>Nothing to show.</Notice>;
+
+  return (
+    <div>
+      <div className="flex items-center justify-end gap-2 mb-3">
+        {error && <span className="text-xs text-red-600 mr-auto">{error}</span>}
+        <button
+          onClick={() => void onExport()}
+          disabled={exporting}
+          className="h-8 px-3 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors duration-150"
+        >
+          {exporting ? "Generating…" : "PDF"}
+        </button>
+      </div>
+      {render(q.data)}
     </div>
   );
 }

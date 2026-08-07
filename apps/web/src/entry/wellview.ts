@@ -267,13 +267,77 @@ export interface MudPumpRow {
   model: string | null; ratingHp: number | null; rodDiaIn: number | null; strokeIn: number | null;
   linerSizeIn: string | null; volPerStkBbl: number | null;
 }
+export interface BhaRunRow {
+  id: string;
+  /** Read-only here — the daily save owns the number and the name. */
+  bhaNo: number | null;
+  name: string | null;
+  wellboreId: string | null;
+  depthOutMkb: number | null;
+  dateOut: string | null;
+  timeOut: string | null;
+  comment: string | null;
+  sensors: { order: number; sensorType: string | null; distFromBitM: number | null; note: string | null }[];
+}
 export interface WellRegisters {
   wellbores: WellboreRow[];
+  bhaRuns: BhaRunRow[];
   lessons: LessonRow[];
   kicks: KickRow[];
   lostCirculation: LostCirculationRow[];
   mudPumps: MudPumpRow[];
   rigId: string;
+}
+
+// ── reports 02 / 03 ─────────────────────────────────────────────────────────
+export interface BhaComponentRow {
+  jts: number | null; itemDes: string | null; odIn: number | null; idIn: number | null;
+  massPerLenKgM: number | null; grade: string | null; driftIn: number | null;
+  gaugeIn: number | null; connections: string | null; lenM: number | null; cumLenM: number | null;
+}
+export interface BhaParamRow {
+  wellbore: string | null; startDate: string | null; endDate: string | null;
+  drillTimeHr: number | null; startMkb: number | null; endDepthMkb: number | null;
+  intDepthM: number | null; intRopMHr: number | null;
+  wob1000Lbf: number | null; rpm: number | null; qFlowGpm: number | null; sppPsi: number | null;
+}
+export interface Report02Payload extends ReportEnvelope {
+  runCaption: string;
+  runHeader: HeaderRow;
+  bitRow: HeaderRow;
+  stringRow: HeaderRow;
+  nozzles: string | null;
+  comment: string | null;
+  components: BhaComponentRow[];
+  bitTypes: {
+    bitType: string | null; make: string | null; model: string | null;
+    serialNumber: string | null; iadcCodes: string | null;
+    itemCost: number | null; lengthM: number | null;
+  }[];
+  drillingParameters: BhaParamRow[];
+  bitNozzles: number[];
+  sensors: { sensorType: string | null; distFromBitM: number | null; note: string | null }[];
+  mudChecks: {
+    date: string | null; depthMkb: number | null; type: string | null;
+    densPpg: number | null; pvCp: number | null; ypLbf100ft2: number | null;
+    ph: number | null; sandPct: number | null; solidsPct: number | null;
+  }[];
+  schematicOmitted: true;
+}
+export interface BitSummaryRow {
+  bhaNo: number | null; bitRun: string | null; sizeIn: string | null;
+  make: string | null; model: string | null; serialNo: string | null;
+  iadcCodes: string | null; tfaIn2: number | null; nozzles: string | null;
+  depthInMkb: number | null; depthOutMkb: number | null; drilledM: number | null;
+  drillTimeHr: number | null; bhaRopMHr: number | null;
+  wobMax: number | null; wobMin: number | null; rpmMax: number | null; rpmMin: number | null;
+  bitDull: string | null;
+}
+export interface Report03Payload extends ReportEnvelope { bits: BitSummaryRow[] }
+
+export interface BhaRunListItem {
+  id: string; bhaNo: number | null; name: string | null;
+  depthInMkb: number | null; depthOutMkb: number | null;
 }
 
 export interface CatalogEntry {
@@ -296,6 +360,7 @@ export const wellviewApi = {
   saveJob: (id: string, body: JobBody) => entryApi.put<JobDetail>(`/jobs/${id}`, body),
   deleteJob: (id: string) => entryApi.del<void>(`/jobs/${id}`),
   attachReports: (id: string) => entryApi.post<{ attached: number }>(`/jobs/${id}/attach-reports`),
+  bhaRuns: (wellId: string) => entryApi.get<BhaRunListItem[]>(`/wells/${wellId}/bha-runs`),
   registers: (wellId: string) => entryApi.get<WellRegisters>(`/wells/${wellId}/registers`),
   saveRegisters: (wellId: string, body: Omit<WellRegisters, "mudPumps" | "rigId">) =>
     entryApi.put<void>(`/wells/${wellId}/registers`, body),

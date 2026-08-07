@@ -35,6 +35,9 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | Entry UI — daily "Events & HSE" tab, extended operations log, contacts, personnel log | 2026-08-07 |
 | Entry UI — Well registers panel (wellbores, mud pumps, lessons, kicks, lost circulation) | 2026-08-07 |
 | `Col` gains a tri-state `bool` cell (Yes / No / unanswered) | 2026-08-07 |
+| `EntryBhaRun` + `EntryBhaSensor` masters, bridged onto the daily string / bit / interval rows, with a backfill | 2026-08-07 |
+| BHA runs derived automatically from the BHA number the daily save already carries | 2026-08-07 |
+| Entry UI — BHA run facts and sensors in the Well registers panel | 2026-08-07 |
 
 ## Tier 1 — daily drilling
 
@@ -42,8 +45,8 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 |---|---|---|---|---|---|---|---|---|
 | 06 | Daily Drilling | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 | 07 | Daily Drilling - Detail | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
-| 02 | BHA Detail | 2026-08-07 | — | — | — | — | — | — |
-| 03 | Bit Summary | 2026-08-07 | — | — | — | — | — | — |
+| 02 | BHA Detail | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
+| 03 | Bit Summary | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 
 ## Tier 2 — well engineering
 
@@ -152,6 +155,20 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
 - **2026-08-07 — the day's cost comes from the job's `CostItem` rows, sliced by `costDate`.** There
   is no second per-day cost table; report 06's Day Total and report 01's Job Cost Summary add up the
   same rows.
+- **2026-08-07 — a BHA run is derived, not created by hand.** The crew already types a BHA number on
+  the drill-strings tab every morning, so the daily save upserts one `EntryBhaRun` per
+  (well, BHA number) and points that day's string, its bit and its drilled intervals at it. The run
+  master stays thin: only what no day can know — where the assembly came out and when, its sensors,
+  the run comment — is typed in the Well registers panel. A migration backfilled the runs that
+  existed as day slices before this.
+- **2026-08-07 — a drilled interval is attributed to a run only on a single-string day.** With two
+  assemblies in one day the daily rows do not record which was in the hole for a given interval, and
+  guessing would put another assembly's parameters in report 02's ranges.
+- **2026-08-07 — report 02's schematic is not drawn.** The sample prints a vertical wellbore
+  schematic down its left rail. The shared schematic component is a Tier 4/5 deliverable, so both
+  the preview and the PDF say so in place of it rather than leaving a silent gap.
+- **2026-08-07 — component mass is stored in kg/m, not lb/ft.** The samples print lb/ft, but the
+  lengths beside it are metres; mixing the two silently scales a string weight by 3.28.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

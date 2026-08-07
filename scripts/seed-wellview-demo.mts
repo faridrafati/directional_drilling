@@ -296,9 +296,28 @@ async function main() {
     },
   });
 
+  // ── the BHA run reports 02 and 03 are scoped to ─────────────────────────
+  // Created before the day, because the day's drill string, bit and drilled
+  // interval all point AT it — that link is what turns per-day slices into a run.
+  await prisma.entryBhaRun.deleteMany({ where: { wellId: well.id } });
+  const bhaRun = await prisma.entryBhaRun.create({
+    data: {
+      wellId: well.id, wellboreId: wellbores[0]?.id ?? null, bhaNo: 2,
+      depthOutMkb: 810.0, dateOut: day(8), timeOut: "16:45",
+      comment: "Pulled for bit change at section TD; jar fired twice on the way out.",
+      sensors: {
+        create: [
+          { order: 0, sensorType: "Gamma", distFromBitM: 14.2, note: "Azimuthal" },
+          { order: 1, sensorType: "Inclination", distFromBitM: 12.8 },
+          { order: 2, sensorType: "Vibration", distFromBitM: 15.6, note: "Lateral and axial" },
+        ],
+      },
+    },
+  });
+
   // ── one fully-filled day, so reports 06 and 07 have something to print ──
   const admin = await prisma.entryUser.findFirst({ where: { role: "admin" }, orderBy: { createdAt: "asc" } });
-  if (admin) await seedDay(well.id, admin.id, job.id, wellbores[0]?.id ?? null, pumps);
+  if (admin) await seedDay(well.id, admin.id, job.id, wellbores[0]?.id ?? null, pumps, bhaRun.id);
 
   // Attach any daily reports already filed on this well, so the day-scoped
   // reports have a job to hang off.
@@ -341,6 +360,7 @@ async function seedDay(
   wellId: string, userId: string, jobId: string,
   wellboreId: string | null,
   pumps: { id: string; pumpNo: string | null }[],
+  bhaRunId: string,
 ) {
   const reportDate = day(1);
   const existing = await prisma.entryReport.findUnique({
@@ -475,7 +495,7 @@ async function seedDay(
       },
       drillingParameters: {
         create: [{
-          order: 0, wellboreId,
+          order: 0, wellboreId, bhaRunId,
           startMkb: 195.0, endDepthMkb: 299.0, drillTimeHr: 2.0,
           intRopMHr: 52.0, qFlowGpm: 786, wob1000Lbf: 22, rpm: 120, sppPsi: 2100,
           drillStrWtKlbf: 148, puStrWtKlbf: 162, soStrWtKlbf: 138,
@@ -490,28 +510,29 @@ async function seedDay(
       },
       bitRuns: {
         create: [{
-          order: 0, bitNo: "2", bitSerialNo: "456789", size: "17 1/2", type: "SS33SGJ4",
-          make: "Security", iadcCode: "115", nozzles: "18/18/18/18/18/18", tfa: 1.9,
-          lengthM: 0.38, dullGrade: "1-1-NO-A-2-0-NO-TD",
+          order: 0, bhaRunId, bitNo: "2", bitSerialNo: "456789", size: "17 1/2", type: "SS33SGJ4",
+          make: "Security", model: "SS33SGJ4", iadcCode: "115",
+          nozzles: "18/18/18/18/18/18", tfa: 1.9,
+          lengthM: 0.38, itemCost: 48_500, dullGrade: "1-1-NO-A-2-0-NO-TD",
           meterage: 104, hours: 2.0, wob: 22, rpm: 120,
         }],
       },
       drillStrings: {
         create: [{
-          order: 0, name: "17-1/2\" Drilling Assy", bhaNo: 2,
+          order: 0, bhaRunId, name: "17-1/2\" Drilling Assy", bhaNo: 2,
           depthInMkb: 195.0, dateIn: reportDate, objective: "Drill 17-1/2\" hole to 810 m",
           depthDrilledM: 104, drillingTimeHr: 2.0, circulatingTimeHr: 1.5,
           rotatingTimeHr: 2.0, slidingTimeHr: 0, stringWtKlbf: 148,
           note: "Made up per programme; jar placed 9 stands above the collars.",
           components: {
             create: [
-              { order: 0, itemDes: "17-1/2\" Bit", odIn: 17.5, idIn: null, jts: 1, lenM: 0.38, cumLenM: 0.38, topThread: "6 5/8 REG" },
-              { order: 1, itemDes: "Float Sub", odIn: 9.5, idIn: 3.0, jts: 1, lenM: 0.85, cumLenM: 1.23, topThread: "6 5/8 REG" },
-              { order: 2, itemDes: "Near Bit Stabilizer", odIn: 17.375, idIn: 3.0, jts: 1, lenM: 2.1, cumLenM: 3.33, topThread: "6 5/8 REG" },
-              { order: 3, itemDes: "Drill Collar", odIn: 9.5, idIn: 3.0, jts: 6, lenM: 55.4, cumLenM: 58.73, topThread: "6 5/8 REG" },
-              { order: 4, itemDes: "Drilling Jar", odIn: 9.5, idIn: 3.0, jts: 1, lenM: 9.8, cumLenM: 68.53, topThread: "6 5/8 REG" },
-              { order: 5, itemDes: "Heavy Weight Drill Pipe", odIn: 5, idIn: 3.0, jts: 15, lenM: 138.5, cumLenM: 207.03, topThread: "4 1/2 IF" },
-              { order: 6, itemDes: "Drill Pipe", odIn: 5, idIn: 4.276, jts: 10, lenM: 92.0, cumLenM: 299.03, topThread: "4 1/2 IF" },
+              { order: 0, itemDes: "17-1/2\" Bit", odIn: 17.5, idIn: null, jts: 1, lenM: 0.38, cumLenM: 0.38, topThread: "6 5/8 REG", connections: "6 5/8 REG", gaugeIn: 17.5 },
+              { order: 1, itemDes: "Float Sub", odIn: 9.5, idIn: 3.0, jts: 1, lenM: 0.85, cumLenM: 1.23, topThread: "6 5/8 REG", connections: "6 5/8 REG", massPerLenKgM: 218, driftIn: 2.81 },
+              { order: 2, itemDes: "Near Bit Stabilizer", odIn: 17.375, idIn: 3.0, jts: 1, lenM: 2.1, cumLenM: 3.33, topThread: "6 5/8 REG", connections: "6 5/8 REG", massPerLenKgM: 232, gaugeIn: 17.375 },
+              { order: 3, itemDes: "Drill Collar", odIn: 9.5, idIn: 3.0, jts: 6, lenM: 55.4, cumLenM: 58.73, topThread: "6 5/8 REG", connections: "6 5/8 REG", massPerLenKgM: 218, grade: "AISI 4145H", driftIn: 2.81 },
+              { order: 4, itemDes: "Drilling Jar", odIn: 9.5, idIn: 3.0, jts: 1, lenM: 9.8, cumLenM: 68.53, topThread: "6 5/8 REG", connections: "6 5/8 REG", massPerLenKgM: 210 },
+              { order: 5, itemDes: "Heavy Weight Drill Pipe", odIn: 5, idIn: 3.0, jts: 15, lenM: 138.5, cumLenM: 207.03, topThread: "4 1/2 IF", connections: "4 1/2 IF", massPerLenKgM: 73, grade: "S135", driftIn: 2.81 },
+              { order: 6, itemDes: "Drill Pipe", odIn: 5, idIn: 4.276, jts: 10, lenM: 92.0, cumLenM: 299.03, topThread: "4 1/2 IF", connections: "4 1/2 IF", massPerLenKgM: 29.05, grade: "S135", driftIn: 4.15 },
             ],
           },
         }],

@@ -26,6 +26,9 @@ const PASSWORD = process.env.ENTRY_PASSWORD ?? "admin";
 /** The well `scripts/seed-wellview-demo.mts` creates. */
 const DEMO_WELL = "Sample 11 - Full Data";
 
+/** The reports with an assembler today; the rest still carry a "soon" badge. */
+const BUILT = ["01", "02", "03", "06", "07"] as const;
+
 /** The four totals report 01 computes, exactly as the sample prints them. */
 const EXPECTED_TOTALS = [
   "10,218,000.00",   // Total AFE Amount
@@ -54,8 +57,14 @@ test.describe("Well Reports", () => {
     }
     // 30 samples, 30 cards.
     await expect(page.locator("aside button")).toHaveCount(30);
-    // Anything without an assembler says so rather than pretending to work.
-    await expect(page.locator("aside button", { hasText: "BHA Detail" })).toContainText("soon");
+    // A report that IS built carries no "soon" badge, and one that is not does.
+    // Asserted structurally rather than by naming a report, so building the next
+    // one does not break this test — only the counts move.
+    for (const type of BUILT) {
+      await expect(page.getByTestId(`report-${type}`)).not.toContainText("soon");
+    }
+    const pending = await page.locator("aside button", { hasText: "soon" }).count();
+    expect(pending).toBe(30 - BUILT.length);
   });
 
   test("a well with no job says so instead of asking for a job that isn't there", async ({ page }) => {
@@ -144,6 +153,59 @@ test.describe("Well Reports", () => {
       await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
       await expect(page.getByText("hr of 24")).toBeVisible({ timeout: 15_000 });
 
+      const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 30_000 }),
+        page.getByRole("button", { name: "PDF" }).click(),
+      ]);
+      const path = join(dir, download.suggestedFilename());
+      await download.saveAs(path);
+      await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
+      const { statSync, readFileSync } = await import("node:fs");
+      expect(statSync(path).size).toBeGreaterThan(5_000);
+      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    });
+  }
+
+  // Reports 02 and 03 are run-scoped: 02 is one page per assembly, 03 one row
+  // per assembly across the well. Both derive their figures from the day rows
+  // that carry the run's id.
+  test("report 02 previews the run's derived figures", async ({ page }) => {
+    await page.getByTestId("report-02").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    const runs = await page.getByLabel("BHA run", { exact: true }).locator("option").allTextContents();
+    test.skip(runs.length === 0, "no BHA run on the demo well");
+
+    // Depth In comes from the first day's string, Depth Out from the run master,
+    // Depth Drilled and the ROP from the days between them.
+    for (const label of ["Depth In (mKB)", "Depth Out (mKB)", "Depth Drilled (m)", "BHA ROP (m/hr)"]) {
+      await expect(page.getByText(label, { exact: true })).toBeVisible({ timeout: 15_000 });
+    }
+    await expect(page.getByText("195.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("810.00", { exact: true }).first()).toBeVisible();
+    // String Length is Σ the make-up's component lengths, not a typed figure.
+    await expect(page.getByText("299.03", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Sensors", { exact: true })).toBeVisible();
+    // The sample's schematic is not drawn; the page says so rather than leaving
+    // a silent gap.
+    await expect(page.getByText(/vertical wellbore schematic/)).toBeVisible();
+  });
+
+  test("report 03 lists every run on the well", async ({ page }) => {
+    await page.getByTestId("report-03").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Bits", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("1-1-NO-A-2-0-NO-TD", { exact: true })).toBeVisible();
+    // Drilled = Σ the days' progress; ROP = that ÷ the run's hours.
+    await expect(page.getByText("104.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("52.00", { exact: true }).first()).toBeVisible();
+  });
+
+  for (const type of ["02", "03"] as const) {
+    test(`report ${type} exports a PDF`, async ({ page }, testInfo) => {
+      await page.getByTestId(`report-${type}`).click();
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      await expect(page.getByRole("button", { name: "PDF" })).toBeVisible({ timeout: 15_000 });
       const dir = mkdtempSync(join(tmpdir(), "wellview-"));
       const [download] = await Promise.all([
         page.waitForEvent("download", { timeout: 30_000 }),

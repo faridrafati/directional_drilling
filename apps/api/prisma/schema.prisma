@@ -276,6 +276,7 @@ model EntryWell {
   reports                EntryReport[]
   jobs                   Job[]
   wellbores              EntryWellbore[]
+  bhaRuns                EntryBhaRun[]
   lessons                EntryIntervalLesson[]
   kicks                  EntryKick[]
   lostCirculation        EntryLostCirculation[]
@@ -428,9 +429,9 @@ model EntryReport {
 }
 
 model EntryBitRun {
-  id              String      @id @default(cuid())
+  id              String       @id @default(cuid())
   reportId        String
-  order           Int         @default(0)
+  order           Int          @default(0)
   bitNo           String?
   bitSerialNo     String?
   size            String?
@@ -456,11 +457,16 @@ model EntryBitRun {
   hsi             Float?
   /// Report 06's "Length (ft)" on the drill-string block — the bit's length.
   lengthM         Float?
+  /// Report 02's "Item Cost (Cost)" on the bit sub-table.
+  itemCost        Float?
+  /// The multi-day run this day's bit row belongs to (reports 02 and 03).
+  bhaRunId        String?
   cmtDrilled      String?
   washAndRun      String?
   bitChangeIn     String?
   bitChangeOut    String?
-  report          EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  report          EntryReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  bhaRun          EntryBhaRun? @relation(fields: [bhaRunId], references: [id], onDelete: SetNull)
 
   @@index([reportId, order])
 }
@@ -694,7 +700,11 @@ model EntryDrillingParameter {
   qLiqReturnGpm   Float? /// Q Liq Return
   qGasReturnM3Min Float? /// Q Gas Return
   report          EntryReport    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  /// The BHA run that drilled this interval — report 02 scopes its parameter
+  /// table and its WOB / RPM / flow ranges to one run.
+  bhaRunId        String?
   wellbore        EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+  bhaRun          EntryBhaRun?   @relation(fields: [bhaRunId], references: [id], onDelete: SetNull)
 
   @@index([reportId, order])
   @@index([wellboreId])
@@ -961,7 +971,10 @@ model EntryDrillString {
   stringWtKlbf      Float?
   note              String?
   report            EntryReport                 @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  /// The multi-day run this day's slice belongs to (reports 02 and 03).
+  bhaRunId          String?
   components        EntryDrillStringComponent[]
+  bhaRun            EntryBhaRun?                @relation(fields: [bhaRunId], references: [id], onDelete: SetNull)
 
   @@index([reportId, order])
 }
@@ -983,6 +996,14 @@ model EntryDrillStringComponent {
   cumLenM       Float? /// cum_len_m
   /// Report 07's "Top Thread" column, e.g. IF, API REG, 4.5IF.
   topThread     String?
+  // ── report 02's fuller tally ──
+  /// Mass per unit length in kg/m — METRIC, to match `lenM`. The samples print
+  /// lb/ft; mixing the two silently scales a string weight by 3.28.
+  massPerLenKgM Float?
+  grade         String? /// e.g. S135, L80
+  driftIn       Float?
+  gaugeIn       Float?
+  connections   String? /// e.g. 4.5IF, 6.62 API REG
   com           String?
   drillString   EntryDrillString @relation(fields: [drillStringId], references: [id], onDelete: Cascade)
 
@@ -1388,6 +1409,7 @@ model EntryWellbore {
 
   well               EntryWell                @relation(fields: [wellId], references: [id], onDelete: Cascade)
   drillingParameters EntryDrillingParameter[]
+  bhaRuns            EntryBhaRun[]
 
   @@index([wellId, order])
 }
@@ -1572,4 +1594,62 @@ model EntryLostCirculation {
   well           EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
 
   @@index([wellId, order])
+}
+
+/// A BHA run, spanning the days it was in the hole — the row grain of report 02
+/// (one page per run) and report 03 (one row per run for the whole well).
+///
+/// DELIBERATELY THIN. Everything the daily rows already carry — the assembly
+/// name, depth in, date in, the drilling hours, the components, the bit — is
+/// DERIVED at assembly time from `drillStrings`. Only facts no day-row can hold
+/// are stored here.
+///
+/// `depthOutMkb` is the exception, and it is stored on purpose: a run can come
+/// out on a day with no drilled interval at all (report 03's sample has runs
+/// with no WOB or RPM recorded), so there is nothing to take a MAX over.
+model EntryBhaRun {
+  id          String   @id @default(cuid())
+  wellId      String
+  wellboreId  String?
+  /// The run's identity, and the key the daily rows are matched on.
+  bhaNo       Int?
+  depthOutMkb Float?
+  /// The day the assembly came out. Free text "as printed", the same convention
+  /// as EntryDrillString.dateIn — report 02 prints the pair on one line, so the
+  /// two halves must not be in different calendars.
+  dateOut     String?
+  timeOut     String? /// HH:MM
+  /// The run-level comment. EntryDrillString.note stays the per-DAY note.
+  comment     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  well               EntryWell                @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore           EntryWellbore?           @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+  sensors            EntryBhaSensor[]
+  drillStrings       EntryDrillString[]
+  bitRuns            EntryBitRun[]
+  drillingParameters EntryDrillingParameter[]
+
+  @@unique([wellId, bhaNo])
+  @@index([wellId])
+  @@index([wellboreId])
+}
+
+/// Report 02's "Sensors" table. Run-level: the sensor package is a property of
+/// the assembly and does not change while it is in the hole, so a per-day home
+/// would make the crew retype it every morning.
+model EntryBhaSensor {
+  id           String      @id @default(cuid())
+  bhaRunId     String
+  order        Int         @default(0)
+  sensorType   String? /// e.g. Gamma, Resistivity, Inclination, Vibration
+  /// Distance from the bit, metres. NOT derivable from the component tally:
+  /// `cumLenM` gives the distance to a COLLAR, while the sensor sits at its own
+  /// offset inside that collar — which is the number this column prints.
+  distFromBitM Float?
+  note         String?
+  bhaRun       EntryBhaRun @relation(fields: [bhaRunId], references: [id], onDelete: Cascade)
+
+  @@index([bhaRunId, order])
 }
