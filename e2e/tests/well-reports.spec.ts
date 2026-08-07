@@ -60,21 +60,32 @@ test.describe("Well Reports", () => {
 
   test("a well with no job says so instead of asking for a job that isn't there", async ({ page }) => {
     await page.getByRole("button", { name: /AFE vs Field Est/ }).click();
-    const wells = await page.getByLabel("Well").locator("option").allTextContents();
-    const empty = wells.find((w) => w !== DEMO_WELL);
-    test.skip(!empty, "only the demo well is assigned to this account");
-    await page.getByLabel("Well").selectOption({ label: empty! });
+    const wells = await page.getByLabel("Well", { exact: true }).locator("option").allTextContents();
+
+    // Find a well that genuinely has no job, rather than assuming one exists —
+    // which well is empty depends on the database this runs against.
+    const noJob = page.getByText(/has no\s+drilling job recorded yet/);
+    const sheet = page.getByText("Job Cost Summary");
+    let found = false;
+    for (const w of wells) {
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: w });
+      // The panel settles into exactly one of two states; wait for either
+      // rather than for a fixed delay.
+      await expect(noJob.or(sheet).first()).toBeVisible({ timeout: 10_000 });
+      if (await noJob.isVisible()) { found = true; break; }
+    }
+    test.skip(!found, "every well on this account has a job");
     await expect(page.getByText(/has no\s+drilling job recorded yet/)).toBeVisible();
-    await expect(page.getByLabel("Job")).toBeDisabled();
+    await expect(page.getByLabel("Job", { exact: true })).toBeDisabled();
   });
 
   test("report 01 previews the totals the sample prints", async ({ page }) => {
     await page.getByRole("button", { name: /AFE vs Field Est/ }).click();
-    await page.getByLabel("Well").selectOption({ label: DEMO_WELL });
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
 
     // The pickers are populated, not empty dropdowns.
-    await expect(page.getByLabel("Well")).not.toHaveValue("");
-    await expect(page.getByLabel("Job")).not.toHaveValue("");
+    await expect(page.getByLabel("Well", { exact: true })).not.toHaveValue("");
+    await expect(page.getByLabel("Job", { exact: true })).not.toHaveValue("");
 
     // The header block prints its labels even where the well has no value.
     for (const label of ["API/UWI", "Surface Legal Location", "Field Name", "License #",
@@ -109,7 +120,7 @@ test.describe("Well Reports", () => {
 
   test("the PDF button produces a file", async ({ page }, testInfo) => {
     await page.getByRole("button", { name: /AFE vs Field Est/ }).click();
-    await page.getByLabel("Well").selectOption({ label: DEMO_WELL });
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
     await expect(page.getByText("10,218,000.00").first()).toBeVisible();
 
     const downloadDir = mkdtempSync(join(tmpdir(), "wellview-"));

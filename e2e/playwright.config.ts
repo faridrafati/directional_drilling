@@ -15,6 +15,10 @@ export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
   retries: 0,
+  // One worker: every spec here drives the SAME database through the UI, so
+  // running two at once lets one test's job or cost code appear inside another
+  // test's assertions. Serial is the only honest setting for DB-backed E2E.
+  workers: 1,
   use: {
     baseURL: "http://localhost:5173",
     trace: "on-first-retry",

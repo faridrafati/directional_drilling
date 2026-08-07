@@ -12,7 +12,7 @@
  * Reports read the entry database, so this page signs in through the same
  * /entry/* session as Daily Report Entry.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EntryAuthProvider, useEntryAuth, SignInCard } from "../entry/auth.js";
 import {
@@ -135,7 +135,9 @@ function Inner() {
                       <div className="flex flex-wrap items-end gap-2 ml-auto">
                         {entry.params.includes("well") && (
                           <Picker label="Well">
+                            {(id) => (
                             <select
+                              id={id}
                               value={wellId}
                               onChange={(e) => setWellId(e.target.value)}
                               className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white min-w-[160px]"
@@ -145,11 +147,14 @@ function Inner() {
                                 <option key={w.id} value={w.id}>{w.name}</option>
                               ))}
                             </select>
+                            )}
                           </Picker>
                         )}
                         {entry.params.includes("job") && (
                           <Picker label="Job">
+                            {(id) => (
                             <select
+                              id={id}
                               value={jobId}
                               onChange={(e) => setJobId(e.target.value)}
                               // Nothing to choose from is a disabled control, not
@@ -163,6 +168,7 @@ function Inner() {
                                 <option key={j.id} value={j.id}>{jobLabel(j)}</option>
                               ))}
                             </select>
+                            )}
                           </Picker>
                         )}
                       </div>
@@ -206,12 +212,24 @@ function jobLabel(j: JobListItem): string {
     .filter(Boolean).join(" · ");
 }
 
-function Picker({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * A labelled picker.
+ *
+ * The label is associated by `htmlFor`, not by wrapping the control: a `<label>`
+ * that CONTAINS a `<select>` takes the selected option into its accessible
+ * name, so the field announces as "Well Dehloran-099 — PDX-555" instead of
+ * "Well".
+ */
+function Picker({ label, children }: {
+  label: string;
+  children: (id: string) => React.ReactNode;
+}) {
+  const id = useId();
   return (
-    <label className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-wide text-gray-400">{label}</span>
-      {children}
-    </label>
+    <div className="flex flex-col gap-0.5">
+      <label htmlFor={id} className="text-[10px] uppercase tracking-wide text-gray-400">{label}</label>
+      {children(id)}
+    </div>
   );
 }
 

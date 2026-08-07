@@ -18,7 +18,7 @@
  * Every value is `string | number | null`: a blank input means "not recorded"
  * and posts as null, never as 0.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 /** Comfortable on touch (44px, 16px text), dense on desktop. */
 const INPUT =
@@ -58,20 +58,27 @@ export function Section({ children, right }: { children: ReactNode; right?: Reac
   );
 }
 
-/** Label / editable value row. */
+/**
+ * Label / editable value row.
+ *
+ * The label is a real `<label htmlFor>`, not a styled div: without the
+ * association a screen reader announces these inputs as unlabelled, and the
+ * label stops being a click target for the field it names.
+ */
 export function TextField({ label, value, onChange, disabled, placeholder, multiline }: {
   label: string; value: string | null; onChange: (v: string | null) => void;
   disabled?: boolean; placeholder?: string; multiline?: boolean;
 }) {
+  const id = useId();
   return (
     <div className={FIELD_ROW}>
-      <div className={LABEL}>{label}</div>
+      <label htmlFor={id} className={LABEL}>{label}</label>
       <div className="flex-1 min-w-0">
         {multiline ? (
-          <textarea rows={3} className={`${INPUT} resize-y`} disabled={disabled} placeholder={placeholder}
+          <textarea id={id} rows={3} className={`${INPUT} resize-y`} disabled={disabled} placeholder={placeholder}
             value={value ?? ""} onChange={(e) => onChange(e.target.value || null)} />
         ) : (
-          <input className={INPUT} disabled={disabled} placeholder={placeholder}
+          <input id={id} className={INPUT} disabled={disabled} placeholder={placeholder}
             value={value ?? ""} onChange={(e) => onChange(e.target.value || null)} />
         )}
       </div>
@@ -87,12 +94,13 @@ export function NumField({ label, value, onChange, disabled, step, unit, signed 
    *  Col.signed: iOS's decimal pad has no minus key, so it must not be requested. */
   signed?: boolean;
 }) {
+  const id = useId();
   return (
     <div className={FIELD_ROW}>
-      <div className={LABEL}>{label}</div>
+      <label htmlFor={id} className={LABEL}>{label}</label>
       <div className="flex-1 min-w-0 flex items-center">
         {/* inputMode raises the phone number pad; type=number keeps the desktop spinner. */}
-        <input type="number" inputMode={signed ? undefined : "decimal"} step={step ?? "any"} className={`${INPUT} tabular-nums`} disabled={disabled}
+        <input id={id} type="number" inputMode={signed ? undefined : "decimal"} step={step ?? "any"} className={`${INPUT} tabular-nums`} disabled={disabled}
           value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} />
         {unit && <span className="pr-2 sm:pr-1.5 text-[11px] sm:text-[9px] text-gray-500 shrink-0">{unit}</span>}
       </div>
@@ -119,8 +127,16 @@ export interface Col<T> {
    * "int" is a whole-number column backed by an Int database column. It must not
    * accept a decimal: the API validates with `z.number().int()`, so a typed
    * "3.5" rejects the WHOLE sheet save with a 400 that names no field.
+   *
+   * "select" is a column whose value must be one of a known set — a phase, a
+   * cost code, an AFE supplement. Free text there would be a foreign key the
+   * user typed, which is not a thing that can work.
    */
-  type?: "text" | "num" | "int";
+  type?: "text" | "num" | "int" | "select";
+  /** Choices for a "select" column. A blank first entry is added automatically. */
+  options?: { value: string; label: string }[];
+  /** Hint text for a free-text column, e.g. a date format. */
+  placeholder?: string;
   /**
    * Numeric column whose value can be NEGATIVE (a south/west survey station, a
    * drop-section build rate). iOS's `decimal` pad has no minus key, so signed
@@ -146,7 +162,7 @@ export interface Col<T> {
  * Rows are re-numbered on every change so `order` always matches the on-screen
  * sequence — the API stores and re-serves rows in that order.
  */
-export function RowTable<T extends { order?: number }>({ cols, rows, onChange, blank, disabled, addLabel, minRows = 0 }: {
+export function RowTable<T extends { order?: number }>({ cols, rows, onChange, blank, disabled, addLabel, minRows = 0, testId }: {
   cols: Col<T>[];
   rows: T[];
   onChange: (rows: T[]) => void;
@@ -155,6 +171,12 @@ export function RowTable<T extends { order?: number }>({ cols, rows, onChange, b
   addLabel?: string;
   /** Keep at least this many rows on screen so the sheet never looks empty. */
   minRows?: number;
+  /**
+   * Stamps `data-testid="<testId>-r<row>-<column>"` on every cell control and
+   * `"<testId>-add"` on the add button, so an end-to-end test can address a
+   * cell without depending on column order or on the visible label.
+   */
+  testId?: string;
 }) {
   const narrow = useNarrowScreen();
   const shown = rows.length >= minRows ? rows : [...rows, ...Array.from({ length: minRows - rows.length }, blank)];
@@ -167,25 +189,37 @@ export function RowTable<T extends { order?: number }>({ cols, rows, onChange, b
   const removeRow = (i: number) => onChange(reindex(shown.filter((_, j) => j !== i)));
   const addRow = () => onChange(reindex([...shown, blank()]));
 
-  const cell = (row: T, i: number, c: Col<T>) =>
-    c.type === "int" ? (
+  const cell = (row: T, i: number, c: Col<T>) => {
+    const tid = testId ? { "data-testid": `${testId}-r${i}-${c.key}` } : {};
+    return c.type === "int" ? (
       // Whole numbers only — step/inputMode ask the browser and the phone keypad
       // for an integer, and the round() makes it true even when they don't.
-      <input type="number" inputMode="numeric" step="1" disabled={disabled} className={`${INPUT} tabular-nums`}
+      <input {...tid} type="number" inputMode="numeric" step="1" disabled={disabled} className={`${INPUT} tabular-nums`}
         value={(row[c.key] as number | null) ?? ""}
         onChange={(e) => setCell(i, c.key, e.target.value === "" ? null : Math.round(Number(e.target.value)))} />
     ) : c.type === "num" ? (
-      <input type="number" inputMode={c.signed ? undefined : "decimal"} step="any" disabled={disabled} className={`${INPUT} tabular-nums`}
+      <input {...tid} type="number" inputMode={c.signed ? undefined : "decimal"} step="any" disabled={disabled} className={`${INPUT} tabular-nums`}
         value={(row[c.key] as number | null) ?? ""}
         onChange={(e) => setCell(i, c.key, e.target.value === "" ? null : Number(e.target.value))} />
+    ) : c.type === "select" ? (
+      // The blank option is not decoration: "no phase yet" is a legitimate
+      // answer for a cost line, and it must post as null rather than default to
+      // whichever row happens to be first.
+      <select {...tid} disabled={disabled} className={INPUT}
+        value={(row[c.key] as string | null) ?? ""}
+        onChange={(e) => setCell(i, c.key, e.target.value || null)}>
+        <option value="">—</option>
+        {(c.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
     ) : (
-      <input disabled={disabled} className={INPUT}
+      <input {...tid} disabled={disabled} className={INPUT} placeholder={c.placeholder}
         value={(row[c.key] as string | null) ?? ""}
         onChange={(e) => setCell(i, c.key, e.target.value || null)} />
     );
+  };
 
   const addButton = !disabled && (
-    <button type="button" onClick={addRow}
+    <button type="button" onClick={addRow} data-testid={testId ? `${testId}-add` : undefined}
       className="mt-2 mb-2 mx-2 sm:mx-1 min-h-[44px] sm:min-h-[28px] px-3 text-sm sm:text-[11px] rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150">
       + {addLabel ?? "Add row"}
     </button>
@@ -210,7 +244,7 @@ export function RowTable<T extends { order?: number }>({ cols, rows, onChange, b
             </div>
             {cols.map((c) => (
               <div key={c.key} className={FIELD_ROW}>
-                <div className={LABEL} title={c.title}>{c.label}</div>
+                <span className={LABEL} title={c.title}>{c.label}</span>
                 <div className="flex-1 min-w-0">{cell(row, i, c)}</div>
               </div>
             ))}

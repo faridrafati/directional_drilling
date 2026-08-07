@@ -24,7 +24,7 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | Report-engine skeleton (`/entry/report-data/:type`, catalog page, `reportChrome.ts`) | 2026-08-07 |
 | Shared Jalali comparator + Gregorian→Jalali (`packages/shared/src/jalali`, 22 tests) | 2026-08-07 |
 | Demo seed (`scripts/seed-wellview-demo.mts`) | 2026-08-07 |
-| Entry UI — Well Data workspace (Jobs & Phases, AFE & Costs) | **not started** — jobs are seeded/API-only today |
+| Entry UI — Well Data workspace (Job, Phases, AFE & supplements, Cost sheet, Cost codes) | 2026-08-07 |
 
 ## Tier 1 — daily drilling
 
@@ -50,7 +50,7 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 
 | # | Report | Spec read | Schema | Entry | Assembler | Preview | PDF | Verified |
 |---|---|---|---|---|---|---|---|---|
-| 01 | AFE vs Field Est vs Final Invoice | 2026-08-07 | 2026-08-07 | seed only | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
+| 01 | AFE vs Field Est vs Final Invoice | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 | 12 | Multi-well Daily Drilling Summary 2 | — | — | — | — | — | — | — |
 | 13 | Multi-well Drilling KPIs (XLSX) | — | — | — | — | — | — | — |
 | 14 | Multi-well Drilling Offsets | — | — | — | — | — | — | — |
@@ -116,6 +116,15 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
 - **2026-08-07 — money cells declare their format.** Header cells carry a `kind`
   (`money` / `decimal` / `int`). Deciding by `Number.isInteger` printed the sample's
   "10,218,000.00" as "10,218,000" purely because that total is round.
+- **2026-08-07 — the cost codes live beside the job sheet, not inside it.** They are a
+  company-wide chart of accounts, and nesting them under a job made them unreachable until a job
+  existed — which is backwards, since a cost line cannot be typed before its code exists.
+- **2026-08-07 — entry labels are associated, not just styled.** `TextField` / `NumField` now render
+  a real `<label htmlFor>`, and the well/job pickers use `htmlFor` rather than wrapping their
+  `<select>` (a wrapping label folds the selected option into the field's accessible name, so the
+  well picker announced as "Well Dehloran-099 — PDX-555").
+- **2026-08-07 — E2E runs with one worker.** Every spec drives the same database through the UI;
+  two in parallel let one test's job appear inside another's assertions.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

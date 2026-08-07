@@ -16,6 +16,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EntryAuthProvider, useEntryAuth, SignInCard, ChangePasswordCard } from "../entry/auth.js";
 import { entryApi, type ReportDetail, type ReportListItem, type EntryWell } from "../entry/client.js";
 import { ReportEditor } from "../components/entry/ReportEditor.js";
+import { WellDataEditor } from "../components/entry/WellDataEditor.js";
 import { AdminPanel } from "../components/entry/AdminPanel.js";
 import { JalaliDatePicker } from "../components/ddr/JalaliDatePicker.js";
 
@@ -29,7 +30,7 @@ export function ReportEntryPage() {
 
 function Inner() {
   const { user, wells, loading, signOut } = useEntryAuth();
-  const [tab, setTab] = useState<"reports" | "admin">("reports");
+  const [tab, setTab] = useState<"reports" | "welldata" | "admin">("reports");
   const [changing, setChanging] = useState(false);
 
   return (
@@ -73,20 +74,69 @@ function Inner() {
 
         {user && !user.mustChangePassword && !changing && (
           <>
-            {user.role === "admin" && (
-              <div className="flex gap-2 sm:gap-1 border-b border-gray-200 mb-3 shrink-0">
-                {([["reports", "Reports"], ["admin", "Administration"]] as const).map(([id, label]) => (
-                  <button key={id} onClick={() => setTab(id)}
-                    className={`min-h-[44px] sm:min-h-[36px] px-4 sm:px-3 py-2 text-sm -mb-px border-b-2 transition-colors duration-150 ${tab === id ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-            {tab === "admin" && user.role === "admin" ? <AdminPanel /> : <ReportsWorkspace wells={wells} isAdmin={user.role === "admin"} />}
+            {/* Daily reports and well data are both company-man work; only
+                Administration is gated. */}
+            <div className="flex gap-2 sm:gap-1 border-b border-gray-200 mb-3 shrink-0">
+              {([["reports", "Daily reports"], ["welldata", "Well data"],
+                 ...(user.role === "admin" ? [["admin", "Administration"] as const] : [])] as const).map(([id, label]) => (
+                <button key={id} onClick={() => setTab(id)}
+                  className={`min-h-[44px] sm:min-h-[36px] px-4 sm:px-3 py-2 text-sm -mb-px border-b-2 transition-colors duration-150 ${tab === id ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {tab === "admin" && user.role === "admin"
+              ? <AdminPanel />
+              : tab === "welldata"
+                ? <WellDataWorkspace wells={wells} isAdmin={user.role === "admin"} />
+                : <ReportsWorkspace wells={wells} isAdmin={user.role === "admin"} />}
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Well data — pick a well, then edit its jobs, phases, AFE and cost sheet.
+ *
+ * A thin wrapper: the well picker lives here so the editor itself only ever
+ * deals with one well, the same split the daily workspace uses.
+ */
+function WellDataWorkspace({ wells, isAdmin }: { wells: EntryWell[]; isAdmin: boolean }) {
+  const [wellId, setWellId] = useState<string>(wells[0]?.id ?? "");
+  useEffect(() => {
+    if (!wells.length) { setWellId(""); return; }
+    if (!wells.some((w) => w.id === wellId)) setWellId(wells[0].id);
+  }, [wells, wellId]);
+
+  if (!wells.length) {
+    return (
+      <div className="flex-1 min-h-0 flex items-start justify-center pt-10">
+        <div className="max-w-md text-center text-sm text-gray-500 border border-gray-200 bg-white rounded-lg shadow-sm p-6">
+          <p className="font-medium text-gray-700 mb-1">No wells assigned to you yet.</p>
+          <p className="text-xs">
+            An admin registers the rig and the well, then ticks it for your account under
+            <b> Administration → Users &amp; assignments</b>.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const selected = wells.find((w) => w.id === wellId);
+  return (
+    <div className="flex-1 min-h-0 flex flex-col gap-3">
+      <div className="shrink-0 flex items-center gap-2">
+        {/* htmlFor, not a wrapping label: wrapping a <select> folds the selected
+            option into the field's accessible name. */}
+        <label htmlFor="welldata-well" className="text-xs sm:text-[11px] text-gray-500 shrink-0">Well</label>
+        <select id="welldata-well" value={wellId} onChange={(e) => setWellId(e.target.value)}
+          className="min-h-[44px] sm:min-h-[36px] px-2 text-base sm:text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-md">
+          {wells.map((w) => <option key={w.id} value={w.id}>{w.name} — {w.rig?.name}</option>)}
+        </select>
+      </div>
+      {wellId && <WellDataEditor wellId={wellId} wellName={selected?.name ?? ""} isAdmin={isAdmin} />}
     </div>
   );
 }
