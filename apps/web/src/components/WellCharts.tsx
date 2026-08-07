@@ -42,6 +42,109 @@ import { StationDetailsPanel, type StationDetails } from "./StationDetailsPanel.
  * for either axis and respect the reversed-Y vertical-section axis.
  */
 type Domain = [number, number] | null;
+
+/* ── Flat-axis guard ───────────────────────────────────────────────────────
+ *
+ * WHY THIS EXISTS — the VERTICAL WELL case.
+ *
+ * A vertical (or near-vertical) well has no horizontal displacement: every
+ * station's NS and EW — and therefore its VSEC — is 0. In practice it is
+ * either an EXACT 0 (inc = 0 ⇒ `sqrt(1 - cos²inc)` is exactly 0 in
+ * packages/shared surToVct) or a float-noise residue such as 1.4e-15 left
+ * over from `cos(azm)` / `sin(azm)` at inc ≈ 0. BOTH cases occur, so an
+ * `=== 0` test is not sufficient.
+ *
+ * Recharts' `domain={["auto","auto"]}` fits an axis to the DATA EXTENT. When
+ * that extent is zero or microscopic it stretches nothing across the full
+ * pixel width of the axis, which amplifies the noise into a full-scale
+ * slope: the Plan View of a perfectly vertical well drew a dramatic diagonal
+ * and the ticks read "1.4e-15".
+ *
+ * The guard hands Recharts an EXPLICIT symmetric window around the constant
+ * value instead of letting it autoscale nothing. A vertical well then reads
+ * honestly — a single point at the origin in Plan View, a straight vertical
+ * line at VS = 0 in the Vertical Section — with the value at its true
+ * position on the axis. Ordinary wells get `null` back and keep today's
+ * autoscaling untouched.
+ */
+
+/** Below this magnitude a displacement is trig residue, not a real offset. */
+const AXIS_NOISE_EPS = 1e-9;
+
+/**
+ * Absolute flatness floor, in project length units. An axis spanning less
+ * than this is not a trajectory in ANY unit we support — a micrometre in
+ * ft/m, a millimetre in km — so it is either float noise or a well that is
+ * vertical for every practical purpose. Deliberately looser than
+ * AXIS_NOISE_EPS: noise is not always 1e-15, it scales with the magnitude of
+ * the terms that produced it (a wellhead at NS = 1e5 cancels down to ~1e-11,
+ * an inc of 1e-6° projects to ~1e-8).
+ */
+const AXIS_FLAT_ABS = 1e-6;
+
+/** An extent narrower than this FRACTION of the values involved is flat. */
+const AXIS_FLAT_REL = 1e-6;
+
+/**
+ * HARD CEILING on the flatness tolerance, whatever the magnitude of the data.
+ *
+ * INVARIANT: an axis spanning more than AXIS_FLAT_MAX project length units is
+ * NEVER treated as flat. The relative term exists only to keep up with float
+ * noise, which grows like magnitude × 2^-52 (≈1e-16) — at magnitude 1e10 that
+ * is still only ~1e-6, so a 1e-3 ceiling clears real noise by three orders of
+ * magnitude at every magnitude we could ever plot. Without the cap the
+ * relative term overtakes real data above |value| ~1e6: at 3.75e6 the
+ * tolerance would be 3.75, and a genuine 2-unit trajectory spread would be
+ * collapsed into a padded dot spanning ±187,500.
+ */
+const AXIS_FLAT_MAX = 1e-3;
+
+/** Half-width of the window drawn around a constant value with no scale of
+ *  its own (i.e. the all-zeros vertical well) — ±1 project length unit. */
+const FLAT_AXIS_PAD = 1;
+
+/**
+ * Snap float noise to an exact 0 so tooltips and axis ticks never print
+ * "1.4e-15" (or "-0.00") for a well that never left the vertical.
+ *
+ * Applied ONLY to the charts' own derived row objects. The StationRow /
+ * KeypointRow records that the tables, the interpolator and the exports read
+ * are never touched — they keep the raw solver output.
+ */
+function snapAxisZero(v: number): number {
+  return Number.isFinite(v) && Math.abs(v) < AXIS_NOISE_EPS ? 0 : v;
+}
+
+/**
+ * SAFE domain for an axis whose data may be constant — see the block comment
+ * above. Returns `null` when the extent is healthy, so callers fall back to
+ * Recharts' `["auto","auto"]` and nothing changes for a normal trajectory.
+ */
+function flatAxisDomain(extent: readonly [number, number]): [number, number] | null {
+  const [lo, hi] = extent;
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+  const min = Math.min(lo, hi), max = Math.max(lo, hi);
+  // "Flat" is relative to the values involved — a 1e-6 spread is nothing at
+  // NS = 5000 ft — with an absolute floor that catches the all-exact-zeros
+  // case, where the relative test degenerates to 0 > 0, and a hard ceiling so
+  // the relative term can never grow large enough to swallow REAL data.
+  // INVARIANT: AXIS_FLAT_ABS <= flatTol <= AXIS_FLAT_MAX, always.
+  const magnitude = Math.max(Math.abs(min), Math.abs(max));
+  const flatTol = Math.min(
+    Math.max(magnitude * AXIS_FLAT_REL, AXIS_FLAT_ABS),
+    AXIS_FLAT_MAX,
+  );
+  if (max - min > flatTol) return null;
+  // Centre the window on the constant value so the series renders as a
+  // straight line AT ITS TRUE POSITION, not wherever autoscaling put it.
+  // A centre under the flatness floor is noise about zero → snap it, which
+  // also keeps the window symmetric and the gridlines on round numbers.
+  const mid = (min + max) / 2;
+  const centre = Math.abs(mid) < AXIS_FLAT_ABS ? 0 : mid;
+  const pad = Math.max(Math.abs(centre) * 0.05, FLAT_AXIS_PAD);
+  return [centre - pad, centre + pad];
+}
+
 function useChartZoom(
   xKey: string,
   yKey: string,
@@ -68,12 +171,27 @@ function useChartZoom(
     return { x: [xMin, xMax] as [number, number], y: [yMin, yMax] as [number, number] };
   }, [data, xKey, yKey]);
 
+  // Flat-axis guard (see flatAxisDomain above). `null` for ordinary wells;
+  // a padded window when the axis' data is constant — e.g. NS/EW/VSEC on a
+  // vertical well. Exposed so the axes can prefer it over ["auto","auto"].
+  const safeXDomain = useMemo(() => flatAxisDomain(extents.x), [extents.x]);
+  const safeYDomain = useMemo(() => flatAxisDomain(extents.y), [extents.y]);
+
+  // The extent every zoom/pan/grid computation works from — and the ONLY one
+  // the hook hands out (see the return below). Substituting the padded window
+  // keeps the span non-zero, so panning a vertical well moves the view and
+  // zoom-out doesn't clamp to a microscopic window.
+  const baseExtents = useMemo(
+    () => ({ x: safeXDomain ?? extents.x, y: safeYDomain ?? extents.y }),
+    [extents, safeXDomain, safeYDomain],
+  );
+
   // Live refs so the native DOM listeners (attached once) always read the
   // latest domain/extents without re-subscribing on every render.
-  const domRef = useRef({ x: extents.x, y: extents.y });
-  domRef.current = { x: xDomain ?? extents.x, y: yDomain ?? extents.y };
-  const extentsRef = useRef(extents);
-  extentsRef.current = extents;
+  const domRef = useRef({ x: baseExtents.x, y: baseExtents.y });
+  domRef.current = { x: xDomain ?? baseExtents.x, y: yDomain ?? baseExtents.y };
+  const extentsRef = useRef(baseExtents);
+  extentsRef.current = baseExtents;
   const yRevRef = useRef(yReversed);
   yRevRef.current = yReversed;
 
@@ -203,12 +321,12 @@ function useChartZoom(
     const mid = (cur[0] + cur[1]) / 2;
     let half = ((cur[1] - cur[0]) / 2) * factor;
     const naturalHalf = axis === "x"
-      ? (extents.x[1] - extents.x[0]) / 2 || 1
-      : (extents.y[1] - extents.y[0]) / 2 || 1;
+      ? (baseExtents.x[1] - baseExtents.x[0]) / 2 || 1
+      : (baseExtents.y[1] - baseExtents.y[0]) / 2 || 1;
     half = Math.max(naturalHalf * 1e-3, Math.min(naturalHalf * 50, Math.abs(half)));
     const next: [number, number] = [mid - half, mid + half];
     if (axis === "x") setXDomain(next); else setYDomain(next);
-  }, [extents]);
+  }, [baseExtents]);
 
   const reset = useCallback(() => {
     setXDomain(null); setYDomain(null); setDragA(null); setDragB(null);
@@ -221,12 +339,14 @@ function useChartZoom(
     ? { x1: dragA.x, x2: dragB.x, y1: dragA.y, y2: dragB.y }
     : null;
 
-  // Effective (currently-visible) domain — the zoom override, else the data
-  // extents. Both halves are referentially stable between renders (extents
-  // is memoised; xDomain/yDomain only change on a zoom/pan), so the memo
-  // below keeps the gridline arrays stable too.
-  const effX = xDomain ?? extents.x;
-  const effY = yDomain ?? extents.y;
+  // Effective (currently-visible) domain — the zoom override, else the
+  // flat-guarded data extents. Both halves are referentially stable between
+  // renders (baseExtents is memoised; xDomain/yDomain only change on a
+  // zoom/pan), so the memo below keeps the gridline arrays stable too.
+  // Using baseExtents (not the raw extents) is what keeps the grid drawn on
+  // a vertical well: gridTickValues bails out on a zero-width range.
+  const effX = xDomain ?? baseExtents.x;
+  const effY = yDomain ?? baseExtents.y;
   const effX0 = effX[0], effX1 = effX[1], effY0 = effY[0], effY1 = effY[1];
 
   // Pre-computed, MEMOISED gridline value arrays. Passing a fresh array as
@@ -241,9 +361,15 @@ function useChartZoom(
     minorY: gridTickValues(effY0, effY1, true),
   }), [effX0, effX1, effY0, effY1]);
 
+  // `baseExtents` — NOT the raw `extents` — is the only extent exposed, under
+  // the name it carries inside the hook. The raw pair is deliberately kept
+  // private: on a vertical well it is [0, 0], so anything sized from it (a
+  // span, a tick step, a fraction-of-range threshold) silently degenerates.
+  // A future caller reaching for `zoom.extents` now gets a compile error
+  // instead of a zero-width window, and finds the guarded one right here.
   return {
-    wrapRef, xDomain, yDomain, extents, scaleAxis, reset, isZoomed,
-    selectionArea, gridLines,
+    wrapRef, xDomain, yDomain, baseExtents, scaleAxis, reset, isZoomed,
+    selectionArea, gridLines, safeXDomain, safeYDomain,
   };
 }
 
@@ -638,7 +764,11 @@ export function naturalVsecAzm(stations: { ns: number; ew: number }[]): number {
   const last = stations[stations.length - 1];
   const dn = last.ns - first.ns;
   const de = last.ew - first.ew;
-  if (dn === 0 && de === 0) return 0;
+  // A vertical well has no section bearing. Test against the noise floor,
+  // not against 0: at inc ≈ 0 the trig leaves residues like 1e-15 in NS/EW,
+  // and atan2 turns that residue into a confident-looking random azimuth
+  // (which then re-projects VSEC into more noise).
+  if (Math.abs(dn) < AXIS_FLAT_ABS && Math.abs(de) < AXIS_FLAT_ABS) return 0;
   return Math.atan2(de, dn);
 }
 
@@ -896,14 +1026,28 @@ function CustomTooltip({
   };
 }
 
-/** Convert a StationRow into the panel-ready shape. */
+/**
+ * Convert a StationRow into the panel-ready shape.
+ *
+ * The horizontal offsets get the SAME snapAxisZero treatment as the chart
+ * rows, so the details panel reads "0.000" wherever the axis reads 0 instead
+ * of "-0.000" for the ±1e-15 trig residue a vertical well leaves behind. This
+ * matters in the Charts tab, where both charts render with
+ * showDetailsPanel={false} and hoist through onHover — the panel actually on
+ * screen is fed from here, not from the charts' own derived rows.
+ *
+ * Builds a FRESH object: the StationRow the tables, the interpolator and the
+ * exports read is never touched and keeps the raw solver output.
+ */
 function toDetails(s: StationRow): StationDetails {
   return {
     label: s.comment || `MD ${s.md.toFixed(1)}`,
     comment: s.comment ?? "",
     kind: "station",
-    md: s.md, inc: s.inc, azm: s.azm, tvd: s.tvd, vsec: s.vsec,
-    ns: s.ns, ew: s.ew, dls: s.dls, tf: s.tf,
+    md: s.md, inc: s.inc, azm: s.azm, tvd: s.tvd,
+    vsec: snapAxisZero(s.vsec),
+    ns: snapAxisZero(s.ns), ew: snapAxisZero(s.ew),
+    dls: s.dls, tf: s.tf,
     br: s.br, tr: s.tr, dmd: s.dmd,
   };
 }
@@ -937,9 +1081,13 @@ export function VerticalSectionChart({
     if (stations.length === 0) return [];
     const origin = stations[0];
     const cos = Math.cos(refAzm), sin = Math.sin(refAzm);
+    // snapAxisZero on the derived VSEC only — these are fresh chart rows, so
+    // the StationRow the tables and exports read keeps the raw solver value.
+    // Without it a vertical well's VSEC arrives as ±1e-15 and the tooltip
+    // prints "-0.00".
     return stations.map((s, i) => ({
       i,
-      vsec: (s.ns - origin.ns) * cos + (s.ew - origin.ew) * sin,
+      vsec: snapAxisZero((s.ns - origin.ns) * cos + (s.ew - origin.ew) * sin),
       tvd: s.tvd,
       comment: s.comment,
     }));
@@ -953,7 +1101,7 @@ export function VerticalSectionChart({
     const origin = stations[0];
     const cos = Math.cos(refAzm), sin = Math.sin(refAzm);
     return keypoints.map((k) => ({
-      vsec: (k.ns - origin.ns) * cos + (k.ew - origin.ew) * sin,
+      vsec: snapAxisZero((k.ns - origin.ns) * cos + (k.ew - origin.ew) * sin),
       tvd: k.tvd,
       label: shortKeypointLabel(k.comment),
       key: `${k.segmentOrder}-${k.roleIndex}-${k.md}`,
@@ -971,8 +1119,17 @@ export function VerticalSectionChart({
   // When the user picks a custom view angle, override the station's stored
   // VSEC in the details panel too — otherwise the side panel and the chart
   // would disagree.
+  // `data[i].vsec` is the value re-projected onto the CURRENT view azimuth
+  // (already snapped); toDetails' own snapped vsec is the fallback when the
+  // chart row is missing, so the panel never shows the raw "-0.000".
   const hovered: StationDetails | null = hoverIdx !== null && stations[hoverIdx]
-    ? { ...toDetails(stations[hoverIdx]), vsec: data[hoverIdx]?.vsec ?? stations[hoverIdx].vsec }
+    ? {
+        ...toDetails(stations[hoverIdx]),
+        // The chart row's VSEC is the value re-projected onto the CURRENT view
+        // azimuth (and already snapped); the stored one is the fallback, snapped
+        // here too so the panel never prints "-0.000" for a vertical well.
+        vsec: data[hoverIdx]?.vsec ?? snapAxisZero(stations[hoverIdx].vsec),
+      }
     : null;
   // Notify the parent on every hover transition (after render).
   React.useEffect(() => { onHover?.(hovered); }, [hovered, onHover]);
@@ -1022,7 +1179,11 @@ export function VerticalSectionChart({
           {engineeringGrid(zoom.gridLines)}
           <XAxis
             dataKey="vsec" type="number" stroke="#475569" fontSize={12}
-            domain={zoom.xDomain ?? ["auto", "auto"]}
+            /* Explicit zoom domain wins; then the flat-axis guard (a vertical
+               well has VSEC ≡ 0 and must draw as a straight vertical line at
+               VS = 0, not a diagonal); autoscale only when the data has a
+               real extent. */
+            domain={zoom.xDomain ?? zoom.safeXDomain ?? ["auto", "auto"]}
             allowDataOverflow={zoom.xDomain !== null}
             tickFormatter={fmtAxisTick}
           >
@@ -1030,7 +1191,9 @@ export function VerticalSectionChart({
           </XAxis>
           <YAxis
             dataKey="tvd" type="number" reversed stroke="#475569" fontSize={12}
-            domain={zoom.yDomain ?? ["auto", "auto"]}
+            /* Same guard for free — a zero-length or perfectly horizontal
+               drain would degenerate on TVD exactly the same way. */
+            domain={zoom.yDomain ?? zoom.safeYDomain ?? ["auto", "auto"]}
             allowDataOverflow={zoom.yDomain !== null}
             tickFormatter={fmtAxisTick}
           >
@@ -1133,12 +1296,16 @@ export function PlanViewChart({
   smoothLines = true,
   keypoints = [],
 }: Props) {
+  // Fresh chart rows — snapAxisZero kills the ±1e-15 trig residue a vertical
+  // well leaves in NS/EW so the tooltip and ticks read "0.00", not "-0.00" /
+  // "1.4e-15". The source StationRow is untouched: the tables, the
+  // interpolator and the exports still read the raw solver output.
   const data = useMemo(
     () =>
       stations.map((s, i) => ({
         i,
-        ew: s.ew,
-        ns: s.ns,
+        ew: snapAxisZero(s.ew),
+        ns: snapAxisZero(s.ns),
         comment: s.comment,
       })),
     [stations]
@@ -1187,7 +1354,10 @@ export function PlanViewChart({
           {engineeringGrid(planZoom.gridLines)}
           <XAxis
             dataKey="ew" type="number" stroke="#475569" fontSize={12}
-            domain={planZoom.xDomain ?? ["auto", "auto"]}
+            /* Explicit zoom domain wins; then the flat-axis guard — on a
+               vertical well every EW is 0 and autoscaling nothing turned the
+               float noise into a full-width diagonal. */
+            domain={planZoom.xDomain ?? planZoom.safeXDomain ?? ["auto", "auto"]}
             allowDataOverflow={planZoom.xDomain !== null}
             tickFormatter={fmtAxisTick}
           >
@@ -1195,7 +1365,9 @@ export function PlanViewChart({
           </XAxis>
           <YAxis
             dataKey="ns" type="number" stroke="#475569" fontSize={12}
-            domain={planZoom.yDomain ?? ["auto", "auto"]}
+            /* Ditto for NS — with both axes guarded a purely vertical well
+               collapses to a single point at the origin, which is the truth. */
+            domain={planZoom.yDomain ?? planZoom.safeYDomain ?? ["auto", "auto"]}
             allowDataOverflow={planZoom.yDomain !== null}
             tickFormatter={fmtAxisTick}
           >
@@ -1228,8 +1400,8 @@ export function PlanViewChart({
           {keypoints.map((k) => (
             <ReferenceDot
               key={`${k.segmentOrder}-${k.roleIndex}-${k.md}`}
-              x={k.ew}
-              y={k.ns}
+              x={snapAxisZero(k.ew)}
+              y={snapAxisZero(k.ns)}
               ifOverflow="visible"
               isFront
               shape={(props: { cx?: number; cy?: number }) => (
