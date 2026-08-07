@@ -10,6 +10,7 @@ const NAV: { to: string; label: string }[] = [
   { to: "/air-gas", label: "Air & Gas Drilling" },
   { to: "/ddr", label: "Daily Drilling Reports" },
   { to: "/ddr-entry", label: "Daily Report Entry" },
+  { to: "/well-reports", label: "Well Reports" },
 ];
 
 /** Derrick mark — inline SVG (the design checklist forbids emoji-as-icon). */

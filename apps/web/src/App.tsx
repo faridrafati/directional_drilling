@@ -31,6 +31,10 @@ const DdrReportsPage = lazy(() =>
 const ReportEntryPage = lazy(() =>
   import("./pages/ReportEntryPage.js").then((m) => ({ default: m.ReportEntryPage }))
 );
+// The WellView report suite — generated from the app's own database.
+const WellviewReportsPage = lazy(() =>
+  import("./pages/WellviewReportsPage.js").then((m) => ({ default: m.WellviewReportsPage }))
+);
 
 export function App() {
   return (
@@ -50,6 +54,8 @@ export function App() {
           <Route path="/ddr" element={<DdrReportsPage />} />
           {/* Daily Report Entry — company men file the same form from the rig. */}
           <Route path="/ddr-entry" element={<ReportEntryPage />} />
+          {/* Well Reports — the WellView report suite, from the entry database. */}
+          <Route path="/well-reports" element={<WellviewReportsPage />} />
           <Route
             path="/3d/:id"
             element={<PlaceholderPage title="3D Field Visualization" phase="Phase 5" />}

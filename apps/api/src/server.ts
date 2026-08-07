@@ -11,6 +11,8 @@ import { registerDdrRoutes } from "./routes/ddr.js";
 import { registerAirmudRoutes } from "./routes/airmud.js";
 import { registerEntryRoutes } from "./routes/entry.js";
 import { seedAdmin } from "./entry/auth.js";
+import { registerWellviewRoutes } from "./routes/wellview.js";
+import { registerReportRoutes } from "./reports/index.js";
 import { seedWellviewCodes } from "./wellview/codes.js";
 
 const prisma = new PrismaClient();
@@ -58,6 +60,10 @@ async function main() {
   await registerAirmudRoutes(app);
   // Rig-side report entry (the only authenticated part of the API).
   await registerEntryRoutes(app, prisma);
+  // WellView report suite: the well-level job/AFE/cost entry API and the report
+  // assemblers. Same entry token, same well-access rule as /entry/* above.
+  await registerWellviewRoutes(app, prisma);
+  await registerReportRoutes(app, prisma);
   await seedAdmin(prisma, (msg) => app.log.info(msg));
   // The WellView operation-code tables. Idempotent upserts, same bootstrap
   // pattern as the admin account — no separate seed step to forget.

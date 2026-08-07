@@ -21,6 +21,7 @@ import { z } from "zod";
 import {
   hashPassword, verifyPassword, issueToken, requireUser, requireAdmin,
 } from "../entry/auth.js";
+import { allowedWellIds as scopedWellIds, mayUseWell as canUseWell } from "../entry/access.js";
 import { wellRegistryOptions } from "../ddr/db.js";
 
 // ── coercion helpers: the form posts strings, blanks mean "not recorded" ─────
@@ -256,18 +257,10 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
 
   const publicUser = { id: true, username: true, fullName: true, role: true, active: true, mustChangePassword: true, createdAt: true } as const;
 
-  /** Wells this caller may touch — everything for an admin, assignments otherwise. */
-  async function allowedWellIds(req: FastifyRequest): Promise<string[] | "all"> {
-    if (req.entryUser!.role === "admin") return "all";
-    const rows = await prisma.entryAssignment.findMany({
-      where: { userId: req.entryUser!.sub }, select: { wellId: true },
-    });
-    return rows.map((r) => r.wellId);
-  }
-  async function mayUseWell(req: FastifyRequest, wellId: string): Promise<boolean> {
-    const ids = await allowedWellIds(req);
-    return ids === "all" || ids.includes(wellId);
-  }
+  // The rule itself lives in ../entry/access.ts — the job and report-data routes
+  // guard on the same one, and a second copy would be a second place to drift.
+  const allowedWellIds = (req: FastifyRequest) => scopedWellIds(prisma, req);
+  const mayUseWell = (req: FastifyRequest, wellId: string) => canUseWell(prisma, req, wellId);
 
   // ══ auth ═════════════════════════════════════════════════════════════════
   app.post<{ Body: { username?: string; password?: string } }>("/entry/auth/login", async (req, reply) => {

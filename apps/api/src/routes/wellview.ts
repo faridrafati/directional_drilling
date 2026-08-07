@@ -1,0 +1,373 @@
+/**
+ * WellView report suite — the well-level (job / AFE / cost) entry API.
+ *
+ *   /entry/wellview/codes        the seeded operation-code tables (pick-lists)
+ *   /entry/wells/:wellId/jobs    the jobs on one well
+ *   /entry/jobs                  create
+ *   /entry/jobs/:id              read · save · delete
+ *   /entry/cost-codes            the company chart of accounts   (admin)
+ *
+ * Registered separately from entry.ts because it is a different GRAIN: the daily
+ * routes there are per-report, these are per-job. Both sit behind the same entry
+ * token and the same well-access rule (../entry/access.ts).
+ *
+ * SAVE DOCTRINE — id-stable upsert, NOT the daily editor's replace-all
+ * ------------------------------------------------------------------
+ * `PUT /entry/reports/:id` deletes every child row and re-creates it, which is
+ * safe there because nothing points INTO a daily child row. A job is different:
+ * a CostItem carries `phaseId` and `afeLineId`. Delete-and-recreate would mint
+ * new phase ids on every save and orphan every cost row that referenced one.
+ *
+ * So the job save keeps ids: rows the client posts with an id are updated, rows
+ * whose id is no longer posted are deleted, rows with a new id are created. The
+ * client mints a cuid for a row it just added (the columns are
+ * `String @id @default(cuid())`, so a supplied id is perfectly valid), which is
+ * what lets a cost row reference a phase created in the SAME save.
+ */
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { requireUser, requireAdmin } from "../entry/auth.js";
+import { mayUseWell } from "../entry/access.js";
+
+// ── coercion helpers, identical in behaviour to routes/entry.ts ──────────────
+// A blank input means "not recorded" and must land as null, never as 0 or "".
+const blank = (v: unknown) => v === "" || v === null || v === undefined;
+const num = z.preprocess(
+  (v) => (blank(v) ? null : typeof v === "string" ? (v.trim() === "" ? null : Number(v)) : v),
+  z.number().finite().nullable(),
+).default(null);
+const str = z.preprocess(
+  (v) => (blank(v) ? null : String(v).trim() === "" ? null : String(v).trim()),
+  z.string().nullable(),
+).default(null);
+const int0 = z.preprocess((v) => (blank(v) ? 0 : Number(v)), z.number().int()).default(0);
+/** A client-minted cuid on a new row, or the stored id on an existing one. */
+const rowId = z.preprocess(
+  (v) => (blank(v) ? null : String(v).trim() || null),
+  z.string().nullable(),
+).default(null);
+
+/**
+ * Jalali "YYYY/MM/DD", optionally with a time — phase boundaries carry one
+ * because report 10's durations are printed to 2 dp off 09:00 / 21:45 marks.
+ * Kept as a WARNING-free plain string field: the same looseness as the daily
+ * routes, so nothing that already saves stops saving.
+ */
+const jalaliish = str;
+
+const jobPhasePlanSchema = z.object({
+  startDepth: num, endDepth: num, durMostLikelyDays: num, costMostLikely: num,
+}).nullable().default(null);
+
+const jobPhaseSchema = z.object({
+  id: rowId, order: int0,
+  phaseType1: str, phaseType2: str,
+  actualStartDate: jalaliish, actualEndDate: jalaliish,
+  actualStartDepth: num, actualEndDepth: num,
+  workingPhaseCode: str,
+  plan: jobPhasePlanSchema,
+});
+
+const afeSupplementSchema = z.object({
+  id: rowId, order: int0, number: str, amount: num, approvedDate: jalaliish,
+});
+const afeLineSchema = z.object({
+  id: rowId, order: int0, costCodeId: str, description: str, amount: num,
+});
+const afeSchema = z.object({
+  id: rowId, order: int0, afeNumber: str, description: str, amount: num,
+  approvedDate: jalaliish,
+  supplements: z.array(afeSupplementSchema).default([]),
+  lines: z.array(afeLineSchema).default([]),
+});
+
+const costItemSchema = z.object({
+  id: rowId, order: int0,
+  phaseId: str, costCodeId: str, afeLineId: str, supplementId: str,
+  description: str,
+  afeAmount: num, suppAmount: num, fieldEstimate: num, finalInvoice: num,
+  category: str, costDate: jalaliish,
+});
+
+const jobHeaderSchema = z.object({
+  order: int0, name: str, category: str, primaryJobType: str, secondaryJobType: str,
+  status1: str,
+  plannedStartDate: jalaliish, startDate: jalaliish,
+  minPlannedEndDate: jalaliish, mostLikelyPlannedEndDate: jalaliish,
+  maxPlannedEndDate: jalaliish, endDate: jalaliish,
+  targetDepth: num, targetFormation: str, summary: str,
+  possCostSave: num, possTimeSaveHr: num, estProblemCost: num, estLostTimeHr: num,
+});
+
+/** The whole job sheet, as the Well Data editor posts it. */
+const jobSaveSchema = jobHeaderSchema.extend({
+  phases: z.array(jobPhaseSchema).default([]),
+  afes: z.array(afeSchema).default([]),
+  costItems: z.array(costItemSchema).default([]),
+});
+
+const costCodeSchema = z.object({
+  id: rowId,
+  // NOT .min(1): the admin grid keeps spare blank rows on screen like every
+  // other table in this app, and a spare row must not 400 the whole save. Rows
+  // with nothing in them are dropped below.
+  code1: str, code2: str, description: str, projectScope: str,
+  active: z.preprocess((v) => (v === undefined ? true : !!v), z.boolean()).default(true),
+});
+
+/** Everything a job detail endpoint returns, in print order. */
+const JOB_INCLUDE = {
+  phases: { orderBy: { order: "asc" }, include: { plan: true } },
+  afes: {
+    orderBy: { order: "asc" },
+    include: {
+      supplements: { orderBy: { order: "asc" } },
+      lines: { orderBy: { order: "asc" }, include: { costCode: true } },
+    },
+  },
+  costItems: { orderBy: { order: "asc" }, include: { costCode: true } },
+  well: { include: { rig: true } },
+} as const;
+
+export async function registerWellviewRoutes(app: FastifyInstance, prisma: PrismaClient) {
+  const badReq = (reply: FastifyReply, e: unknown) =>
+    reply.code(400).send({
+      error: e instanceof z.ZodError
+        ? e.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
+        : String((e as Error)?.message ?? e),
+    });
+
+  const mayUse = (req: FastifyRequest, wellId: string) => mayUseWell(prisma, req, wellId);
+
+  /** Load a job and check the caller may see its well. */
+  async function loadJob(req: FastifyRequest, reply: FastifyReply, id: string) {
+    const job = await prisma.job.findUnique({ where: { id }, include: JOB_INCLUDE });
+    if (!job) { reply.code(404).send({ error: "not found" }); return null; }
+    if (!(await mayUse(req, job.wellId))) { reply.code(403).send({ error: "not your well" }); return null; }
+    return job;
+  }
+
+  // ══ code tables — the pick-lists behind the time-log coding ══════════════
+  app.get("/entry/wellview/codes", { preHandler: requireUser }, async () => {
+    const [mainOperations, operationDetails, matrix, timeIndicators, reportCodes, workingPhases] =
+      await Promise.all([
+        prisma.wvMainOperation.findMany({ orderBy: { order: "asc" } }),
+        prisma.wvOperationDetail.findMany({ orderBy: { num: "asc" } }),
+        prisma.wvMatrixCell.findMany({ orderBy: [{ letter: "asc" }, { detailNum: "asc" }] }),
+        prisma.wvTimeIndicator.findMany({ orderBy: { order: "asc" } }),
+        prisma.wvReportCode.findMany({ orderBy: { order: "asc" } }),
+        prisma.wvWorkingPhase.findMany({ orderBy: { order: "asc" } }),
+      ]);
+    // The matrix goes over the wire as one letter → details map rather than 437
+    // rows: the client only ever asks "is this pair marked" and "what may follow
+    // this letter", and both are O(1) on the map.
+    const validDetails: Record<string, number[]> = {};
+    for (const cell of matrix) (validDetails[cell.letter] ??= []).push(cell.detailNum);
+    return { mainOperations, operationDetails, validDetails, timeIndicators, reportCodes, workingPhases };
+  });
+
+  // ══ jobs ═════════════════════════════════════════════════════════════════
+  app.get<{ Params: { wellId: string } }>(
+    "/entry/wells/:wellId/jobs", { preHandler: requireUser }, async (req, reply) => {
+      if (!(await mayUse(req, req.params.wellId))) return reply.code(403).send({ error: "not your well" });
+      return prisma.job.findMany({
+        where: { wellId: req.params.wellId },
+        orderBy: { order: "asc" },
+        include: {
+          afes: { orderBy: { order: "asc" }, select: { id: true, afeNumber: true, order: true } },
+          _count: { select: { phases: true, costItems: true, reports: true } },
+        },
+      });
+    });
+
+  app.post<{ Body: { wellId?: string; name?: string; category?: string } }>(
+    "/entry/jobs", { preHandler: requireUser }, async (req, reply) => {
+      try {
+        const wellId = z.string().min(1).parse(req.body?.wellId);
+        if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+        const last = await prisma.job.findFirst({
+          where: { wellId }, orderBy: { order: "desc" }, select: { order: true },
+        });
+        const created = await prisma.job.create({
+          data: {
+            wellId,
+            order: (last?.order ?? -1) + 1,
+            name: req.body?.name?.trim() || null,
+            category: req.body?.category?.trim() || null,
+          },
+          include: JOB_INCLUDE,
+        });
+        return reply.code(201).send(created);
+      } catch (e) { return badReq(reply, e); }
+    });
+
+  app.get<{ Params: { id: string } }>("/entry/jobs/:id", { preHandler: requireUser }, async (req, reply) => {
+    const job = await loadJob(req, reply, req.params.id);
+    return job ?? undefined;
+  });
+
+  app.put<{ Params: { id: string }; Body: unknown }>(
+    "/entry/jobs/:id", { preHandler: requireUser }, async (req, reply) => {
+      const existing = await loadJob(req, reply, req.params.id);
+      if (!existing) return undefined;
+
+      let body: z.infer<typeof jobSaveSchema>;
+      try { body = jobSaveSchema.parse(req.body); } catch (e) { return badReq(reply, e); }
+      const { phases, afes, costItems, ...header } = body;
+      const jobId = existing.id;
+
+      // Ids the client is keeping. Anything stored under this job that is NOT in
+      // these sets was removed in the editor and is deleted; everything else is
+      // updated in place, so the phase / AFE-line ids a cost row points at stay
+      // valid across the save.
+      const keptPhaseIds = phases.map((p) => p.id).filter((x): x is string => !!x);
+      const keptAfeIds = afes.map((a) => a.id).filter((x): x is string => !!x);
+      const keptSuppIds = afes.flatMap((a) => a.supplements.map((s) => s.id)).filter((x): x is string => !!x);
+      const keptLineIds = afes.flatMap((a) => a.lines.map((l) => l.id)).filter((x): x is string => !!x);
+      const keptCostIds = costItems.map((c) => c.id).filter((x): x is string => !!x);
+
+      await prisma.$transaction(async (tx) => {
+        await tx.job.update({ where: { id: jobId }, data: header });
+
+        // Cost rows first: they reference phases and AFE lines, and deleting a
+        // phase only nulls the reference (SetNull) — it never takes the cost
+        // with it, which is the whole point of that onDelete rule.
+        await tx.costItem.deleteMany({ where: { jobId, id: { notIn: keptCostIds.length ? keptCostIds : ["-"] } } });
+        await tx.jobPhase.deleteMany({ where: { jobId, id: { notIn: keptPhaseIds.length ? keptPhaseIds : ["-"] } } });
+        await tx.afe.deleteMany({ where: { jobId, id: { notIn: keptAfeIds.length ? keptAfeIds : ["-"] } } });
+
+        for (const p of phases) {
+          const { id, plan, ...phaseData } = p;
+          const saved = id
+            ? await tx.jobPhase.upsert({
+              where: { id },
+              create: { id, jobId, ...phaseData },
+              update: phaseData,
+            })
+            : await tx.jobPhase.create({ data: { jobId, ...phaseData } });
+          // 1:1 — a blanked plan is removed rather than kept as an all-null row
+          // that would print as a fabricated zero on report 10.
+          if (plan) {
+            await tx.jobPhasePlan.upsert({
+              where: { jobPhaseId: saved.id },
+              create: { jobPhaseId: saved.id, ...plan },
+              update: plan,
+            });
+          } else {
+            await tx.jobPhasePlan.deleteMany({ where: { jobPhaseId: saved.id } });
+          }
+        }
+
+        for (const a of afes) {
+          const { id, supplements, lines, ...afeData } = a;
+          const saved = id
+            ? await tx.afe.upsert({ where: { id }, create: { id, jobId, ...afeData }, update: afeData })
+            : await tx.afe.create({ data: { jobId, ...afeData } });
+          await tx.afeSupplement.deleteMany({
+            where: { afeId: saved.id, id: { notIn: keptSuppIds.length ? keptSuppIds : ["-"] } },
+          });
+          await tx.afeLine.deleteMany({
+            where: { afeId: saved.id, id: { notIn: keptLineIds.length ? keptLineIds : ["-"] } },
+          });
+          for (const s of supplements) {
+            const { id: sid, ...data } = s;
+            if (sid) await tx.afeSupplement.upsert({ where: { id: sid }, create: { id: sid, afeId: saved.id, ...data }, update: data });
+            else await tx.afeSupplement.create({ data: { afeId: saved.id, ...data } });
+          }
+          for (const l of lines) {
+            const { id: lid, ...data } = l;
+            if (lid) await tx.afeLine.upsert({ where: { id: lid }, create: { id: lid, afeId: saved.id, ...data }, update: data });
+            else await tx.afeLine.create({ data: { afeId: saved.id, ...data } });
+          }
+        }
+
+        for (const c of costItems) {
+          const { id, ...data } = c;
+          if (id) await tx.costItem.upsert({ where: { id }, create: { id, jobId, ...data }, update: data });
+          else await tx.costItem.create({ data: { jobId, ...data } });
+        }
+      });
+
+      return prisma.job.findUnique({ where: { id: jobId }, include: JOB_INCLUDE });
+    });
+
+  app.delete<{ Params: { id: string } }>("/entry/jobs/:id", { preHandler: requireUser }, async (req, reply) => {
+    const job = await loadJob(req, reply, req.params.id);
+    if (!job) return undefined;
+    await prisma.job.delete({ where: { id: job.id } });
+    return reply.code(204).send();
+  });
+
+  /**
+   * Attach a well's existing daily reports to a job.
+   *
+   * The bridge column ships null on every report that predates jobs, and there
+   * is no safe SQL rule to guess an attribution — so it is an explicit action,
+   * scoped to the days that are not already attached to some other job.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/entry/jobs/:id/attach-reports", { preHandler: requireUser }, async (req, reply) => {
+      const job = await loadJob(req, reply, req.params.id);
+      if (!job) return undefined;
+      const { count } = await prisma.entryReport.updateMany({
+        where: { wellId: job.wellId, jobId: null },
+        data: { jobId: job.id },
+      });
+      return { attached: count };
+    });
+
+  // ══ cost codes (admin) ═══════════════════════════════════════════════════
+  app.get("/entry/cost-codes", { preHandler: requireUser }, async () =>
+    prisma.costCode.findMany({ orderBy: [{ code1: "asc" }, { code2: "asc" }] }));
+
+  app.put<{ Body: unknown }>("/entry/cost-codes", { preHandler: requireAdmin }, async (req, reply) => {
+    let rows: z.infer<typeof costCodeSchema>[];
+    try {
+      rows = z.object({ codes: z.array(costCodeSchema).default([]) }).parse(req.body).codes;
+    } catch (e) { return badReq(reply, e); }
+
+    // Drop the grid's spare blank rows before doing anything, the same way the
+    // daily editor prunes — a row with no code and no description is not data.
+    const filled = rows.filter((r) => r.code1 || r.code2 || r.description);
+    const missing = filled.find((r) => !r.code1 || !r.code2 || !r.description);
+    if (missing) {
+      return reply.code(400).send({
+        error: `every cost code needs a Code 1, a Code 2 and a description — check "${missing.code1 ?? ""}/${missing.code2 ?? ""}"`,
+      });
+    }
+    const pairs = filled.map((r) => `${r.code1}/${r.code2}`);
+    const dupe = pairs.find((p, i) => pairs.indexOf(p) !== i);
+    if (dupe) return reply.code(409).send({ error: `cost code ${dupe} is listed twice` });
+
+    const kept = filled.map((r) => r.id).filter((x): x is string => !!x);
+    try {
+      await prisma.$transaction(async (tx) => {
+        // A code still referenced by an AFE line or a cost row is deactivated,
+        // never deleted — the reports that print it must keep printing it.
+        const removable = await tx.costCode.findMany({
+          where: { id: { notIn: kept.length ? kept : ["-"] } },
+          select: { id: true, _count: { select: { afeLines: true, costItems: true } } },
+        });
+        const orphan = removable.filter((c) => !c._count.afeLines && !c._count.costItems).map((c) => c.id);
+        const inUse = removable.filter((c) => c._count.afeLines || c._count.costItems).map((c) => c.id);
+        if (orphan.length) await tx.costCode.deleteMany({ where: { id: { in: orphan } } });
+        if (inUse.length) await tx.costCode.updateMany({ where: { id: { in: inUse } }, data: { active: false } });
+        for (const r of filled) {
+          const data = {
+            code1: r.code1!, code2: r.code2!, description: r.description!,
+            projectScope: r.projectScope, active: r.active,
+          };
+          if (r.id) await tx.costCode.upsert({ where: { id: r.id }, create: { id: r.id, ...data }, update: data });
+          else await tx.costCode.create({ data });
+        }
+      });
+    } catch (e) {
+      if ((e as { code?: string }).code === "P2002") {
+        return reply.code(409).send({ error: "two rows share the same Code 1 / Code 2 pair" });
+      }
+      return badReq(reply, e);
+    }
+    return prisma.costCode.findMany({ orderBy: [{ code1: "asc" }, { code2: "asc" }] });
+  });
+}

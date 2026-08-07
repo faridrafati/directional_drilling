@@ -1,0 +1,323 @@
+/**
+ * Well Reports — the WellView report suite.
+ *
+ * A catalog of the 30 reports grouped by category, each with the parameter
+ * pickers it needs (well · job · date · BHA run · a multi-well selector), an
+ * on-screen preview and the export buttons.
+ *
+ * The catalog lists every report, including the ones not built yet: the page is
+ * the plan made visible, so it is obvious what exists and what is still coming
+ * rather than the page looking finished at one report.
+ *
+ * Reports read the entry database, so this page signs in through the same
+ * /entry/* session as Daily Report Entry.
+ */
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { EntryAuthProvider, useEntryAuth, SignInCard } from "../entry/auth.js";
+import {
+  wellviewApi,
+  type CatalogEntry, type JobListItem, type Report01Payload,
+} from "../entry/wellview.js";
+import { Report01Preview } from "../components/wellview/ReportPreview.js";
+
+const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
+
+export function WellviewReportsPage() {
+  return (
+    <EntryAuthProvider>
+      <Inner />
+    </EntryAuthProvider>
+  );
+}
+
+function Inner() {
+  const { user, wells, loading, signOut } = useEntryAuth();
+  const [wellId, setWellId] = useState<string>("");
+  const [jobId, setJobId] = useState<string>("");
+  const [selected, setSelected] = useState<string>("01");
+
+  const catalogQ = useQuery({
+    queryKey: ["wellview", "catalog"],
+    queryFn: wellviewApi.catalog,
+    enabled: !!user,
+  });
+  const jobsQ = useQuery({
+    queryKey: ["wellview", "jobs", wellId],
+    queryFn: () => wellviewApi.jobsForWell(wellId),
+    enabled: !!user && !!wellId,
+  });
+
+  // Pick the first well as soon as the session knows about one, so the page is
+  // never a set of empty dropdowns on arrival.
+  useEffect(() => {
+    if (!wellId && wells.length) setWellId(wells[0].id);
+  }, [wells, wellId]);
+  // A well change invalidates the job — never carry another well's job across.
+  useEffect(() => { setJobId(""); }, [wellId]);
+  useEffect(() => {
+    const list = jobsQ.data ?? [];
+    if (!jobId && list.length) setJobId(list[0].id);
+  }, [jobsQ.data, jobId]);
+
+  const catalog = catalogQ.data ?? [];
+  const entry = catalog.find((c) => c.type === selected) ?? null;
+  const jobs = jobsQ.data ?? [];
+  const wellName = wells.find((w) => w.id === wellId)?.name ?? "";
+
+  return (
+    <div className="h-full flex flex-col p-3 sm:p-6">
+      <div className="w-full max-w-[1700px] mx-auto flex flex-col flex-1 min-h-0">
+        <div className="mb-3 sm:mb-4 shrink-0 flex flex-col sm:flex-row sm:flex-wrap sm:items-start sm:justify-between gap-3">
+          <div className="border-l-[3px] border-amber-500 pl-3">
+            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 tracking-tight">Well Reports</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              The WellView report suite, generated from this application&rsquo;s own data. Layouts follow the
+              sample reports; depths are metric (mKB, m) and dates are Jalali, as stored.
+            </p>
+          </div>
+          {user && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-gray-600">
+                {user.fullName} <span className="text-gray-400">({user.username})</span>
+              </span>
+              <button onClick={signOut} className="h-8 px-3 text-xs rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150">
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
+
+        {loading && <div className="text-sm text-gray-500">Signing in…</div>}
+        {!loading && !user && <SignInCard />}
+
+        {user && (
+          <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4">
+            {/* ── catalog ── */}
+            <aside className="lg:w-[300px] shrink-0 overflow-y-auto lg:max-h-full">
+              {CATEGORIES.map((category) => {
+                const items = catalog.filter((c) => c.category === category);
+                if (items.length === 0) return null;
+                return (
+                  <div key={category} className="mb-3">
+                    <div className="text-[10px] uppercase tracking-wide text-gray-400 px-1 pb-1">{category}</div>
+                    <div className="space-y-1">
+                      {items.map((c) => (
+                        <CatalogCard
+                          key={c.type}
+                          entry={c}
+                          active={c.type === selected}
+                          onClick={() => setSelected(c.type)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {catalogQ.isLoading && <div className="text-xs text-gray-400 px-1">Loading catalog…</div>}
+            </aside>
+
+            {/* ── parameters + preview ── */}
+            <section className="flex-1 min-w-0 flex flex-col min-h-0">
+              {!entry ? (
+                <div className="text-sm text-gray-500">Pick a report on the left.</div>
+              ) : (
+                <>
+                  <div className="bg-white border border-gray-200 rounded-lg p-3 mb-3 shrink-0">
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-gray-900">
+                          <span className="text-gray-400 tabular-nums mr-1.5">{entry.type}</span>
+                          {entry.title}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">{entry.blurb}</div>
+                      </div>
+                      <div className="flex flex-wrap items-end gap-2 ml-auto">
+                        {entry.params.includes("well") && (
+                          <Picker label="Well">
+                            <select
+                              value={wellId}
+                              onChange={(e) => setWellId(e.target.value)}
+                              className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white min-w-[160px]"
+                            >
+                              {wells.length === 0 && <option value="">no wells assigned</option>}
+                              {wells.map((w) => (
+                                <option key={w.id} value={w.id}>{w.name}</option>
+                              ))}
+                            </select>
+                          </Picker>
+                        )}
+                        {entry.params.includes("job") && (
+                          <Picker label="Job">
+                            <select
+                              value={jobId}
+                              onChange={(e) => setJobId(e.target.value)}
+                              // Nothing to choose from is a disabled control, not
+                              // a live one showing a message — the well needs a
+                              // job before this picker means anything.
+                              disabled={jobs.length === 0}
+                              className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white min-w-[180px] disabled:bg-gray-50 disabled:text-gray-400"
+                            >
+                              {jobs.length === 0 && <option value="">— no jobs —</option>}
+                              {jobs.map((j) => (
+                                <option key={j.id} value={j.id}>{jobLabel(j)}</option>
+                              ))}
+                            </select>
+                          </Picker>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-h-0 overflow-auto bg-gray-100 rounded-lg p-3">
+                    {!entry.available ? (
+                      <Pending entry={entry} />
+                    ) : entry.params.includes("job") && !jobsQ.isLoading && jobs.length === 0 ? (
+                      // A job-scoped report on a well with no jobs. Say what is
+                      // missing and where to add it — "pick a job above" would
+                      // be asking for something that is not there to pick.
+                      <Notice>
+                        <span className="font-medium text-gray-700">{wellName || "This well"}</span> has no
+                        drilling job recorded yet, and this report is scoped to one.
+                        <div className="mt-1.5 text-xs text-gray-400">
+                          Jobs, phases, the AFE and the cost sheet are entered under Well Data. Pick another
+                          well above if one is already set up.
+                        </div>
+                      </Notice>
+                    ) : entry.type === "01" ? (
+                      <Report01Panel jobId={jobId} />
+                    ) : (
+                      <Pending entry={entry} />
+                    )}
+                  </div>
+                </>
+              )}
+            </section>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function jobLabel(j: JobListItem): string {
+  const afe = j.afes.find((a) => a.afeNumber)?.afeNumber;
+  return [j.name ?? j.primaryJobType ?? j.category ?? "Job", afe ? `AFE ${afe}` : null]
+    .filter(Boolean).join(" · ");
+}
+
+function Picker({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-0.5">
+      <span className="text-[10px] uppercase tracking-wide text-gray-400">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function CatalogCard({ entry, active, onClick }: {
+  entry: CatalogEntry; active: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-2 py-1.5 rounded-md border transition-colors duration-150 ${
+        active
+          ? "border-blue-500 bg-blue-50"
+          : "border-gray-200 bg-white hover:bg-gray-50"
+      }`}
+    >
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-[10px] tabular-nums text-gray-400 shrink-0">{entry.type}</span>
+        <span className={`text-xs truncate ${active ? "font-semibold text-blue-800" : "text-gray-800"}`}>
+          {entry.title}
+        </span>
+        {!entry.available && (
+          <span className="ml-auto shrink-0 text-[9px] px-1 rounded bg-gray-100 text-gray-400 border border-gray-200">
+            soon
+          </span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+/** A report whose assembler is not written yet — say so plainly. */
+function Pending({ entry }: { entry: CatalogEntry }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-6 text-center max-w-[560px] mx-auto">
+      <div className="text-sm font-semibold text-gray-800">{entry.title}</div>
+      <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+        {entry.blurb}
+      </p>
+      <p className="text-xs text-gray-400 mt-3">
+        Not built yet. The field inventory for this report is in{" "}
+        <code className="text-gray-500">WELLVIEW_REPORT_SPEC.md</code>; progress is tracked in{" "}
+        <code className="text-gray-500">docs/wellview-report-status.md</code>.
+      </p>
+    </div>
+  );
+}
+
+/** Report 01, with its preview and its PDF button. */
+function Report01Panel({ jobId }: { jobId: string }) {
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const q = useQuery({
+    queryKey: ["wellview", "report", "01", jobId],
+    queryFn: () => wellviewApi.reportData<Report01Payload>("01", { jobId }),
+    enabled: !!jobId,
+  });
+
+  const onExport = async () => {
+    if (!q.data) return;
+    setExporting(true);
+    setError(null);
+    try {
+      // pdfmake is imported at click time, so the report bundle stays out of the
+      // initial page load — the same rule the directional-plot export follows.
+      const { exportReport01Pdf } = await import("../export/wellview/01-afe-vs-field-est.js");
+      await exportReport01Pdf(q.data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (!jobId) {
+    return <Notice>Pick a job above. This report is scoped to one drilling job.</Notice>;
+  }
+  if (q.isLoading) return <Notice>Assembling the report…</Notice>;
+  if (q.error) return <Notice tone="error">{(q.error as Error).message}</Notice>;
+  if (!q.data) return <Notice>Nothing to show.</Notice>;
+
+  return (
+    <div>
+      <div className="flex items-center justify-end gap-2 mb-3">
+        {error && <span className="text-xs text-red-600 mr-auto">{error}</span>}
+        <button
+          onClick={() => void onExport()}
+          disabled={exporting}
+          className="h-8 px-3 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors duration-150"
+        >
+          {exporting ? "Generating…" : "PDF"}
+        </button>
+      </div>
+      <Report01Preview payload={q.data} />
+    </div>
+  );
+}
+
+function Notice({ children, tone }: { children: React.ReactNode; tone?: "error" }) {
+  return (
+    <div className={`max-w-[560px] mx-auto rounded-lg border px-4 py-3 text-sm ${
+      tone === "error"
+        ? "border-red-200 bg-red-50 text-red-700"
+        : "border-gray-200 bg-white text-gray-500"
+    }`}>
+      {children}
+    </div>
+  );
+}

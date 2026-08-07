@@ -447,26 +447,44 @@ function glyphToChar(name) {
 function parseToUnicode(bytes) {
   const map = new Map();
   const text = bytes.toString("latin1");
+  // A destination may hold SEVERAL code points — a ligature maps one glyph to
+  // "fi" as `<0066 0069>`. The whitespace inside must be tolerated in both the
+  // item pattern and here, or the entry is skipped and every later glyph in the
+  // array shifts by one: "Type" decodes as "yp0e" and the corruption looks like
+  // a font problem rather than a parser one.
   const hex = (h) => {
+    const clean = h.replace(/\s+/g, "");
+    if (clean.length === 2) return String.fromCharCode(parseInt(clean, 16));
     let out = "";
-    for (let k = 0; k + 3 < h.length; k += 4) out += String.fromCharCode(parseInt(h.slice(k, k + 4), 16));
-    if (h.length === 2) out = String.fromCharCode(parseInt(h, 16));
+    for (let k = 0; k + 3 < clean.length; k += 4) {
+      out += String.fromCharCode(parseInt(clean.slice(k, k + 4), 16));
+    }
     return out;
   };
+  const HEX_ITEM = /<([0-9A-Fa-f\s]+)>/g;
   for (const block of text.match(/beginbfchar([\s\S]*?)endbfchar/g) ?? []) {
-    for (const m of block.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
-      map.set(parseInt(m[1], 16), hex(m[2]));
+    for (const m of block.matchAll(/<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>/g)) {
+      map.set(parseInt(m[1].replace(/\s+/g, ""), 16), hex(m[2]));
     }
   }
   for (const block of text.match(/beginbfrange([\s\S]*?)endbfrange/g) ?? []) {
-    for (const m of block.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
-      const lo = parseInt(m[1], 16), hi = parseInt(m[2], 16), dst = parseInt(m[3], 16);
-      for (let c = lo; c <= hi && c - lo < 65536; c++) map.set(c, String.fromCodePoint(dst + (c - lo)));
-    }
-    for (const m of block.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[([\s\S]*?)\]/g)) {
-      const lo = parseInt(m[1], 16);
-      const items = [...m[3].matchAll(/<([0-9A-Fa-f]+)>/g)].map((x) => hex(x[1]));
+    // Array form first, and its span is then excluded from the triple scan —
+    // otherwise "<lo> <hi> [<a> …" also reads as the triple <lo> <hi> <a> and
+    // overwrites the whole range with consecutive values.
+    const covered = [];
+    for (const m of block.matchAll(/<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>\s*\[([\s\S]*?)\]/g)) {
+      covered.push([m.index ?? 0, (m.index ?? 0) + m[0].length]);
+      const lo = parseInt(m[1].replace(/\s+/g, ""), 16);
+      const items = [...m[3].matchAll(HEX_ITEM)].map((x) => hex(x[1]));
       items.forEach((s, k) => map.set(lo + k, s));
+    }
+    for (const m of block.matchAll(/<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>/g)) {
+      const at = m.index ?? 0;
+      if (covered.some(([a, b]) => at >= a && at < b)) continue;
+      const lo = parseInt(m[1].replace(/\s+/g, ""), 16);
+      const hi = parseInt(m[2].replace(/\s+/g, ""), 16);
+      const dst = parseInt(m[3].replace(/\s+/g, ""), 16);
+      for (let c = lo; c <= hi && c - lo < 65536; c++) map.set(c, String.fromCodePoint(dst + (c - lo)));
     }
   }
   return map;
