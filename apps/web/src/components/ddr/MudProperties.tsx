@@ -452,7 +452,10 @@ const PROP_SPECS: PropSpec[] = [
   { key: "salinity", label: "Salinity", unit: "ppm" },
   { key: "calcium", label: "Calcium", unit: "ppm" },
   { key: "mbt", label: "MBT", unit: "ppb", note: "Reactive-clay (CEC) loading" },
-  { key: "temp", label: "Flowline temp", unit: "°C" },
+  // N01.ReturnTemperature is the DR.xls return temperature in °F (values run
+  // 100-150). a.json asks for °C, but relabelling without converting turns
+  // 100°F into "100°C" — shown as recorded instead.
+  { key: "temp", label: "Flowline temp", unit: "°F" },
 ];
 
 interface PropStat { spec: PropSpec; n: number; min: number; avg: number; max: number; outLo: number; outHi: number }

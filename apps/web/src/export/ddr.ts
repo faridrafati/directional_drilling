@@ -183,3 +183,33 @@ export async function exportDdrXlsx(well: DdrWellInfo, detail: DdrReportDetail):
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   saveAs(new Blob([out], { type: "application/octet-stream" }), `${baseName(well, detail)}.xlsx`);
 }
+
+/**
+ * Archive mud weight → a.json's `density_ppg`, as a RANGE.
+ *
+ * Lives here because the Form view, the Tables view and the exports all need the
+ * same answer — two independent conversions were showing two different numbers
+ * for one field, and one of them silently dropped the day's minimum.
+ *
+ * The archive stores the weight per DR.xls: a MIN/MAX pair, mostly in pcf
+ * (≈60–140), occasionally already ppg (≈8–20) or SG (≈1.0–2.5). The unit is not
+ * recorded, so it is inferred from magnitude — the same rule the API's hydraulics
+ * use. Returns null rather than guessing when the value is outside every band.
+ */
+export function mudWeightPpg(x: unknown): number | null {
+  const n = typeof x === "number" ? x : Number(String(x ?? "").trim());
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const r = (v: number) => Number(v.toFixed(2));
+  if (n >= 30) return r(n / 7.4805);   // pcf
+  if (n >= 5) return r(n);             // already ppg
+  if (n >= 0.8) return r(n * 8.345);   // SG
+  return null;
+}
+
+/** "min–max" in ppg (collapsed when the two ends agree), or null. */
+export function mudWeightRangePpg(min: unknown, max: unknown): string | null {
+  const lo = mudWeightPpg(min), hi = mudWeightPpg(max);
+  if (lo == null && hi == null) return null;
+  if (lo == null || hi == null) return String(lo ?? hi);
+  return lo === hi ? String(lo) : `${lo}–${hi}`;
+}

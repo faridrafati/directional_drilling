@@ -2221,6 +2221,57 @@ export function getLithologyGraph(f: FormationMatrixFilters): Record<string, unk
   return { wells, depthRange, lithoTypes: [...typeSet].sort() };
 }
 
+// ── a.json operations_24hr vocabulary over the archive's operations log ──────
+// a.json gives every 24-hour log row a `code_1` (operation code) and a `code_2`
+// (P / NP). The archive stores `code_1` — OperationAnalysis.OperationCode, whose
+// meaning lives in the Operations lookup — but it stores NO P/NP flag, so
+// `code_2` has to be INFERRED. The Operations descriptions are written to a
+// house style that separates the two families, and that opening wording is the
+// signal — matched exactly as written below, and stated the same way on screen:
+//   NP → "Lost time due to …"
+//   P  → "Time actually spent …"
+//     → "All operation(s) …" / "All the operation(s) …" — every planned-work
+//        definition in this family, which is not only "All operations necessary
+//        to …" but also RD/RM "All the operations for rig down / moving": rig
+//        down and rig move are planned work, not lost time.
+//     → "All repair …" — ROE "All repair and routine service …", likewise
+//        planned (scheduled service), as opposed to a breakdown, which the
+//        lookup words as "Lost time due to …".
+// Codes whose wording places them in neither family (ACD "Time for any
+// accident.", LDP, NT, SAC) stay UNCLASSIFIED — never guessed into a bucket.
+// The coarser ActivityGroups signal ("01 Drilling" / "02 Waiting", from
+// TimeAnalysis) is the fallback for wells whose operations log carries no
+// usable times; it is per-day, not per-code, so it is the weaker of the two.
+export type PnpClass = "P" | "NP";
+function classifyOperation(desc: string): PnpClass | null {
+  const d = desc.trim().toLowerCase();
+  if (d.startsWith("lost time due to")) return "NP";
+  if (d.startsWith("time actually spent")) return "P";
+  if (/^all (the )?(operations?|repair)\b/.test(d)) return "P";
+  return null;
+}
+
+/** "HH:MM" → minutes past midnight. Hours may run past 24: the archive logs the
+ *  00:00–06:00 morning extension of the next day as 24:00–07:00. */
+function hhmmMinutes(x: unknown): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s(x));
+  if (!m) return null;
+  const h = Number(m[1]), mi = Number(m[2]);
+  if (h > 48 || mi > 59) return null;
+  return h * 60 + mi;
+}
+/** Duration of one logged operation row, wrapping midnight. Rows with no time,
+ *  an unparsable time or a zero span (the archive writes 00:00→00:00 when the
+ *  time was never filled in) contribute nothing rather than a guessed value. */
+function loggedHours(from: unknown, to: unknown): number | null {
+  const a = hhmmMinutes(from), b = hhmmMinutes(to);
+  if (a == null || b == null) return null;
+  let d = b - a;
+  if (d < 0) d += 24 * 60;
+  if (d <= 0 || d > 24 * 60) return null;
+  return d / 60;
+}
+
 /** Per-well analytics: drilling-progress curve + time distribution. */
 export function getAnalytics(wellCode: string): Record<string, unknown> {
   const db = data();
@@ -2255,9 +2306,75 @@ export function getAnalytics(wellCode: string): Record<string, unknown> {
     .sort((a, b) => b.hours - a.hours);
 
   const totalHours = round1(timeByType.reduce((s2, r) => s2 + r.hours, 0));
+
+  // ── a.json operations_24hr.code_1: hours per OPERATION CODE ────────────────
+  // One row of the archive's operations log = one a.json 24-hr log row; its
+  // duration is end − start (a.json dur_hr), which the archive keeps as the
+  // FTime/TTime pair rather than as a number.
+  const opRows = db.prepare(`
+    SELECT OperationCode AS code, FTime AS f, TTime AS t
+    FROM OperationAnalysis WHERE WellCode = ?
+  `).all(wellCode) as Row[];
+  const byCode = new Map<string, { hours: number; rows: number }>();
+  let untimedRows = 0;
+  for (const r of opRows) {
+    const code = s(r.code);
+    if (!code) continue;
+    const h = loggedHours(r.f, r.t);
+    if (h == null) { untimedRows++; continue; }
+    const cur = byCode.get(code) ?? { hours: 0, rows: 0 };
+    cur.hours += h; cur.rows++;
+    byCode.set(code, cur);
+  }
+  const timeByOperation = [...byCode]
+    .map(([code, agg]) => {
+      const desc = lk.operation.get(code) ?? "";
+      return { code, desc: desc || null, hours: round1(agg.hours), rows: agg.rows, pnp: classifyOperation(desc) };
+    })
+    .filter((r) => r.hours > 0)
+    .sort((a2, b2) => b2.hours - a2.hours);
+
+  // ── a.json operations_24hr.code_2: P / NP — DERIVED, never stored ──────────
+  const bucket = (c: PnpClass | null) =>
+    round1(timeByOperation.filter((r) => r.pnp === c).reduce((s2, r) => s2 + r.hours, 0));
+  const opTotalHours = round1(timeByOperation.reduce((s2, r) => s2 + r.hours, 0));
+  const groupHours = (name: string) => round1(timeByGroup.find((g) => g.group === name)?.hours ?? 0);
+  const pnp = {
+    // "operation-code definitions" = the per-code wording of the Operations
+    // lookup; "activity groups" = the two-row ActivityGroups fallback, used only
+    // when the operations log has no usable durations at all.
+    source: timeByOperation.length ? "operation-code definitions" : "activity groups",
+    productiveHours: timeByOperation.length ? bucket("P") : groupHours("Drilling"),
+    nonProductiveHours: timeByOperation.length ? bucket("NP") : groupHours("Waiting"),
+    unclassifiedHours: timeByOperation.length ? bucket(null) : 0,
+    totalHours: timeByOperation.length ? opTotalHours : round1(groupHours("Drilling") + groupHours("Waiting")),
+    topNonProductive: timeByOperation.filter((r) => r.pnp === "NP").slice(0, 8),
+    unclassifiedCodes: timeByOperation.filter((r) => r.pnp === null).slice(0, 8),
+    // Cross-check from the other (coarser) signal, always reported so the two
+    // can be compared on screen.
+    activityGroup: { drillingHours: groupHours("Drilling"), waitingHours: groupHours("Waiting") },
+    untimedRows,
+  };
+
+  // ── a.json formations: prognosed vs actual top ─────────────────────────────
+  // D07 keeps the ACTUAL top only (DepthPoint, mKB). a.json's prog_top_md_mkb
+  // has no archive column at all, so it is returned as null and labelled on
+  // screen — the comparison is the block's whole point, so it is not dropped.
+  const formations = (db.prepare(`
+    SELECT FormCode AS code, DepthPoint AS md, SecondDepth AS second
+    FROM D07 WHERE WellCode = ? ORDER BY CAST(DepthPoint AS REAL)
+  `).all(wellCode) as Row[])
+    .map((r) => ({
+      name: look(lk.formation, r.code),
+      progTopMd: null as number | null, // not recorded in the archive
+      finalTopMd: val(r.md) as number | null,
+      subseaDepth: orNull(r.second) as string | null,
+    }))
+    .filter((r) => r.name != null || typeof r.finalTopMd === "number");
+
   const depths = progress.map((p) => p.depth as number);
   return {
-    progress, timeByType, timeByGroup,
+    progress, timeByType, timeByGroup, timeByOperation, pnp, formations,
     summary: {
       reports: progress.length,
       maxDepth: depths.length ? Math.max(...depths) : null,
