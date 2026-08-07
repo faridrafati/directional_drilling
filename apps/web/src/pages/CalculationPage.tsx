@@ -34,6 +34,29 @@ const PlanViewChart = lazy(() =>
 type Tab = "grid" | "3d" | "charts";
 
 /**
+ * DOM hooks the Directional Plot PDF export uses to find the two live chart
+ * surfaces. ChartsView stamps `data-dd-plot` onto each chart card; the
+ * exporter is handed the resolved `<svg>` elements, so it stays ignorant of
+ * this page's markup.
+ */
+const PLOT_ANCHOR = { plan: "plan", verticalSection: "vertical-section" } as const;
+
+/** `[data-dd-plot="plan"] svg.recharts-surface` — the Recharts root SVG. */
+function plotSurfaceSelector(anchor: string): string {
+  return `[data-dd-plot="${anchor}"] svg.recharts-surface`;
+}
+
+/**
+ * Bounds on the profile chain printed in the Directional Plot PDF header —
+ * see `profileLabel`. 40 characters is what one header value may occupy there
+ * (directionalPlot.ts's MAX_FIELD_VALUE_CHARS) before it wraps past the two
+ * lines that report's page-1 height budget reserves for a header row.
+ */
+const PROFILE_LABEL_MAX_CHARS = 40;
+const PROFILE_CHAIN_SEPARATOR = " > ";
+const PROFILE_CHAIN_MORE = " …";
+
+/**
  * Normalize a degree value into [0, 360°) for display. Compass-style azm /
  * tool-face values are equivalent under 360°-wrap (337.38° == -22.62°), so
  * we standardise on the unsigned representation everywhere they appear.
@@ -173,6 +196,18 @@ export function CalculationPage() {
   // three choices — Download PDF / Download Excel / Print Current View —
   // so the user picks one place no matter which tab they're on.
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  // Transient status line for the exports that can actually FAIL. The
+  // Directional Plot report rasterises the live chart SVGs through a canvas;
+  // if a plot is not mounted or the browser refuses to decode it, the user
+  // needs to be told — a PDF with a blank page where the plot should be is
+  // worse than no PDF at all. Errors linger longer than confirmations.
+  const [exportStatus, setExportStatus] =
+    useState<{ text: string; kind: "info" | "error" } | null>(null);
+  useEffect(() => {
+    if (!exportStatus) return;
+    const t = setTimeout(() => setExportStatus(null), exportStatus.kind === "error" ? 9000 : 4000);
+    return () => clearTimeout(t);
+  }, [exportStatus]);
   // "Find point between stations" interpolation tool, toggled by the Search
   // button at the top of the Grid tab.
   const [findOpen, setFindOpen] = useState(false);
@@ -237,6 +272,52 @@ export function CalculationPage() {
   }, [stations, vsecRefAzm]);
 
   /**
+   * Human-readable profile chain for the Directional Plot PDF header — e.g.
+   * "Build & Hold > Hold-Curve 3D". Consecutive rows sharing a profileType
+   * were created together by one profile pick, so runs collapse to a single
+   * entry; the START row carries no profile. Empty string when there is
+   * nothing to say, which the exporter then omits from the header block.
+   *
+   * The separator is a plain ">" and not "→" on purpose: this string is
+   * printed with pdfmake's bundled Roboto, whose subset has no U+2192, so an
+   * arrow comes out of the PDF as a tofu box. (U+2026, the ellipsis used
+   * below, IS in that subset.)
+   *
+   * The chain is BOUNDED. Page 1 of that report is a fixed height budget —
+   * header block, both plots, the markers note — and a calculation with
+   * several alternating segments produced a chain long enough to wrap the
+   * header row after row and push the plots onto a third page, silently
+   * breaking the "page 1 = plots, page 2 = table" contract. Whole entries are
+   * kept and the rest stands as "…", so the profile names that do print are
+   * never half a name. (directionalPlot.ts enforces its own equal cap on every
+   * header value — it cannot trust a caller — but truncating here is what
+   * makes the cut land on a segment boundary instead of mid-word.)
+   */
+  const profileLabel = useMemo(() => {
+    const chain: string[] = [];
+    for (const s of segments) {
+      if (s.profileType === ProfileType.START) continue;
+      const label = profileTypeLabel(s.profileType);
+      if (chain[chain.length - 1] !== label) chain.push(label);
+    }
+    const full = chain.join(PROFILE_CHAIN_SEPARATOR);
+    if (full.length <= PROFILE_LABEL_MAX_CHARS) return full;
+
+    const kept: string[] = [];
+    let used = 0;
+    for (const label of chain) {
+      const next = kept.length === 0 ? label.length : used + PROFILE_CHAIN_SEPARATOR.length + label.length;
+      if (next + PROFILE_CHAIN_MORE.length > PROFILE_LABEL_MAX_CHARS) break;
+      kept.push(label);
+      used = next;
+    }
+    // A single profile name longer than the cap is the only way `kept` ends up
+    // empty; cut that one mid-word rather than reporting no profile at all.
+    if (kept.length === 0) return `${chain[0].slice(0, PROFILE_LABEL_MAX_CHARS - 1)}…`;
+    return `${kept.join(PROFILE_CHAIN_SEPARATOR)}${PROFILE_CHAIN_MORE}`;
+  }, [segments]);
+
+  /**
    * Map from a segment's order to its profile-group number ("0" for the
    * START row, "1", "2", … for each consecutive same-profileType run after
    * it). The StationsTable joins stations + keypoints by segmentOrder
@@ -259,16 +340,21 @@ export function CalculationPage() {
   // can label chart axes / tooltips / 3D scale indicator with the right unit
   // suffix. The Project.units field is JSON-encoded (Pascal/SQLite has no
   // native JSON type) so it's parsed per render.
-  const lengthUnit = (() => {
+  const projectUnits = (() => {
     const raw = data?.well?.field?.country?.project?.units;
-    if (!raw) return "ft";
+    if (!raw) return { length: "ft", dls: undefined as string | undefined };
     try {
-      const parsed = JSON.parse(raw) as { length?: string };
-      return parsed.length || "ft";
+      const parsed = JSON.parse(raw) as { length?: string; dls?: string };
+      return { length: parsed.length || "ft", dls: parsed.dls };
     } catch {
-      return "ft";
+      return { length: "ft", dls: undefined as string | undefined };
     }
   })();
+  const lengthUnit = projectUnits.length;
+  /** The project's DECLARED severity unit ("deg/100ft" | "deg/30m"). Exports must
+   *  print this, not one derived from the length unit — "°/100m" and "°/30m"
+   *  differ by a factor of 3.3 and both look plausible on a metric project. */
+  const dlsUnit = projectUnits.dls;
 
   if (isLoading) return <div className="p-6 text-gray-500">Loading…</div>;
   if (error || !data) return <div className="p-6 text-red-600">Calculation not found.</div>;
@@ -349,7 +435,65 @@ export function CalculationPage() {
       countryName: data.well?.field?.country?.name ?? "?",
       fieldName: data.well?.field?.name ?? "?",
       wellName: data.well?.name ?? "?",
+      lengthUnit,
+      dlsUnit,
     });
+  }
+
+  /**
+   * "Directional plot (PDF)" — a GENERATED two-page report, not the browser
+   * print dialog:
+   *
+   *   page 1  title · well-identification header · the Plan and Vertical
+   *           Section plots, captured from the live Recharts SVGs
+   *   page 2  the calculated-stations table (same builder as the PDF above)
+   *
+   * The chart surfaces only exist while the Charts tab is mounted, which is
+   * why the menu entry is gated on that tab. We still handle their absence:
+   * the exporter throws with a reason and we show it instead of downloading a
+   * report with a blank page.
+   */
+  async function handleDirectionalPlotExport() {
+    if (!data) return;
+    setExportStatus({ text: "Rendering the directional plot…", kind: "info" });
+    try {
+      const { exportDirectionalPlotPdf } = await import("../export/directionalPlot.js");
+      await exportDirectionalPlotPdf(
+        data,
+        {
+          projectName: data.well?.field?.country?.project?.name,
+          countryName: data.well?.field?.country?.name,
+          fieldName: data.well?.field?.name,
+          wellName: data.well?.name,
+          wellNs: data.well?.ns,
+          wellEw: data.well?.ew,
+          wellMsl: data.well?.msl,
+          wellTvd: data.well?.tvd,
+          wellMd: data.well?.md,
+          wellType: data.well?.wellType,
+          profileLabel,
+          // The plotted vertical section depends on this bearing, so the
+          // report has to state which one it was drawn against.
+          vsecAzmDeg: stations.length > 1 ? normalizeDeg360(rad2deg(vsecRefAzm)) : null,
+          lengthUnit,
+      dlsUnit,
+        },
+        {
+          plan: document.querySelector<SVGSVGElement>(
+            plotSurfaceSelector(PLOT_ANCHOR.plan)
+          ),
+          verticalSection: document.querySelector<SVGSVGElement>(
+            plotSurfaceSelector(PLOT_ANCHOR.verticalSection)
+          ),
+        },
+      );
+      setExportStatus({ text: "Directional plot PDF downloaded.", kind: "info" });
+    } catch (err) {
+      setExportStatus({
+        text: `Directional plot export failed: ${err instanceof Error ? err.message : String(err)}`,
+        kind: "error",
+      });
+    }
   }
   async function handleXlsxExport() {
     if (!data) return;
@@ -723,20 +867,26 @@ export function CalculationPage() {
       ) : null}
 
       {/* Export-format chooser — pops when the user clicks the toolbar
-          "Export" button. Three actions: PDF (stations table), Excel
-          (workbook), Print Current View (browser print → Save as PDF).
-          The print option is only meaningful for the Charts / 3D tabs
-          where a `.print-target` wrapper exists; we disable it elsewhere
-          rather than producing an unhelpful whole-page print. */}
+          "Export" button. Four actions: PDF (stations table), Excel
+          (workbook), Directional plot PDF (generated report with both 2D
+          plots), Print Current View (browser print → Save as PDF).
+          The last two need the charts on screen, so they're enabled per-tab
+          rather than producing an unhelpful blank page. */}
       {exportMenuOpen && (
         <ExportMenuModal
           stationCount={stations.length}
           currentTab={tab}
           onDownloadPdf={() => { setExportMenuOpen(false); handlePdfExport(); }}
           onDownloadXlsx={() => { setExportMenuOpen(false); handleXlsxExport(); }}
+          onDirectionalPlot={() => { setExportMenuOpen(false); handleDirectionalPlotExport(); }}
           onPrintCurrentTab={() => { setExportMenuOpen(false); handlePrintCurrentTab(); }}
           onClose={() => setExportMenuOpen(false)}
         />
+      )}
+
+      {/* Transient export status — auto-dismisses (see the effect above). */}
+      {exportStatus && (
+        <ExportToast status={exportStatus} onDismiss={() => setExportStatus(null)} />
       )}
      </div>
     </div>
@@ -744,10 +894,49 @@ export function CalculationPage() {
 }
 
 /**
- * Export-format chooser modal. Three actions:
+ * Bottom-right status toast for the export actions. Same visual language as
+ * the Log Analysis page's status toast; red-tinted when an export failed so a
+ * failure can't be mistaken for a completed download.
+ */
+function ExportToast({
+  status, onDismiss,
+}: {
+  status: { text: string; kind: "info" | "error" };
+  onDismiss: () => void;
+}) {
+  const isError = status.kind === "error";
+  return (
+    <div className="fixed bottom-4 right-4 z-50 max-w-md animate-[fadeIn_120ms_ease-out] print-hidden">
+      <div
+        className={`flex items-start gap-2 text-sm rounded-lg px-3 py-2 shadow-lg ${
+          isError ? "bg-red-700/95 text-white" : "bg-gray-900/90 text-white"
+        }`}
+        role="status"
+        aria-live="polite"
+      >
+        <span className="flex-1">{status.text}</span>
+        <button
+          onClick={onDismiss}
+          className={isError ? "text-red-200 hover:text-white leading-none" : "text-gray-400 hover:text-white leading-none"}
+          title="Dismiss"
+          aria-label="Dismiss"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Export-format chooser modal. Four actions:
  *   1. Download PDF  — multi-page stations table (pdfmake-generated)
  *   2. Download Excel — .xlsx workbook with stations + segment inputs
- *   3. Print Current View — uses the browser print dialog; user picks
+ *   3. Directional plot (PDF) — a GENERATED two-page report: the well
+ *      header + both 2D plots rasterised from the live chart SVGs on
+ *      page 1, the stations table on page 2. Needs the Charts tab to be
+ *      mounted, because that is where the SVGs live.
+ *   4. Print Current View — uses the browser print dialog; user picks
  *      "Save as PDF" to get a vector PDF of whatever the active tab
  *      is showing (Charts: VSEC + Plan View + legends + stations
  *      table; 3D: the WebGL snapshot).
@@ -758,16 +947,20 @@ export function CalculationPage() {
  */
 function ExportMenuModal({
   stationCount, currentTab,
-  onDownloadPdf, onDownloadXlsx, onPrintCurrentTab, onClose,
+  onDownloadPdf, onDownloadXlsx, onDirectionalPlot, onPrintCurrentTab, onClose,
 }: {
   stationCount: number;
   currentTab: Tab;
   onDownloadPdf: () => void;
   onDownloadXlsx: () => void;
+  onDirectionalPlot: () => void;
   onPrintCurrentTab: () => void;
   onClose: () => void;
 }) {
   const printAvailable = currentTab === "3d" || currentTab === "charts";
+  // The plots are only in the DOM while the Charts tab is mounted, and there
+  // is nothing to draw without at least two stations.
+  const plotAvailable = currentTab === "charts" && stationCount > 1;
   return (
     <div
       className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
@@ -817,6 +1010,22 @@ function ExportMenuModal({
             onClick={onDownloadXlsx}
           />
           <ExportMenuButton
+            color="amber"
+            title="Directional plot (PDF)"
+            subtitle={plotAvailable
+              ? "Generated report — well header + Plan and Vertical Section plots, then the stations table"
+              : currentTab === "charts"
+                ? "Calculate at least two stations to plot the trajectory"
+                : "Switch to the Charts tab to enable this option"}
+            disabled={!plotAvailable}
+            iconPath={[
+              <polyline key="0" points="3 3 3 21 21 21" />,
+              <path key="1" d="M6 16c3-1 4-8 7-8s4 5 7 3" />,
+              <circle key="2" cx="6" cy="16" r="1.6" />,
+            ]}
+            onClick={onDirectionalPlot}
+          />
+          <ExportMenuButton
             color="blue"
             title="Print Current View as PDF"
             subtitle={printAvailable
@@ -840,7 +1049,7 @@ function ExportMenuModal({
 function ExportMenuButton({
   color, title, subtitle, iconPath, onClick, disabled,
 }: {
-  color: "red" | "green" | "blue";
+  color: "red" | "green" | "blue" | "amber";
   title: string;
   subtitle: string;
   iconPath: React.ReactNode;
@@ -851,6 +1060,7 @@ function ExportMenuButton({
     red:   { bg: "bg-red-50 hover:bg-red-100",   text: "text-red-700",   ring: "ring-red-200" },
     green: { bg: "bg-green-50 hover:bg-green-100", text: "text-green-700", ring: "ring-green-200" },
     blue:  { bg: "bg-blue-50 hover:bg-blue-100", text: "text-blue-700",  ring: "ring-blue-200" },
+    amber: { bg: "bg-amber-50 hover:bg-amber-100", text: "text-amber-700", ring: "ring-amber-200" },
   };
   const p = palette[color];
   return (
@@ -1050,8 +1260,10 @@ function ChartsView({
             Generated {new Date().toLocaleString()}
           </div>
         </div>
+        {/* `data-dd-plot` is the handle the Directional Plot PDF export uses
+            to find each live Recharts <svg> (see plotSurfaceSelector). */}
         <div className="flex-1 grid grid-cols-1 xl:grid-cols-2 gap-4 min-w-0 print-charts-row">
-          <div className="print-chart-card">
+          <div className="print-chart-card" data-dd-plot={PLOT_ANCHOR.verticalSection}>
             <VerticalSectionChart
               stations={stations}
               keypoints={keypoints}
@@ -1063,7 +1275,7 @@ function ChartsView({
               smoothLines={smoothLines}
             />
           </div>
-          <div className="print-chart-card">
+          <div className="print-chart-card" data-dd-plot={PLOT_ANCHOR.plan}>
             <PlanViewChart
               stations={stations}
               keypoints={keypoints}

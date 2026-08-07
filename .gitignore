@@ -93,3 +93,6 @@ old_fmi_code/**/*.jpg
 old_fmi_code/**/Thumbs.db
 old_fmi_code/**/Desktop.ini
 old_fmi_code/**/*.doc
+
+# Windows "downloaded from the internet" markers (WSL surfaces these)
+*:Zone.Identifier

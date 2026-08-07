@@ -94,6 +94,20 @@ export interface CalculationDetail {
   well?: {
     id: string;
     name: string;
+    /**
+     * Wellhead position + planned depths, straight off the Well record.
+     * `GET /calculations/:id` includes the whole well row, so these always
+     * arrive; every one of them is nullable in the schema (a well may be
+     * registered before it is surveyed), hence `| null`. Consumers that print
+     * them — the Directional Plot PDF header — omit the field when null
+     * rather than showing a blank placeholder.
+     */
+    ns?: number | null;
+    ew?: number | null;
+    msl?: number | null;
+    tvd?: number | null;
+    md?: number | null;
+    wellType?: string | null;
     field?: {
       id: string;
       name: string;
