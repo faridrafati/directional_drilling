@@ -1,11 +1,12 @@
 /**
  * Daily Drilling Reports — unified page.
  *
- * The Remarks & Summary search IS the page: a cross-well keyword/facet search
- * with two views (REMARKS = one row per operation, SUMMARY = one row per day).
- * Clicking any result row opens that day's full daily drilling report in an
- * overlay — the DR.xls-layout form, the raw joined section tables, or the
- * well's analytics — merging the old separate "Reports" browser into one place.
+ * Reports & Search IS the page: a cross-well keyword/facet search with three
+ * views over one sidebar — REMARKS (one row per operation), SUMMARY (one row per
+ * day) and BROWSE DAYS (no search at all: every daily report of the wells picked
+ * in the sidebar). Clicking any row opens that day's full daily drilling report
+ * in an overlay — the DR.xls-layout form, the raw joined section tables, or the
+ * well's analytics. The old separate "Browse Reports" tab is that third view.
  *
  * Reads the legacy Access→SQLite DBs directly via the @dd/api /ddr/* routes (no
  * migration, no Supabase). Dates are Jalali (Shamsi) strings as stored.
@@ -21,7 +22,6 @@ import {
 import { DrReportForm } from "../components/ddr/DrReportForm.js";
 import { DdrAnalytics } from "../components/ddr/DdrAnalytics.js";
 import { DdrRemarksSearch } from "../components/ddr/DdrRemarksSearch.js";
-import { DdrReportBrowser } from "../components/ddr/DdrReportBrowser.js";
 import { FormationLithology } from "../components/ddr/FormationLithology.js";
 import { MudProperties } from "../components/ddr/MudProperties.js";
 import { MudStock } from "../components/ddr/MudStock.js";
@@ -61,7 +61,7 @@ const fmt = (v: unknown): string => {
 export function DdrReportsPage() {
   const [report, setReport] = useState<ReportRef | null>(null);
   const [view, setView] = useState<ModalView>("form");
-  const [tab, setTab] = useState<"browse" | "search" | "litho" | "mud" | "stock" | "path" | "time" | "tools" | "rop">("browse");
+  const [tab, setTab] = useState<"search" | "litho" | "mud" | "stock" | "path" | "time" | "tools" | "rop">("search");
 
   const statusQ = useQuery({
     queryKey: ["ddr", "status"],
@@ -103,7 +103,7 @@ export function DdrReportsPage() {
         )}
 
         <div className="flex gap-1 border-b border-gray-200 mb-3 shrink-0">
-          {([["browse", "Browse Reports"], ["search", "Reports & Search"], ["litho", "Formation & Lithology"], ["mud", "Mud Properties"], ["stock", "Mud Stock"], ["path", "Well Path"], ["time", "Time Analysis"], ["tools", "Tools"], ["rop", "ROP Optimization"]] as const).map(([id, label]) => (
+          {([["search", "Reports & Search"], ["litho", "Formation & Lithology"], ["mud", "Mud Properties"], ["stock", "Mud Stock"], ["path", "Well Path"], ["time", "Time Analysis"], ["tools", "Tools"], ["rop", "ROP Optimization"]] as const).map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)}
               className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors duration-150 ${tab === id ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>
               {label}
@@ -111,11 +111,7 @@ export function DdrReportsPage() {
           ))}
         </div>
 
-        {tab === "browse" ? (
-          <DdrReportBrowser
-            onOpenReport={(wellCode, serialNo, date) => { setReport({ wellCode, serialNo, date }); setView("form"); }}
-          />
-        ) : tab === "search" ? (
+        {tab === "search" ? (
           <DdrRemarksSearch
             onOpenReport={(wellCode, serialNo, date) => { setReport({ wellCode, serialNo, date }); setView("form"); }}
           />

@@ -1,16 +1,26 @@
 /**
- * Remarks & Summary — port of the Delphi DDR "REMARKS OR SUMMERY" tab (Unit1).
+ * Reports & Search — port of the Delphi DDR "REMARKS OR SUMMERY" tab (Unit1),
+ * plus the day browser that used to be a tab of its own.
  *
  * Cross-well keyword search with AND / OR / NOT logic, plus the filterable
  * facets the Delphi form exposes — Fields, Wells, Bit (hole) sizes, Mud types,
  * Rigs, Operation names, the "Time included" toggle, and the saved search groups
- * from DB.sqlite FIELDDATA. Two result views query *different* source tables:
+ * from DB.sqlite FIELDDATA. THREE views share the one sidebar:
  *   • REMARKS = one row per operation (OperationAnalysis.Description) incl. op
  *     code + from/to time.
  *   • SUMMARY = one row per day = the L04 daily-report operations narrative
  *     (hole/depths/mud/weights/rig/well/date/description). A day with no logged
  *     operations still has a daily summary, so the two views differ.
- * Switching the view re-runs the search against the matching table. CSV export.
+ *   • BROWSE DAYS = no search at all: every daily report of the wells picked in
+ *     the sidebar, listed day by day (DdrBrowseDays). Searching answers "which
+ *     days match this?", browsing answers "show me this well's days".
+ * Switching between the two search views re-runs the search against the matching
+ * table; browsing needs no run. CSV export covers the search rows.
+ *
+ * Only Fields, Wells and the date window feed the browse view, so the facets
+ * that would do nothing there (bit sizes, mud types, rigs, operations, saved
+ * keyword groups, the keyword boxes themselves) are hidden or disabled while
+ * browsing rather than sitting there looking as if they filter it.
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +28,7 @@ import { api } from "../../api/client.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
 import { useFacetOptions } from "./useFacetOptions.js";
 import { useDdrSelection } from "./ddrSelection.js";
+import { DdrBrowseDays } from "./DdrBrowseDays.js";
 
 interface GroupEditor { originalName: string | null; name: string; category: string; and: string; or: string; not: string }
 
@@ -35,6 +46,19 @@ interface SearchOptions {
   mudTypes: string[]; rigs: string[]; operations: { code: string; desc: string }[];
 }
 export interface Item { value: string; label: string; keywords?: string; hint?: string; icon?: ReactNode }
+
+/** The two views that run a search, and the one that just lists days. */
+type SearchMode = "remarks" | "summary";
+type View = SearchMode | "browse";
+const VIEWS: [View, string][] = [["remarks", "Remarks"], ["summary", "Summary"], ["browse", "Browse days"]];
+/** Why the keyword chrome is inert while browsing — one sentence, everywhere. */
+const KW_OFF = "Keywords search the Remarks / Summary text — Browse days lists every day of the selected wells instead";
+const TIME_OFF = "Browse days lists every daily report of the selected wells — there are no operation rows to filter by clock time";
+const VIEW_HINT: Record<View, string> = {
+  remarks: "One row per logged operation",
+  summary: "One row per day — the daily report narrative",
+  browse: "No search: every daily report of the selected wells, day by day",
+};
 
 const parse = (s: string) => s.split(/[,;]+/).map((x) => x.trim()).filter(Boolean);
 const fmt = (v: unknown): string => {
@@ -80,10 +104,18 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
   const [andKw, setAndKw] = useState("");
   const [orKw, setOrKw] = useState("");
   const [notKw, setNotKw] = useState("");
-  const { dateFrom, setDateFrom, dateTo, setDateTo } = useDdrSelection();   // shared across tabs
+  const { dateFrom, setDateFrom, dateTo, setDateTo, browseRangeApplied } = useDdrSelection();   // shared across tabs
   const [onlyTimed, setOnlyTimed] = useState(false);
-  const [view, setView] = useState<"remarks" | "summary">("remarks");
+  const [view, setView] = useState<View>("remarks");
+  const browsing = view === "browse";
   const [groupFilter, setGroupFilter] = useState("");
+  /** The well selection whose date span the browse view has already written into
+   *  the shared pickers. Kept here, above the view switch, so toggling Remarks ⇄
+   *  Browse does not re-apply it over a window the user narrowed by hand. */
+  // The browse guard lives in ddrSelection, beside the window it protects —
+  // this component unmounts on every tab switch, so a local ref would reset
+  // and re-widen a window the user narrowed.
+  const browseRangeFor = browseRangeApplied;
   // facet selections — fields/wells/bit/mud shared across tabs (ddrSelection);
   // rigs/operations stay local to this search tab.
   const {
@@ -137,6 +169,14 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
     });
   }, [o?.wells, selFields]);
 
+  // The sidebar's well picks, carried into the browse view with the labels the
+  // picker shows (same-named wells already carry their code there) — codes alone
+  // would leave the Well column unreadable.
+  const browseWells = useMemo(() => {
+    const label = new Map(wellItems.map((i) => [i.value, i.label]));
+    return selWells.map((code) => ({ code, label: label.get(code) ?? code }));
+  }, [selWells, wellItems]);
+
   // Each field is also searchable by its wells' code prefix ("AB-" ⇒ Aban), so
   // typing "ab" or "ab-" surfaces the field even though its name is "Aban".
   const fieldKeywords = useMemo(() => {
@@ -165,8 +205,8 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
 
   // modeOverride lets the view toggle re-query immediately (before the `view`
   // state update has flushed); the Run button passes nothing → uses `view`.
-  async function runSearch(modeOverride?: "remarks" | "summary") {
-    const mode = modeOverride ?? view;
+  async function runSearch(modeOverride?: SearchMode) {
+    const mode = modeOverride ?? (view === "browse" ? "remarks" : view);
     setLoading(true);
     setError(null);
     try {
@@ -239,9 +279,10 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
     setAndKw(""); setOrKw(""); setNotKw(""); setDateFrom(""); setDateTo(""); setOnlyTimed(false);
     setSelFields([]); setSelWells([]); setSelHole([]); setSelMud([]); setSelRigs([]); setSelOps([]);
     setResult(null);
+    browseRangeFor.current = "";   // re-picking the same well re-points the window again
   }
   function exportCsv() {
-    if (!result?.rows.length) return;
+    if (browsing || !result?.rows.length) return;
     const cols = view === "summary" ? SUMMARY_COLS : REMARKS_COLS;
     const cell = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
     const lines = [cols.map(([, l]) => l).join(",")];
@@ -259,12 +300,26 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
       <div className="flex flex-col min-h-0 bg-white border border-gray-200 rounded p-3 overflow-y-auto">
         <MultiSelect title="Fields" items={(o?.fields ?? []).map((f) => ({ value: f, label: f, keywords: [...(fieldKeywords.get(f) ?? [])].join(" ") }))} selected={selFields} onChange={setSelFields} />
         <MultiSelect title={selFields.length ? `Wells · in ${selFields.length} field(s)` : "Wells"} items={wellItems} selected={selWells} onChange={setSelWells} />
-        <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
-        <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
-        <MultiSelect title="Rigs" items={(o?.rigs ?? []).map((r) => ({ value: r, label: r }))} selected={selRigs} onChange={setSelRigs} />
-        <MultiSelect title="Operations" items={(o?.operations ?? []).map((op) => ({ value: op.code, label: opLabel(op.code), hint: op.desc }))} selected={selOps} onChange={setSelOps} />
+        {/* Browsing lists whole days straight from the well's report list, which
+            takes no facet but the well itself — so the ones it cannot honour are
+            not shown while it is on. The picks themselves are kept (shared state)
+            and come back with the search views. */}
+        {browsing ? (
+          <p className="py-2 text-[11px] leading-snug text-gray-500 border-b border-gray-100">
+            Browsing days uses <b>Fields</b>, <b>Wells</b> and the date window only. Bit sizes, mud
+            types, rigs, operations and saved keyword searches filter the Remarks / Summary search —
+            switch back to one of those to use them; your picks are kept.
+          </p>
+        ) : (
+          <>
+            <MultiSelect title="Bit sizes" items={facet.holeSizes.map((h) => ({ value: h, label: h }))} selected={selHole} onChange={setSelHole} />
+            <MultiSelect title="Mud types" items={facet.mudTypes.map((m) => ({ value: m, label: m }))} selected={selMud} onChange={setSelMud} />
+            <MultiSelect title="Rigs" items={(o?.rigs ?? []).map((r) => ({ value: r, label: r }))} selected={selRigs} onChange={setSelRigs} />
+            <MultiSelect title="Operations" items={(o?.operations ?? []).map((op) => ({ value: op.code, label: opLabel(op.code), hint: op.desc }))} selected={selOps} onChange={setSelOps} />
+          </>
+        )}
 
-        <div className="pt-2">
+        <div className={`pt-2 ${browsing ? "hidden" : ""}`}>
           <div className="flex items-center justify-between mb-1">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">Saved searches ({groupsQ.data?.length ?? 0})</span>
             <button onClick={() => openNewGroup()} title="Save the current keywords as a new group" className="text-[11px] text-blue-600 hover:underline">＋ New</button>
@@ -300,9 +355,9 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
       <div className="flex flex-col min-h-0 gap-3">
         <div className="bg-white border border-gray-200 rounded p-3 shrink-0 space-y-2">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <KwInput label="AND (all of)" value={andKw} onChange={setAndKw} placeholder="STUCK, FISHING" />
-            <KwInput label="OR (any of)" value={orKw} onChange={setOrKw} placeholder="W&R, WASH AND REAM" />
-            <KwInput label="NOT (none of)" value={notKw} onChange={setNotKw} placeholder="BIT" />
+            <KwInput label="AND (all of)" value={andKw} onChange={setAndKw} placeholder="STUCK, FISHING" disabled={browsing} disabledTitle={KW_OFF} />
+            <KwInput label="OR (any of)" value={orKw} onChange={setOrKw} placeholder="W&R, WASH AND REAM" disabled={browsing} disabledTitle={KW_OFF} />
+            <KwInput label="NOT (none of)" value={notKw} onChange={setNotKw} placeholder="BIT" disabled={browsing} disabledTitle={KW_OFF} />
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
@@ -314,25 +369,47 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
               <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="1392/12/29" />
             </label>
             <label
-              className={`inline-flex items-center gap-1.5 text-xs h-9 select-none ${view === "summary" ? "text-gray-300 cursor-not-allowed" : "text-gray-600 cursor-pointer"}`}
-              title={view === "summary" ? "“Time included” applies to REMARKS only" : "Only operations that have a from/to time"}
+              className={`inline-flex items-center gap-1.5 text-xs h-9 select-none ${view !== "remarks" ? "text-gray-300 cursor-not-allowed" : "text-gray-600 cursor-pointer"}`}
+              title={browsing ? TIME_OFF : view === "summary" ? "“Time included” applies to REMARKS only" : "Only operations that have a from/to time"}
             >
-              <input type="checkbox" checked={onlyTimed} disabled={view === "summary"} onChange={(e) => setOnlyTimed(e.target.checked)} className="rounded border-gray-300" />
+              <input type="checkbox" checked={onlyTimed} disabled={view !== "remarks"} onChange={(e) => setOnlyTimed(e.target.checked)} className="rounded border-gray-300" />
               Time included
             </label>
-            <button onClick={() => runSearch()} disabled={loading} className="h-9 px-4 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300">{loading ? "Searching…" : "Run search"}</button>
+            <button onClick={() => runSearch()} disabled={loading || browsing}
+              title={browsing ? "Browsing lists the selected wells' days as you pick them — there is nothing to run" : undefined}
+              className="h-9 px-4 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300">{loading ? "Searching…" : "Run search"}</button>
             <button onClick={clearAll} className="h-9 px-3 text-sm rounded border border-gray-300 hover:bg-gray-50">Clear</button>
-            <button onClick={exportCsv} disabled={!result?.rows.length} className="h-9 px-3 text-sm rounded bg-green-700 text-white hover:bg-green-800 disabled:bg-gray-300">Export CSV</button>
-            <div className="inline-flex rounded border border-gray-300 overflow-hidden ml-auto" title="REMARKS = per operation · SUMMARY = per day (daily report narrative)">
-              {(["remarks", "summary"] as const).map((m) => (
-                <button key={m} onClick={() => { setView(m); if (result || loading) runSearch(m); }}
-                  className={`px-3 h-9 text-xs uppercase ${view === m ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{m}</button>
+            <button onClick={exportCsv} disabled={browsing || !result?.rows.length}
+              title={browsing ? "Export writes the search result rows — switch to Remarks or Summary to use it" : undefined}
+              className="h-9 px-3 text-sm rounded bg-green-700 text-white hover:bg-green-800 disabled:bg-gray-300">Export CSV</button>
+            <div className="inline-flex rounded border border-gray-300 overflow-hidden ml-auto">
+              {VIEWS.map(([m, label]) => (
+                <button key={m} title={VIEW_HINT[m]}
+                  onClick={() => {
+                    // Do NOT auto-rerun when coming back FROM browse: browsing re-points
+                    // the shared date window, so re-running here would quietly replace the
+                    // result the user is switching back to look at. They can press Run.
+                    const fromBrowse = view === "browse";
+                    setView(m);
+                    if (m !== "browse" && !fromBrowse && (result || loading)) runSearch(m);
+                  }}
+                  className={`px-3 h-9 text-xs uppercase whitespace-nowrap ${view === m ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{label}</button>
               ))}
             </div>
           </div>
+          {browsing && (
+            <div className="text-[11px] text-gray-500">
+              Pick wells in the sidebar to list their daily reports, then click a day to open the full
+              report. The dates start at the selected wells' own first and last report — narrow them to
+              focus on a section.
+            </div>
+          )}
           {error && <div className="text-xs text-red-600">{error}</div>}
         </div>
 
+        {browsing ? (
+          <DdrBrowseDays wells={browseWells} onOpenReport={onOpenReport} appliedRangeFor={browseRangeApplied} />
+        ) : (
         <div className="bg-white border border-gray-200 rounded flex-1 min-h-0 flex flex-col overflow-hidden">
           <div className="px-3 py-2 border-b border-gray-100 text-sm text-gray-600 shrink-0 flex items-center justify-between gap-2">
             <span>
@@ -354,6 +431,7 @@ export function DdrRemarksSearch({ onOpenReport }: { onOpenReport?: (wellCode: s
             )}
           </div>
         </div>
+        )}
       </div>
 
       {editor && (
@@ -415,14 +493,15 @@ function ResultTable({ cols, rows, onOpen }: {
   );
 }
 
-function KwInput({ label, value, onChange, placeholder, small }: {
+function KwInput({ label, value, onChange, placeholder, small, disabled, disabledTitle }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string; small?: boolean;
+  disabled?: boolean; disabledTitle?: string;
 }) {
   return (
-    <label className="block">
-      <span className="text-[11px] text-gray-500 block mb-0.5">{label}</span>
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-        className={`${small ? "w-36" : "w-full"} h-9 border border-gray-300 rounded px-2 text-sm`} />
+    <label className="block" title={disabled ? disabledTitle : undefined}>
+      <span className={`text-[11px] block mb-0.5 ${disabled ? "text-gray-300" : "text-gray-500"}`}>{label}</span>
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
+        className={`${small ? "w-36" : "w-full"} h-9 border border-gray-300 rounded px-2 text-sm disabled:bg-gray-50 disabled:text-gray-400`} />
     </label>
   );
 }

@@ -11,7 +11,7 @@
  * options endpoint) and only sends the relevant facets to its own query — a
  * selection that has no data on a tab is simply ignored there, not lost.
  */
-import { createContext, useContext, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { createContext, useContext, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from "react";
 
 type StrList = string[];
 type SetStr = Dispatch<SetStateAction<string>>;
@@ -29,6 +29,15 @@ export interface DdrSelection {
   dateTo: string; setDateTo: SetStr;
   depthFrom: string; setDepthFrom: SetStr;
   depthTo: string; setDepthTo: SetStr;
+  /**
+   * Which well selection the Browse-days view has already pointed the date
+   * window at. It lives HERE, beside the window it guards, because the tab that
+   * renders Browse is unmounted on every tab switch — a ref inside it would
+   * reset and re-widen a window the user had narrowed by hand, and would rewrite
+   * the range that Tools / Well Path / Mud Stock / ROP are sharing merely
+   * because the user looked at Browse again.
+   */
+  browseRangeApplied: MutableRefObject<string>;
   /** Reset every shared facet + the date/depth ranges (the sidebar "Clear" action). */
   clearShared: () => void;
 }
@@ -47,12 +56,15 @@ export function DdrSelectionProvider({ children }: { children: ReactNode }) {
   const [dateTo, setDateTo] = useState("");
   const [depthFrom, setDepthFrom] = useState("");
   const [depthTo, setDepthTo] = useState("");
+  const browseRangeApplied = useRef("");
 
   const value = useMemo<DdrSelection>(() => ({
     fields, setFields, wells, setWells, holeSizes, setHoleSizes, mudTypes, setMudTypes,
     materials, setMaterials, activityTypes, setActivityTypes, formations, setFormations,
+    browseRangeApplied,
     dateFrom, setDateFrom, dateTo, setDateTo, depthFrom, setDepthFrom, depthTo, setDepthTo,
     clearShared: () => {
+      browseRangeApplied.current = "";
       setFields([]); setWells([]); setHoleSizes([]); setMudTypes([]); setMaterials([]); setActivityTypes([]);
       setFormations([]); setDateFrom(""); setDateTo(""); setDepthFrom(""); setDepthTo("");
     },
