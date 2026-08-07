@@ -13,7 +13,7 @@
  * Dates are Jalali (Shamsi) "YYYY/MM/DD" exactly as the archive stores them, so
  * they sort lexicographically and the date filter is a plain string compare.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
 import { JalaliDatePicker } from "./JalaliDatePicker.js";
@@ -54,6 +54,10 @@ export function DdrReportBrowser({ onOpenReport }: {
   const [wellCode, setWellCode] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  /** The well whose own date span has already been written into the pickers.
+   *  Guards the effect below so a user narrowing the window is not overwritten
+   *  every time the day list re-renders. */
+  const appliedRangeFor = useRef("");
 
   const optsQ = useQuery({
     queryKey: ["ddr", "search-options"],
@@ -87,6 +91,24 @@ export function DdrReportBrowser({ onOpenReport }: {
     enabled: !!wellCode,
   });
 
+  /**
+   * Re-point the date window at the well that is actually selected.
+   *
+   * Without this a window left over from the previous well silently filters the
+   * new one to nothing — pick a 1389 well after a 1395 one and the list reads
+   * "no reports in that date window" for a well that has hundreds. Showing the
+   * well's own first and last report date instead makes the span visible and
+   * gives a sane starting point to narrow from.
+   */
+  useEffect(() => {
+    if (!wellCode || !daysQ.data) return;
+    if (appliedRangeFor.current === wellCode) return;   // already applied; leave manual edits alone
+    appliedRangeFor.current = wellCode;
+    const dates = daysQ.data.map((r) => (r.date ?? "").trim()).filter(Boolean).sort();
+    setDateFrom(dates[0] ?? "");
+    setDateTo(dates[dates.length - 1] ?? "");
+  }, [wellCode, daysQ.data]);
+
   // Jalali dates sort lexicographically, so the window is a string compare.
   const days = useMemo(() => {
     const rows = daysQ.data ?? [];
@@ -94,12 +116,25 @@ export function DdrReportBrowser({ onOpenReport }: {
     if (!from && !to) return rows;
     return rows.filter((r) => {
       const d = (r.date ?? "").trim();
-      if (!d) return false;                       // undated rows can't be in a window
+      // An undated report cannot be judged against a window, and the window is
+      // now pre-filled with the well's own span — so excluding them would hide
+      // real reports the moment a well is picked. They stay visible with a "—"
+      // date and are counted separately in the header.
+      if (!d) return true;
       return (!from || d >= from) && (!to || d <= to);
     });
   }, [daysQ.data, dateFrom, dateTo]);
 
-  const clear = () => { setField(""); setWellCode(""); setDateFrom(""); setDateTo(""); };
+  /** Reports the archive stored without a date — they cannot be windowed. */
+  const undated = useMemo(
+    () => (daysQ.data ?? []).filter((r) => !(r.date ?? "").trim()).length,
+    [daysQ.data],
+  );
+
+  const clear = () => {
+    appliedRangeFor.current = "";
+    setField(""); setWellCode(""); setDateFrom(""); setDateTo("");
+  };
 
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
@@ -109,7 +144,7 @@ export function DdrReportBrowser({ onOpenReport }: {
           <div>
             <label className={LABEL} htmlFor="ddr-browse-field">Field</label>
             <select id="ddr-browse-field" className={SELECT} value={field}
-              onChange={(e) => { setField(e.target.value); setWellCode(""); }}>
+              onChange={(e) => { setField(e.target.value); setWellCode(""); setDateFrom(""); setDateTo(""); }}>
               <option value="">All fields</option>
               {(optsQ.data?.fields ?? []).map((f) => <option key={f} value={f}>{f}</option>)}
             </select>
@@ -120,7 +155,7 @@ export function DdrReportBrowser({ onOpenReport }: {
             </label>
             <select id="ddr-browse-well" className={SELECT} value={wellCode}
               disabled={!wells.length}
-              onChange={(e) => setWellCode(e.target.value)}>
+              onChange={(e) => { setWellCode(e.target.value); setDateFrom(""); setDateTo(""); }}>
               <option value="">{wells.length ? `Select a well (${wells.length})` : "No wells"}</option>
               {wells.map((w) => <option key={w.code} value={w.code}>{w.label}</option>)}
             </select>
@@ -137,7 +172,8 @@ export function DdrReportBrowser({ onOpenReport }: {
         <div className="flex items-center justify-between gap-3 mt-3 flex-wrap">
           <p className="text-[11px] text-gray-500">
             Pick a well to list its daily reports, then click a day to open the full report.
-            Leave the dates empty for every day on the well.
+            The dates start at that well's own first and last report — narrow them to focus
+            on a section.
           </p>
           <button onClick={clear}
             className="min-h-[44px] sm:min-h-[32px] px-3 text-sm sm:text-xs rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-150">
@@ -153,7 +189,11 @@ export function DdrReportBrowser({ onOpenReport }: {
             ? "No well selected."
             : daysQ.isLoading
               ? "Loading the day list…"
-              : <>Daily reports · <b>{days.length}</b>{daysQ.data && days.length !== daysQ.data.length ? ` of ${daysQ.data.length}` : ""}</>}
+              : <>
+                  Daily reports · <b>{days.length}</b>
+                  {daysQ.data && days.length !== daysQ.data.length ? ` of ${daysQ.data.length}` : ""}
+                  {undated > 0 ? <span className="text-gray-400"> · {undated} undated, always shown</span> : null}
+                </>}
         </div>
         <div className="overflow-auto flex-1 min-h-0">
           {!wellCode ? (
