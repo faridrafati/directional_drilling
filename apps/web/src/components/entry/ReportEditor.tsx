@@ -90,6 +90,17 @@ function toBody(r: ReportDetail): ReportBody {
     // carry over exactly like `mud` — one block per day, or none at all.
     wellheads: r.wellheads ?? [], scrRates: r.scrRates ?? [], supportVessels: r.supportVessels ?? [],
     fit: r.fit ?? null, marine: r.marine ?? null,
+    // ── report 18's geological sheet ──
+    avgBackgroundGasPct: r.avgBackgroundGasPct, maxBackgroundGasPct: r.maxBackgroundGasPct,
+    avgConnectionGasPct: r.avgConnectionGasPct, maxConnectionGasPct: r.maxConnectionGasPct,
+    avgTripGasPct: r.avgTripGasPct, maxTripGasPct: r.maxTripGasPct,
+    avgDrillGasPct: r.avgDrillGasPct, maxDrillGasPct: r.maxDrillGasPct,
+    geoActivityAtReportTime: r.geoActivityAtReportTime,
+    geoOpsThisPeriod: r.geoOpsThisPeriod, geoOpsNextPeriod: r.geoOpsNextPeriod,
+    sampleDescriptions: r.sampleDescriptions ?? [],
+    lithologyLog: r.lithologyLog ?? [],
+    shows: r.shows ?? [],
+    logRuns: r.logRuns ?? [],
   };
 }
 
@@ -295,6 +306,20 @@ const SECTIONS = [
   { id: "events", label: "Events & HSE", count: (d: ReportBody) =>
       filledRows(d.intervalProblems) + filledRows(d.safetyChecks)
       + filledRows(d.safetyIncidents, ["order", "lostTime"]) + filledRows(d.mudVolumes), unit: "row" },
+  // Report 18's own sheet. Written by the WELLSITE GEOLOGIST, not the driller —
+  // which is why it is one tab rather than columns scattered through the others,
+  // and why its narrative fields sit beside the gas readings instead of in
+  // "Summary & weather".
+  { id: "geology", label: "Geology", count: (d: ReportBody) =>
+      filledRows(d.sampleDescriptions) + filledRows(d.lithologyLog)
+      + filledRows(d.shows, ["order", "kind"]) + filledRows(d.logRuns)
+      + (filled({
+        a: d.avgBackgroundGasPct, b: d.maxBackgroundGasPct,
+        c: d.avgConnectionGasPct, e: d.maxConnectionGasPct,
+        f: d.avgTripGasPct, g: d.maxTripGasPct,
+        h: d.avgDrillGasPct, i: d.maxDrillGasPct,
+        j: d.geoActivityAtReportTime, k: d.geoOpsThisPeriod, l: d.geoOpsNextPeriod,
+      }, []) ? 1 : 0), unit: "row" },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -501,6 +526,7 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
         {section === "wellhead" && <WellheadAndScr {...props} />}
         {section === "fit" && <FitSubform {...props} setFit={setFit} />}
         {section === "marine" && <MarineAndVessels {...props} setMarine={setMarine} />}
+        {section === "geology" && <GeologySubform {...props} />}
       </div>
 
       {/* Step through the subforms + the persistent Save / Submit */}
@@ -1205,6 +1231,139 @@ function OperationsLog({ draft, set, disabled }: SubformProps) {
  * The problems come first because the operations log points AT them: a log row's
  * "Prob ref #" is the 1-based position of a row in this table.
  */
+/**
+ * The wellsite GEOLOGIST's sheet — report 18.
+ *
+ * One tab rather than columns scattered through the driller's, because it is
+ * written by a different person about different things. The gas readings sit
+ * beside the geologist's narrative for the same reason: they are what that
+ * narrative is usually about.
+ *
+ * Shows are ONE table with a Kind column, not two. Every field but the gas
+ * readings is common to an oil show and a gas show, and splitting them would
+ * make a geologist decide which grid to open before they know what they have.
+ */
+function GeologySubform({ draft, set, disabled }: SubformProps) {
+  const gas = (label: string, avg: keyof ReportBody, max: keyof ReportBody) => (
+    <div className="grid grid-cols-2" key={label}>
+      <NumField label={`Avg ${label} gas (%)`} disabled={disabled}
+        value={draft[avg] as number | null} onChange={(v) => set(avg, v)} />
+      <NumField label={`Max ${label} gas (%)`} disabled={disabled}
+        value={draft[max] as number | null} onChange={(v) => set(max, v)} />
+    </div>
+  );
+
+  return (
+    <>
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">report 18 · the mud logger's readings</span>}>
+        Gas
+      </Section>
+      {gas("background", "avgBackgroundGasPct", "maxBackgroundGasPct")}
+      {gas("connection", "avgConnectionGasPct", "maxConnectionGasPct")}
+      {gas("trip", "avgTripGasPct", "maxTripGasPct")}
+      {gas("drill", "avgDrillGasPct", "maxDrillGasPct")}
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        Four kinds of gas, each with an average and a maximum. A 2% background with a 40% connection
+        peak is a different well from one reading 2% flat, and one &ldquo;gas&rdquo; figure cannot say
+        which you have.
+      </p>
+
+      <Section>Geological narrative</Section>
+      <TextField label="Geological activity at report time" multiline disabled={disabled}
+        value={draft.geoActivityAtReportTime} onChange={(v) => set("geoActivityAtReportTime", v)} />
+      <TextField label="Geological ops this report period" multiline disabled={disabled}
+        value={draft.geoOpsThisPeriod} onChange={(v) => set("geoOpsThisPeriod", v)} />
+      <TextField label="Geological ops next report period" multiline disabled={disabled}
+        value={draft.geoOpsNextPeriod} onChange={(v) => set("geoOpsNextPeriod", v)} />
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        The geologist&rsquo;s own narrative. The driller&rsquo;s three &mdash; operations at report
+        time, the 24-hour summary and the plan ahead &mdash; stay on Operations narrative and Summary
+        &amp; weather; report 18 prints only these.
+      </p>
+
+      <Section>Sample descriptions</Section>
+      <RowTable
+        cols={[
+          { key: "topMkb", label: "Top (mKB)", type: "num", width: "w-28" },
+          { key: "btmMkb", label: "Btm (mKB)", type: "num", width: "w-28" },
+          { key: "volCaPct", label: "Vol Ca (%)", type: "num", width: "w-24" },
+          { key: "volMgPct", label: "Vol Mg (%)", type: "num", width: "w-24" },
+          { key: "com", label: "Com" },
+        ] as Col<ReportBody["sampleDescriptions"][number]>[]}
+        rows={draft.sampleDescriptions} onChange={(v) => set("sampleDescriptions", v)}
+        disabled={disabled} minRows={2} addLabel="sample" testId="sample"
+        blank={() => ({ order: 0, topMkb: null, btmMkb: null, volCaPct: null, volMgPct: null, com: null })}
+      />
+
+      <Section>Lithology</Section>
+      <RowTable
+        cols={[
+          { key: "topMkb", label: "Top (mKB)", type: "num", width: "w-28" },
+          { key: "btmMkb", label: "Btm (mKB)", type: "num", width: "w-28" },
+          { key: "des", label: "Des", width: "w-48", placeholder: "Lst, arg, mdm hd" },
+          { key: "volPct", label: "Vol (%)", type: "num", width: "w-24",
+            title: "Percent of the interval this lithology makes up" },
+          { key: "type", label: "Type", type: "select", width: "w-32",
+            options: ["Sandstone", "Shale", "Limestone", "Dolomite", "Anhydrite", "Salt", "Marl", "Claystone", "Coal"]
+              .map((v) => ({ value: v, label: v })) },
+          { key: "typeCode", label: "Type code", width: "w-24", placeholder: "Lst" },
+        ] as Col<ReportBody["lithologyLog"][number]>[]}
+        rows={draft.lithologyLog} onChange={(v) => set("lithologyLog", v)}
+        disabled={disabled} minRows={2} addLabel="interval" testId="litho"
+        blank={() => ({ order: 0, topMkb: null, btmMkb: null, des: null, volPct: null, type: null, typeCode: null })}
+      />
+      <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
+        The mud logger&rsquo;s interval log, which is not the free-text lithology on Well /
+        Operations &mdash; that one is the driller&rsquo;s summary of the day, this is what the
+        cuttings actually were, metre by metre. Report 21 draws its lithology track from these.
+      </p>
+
+      <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">oil and gas, one table</span>}>
+        Shows
+      </Section>
+      <RowTable
+        cols={[
+          { key: "kind", label: "Kind", type: "select", width: "w-20",
+            options: [{ value: "Oil", label: "Oil" }, { value: "Gas", label: "Gas" }],
+            title: "Report 18 prints oil and gas shows as two blocks; this column is what splits them" },
+          { key: "topMkb", label: "Top (mKB)", type: "num", width: "w-28" },
+          { key: "btmMkb", label: "Btm (mKB)", type: "num", width: "w-28" },
+          { key: "showType", label: "Show type", width: "w-32", placeholder: "Fluorescence" },
+          { key: "showQuality", label: "Show quality", type: "select", width: "w-28",
+            options: ["Poor", "Fair", "Good", "Excellent"].map((v) => ({ value: v, label: v })),
+            title: "Oil shows" },
+          { key: "showOrigin", label: "Show origin", width: "w-28", placeholder: "Cut", title: "Oil shows" },
+          { key: "totalGasAvgPct", label: "Total gas avg (%)", type: "num", width: "w-24", title: "Gas shows" },
+          { key: "totalGasMinPct", label: "Total gas min (%)", type: "num", width: "w-24", title: "Gas shows" },
+          { key: "totalGasMaxPct", label: "Total gas max (%)", type: "num", width: "w-24", title: "Gas shows" },
+        ] as Col<ReportBody["shows"][number]>[]}
+        rows={draft.shows} onChange={(v) => set("shows", v)}
+        disabled={disabled} minRows={2} addLabel="show" testId="show"
+        blank={() => ({
+          order: 0, kind: null, topMkb: null, btmMkb: null,
+          showQuality: null, showOrigin: null, showType: null,
+          totalGasAvgPct: null, totalGasMinPct: null, totalGasMaxPct: null,
+        })}
+      />
+
+      <Section>Logs</Section>
+      <RowTable
+        cols={[
+          { key: "time", label: "Time", width: "w-20", placeholder: "14:30" },
+          { key: "runNo", label: "Run #", width: "w-20" },
+          { key: "type", label: "Type", width: "w-40", placeholder: "Triple Combo" },
+          { key: "topMkb", label: "Top (mKB)", type: "num", width: "w-28" },
+          { key: "btmMkb", label: "Btm (mKB)", type: "num", width: "w-28" },
+          { key: "loggingCompany", label: "Logging company", width: "w-40" },
+        ] as Col<ReportBody["logRuns"][number]>[]}
+        rows={draft.logRuns} onChange={(v) => set("logRuns", v)}
+        disabled={disabled} minRows={1} addLabel="log run" testId="logrun"
+        blank={() => ({ order: 0, time: null, runNo: null, type: null, topMkb: null, btmMkb: null, loggingCompany: null })}
+      />
+    </>
+  );
+}
+
 function EventsAndHse({ draft, set, disabled }: SubformProps) {
   return (
     <>

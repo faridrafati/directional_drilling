@@ -99,10 +99,18 @@ export interface JobHeader {
 }
 
 /** Exactly what `PUT /entry/jobs/:id` accepts. */
+/** Report 20's contact sheet — job-level, saved with the job. */
+export interface JobContactRow {
+  order: number; company: string | null; contactName: string | null;
+  title: string | null; mobile: string | null; email: string | null; note: string | null;
+}
+
 export interface JobBody extends JobHeader {
   phases: JobPhaseRow[];
   afes: AfeRow[];
   costItems: CostItemRow[];
+  /** Report 20's contact sheet — replace-all, nothing points into it. */
+  contacts: JobContactRow[];
 }
 
 export interface JobDetail extends JobBody {
@@ -545,6 +553,34 @@ export interface Report17Payload extends MultiWellEnvelope {
   totals: HeaderRow;
 }
 
+/* ── the well's geology sheet (reports 18–21) ─────────────────────────────── */
+/**
+ * One formation, prognosed AND as drilled. The two sets of columns are separate
+ * on purpose: report 19 exists to print them beside each other, and a prognosis
+ * that vanishes when the top is drilled cannot be compared with anything.
+ */
+export interface WellFormationRow {
+  order: number;
+  name: string | null; lithDes: string | null; elementType: string | null; layerName: string | null;
+  progDepthTopSs: number | null; progTopTvd: number | null;
+  progDepthBtmSs: number | null; progBtmTvd: number | null;
+  drillTopMd: number | null; drillTopTvd: number | null;
+  drillBtmMd: number | null; drillBtmTvd: number | null;
+  finalTopMd: number | null; finalBtmMd: number | null;
+  ropMHr: number | null;
+  pPorePpg: number | null; pFracPpg: number | null;
+  temperatureC: number | null; h2sConcPct: number | null;
+}
+export interface SamplingRequirementRow {
+  order: number; wellboreId: string | null;
+  topDes: string | null; topMkb: number | null;
+  btmDes: string | null; btmMkb: number | null;
+  rqdBy: string | null; sampledBy: string | null; com: string | null;
+}
+export interface GeologySheet {
+  formations: WellFormationRow[];
+  samplingRequirements: SamplingRequirementRow[];
+}
 export interface MultiTimeLogRow {
   startDate: string; endDate: string;
   durHr: number | null; cumDurHr: number | null;
@@ -639,6 +675,9 @@ export const wellviewApi = {
   deleteJob: (id: string) => entryApi.del<void>(`/jobs/${id}`),
   attachReports: (id: string) => entryApi.post<{ attached: number }>(`/jobs/${id}/attach-reports`),
   casing: (wellId: string) => entryApi.get<CasingSheet>(`/wells/${wellId}/casing`),
+  geology: (wellId: string) => entryApi.get<GeologySheet>(`/wells/${wellId}/geology`),
+  saveGeology: (wellId: string, body: GeologySheet) =>
+    entryApi.put<void>(`/wells/${wellId}/geology`, body),
   saveCasing: (wellId: string, body: CasingSheet) =>
     entryApi.put<void>(`/wells/${wellId}/casing`, body),
   casingStrings: (wellId: string) => entryApi.get<CasingStringListItem[]>(`/wells/${wellId}/casing-strings`),

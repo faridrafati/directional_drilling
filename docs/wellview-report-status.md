@@ -102,6 +102,19 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | 16 | Multi-well Phase Summary Pivot (XLSX) | 2026-08-08 | n/a | n/a | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 | 17 | Multi-well Safety Incidents | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 
+## Tier 4 — foundation
+
+| Item | Status |
+|---|---|
+| `WellFormation` — the register, prognosis AND actual side by side | 2026-08-09 |
+| `GeoSamplingRequirement` · `JobContact` | 2026-08-09 |
+| `EntrySampleDescription` · `EntryLithology` · `EntryShow` · `EntryLogRun` | 2026-08-09 |
+| `EntryReport` — four gas kinds (avg + max) and the geologist's three narrative fields | 2026-08-09 |
+| Geology API (`GET`+`PUT /entry/wells/:id/geology`); contacts ride the job save | 2026-08-09 |
+| Entry UI — well-level Geology panel (formation register in three bands, sampling requirements) | 2026-08-09 |
+| Entry UI — daily Geology tab (gas, narrative, samples, lithology, shows, log runs) | 2026-08-09 |
+| Entry UI — job Contacts tab | 2026-08-09 |
+
 ## Tier 4 — geology
 
 | # | Report | Spec read | Schema | Entry | Assembler | Preview | PDF | Verified |
@@ -408,6 +421,34 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   days carrying depth and a mud check — because that is what an offset actually looks like in the
   database. It is drilled faster and shallower so the curves separate, and it spudded four days
   after the rig arrived so the two day axes genuinely differ.
+- **2026-08-09 — a formation's PROGNOSIS and its ACTUAL are separate columns.** Report 19 exists to
+  print them against each other, and a predicted top overwritten the moment it is drilled cannot be
+  compared with anything. The entry grid is split into three labelled bands over the SAME rows —
+  identity, prognosis, as-drilled — so a geologist filling in a prognosis before spud is not walking
+  past twelve columns they cannot answer yet.
+- **2026-08-09 — the formation register is WELL-level; `EntryFormationTop` stays per-day.** The
+  register is what a geologist maintains from the prognosis onward and what reports 18–21 read; the
+  daily row is the note a driller makes when a top comes in on their shift. Both are real, and they
+  are not the same record.
+- **2026-08-09 — oil and gas shows share one table with a `kind`.** The sample prints two blocks, but
+  every column except the gas readings is common to both, and two tables would need every query and
+  every entry grid twice over — and would make a geologist choose which grid to open before they know
+  what they have.
+- **2026-08-09 — the day's gas is four KINDS, each with an average and a maximum.** A 2% background
+  with a 40% connection peak is a different well from one reading 2% flat, and one "gas" column
+  cannot say which you have.
+- **2026-08-09 — the geologist's narrative is separate from the driller's.** `description`,
+  `opsAtReportTime` and `opsNextPeriod` stay where they are; report 18 prints only
+  `geoActivityAtReportTime`, `geoOpsThisPeriod` and `geoOpsNextPeriod`. They are written by different
+  people about different things, which is also why the daily editor gives geology its own tab.
+- **2026-08-09 — `EntryReport.lithologyLog` is not `EntryReport.lithology`.** The latter already
+  exists as the day's free-text summary a driller types; the new relation is the mud logger's
+  interval-by-interval log, and report 21 draws its lithology track from it. Prisma refusing the
+  duplicate name is what surfaced the distinction.
+- **2026-08-09 — KNOWN LIMITATION: one mud check per day.** `EntryMud` is `@unique` on `reportId`,
+  and report 18's sample prints TWO checks on its day. Widening it to a one-to-many is a
+  restructuring of an existing `Entry*` model, which this work does not do; report 18 prints the
+  day's single check. Worth revisiting — a rig commonly runs a morning and an evening check.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

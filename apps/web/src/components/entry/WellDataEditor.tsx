@@ -29,12 +29,13 @@ import {
   wellviewApi, newRowId,
   type AfeRow, type CostCode, type CostItemRow, type JobBody, type JobDetail,
   type BhaRunRow, type JobListItem, type JobPhaseRow, type KickRow, type LessonRow,
-  type LostCirculationRow, type MudPumpRow, type PlanStationRow,
+  type JobContactRow, type LostCirculationRow, type MudPumpRow, type PlanStationRow,
   type WellRegisters, type WellboreRow,
   type WvCodeTables,
 } from "../../entry/wellview.js";
 import { Section, TextField, NumField, RowTable, type Col } from "./fields.js";
 import { CasingPanel } from "./CasingPanel.js";
+import { GeologyPanel } from "./GeologyPanel.js";
 
 /**
  * Keys `filled()` must ignore when deciding whether a row is worth saving.
@@ -100,6 +101,7 @@ function toBody(j: JobDetail): JobBody {
     })),
     afes: (j.afes ?? []).map((a) => ({ ...a, supplements: a.supplements ?? [], lines: a.lines ?? [] })),
     costItems: j.costItems ?? [],
+    contacts: j.contacts ?? [],
   };
 }
 
@@ -125,16 +127,19 @@ function prune(body: JobBody): JobBody {
         .filter((a) => filled(a, [...LINK_SKIP, "supplements", "lines"]) || a.supplements.length > 0 || a.lines.length > 0),
     ),
     costItems: reindex(body.costItems.filter(costFilled)),
+    contacts: reindex(body.contacts.filter((c) => filled(c))),
   };
 }
 
-type TabId = "job" | "phases" | "afe" | "costs";
+type TabId = "job" | "phases" | "afe" | "costs" | "contacts";
 
 const TABS: { id: TabId; label: string; count: (d: JobBody) => number }[] = [
-  { id: "job", label: "Job", count: (d) => (filled(d, ["order", "phases", "afes", "costItems"]) ? 1 : 0) },
+  { id: "job", label: "Job", count: (d) => (filled(d, ["order", "phases", "afes", "costItems", "contacts"]) ? 1 : 0) },
   { id: "phases", label: "Phases", count: (d) => d.phases.filter(phaseFilled).length },
   { id: "afe", label: "AFE & supplements", count: (d) => d.afes.length },
   { id: "costs", label: "Cost sheet", count: (d) => d.costItems.filter(costFilled).length },
+  // Report 20 prints this; nothing else does, which is why it is last.
+  { id: "contacts", label: "Contacts", count: (d) => d.contacts.filter((c) => filled(c)).length },
 ];
 
 export function WellDataEditor({ wellId, wellName, isAdmin }: {
@@ -164,6 +169,11 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
    * seventh section inside the registers.
    */
   const [showCasing, setShowCasing] = useState(false);
+  /**
+   * The well's formation register and the program's sampling requirements —
+   * reports 18 to 21. Well-level like the casing, and equally big.
+   */
+  const [showGeology, setShowGeology] = useState(false);
   // Associated by htmlFor rather than by wrapping: a <label> around a <select>
   // absorbs the selected option into the field's accessible name.
   const jobPickerId = useId();
@@ -277,6 +287,16 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
           >
             Casing &amp; cement
           </button>
+          <button
+            type="button" onClick={() => setShowGeology((v) => !v)}
+            className={`h-9 px-3 text-xs rounded-md border transition-colors duration-150 ${
+              showGeology
+                ? "border-blue-500 bg-blue-50 text-blue-800"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            Geology
+          </button>
           {isAdmin && (
             <button
               type="button" onClick={() => setShowCodes((v) => !v)}
@@ -302,6 +322,12 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
       {showCasing && (
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden shrink-0">
           <CasingPanel wellId={wellId} wellbores={registersQ.data?.wellbores ?? []} />
+        </div>
+      )}
+
+      {showGeology && (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden shrink-0">
+          <GeologyPanel wellId={wellId} wellbores={registersQ.data?.wellbores ?? []} />
         </div>
       )}
 
@@ -472,6 +498,25 @@ function JobSheet({ job, tab, setTab, codes, costCodes, onSaved }: {
         {tab === "job" && <JobTab draft={draft} set={set} codes={codes} />}
         {tab === "phases" && <PhasesTab draft={draft} set={set} codes={codes} />}
         {tab === "afe" && <AfeTab draft={draft} set={set} costCodeOptions={costCodeOptions} />}
+        {tab === "contacts" && (
+          <RowTable
+            cols={[
+              { key: "company", label: "Company", width: "w-40", placeholder: "Schlumberger" },
+              { key: "contactName", label: "Contact name", width: "w-40" },
+              { key: "title", label: "Title", width: "w-40", placeholder: "Sr Geologist" },
+              { key: "mobile", label: "Mobile", width: "w-32" },
+              { key: "email", label: "E-mail", width: "w-48" },
+              { key: "note", label: "Note" },
+            ] as Col<JobContactRow>[]}
+            rows={draft.contacts}
+            onChange={(rows) => set("contacts", rows)}
+            blank={() => ({
+              order: 0, company: null, contactName: null, title: null,
+              mobile: null, email: null, note: null,
+            })}
+            addLabel="Contact" minRows={3} testId="contact"
+          />
+        )}
         {tab === "costs" && (
           <CostsTab
             draft={draft} set={set} totals={totals}

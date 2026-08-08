@@ -211,6 +211,28 @@ const safetyIncidentSchema = z.object({
   order: int0, time: str, category: str, type: str, subType: str, cause: str,
   lostTime: boolOrNull, severity: str, com: str,
 });
+// ── report 18's geological children ────────────────────────────────────────
+const sampleDescriptionSchema = z.object({
+  order: int0, topMkb: num, btmMkb: num, volCaPct: num, volMgPct: num, com: str,
+});
+const lithologySchema = z.object({
+  order: int0, topMkb: num, btmMkb: num, des: str, volPct: num, type: str, typeCode: str,
+});
+/**
+ * Oil and gas shows share one table with a `kind`. Every column but the gas
+ * readings is common to both, and two tables would need every query and every
+ * entry grid twice over.
+ */
+const showSchema = z.object({
+  order: int0, kind: str, topMkb: num, btmMkb: num,
+  showQuality: str, showOrigin: str, showType: str,
+  totalGasAvgPct: num, totalGasMinPct: num, totalGasMaxPct: num,
+});
+const logRunSchema = z.object({
+  order: int0, time: str, runNo: str, type: str,
+  topMkb: num, btmMkb: num, loggingCompany: str,
+});
+
 /** Report 07 page 2's "Interval Problems"; the time log references these by ordinal. */
 const intervalProblemSchema = z.object({
   order: int0, problemType: str, problemSubType: str, startDate: str, startTime: str,
@@ -232,6 +254,15 @@ const reportSaveSchema = z.object({
   // ── reports 06 / 07 header cells ──
   weather: str, roadCondition: str, holeCondition: str, temperatureC: num,
   startDepthTvd: num, remarks: str, daysRi: num,
+  // ── report 18's daily geological band ──
+  // Four KINDS of gas, each with an average and a maximum: a 2% background with
+  // a 40% connection peak is a different well from one reading 2% flat.
+  avgBackgroundGasPct: num, maxBackgroundGasPct: num,
+  avgConnectionGasPct: num, maxConnectionGasPct: num,
+  avgTripGasPct: num, maxTripGasPct: num,
+  avgDrillGasPct: num, maxDrillGasPct: num,
+  // The geologist's narrative, kept apart from the driller's three below.
+  geoActivityAtReportTime: str, geoOpsThisPeriod: str, geoOpsNextPeriod: str,
   // The three narrative fields of a.json `operations`: what the rig is doing
   // right now, the 24-hour summary (`description`), and the plan ahead.
   opsAtReportTime: str, description: str, opsNextPeriod: str,
@@ -262,6 +293,10 @@ const reportSaveSchema = z.object({
   safetyChecks: z.array(safetyCheckSchema).default([]),
   safetyIncidents: z.array(safetyIncidentSchema).default([]),
   intervalProblems: z.array(intervalProblemSchema).default([]),
+  sampleDescriptions: z.array(sampleDescriptionSchema).default([]),
+  lithologyLog: z.array(lithologySchema).default([]),
+  shows: z.array(showSchema).default([]),
+  logRuns: z.array(logRunSchema).default([]),
 });
 
 const wellSchema = z.object({
@@ -315,6 +350,10 @@ const REPORT_INCLUDE = {
   safetyChecks: { orderBy: { order: "asc" } },
   safetyIncidents: { orderBy: { order: "asc" } },
   intervalProblems: { orderBy: { order: "asc" } },
+  sampleDescriptions: { orderBy: { order: "asc" } },
+  lithologyLog: { orderBy: { order: "asc" } },
+  shows: { orderBy: { order: "asc" } },
+  logRuns: { orderBy: { order: "asc" } },
   well: { include: { rig: true } },
   user: { select: { id: true, username: true, fullName: true } },
 } as const;
@@ -460,6 +499,7 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
         formationTops, surveys, drillingParameters, timeBreakdown,
         operations, supervisors, companies, hseDrills, bulkMaterials,
         mudVolumes, safetyChecks, safetyIncidents, intervalProblems,
+        sampleDescriptions, lithologyLog, shows, logRuns,
         ...header } = body;
       const id = existing.id;
 
@@ -493,6 +533,10 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
         prisma.entrySafetyCheck.deleteMany({ where: { reportId: id } }),
         prisma.entrySafetyIncident.deleteMany({ where: { reportId: id } }),
         prisma.entryIntervalProblem.deleteMany({ where: { reportId: id } }),
+        prisma.entrySampleDescription.deleteMany({ where: { reportId: id } }),
+        prisma.entryLithology.deleteMany({ where: { reportId: id } }),
+        prisma.entryShow.deleteMany({ where: { reportId: id } }),
+        prisma.entryLogRun.deleteMany({ where: { reportId: id } }),
         prisma.entryBitRun.createMany({ data: bitRuns.map((r) => ({ ...r, reportId: id })) }),
         // Nested children rule out a flat createMany — one create per string.
         ...drillStrings.map(({ components, ...s }) =>
@@ -524,6 +568,10 @@ export async function registerEntryRoutes(app: FastifyInstance, prisma: PrismaCl
         prisma.entrySafetyCheck.createMany({ data: safetyChecks.map((r) => ({ ...r, reportId: id })) }),
         prisma.entrySafetyIncident.createMany({ data: safetyIncidents.map((r) => ({ ...r, reportId: id })) }),
         prisma.entryIntervalProblem.createMany({ data: intervalProblems.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entrySampleDescription.createMany({ data: sampleDescriptions.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryLithology.createMany({ data: lithologyLog.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryShow.createMany({ data: shows.map((r) => ({ ...r, reportId: id })) }),
+        prisma.entryLogRun.createMany({ data: logRuns.map((r) => ({ ...r, reportId: id })) }),
       ]);
 
       // ── keep the BHA runs in step with what was just typed ──────────────

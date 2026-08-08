@@ -295,6 +295,8 @@ model EntryWell {
   kicks                  EntryKick[]
   lostCirculation        EntryLostCirculation[]
   planStations           WellPlanStation[]
+  formations             WellFormation[]
+  samplingRequirements   GeoSamplingRequirement[]
 
   @@unique([rigId, name])
   @@index([rigId])
@@ -399,6 +401,25 @@ model EntryReport {
   remarks         String?
   /// Days since the last recordable incident. `daysLti` above is lost-time.
   daysRi          Float?
+  // ── report 18's daily geological band ──
+  /// The day's gas readings, in percent, as the mud logger reports them. Four
+  /// KINDS of gas, each with an average and a maximum — a background average of
+  /// 2% with a 40% connection peak is a different well from one reading 2%
+  /// flat, and a single "gas" column cannot say which you have.
+  avgBackgroundGasPct Float?
+  maxBackgroundGasPct Float?
+  avgConnectionGasPct Float?
+  maxConnectionGasPct Float?
+  avgTripGasPct       Float?
+  maxTripGasPct       Float?
+  avgDrillGasPct      Float?
+  maxDrillGasPct      Float?
+  /// The geologist's own narrative, kept apart from the driller's `description`
+  /// / `opsAtReportTime` / `opsNextPeriod`: the two are written by different
+  /// people about different things, and report 18 prints only these.
+  geoActivityAtReportTime String?
+  geoOpsThisPeriod        String?
+  geoOpsNextPeriod        String?
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -434,6 +455,14 @@ model EntryReport {
   safetyChecks       EntrySafetyCheck[]
   safetyIncidents    EntrySafetyIncident[]
   intervalProblems   EntryIntervalProblem[]
+  // ── report 18's geological children ──
+  sampleDescriptions EntrySampleDescription[]
+  /// NOT `lithology` — that is already the day's free-text lithology summary,
+  /// which a driller types. This is the mud logger's interval-by-interval log,
+  /// and the two are written by different people at different resolutions.
+  lithologyLog       EntryLithology[]
+  shows              EntryShow[]
+  logRuns            EntryLogRun[]
 
   @@unique([wellId, reportDate])
   @@unique([wellId, serialNo])
@@ -1196,6 +1225,7 @@ model Job {
   afes      Afe[]
   costItems CostItem[]
   reports   EntryReport[]
+  contacts  JobContact[]
 
   @@index([wellId, order])
 }
@@ -1438,6 +1468,7 @@ model EntryWellbore {
   holeSections       HoleSection[]
   casingStrings      CasingString[]
   cementJobs         CementJob[]
+  samplingRequirements GeoSamplingRequirement[]
 
   @@index([wellId, order])
 }
@@ -1702,6 +1733,174 @@ model EntryBhaSensor {
 /// A hole section — report 04's "Sections" block: what size was drilled, and
 /// between which depths. Well-level, and pointed at a wellbore because a
 /// sidetrack drills its own sections.
+/// The well's FORMATION REGISTER — prognosed and actual, one row per formation.
+///
+/// Well-level, not per-day: a formation is a fact about the well that the
+/// geologist maintains from the prognosis onward, and it is read by report 18
+/// ("All Formations"), 19 (Formation Performance), 20 (the program) and 21 (the
+/// schematic's formation track). The per-day `EntryFormationTop` stays what it
+/// is — the note a driller makes when a top comes in on their shift.
+///
+/// PROGNOSIS AND ACTUAL ARE SEPARATE COLUMNS, never one that gets overwritten:
+/// report 19 exists to print them beside each other, and a prognosis that
+/// vanishes when the top is drilled cannot be compared with anything.
+model WellFormation {
+  id          String  @id @default(cuid())
+  wellId      String
+  order       Int     @default(0)
+  name        String?
+  /// "Dolomite" | "Shale" | "Limestone" | "Sandstone" — as printed.
+  lithDes     String?
+  /// "Marker" | "Reservoir" | "Seal" — the element the formation plays.
+  elementType String?
+  /// Report 19's "Layer Name", where a formation is subdivided.
+  layerName   String?
+  // ── prognosis (report 20) ──
+  /// Subsea depths, metres. The samples print "Prog Depth Top SS (ft)".
+  progDepthTopSs Float?
+  progTopTvd     Float?
+  progDepthBtmSs Float?
+  progBtmTvd     Float?
+  // ── as drilled (reports 18, 19) ──
+  drillTopMd  Float?
+  drillTopTvd Float?
+  drillBtmMd  Float?
+  drillBtmTvd Float?
+  /// Report 19's "Final Top MD" / "Final Btm MD" — the tops after the log was
+  /// tied in, which is not the same as where the driller called them.
+  finalTopMd  Float?
+  finalBtmMd  Float?
+  /// Rate of penetration through this formation, m/hr.
+  ropMHr      Float?
+  /// Pore and frac pressure in ppg, temperature in °C, H2S in percent.
+  pPorePpg    Float?
+  pFracPpg    Float?
+  temperatureC Float?
+  h2sConcPct  Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
+/// A sampling requirement from the geological program — report 20's own table.
+model GeoSamplingRequirement {
+  id         String  @id @default(cuid())
+  wellId     String
+  wellboreId String?
+  order      Int     @default(0)
+  /// "Open Hole Logs" | "Cores" | "Sidewall Cores" | "Cuttings".
+  topDes     String?
+  topMkb     Float?
+  btmDes     String?
+  btmMkb     Float?
+  rqdBy      String?
+  sampledBy  String?
+  com        String?
+
+  well     EntryWell      @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+
+  @@index([wellId, order])
+}
+
+/// One name and number on the job's contact sheet — report 20 prints the list.
+model JobContact {
+  id          String  @id @default(cuid())
+  jobId       String
+  order       Int     @default(0)
+  company     String?
+  contactName String?
+  title       String?
+  mobile      String?
+  email       String?
+  note        String?
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, order])
+}
+
+/// The day's cuttings description — report 18's "Sample Descriptions".
+model EntrySampleDescription {
+  id       String  @id @default(cuid())
+  reportId String
+  order    Int     @default(0)
+  topMkb   Float?
+  btmMkb   Float?
+  volCaPct Float?
+  volMgPct Float?
+  com      String?
+
+  report EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// The day's lithology log — report 18's "Lithology", report 21's litho track.
+model EntryLithology {
+  id       String  @id @default(cuid())
+  reportId String
+  order    Int     @default(0)
+  topMkb   Float?
+  btmMkb   Float?
+  des      String?
+  /// Percent of the interval this lithology makes up.
+  volPct   Float?
+  /// "Sandstone" | "Shale" | "Limestone" | "Dolomite" | "Anhydrite" | "Salt".
+  type     String?
+  typeCode String?
+
+  report EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// An oil or gas show. ONE model with a `kind`, not two tables: the sample
+/// prints two blocks, but every column except the gas readings is shared, and
+/// two tables would need every query and every entry grid twice over.
+model EntryShow {
+  id           String  @id @default(cuid())
+  reportId     String
+  order        Int     @default(0)
+  /// "Oil" | "Gas" — which block of report 18 the row prints in.
+  kind         String?
+  topMkb       Float?
+  btmMkb       Float?
+  /// Oil shows only: "Poor" | "Fair" | "Good" | "Excellent".
+  showQuality  String?
+  /// Oil shows only: "Cut" | "Fluorescence" | "Stain" | "Bleeding".
+  showOrigin   String?
+  showType     String?
+  /// Gas shows only, in percent.
+  totalGasAvgPct Float?
+  totalGasMinPct Float?
+  totalGasMaxPct Float?
+
+  report EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
+/// A wireline or LWD run — report 18's "Logs" section.
+model EntryLogRun {
+  id             String  @id @default(cuid())
+  reportId       String
+  order          Int     @default(0)
+  time           String? /// HH:MM as printed
+  runNo          String?
+  type           String? /// "Triple Combo" | "CBL" | "FMI" | "Sonic"
+  topMkb         Float?
+  btmMkb         Float?
+  loggingCompany String?
+
+  report EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, order])
+}
+
 /// One station of the DIRECTIONAL PLAN — the trajectory the well was designed
 /// to follow, typed from the plan listing the directional company issues.
 ///

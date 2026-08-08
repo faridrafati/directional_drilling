@@ -206,6 +206,23 @@ async function main() {
   await prisma.jobPhase.deleteMany({ where: { jobId: job.id } });
   await prisma.afe.deleteMany({ where: { jobId: job.id } });
 
+  // Report 20's contact sheet.
+  await prisma.jobContact.deleteMany({ where: { jobId: job.id } });
+  await prisma.jobContact.createMany({
+    data: [
+      ["Geoservices", "Bill Frost", "Mud Logging Manager", "0912 300 4471", "bill.frost@geoservices.example", "Night shift"],
+      ["Schlumberger", "Sam Wind", "Logging Engineer", "0912 992 3226", "sam.wind@slb.example", null],
+      ["NABORS", "Mehdi Sadeghi", "Rig Manager", "0912 100 6677", null, null],
+      ["POGC", "Reza Ahmadi", "Drilling Foreman", "0912 300 1188", "r.ahmadi@pogc.example", null],
+      ["Corelab", "Ali Tabatabai", "Sr Geologist", "0912 445 7712", null, "Coring programme"],
+      ["Halliburton", "Nima Rostami", "Cementing Supervisor", "0912 329 2442", null, null],
+    ].map(([company, contactName, title, mobile, email, note], i) => ({
+      jobId: job.id, order: i,
+      company: company as string, contactName: contactName as string, title: title as string,
+      mobile: mobile as string | null, email: email as string | null, note: note as string | null,
+    })),
+  });
+
   const afe = await prisma.afe.create({
     data: {
       jobId: job.id, order: 0, afeNumber: "9876543",
@@ -302,6 +319,49 @@ async function main() {
       topDepthMkb: 240, bottomDepthMkb: 268, opsInProg: "Drilling 17-1/2\" hole",
       volLostTotBbl: 86,
     },
+  });
+
+  // ── the well's geology (reports 18 / 19 / 20 / 21) ──────────────────────
+  // Prognosis AND actual on every row: report 19 prints them against each
+  // other, so a formation whose predicted top is overwritten when it is drilled
+  // would have nothing to compare.
+  await prisma.wellFormation.deleteMany({ where: { wellId: well.id } });
+  const formations: [string, string, string, number, number, number, number, number, number, number, number, number, number, number][] = [
+    // name          lith         element    pTopSs  pTopTvd pBtmSs  pBtmTvd dTopMd  dTopTvd dBtmMd  dBtmTvd rop   pPore pFrac
+    ["Aghajari",     "Marl",      "Seal",      100,    118,    230,    248,    118.4,  118.3,  248.2,  248.0,  42.5,  8.9, 14.2],
+    ["Mishan",       "Limestone", "Marker",    230,    248,    900,    918,    248.2,  248.0,  902.0,  898.5,  28.1,  9.1, 14.8],
+    ["Gachsaran",    "Anhydrite", "Seal",      900,    918,   1600,   1618,    902.0,  898.5, 1598.0, 1571.2,  19.4,  9.6, 15.4],
+    ["Asmari",       "Limestone", "Reservoir",1600,   1618,   2350,   2368,   1598.0, 1571.2, 2344.0, 2231.8,  11.8, 10.2, 15.9],
+    ["Pabdeh",       "Shale",     "Source",   2350,   2368,   2620,   2638,   2344.0, 2231.8, 2612.0, 2438.4,   9.6, 10.6, 16.2],
+    ["Blue Heron Shale", "Shale", "Reservoir",2620,   2638,   2760,   2778,   2612.0, 2438.4, 2752.0, 2544.9,   8.2, 10.9, 16.5],
+  ];
+  await prisma.wellFormation.createMany({
+    data: formations.map(([name, lithDes, elementType, progDepthTopSs, progTopTvd, progDepthBtmSs,
+      progBtmTvd, drillTopMd, drillTopTvd, drillBtmMd, drillBtmTvd, ropMHr, pPorePpg, pFracPpg], i) => ({
+      wellId: well.id, order: i, name, lithDes, elementType,
+      progDepthTopSs, progTopTvd, progDepthBtmSs, progBtmTvd,
+      drillTopMd, drillTopTvd, drillBtmMd, drillBtmTvd,
+      // The log-tied tops, which are not where the driller called them.
+      finalTopMd: Math.round(drillTopMd * 10) / 10 - 0.4,
+      finalBtmMd: Math.round(drillBtmMd * 10) / 10 - 0.4,
+      ropMHr, pPorePpg, pFracPpg,
+      temperatureC: 38 + i * 14,
+      h2sConcPct: i >= 3 ? 0.02 * i : 0,
+    })),
+  });
+
+  await prisma.geoSamplingRequirement.deleteMany({ where: { wellId: well.id } });
+  await prisma.geoSamplingRequirement.createMany({
+    data: [
+      { wellId: well.id, order: 0, topDes: "Open Hole Logs", topMkb: 300, btmMkb: 2_752,
+        wellboreId: wellbores[0]?.id ?? null, rqdBy: "Operations Geology", sampledBy: "Schlumberger",
+        com: "Triple combo plus sonic over the reservoir." },
+      { wellId: well.id, order: 1, topDes: "Cores", topMkb: 2_400, btmMkb: 2_460,
+        wellboreId: wellbores[0]?.id ?? null, rqdBy: "Reservoir", sampledBy: "Corelab", com: null },
+      { wellId: well.id, order: 2, topDes: "Cuttings", topMkb: 300, btmMkb: 2_752,
+        wellboreId: wellbores[0]?.id ?? null, rqdBy: "Operations Geology", sampledBy: "Geoservices",
+        com: "Every 5 m; every 3 m through the Asmari." },
+    ],
   });
 
   // ── the directional plan (report 08's planned curve) ────────────────────
@@ -650,6 +710,41 @@ async function seedDay(
           { order: 1, formation: "Mishan", progTopMd: 245, depth: 248.2 },
         ],
       },
+      // ── report 18's geological sheet ──
+      avgBackgroundGasPct: 1.8, maxBackgroundGasPct: 4.2,
+      avgConnectionGasPct: 6.4, maxConnectionGasPct: 22.0,
+      avgTripGasPct: 9.1, maxTripGasPct: 31.5,
+      avgDrillGasPct: 2.2, maxDrillGasPct: 7.8,
+      geoActivityAtReportTime: "Drilling 17-1/2\" hole at 299 mKB in Mishan limestone.",
+      geoOpsThisPeriod: "Ran and cemented 20\" casing, drilled out the shoe track and resumed "
+        + "drilling at 20:45. Cuttings sampled every 5 m throughout.",
+      geoOpsNextPeriod: "Continue drilling 17-1/2\" hole; sample every 5 m and every 3 m once the "
+        + "Gachsaran anhydrite is picked.",
+      sampleDescriptions: {
+        create: [
+          { order: 0, topMkb: 250, btmMkb: 285, volCaPct: 22, volMgPct: 4,
+            com: "Mrl, grey-grn, sft-frm, blocky; tr pyr." },
+          { order: 1, topMkb: 285, btmMkb: 299, volCaPct: 72, volMgPct: 11,
+            com: "Lst, off-wht, mdm hd, sucrosic; tr pyr, no vis por." },
+        ],
+      },
+      lithologyLog: {
+        create: [
+          { order: 0, topMkb: 250, btmMkb: 285, des: "Marl, grey-green, soft to firm", volPct: 60, type: "Marl", typeCode: "Mrl" },
+          { order: 1, topMkb: 285, btmMkb: 299, des: "Limestone, off-white, medium hard", volPct: 40, type: "Limestone", typeCode: "Lst" },
+        ],
+      },
+      shows: {
+        create: [
+          { order: 0, kind: "Gas", topMkb: 291, btmMkb: 296, showType: "Background",
+            totalGasAvgPct: 1.8, totalGasMinPct: 0.9, totalGasMaxPct: 4.2 },
+          { order: 1, kind: "Oil", topMkb: 293, btmMkb: 295, showQuality: "Fair",
+            showOrigin: "Cut", showType: "Fluorescence" },
+        ],
+      },
+      logRuns: {
+        create: [{ order: 0, time: "14:30", runNo: "1", type: "Triple Combo", topMkb: 100, btmMkb: 299, loggingCompany: "Schlumberger" }],
+      },
       // NS / EW / VS are carried because report 08 plots them; a station without
       // them simply does not appear on the plan view.
       surveys: {
@@ -767,6 +862,19 @@ const INCIDENTS: Record<number, {
   }],
 };
 
+/**
+ * Which lithology the bit is in at a depth — the formation register's own
+ * intervals, so the daily log and the formation tops cannot disagree.
+ */
+function lithologyAt(depth: number): { des: string; type: string; typeCode: string; volPct: number } {
+  if (depth <= 248) return { des: "Marl, grey-green, soft", type: "Marl", typeCode: "Mrl", volPct: 80 };
+  if (depth <= 902) return { des: "Limestone, off-white, medium hard", type: "Limestone", typeCode: "Lst", volPct: 75 };
+  if (depth <= 1_598) return { des: "Anhydrite, white, with salt stringers", type: "Anhydrite", typeCode: "Anh", volPct: 85 };
+  if (depth <= 2_344) return { des: "Limestone, cream, vuggy porosity", type: "Limestone", typeCode: "Lst", volPct: 70 };
+  if (depth <= 2_612) return { des: "Shale, dark grey, fissile, calcareous", type: "Shale", typeCode: "Sh", volPct: 90 };
+  return { des: "Shale, black, organic-rich", type: "Shale", typeCode: "Sh", volPct: 95 };
+}
+
 async function seedProgressDays(wellId: string, userId: string, jobId: string) {
   //   day  depth   [letter, code2, hours, problem hours, remark]
   const days: [number, number, [string, string, number, number, string][]][] = [
@@ -842,6 +950,17 @@ async function seedProgressDays(wellId: string, userId: string, jobId: string) {
             { order: 1, jobContact: "Mehdi Sadeghi", position: "Rig Manager", mobile: "0912 100 6677" },
           ],
         },
+        // One lithology interval per day, so report 21's litho track spans the
+        // whole well instead of only the showcase day's 49 metres.
+        lithologyLog: {
+          create: [{
+            order: 0, topMkb: previous, btmMkb: depth,
+            ...lithologyAt(depth),
+          }],
+        },
+        // The mud logger's gas, so report 18 has a reading on any day.
+        avgBackgroundGasPct: 1.2 + (offset % 4) * 0.4,
+        maxBackgroundGasPct: 3.0 + (offset % 4) * 0.9,
         // Report 13's "Drilling Hrs" column and its Avg. ROP are built from
         // this, not from the coded log: it is the field that MEANS rotating
         // hours, and one source beats reconciling two.

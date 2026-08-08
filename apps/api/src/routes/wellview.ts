@@ -110,11 +110,18 @@ const jobHeaderSchema = z.object({
   possCostSave: num, possTimeSaveHr: num, estProblemCost: num, estLostTimeHr: num,
 });
 
+/** Report 20's contact sheet — replace-all, nothing points into it. */
+const jobContactSchema = z.object({
+  order: int0, company: str, contactName: str, title: str,
+  mobile: str, email: str, note: str,
+});
+
 /** The whole job sheet, as the Well Data editor posts it. */
 const jobSaveSchema = jobHeaderSchema.extend({
   phases: z.array(jobPhaseSchema).default([]),
   afes: z.array(afeSchema).default([]),
   costItems: z.array(costItemSchema).default([]),
+  contacts: z.array(jobContactSchema).default([]),
 });
 
 // ── well- and rig-level registers (reports 06 / 07) ─────────────────────────
@@ -232,6 +239,28 @@ const casingSaveSchema = z.object({
   strings: z.array(casingStringSchema).default([]),
 });
 
+// ── the well's geology (reports 18 / 19 / 20 / 21) ─────────────────────────
+/**
+ * The formation register. Prognosis and actual are SEPARATE columns, never one
+ * that gets overwritten — report 19 exists to print them beside each other.
+ */
+const wellFormationSchema = z.object({
+  order: int0, name: str, lithDes: str, elementType: str, layerName: str,
+  progDepthTopSs: num, progTopTvd: num, progDepthBtmSs: num, progBtmTvd: num,
+  drillTopMd: num, drillTopTvd: num, drillBtmMd: num, drillBtmTvd: num,
+  finalTopMd: num, finalBtmMd: num, ropMHr: num,
+  pPorePpg: num, pFracPpg: num, temperatureC: num, h2sConcPct: num,
+});
+const samplingRequirementSchema = z.object({
+  order: int0, wellboreId: str, topDes: str, topMkb: num,
+  btmDes: str, btmMkb: num, rqdBy: str, sampledBy: str, com: str,
+});
+/** Nothing points into either, so both save replace-all. */
+const geologySaveSchema = z.object({
+  formations: z.array(wellFormationSchema).default([]),
+  samplingRequirements: z.array(samplingRequirementSchema).default([]),
+});
+
 const costCodeSchema = z.object({
   id: rowId,
   // NOT .min(1): the admin grid keeps spare blank rows on screen like every
@@ -252,6 +281,7 @@ const JOB_INCLUDE = {
     },
   },
   costItems: { orderBy: { order: "asc" }, include: { costCode: true } },
+  contacts: { orderBy: { order: "asc" } },
   well: { include: { rig: true } },
 } as const;
 
@@ -339,7 +369,7 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
 
       let body: z.infer<typeof jobSaveSchema>;
       try { body = jobSaveSchema.parse(req.body); } catch (e) { return badReq(reply, e); }
-      const { phases, afes, costItems, ...header } = body;
+      const { phases, afes, costItems, contacts, ...header } = body;
       const jobId = existing.id;
 
       // Ids the client is keeping. Anything stored under this job that is NOT in
@@ -359,6 +389,12 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
         // phase only nulls the reference (SetNull) — it never takes the cost
         // with it, which is the whole point of that onDelete rule.
         await tx.costItem.deleteMany({ where: { jobId, id: { notIn: keptCostIds.length ? keptCostIds : ["-"] } } });
+        // The contact sheet has nothing pointing into it, so unlike the phases
+        // and the AFE it saves replace-all.
+        await tx.jobContact.deleteMany({ where: { jobId } });
+        if (contacts.length) {
+          await tx.jobContact.createMany({ data: contacts.map((c) => ({ ...c, jobId })) });
+        }
         await tx.jobPhase.deleteMany({ where: { jobId, id: { notIn: keptPhaseIds.length ? keptPhaseIds : ["-"] } } });
         await tx.afe.deleteMany({ where: { jobId, id: { notIn: keptAfeIds.length ? keptAfeIds : ["-"] } } });
 
@@ -666,6 +702,40 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
               }
             }
           }
+        }
+      });
+      return reply.code(204).send();
+    });
+
+  // ══ the well's geology (reports 18 / 19 / 20 / 21) ═══════════════════════
+  app.get<{ Params: { wellId: string } }>(
+    "/entry/wells/:wellId/geology", { preHandler: requireUser }, async (req, reply) => {
+      const { wellId } = req.params;
+      if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+      const [formations, samplingRequirements] = await Promise.all([
+        prisma.wellFormation.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
+        prisma.geoSamplingRequirement.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
+      ]);
+      return { formations, samplingRequirements };
+    });
+
+  app.put<{ Params: { wellId: string }; Body: unknown }>(
+    "/entry/wells/:wellId/geology", { preHandler: requireUser }, async (req, reply) => {
+      const { wellId } = req.params;
+      if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+      let body: z.infer<typeof geologySaveSchema>;
+      try { body = geologySaveSchema.parse(req.body); } catch (e) { return badReq(reply, e); }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.wellFormation.deleteMany({ where: { wellId } });
+        await tx.geoSamplingRequirement.deleteMany({ where: { wellId } });
+        if (body.formations.length) {
+          await tx.wellFormation.createMany({ data: body.formations.map((f) => ({ ...f, wellId })) });
+        }
+        if (body.samplingRequirements.length) {
+          await tx.geoSamplingRequirement.createMany({
+            data: body.samplingRequirements.map((r) => ({ ...r, wellId })),
+          });
         }
       });
       return reply.code(204).send();

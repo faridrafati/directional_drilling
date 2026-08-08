@@ -330,6 +330,28 @@ export interface SafetyIncidentRow {
   /** The narrative. Report 17 is essentially this column. */
   com: string | null;
 }
+/** Report 18's "Sample Descriptions" — the day's cuttings. */
+export interface SampleDescriptionRow {
+  order: number; topMkb: number | null; btmMkb: number | null;
+  volCaPct: number | null; volMgPct: number | null; com: string | null;
+}
+/** Report 18's "Lithology" — the mud logger's interval log. */
+export interface LithologyRow {
+  order: number; topMkb: number | null; btmMkb: number | null;
+  des: string | null; volPct: number | null; type: string | null; typeCode: string | null;
+}
+/** An oil OR gas show — one row shape, distinguished by `kind`. */
+export interface ShowRow {
+  order: number; kind: string | null; topMkb: number | null; btmMkb: number | null;
+  showQuality: string | null; showOrigin: string | null; showType: string | null;
+  totalGasAvgPct: number | null; totalGasMinPct: number | null; totalGasMaxPct: number | null;
+}
+/** A wireline or LWD run — report 18's "Logs". */
+export interface LogRunRow {
+  order: number; time: string | null; runNo: string | null; type: string | null;
+  topMkb: number | null; btmMkb: number | null; loggingCompany: string | null;
+}
+
 /** Report 07 page 2's "Interval Problems"; the time log references these by row. */
 export interface IntervalProblemRow {
   order: number; problemType: string | null; problemSubType: string | null;
@@ -374,6 +396,13 @@ export interface ReportBody {
   // ── reports 06 / 07 ──
   mudVolumes: MudVolumeRow[]; safetyChecks: SafetyCheckRow[];
   safetyIncidents: SafetyIncidentRow[]; intervalProblems: IntervalProblemRow[];
+  // ── report 18's geological children ──
+  sampleDescriptions: SampleDescriptionRow[];
+  /** NOT `lithology` — that is the day's free-text summary a driller types.
+   *  This is the mud logger's interval-by-interval log. */
+  lithologyLog: LithologyRow[];
+  shows: ShowRow[];
+  logRuns: LogRunRow[];
   /** Weather, road and hole condition as reports 06 / 07 print them. */
   weather: string | null; roadCondition: string | null; holeCondition: string | null;
   temperatureC: number | null;
@@ -383,6 +412,16 @@ export interface ReportBody {
   remarks: string | null;
   /** Days since the last recordable incident (`daysLti` is lost-time). */
   daysRi: number | null;
+  // ── report 18's daily geological band ──
+  /** Four KINDS of gas, each with an average and a maximum, in percent. */
+  avgBackgroundGasPct: number | null; maxBackgroundGasPct: number | null;
+  avgConnectionGasPct: number | null; maxConnectionGasPct: number | null;
+  avgTripGasPct: number | null; maxTripGasPct: number | null;
+  avgDrillGasPct: number | null; maxDrillGasPct: number | null;
+  /** The GEOLOGIST's narrative — the driller's three are separate fields. */
+  geoActivityAtReportTime: string | null;
+  geoOpsThisPeriod: string | null;
+  geoOpsNextPeriod: string | null;
   wellheads: WellheadRow[]; scrRates: ScrRateRow[]; supportVessels: SupportVesselRow[];
   fit: FitProps | null; marine: MarineProps | null;
 }
