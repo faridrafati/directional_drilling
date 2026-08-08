@@ -24,6 +24,7 @@ import { buildReport04, buildReport05 } from "./casing.js";
 import { buildReport08 } from "./directional.js";
 import { buildReport09 } from "./summary.js";
 import { buildReport15, buildReport17, resolveWells } from "./multiwell.js";
+import { buildReport13, buildReport16 } from "./pivots.js";
 
 /** How a report is parameterized — the picker builds itself from this. */
 export type ReportParam = "well" | "job" | "date" | "dateRange" | "bhaRun" | "casingString" | "wells";
@@ -62,10 +63,10 @@ export const REPORT_CATALOG: CatalogEntry[] = [
   { type: "10", title: "Phases — Plan vs Actual", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "Each phase planned against actual, with the days-and-cost graph." },
   { type: "11", title: "Phase Summary Graph", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "Phase durations and costs as bars." },
   { type: "12", title: "Daily Drilling Summary 2", category: "Cost & Multi-well", params: ["wells", "date"], exports: ["pdf"], available: false, blurb: "One block per well for a single day." },
-  { type: "13", title: "Drilling KPIs", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf", "xlsx"], available: false, blurb: "The KPI pivot." },
+  { type: "13", title: "Drilling KPIs", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf", "xlsx"], available: true, blurb: "Cost, depth, time and ROP per well, with a grand total." },
   { type: "14", title: "Drilling Offsets", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf"], available: false, blurb: "Days-vs-depth and cost curves for offset wells." },
   { type: "15", title: "Problem Cost by Accountable Party", category: "Cost & Multi-well", params: ["wells", "dateRange"], exports: ["pdf"], available: true, blurb: "Problem cost pivoted on who it is charged to, stacked by problem kind." },
-  { type: "16", title: "Phase Summary Pivot", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf", "xlsx"], available: false, blurb: "Phase days and cost across wells." },
+  { type: "16", title: "Phase Summary Pivot", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf", "xlsx"], available: true, blurb: "How long each kind of phase takes, across every selected well." },
   { type: "17", title: "Safety Incidents", category: "Cost & Multi-well", params: ["wells", "dateRange"], exports: ["pdf"], available: true, blurb: "Every incident across the selected wells, oldest first." },
   { type: "18", title: "Daily Geological", category: "Geology", params: ["well", "date"], exports: ["pdf"], available: false, blurb: "The day's geology: tops, lithology, samples, gas and shows." },
   { type: "19", title: "Formation Performance", category: "Geology", params: ["well"], exports: ["pdf"], available: false, blurb: "Drilling performance per formation." },
@@ -122,6 +123,8 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
           if (!(await mayUseWell(prisma, req, wellId))) return reply.code(403).send({ error: "not your well" });
           return (await buildReport05(prisma, wellId)) ?? reply.code(404).send({ error: "no such well" });
         }
+        case "13": return buildReport13(prisma, await wellSet(req, req.query.wellIds));
+        case "16": return buildReport16(prisma, await wellSet(req, req.query.wellIds));
         case "15":
           return buildReport15(
             prisma, await wellSet(req, req.query.wellIds), dateRange(req.query.from, req.query.to),

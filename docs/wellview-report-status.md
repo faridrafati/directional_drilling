@@ -85,6 +85,8 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | Multi-well API (`?wellIds=` comma list, `?from=`/`?to=` inclusive Jalali range) | 2026-08-08 |
 | Reports page — well-set picker and the date-range inputs | 2026-08-08 |
 | Entry UI — incident Com column and the sample's own category list | 2026-08-08 |
+| XLSX export path for the suite (`export/wellview/pivots.ts`), Excel button on `ReportPanel` | 2026-08-08 |
+| `WellRef.wellType` — report 16's filter block names it | 2026-08-08 |
 
 ## Tier 3 — cost & multi-well
 
@@ -92,10 +94,10 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 |---|---|---|---|---|---|---|---|---|
 | 01 | AFE vs Field Est vs Final Invoice | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 | 12 | Multi-well Daily Drilling Summary 2 | — | — | — | — | — | — | — |
-| 13 | Multi-well Drilling KPIs (XLSX) | — | — | — | — | — | — | — |
+| 13 | Multi-well Drilling KPIs (XLSX) | 2026-08-08 | n/a | n/a | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 | 14 | Multi-well Drilling Offsets | — | — | — | — | — | — | — |
 | 15 | Problem Cost by Accountable Party | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
-| 16 | Multi-well Phase Summary Pivot (XLSX) | — | — | — | — | — | — | — |
+| 16 | Multi-well Phase Summary Pivot (XLSX) | 2026-08-08 | n/a | n/a | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 | 17 | Multi-well Safety Incidents | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 
 ## Tier 4 — geology
@@ -339,6 +341,38 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
 - **2026-08-08 — `EntrySafetyIncident.com` was missing and is the report.** The other eight columns
   are how you find the row; this is what happened. The daily incident grid gained it, along with the
   sample's own category values.
+- **2026-08-08 — reports 13 and 16 need no new schema: "n/a" in their Schema and Entry columns.**
+  Both are pure derivations — 13 adds up the job cost sheet, the daily operations log and the daily
+  personnel log; 16 measures the phase spine reports 10 and 11 already print. Nothing new is typed
+  for either.
+- **2026-08-08 — a spreadsheet holds NUMBERS, not formatted strings.** A cell containing
+  "10,218,000.00" cannot be summed, sorted or charted, which is the only reason to want the file.
+  The thousands separators and two decimals are a cell number format (`z`), so Excel shows what the
+  page shows while the value stays a number. Verified by reading the generated file back with
+  `cellNF: true`: all 22 numeric cells in 13 and all 46 in 16 carry their format.
+- **2026-08-08 — a blank stays blank in the sheet too.** `null` is written as `undefined`, which
+  SheetJS leaves genuinely empty; writing 0 would turn "not recorded" into a measurement. The demo's
+  second well has no job and no days, and its whole row is empty in both the PDF and the XLSX.
+- **2026-08-08 — the Grand Total re-derives its ratios, it does not average the column.** Averaging
+  Cost/Depth or ROP down the column weights a three-day well the same as a thirty-day one, which is
+  how a fleet ROP comes out faster than every rig in it. The total's ratios come from the summed
+  numerator over the summed denominator.
+- **2026-08-08 — the pivot filter block prints the SET'S values, not "(All)".** WellView prints
+  "(All)" for any dimension nobody filtered on. We print the distinct values the selected wells
+  actually carry and fall back to "(All)" only when there is genuinely more than one:
+  "State/Province: Bushehr" tells a reader what is in front of them, "(All)" tells them nothing.
+  A dimension with nothing recorded prints blank, which is a third statement again.
+- **2026-08-08 — report 16's StdDev is the POPULATION deviation, and blank for a single phase.** The
+  rows are every phase of that kind that was drilled, not a sample drawn from a larger set, and the
+  sample's own StdDev for a three-value group matches ÷ n. A one-phase group prints blank rather than
+  0.00, which would read as "they were all the same" — a claim one observation cannot support.
+- **2026-08-08 — report 16's Count is how many phases were MEASURED.** A phase missing either
+  datetime has no duration and is not counted, rather than counted as zero days — which would drag
+  Avg toward a number nobody observed.
+- **2026-08-08 — the two pivots cross-check the reports built before them.** 13's AFE+Supp, Field Est
+  and variance reproduce report 01's four totals by a different route, and 16's phase-duration Sum of
+  25.46 days is the very figure report 10's last cumulative cell prints. Both are asserted in the E2E
+  specs, so a change that breaks one of the pair fails loudly.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

@@ -22,6 +22,7 @@ import {
   type Report01Payload, type Report02Payload, type Report03Payload,
   type Report04Payload, type Report05Payload,
   type Report08Payload, type Report09Payload,
+  type Report13Payload, type Report16Payload,
   type Report15Payload, type Report17Payload,
   type Report10Payload, type Report11Payload,
 } from "../entry/wellview.js";
@@ -33,6 +34,7 @@ import { Report04Preview, Report05Preview } from "../components/wellview/CasingP
 import { Report08Preview } from "../components/wellview/DirectionalPreview.js";
 import { Report09Preview } from "../components/wellview/SummaryPreview.js";
 import { Report15Preview, Report17Preview } from "../components/wellview/MultiWellPreview.js";
+import { Report13Preview, Report16Preview } from "../components/wellview/PivotPreview.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -408,6 +410,28 @@ function Inner() {
                         exporter={async (p) => (await import("../export/wellview/casing.js")).exportReport05Pdf(p)}
                         empty="Pick a well above."
                       />
+                    ) : entry.type === "13" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "13", wellSetParam]}
+                        enabled
+                        load={() => wellviewApi.reportData<Report13Payload>("13",
+                          wellSetParam ? { wellIds: wellSetParam } : {})}
+                        render={(p) => <Report13Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/pivots.js")).exportReport13Pdf(p)}
+                        xlsxExporter={async (p) => (await import("../export/wellview/pivots.js")).exportReport13Xlsx(p)}
+                        empty="No well available."
+                      />
+                    ) : entry.type === "16" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "16", wellSetParam]}
+                        enabled
+                        load={() => wellviewApi.reportData<Report16Payload>("16",
+                          wellSetParam ? { wellIds: wellSetParam } : {})}
+                        render={(p) => <Report16Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/pivots.js")).exportReport16Pdf(p)}
+                        xlsxExporter={async (p) => (await import("../export/wellview/pivots.js")).exportReport16Xlsx(p)}
+                        empty="No well available."
+                      />
                     ) : entry.type === "15" ? (
                       <ReportPanel
                         queryKey={["wellview", "report", "15", wellSetParam, from, to]}
@@ -726,30 +750,32 @@ function DailyPanel({ type, wellId, date }: { type: string; wellId: string; date
  * Generic because every report after the first three is the same three steps —
  * only the query, the preview component and the exporter change.
  */
-function ReportPanel<T>({ queryKey, enabled, load, render, exporter, empty }: {
+function ReportPanel<T>({ queryKey, enabled, load, render, exporter, xlsxExporter, empty }: {
   queryKey: unknown[];
   enabled: boolean;
   load: () => Promise<T>;
   render: (payload: T) => React.ReactNode;
   exporter: (payload: T) => Promise<void>;
+  /** Only the pivot reports have one — their samples ARE spreadsheets. */
+  xlsxExporter?: (payload: T) => Promise<void>;
   empty: string;
 }) {
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const q = useQuery({ queryKey, queryFn: load, enabled });
 
-  const onExport = async () => {
+  const onExport = async (kind: "pdf" | "xlsx") => {
     if (!q.data) return;
-    setExporting(true);
+    setExporting(kind);
     setError(null);
     try {
-      // pdfmake is imported at click time so the report bundle stays out of the
-      // initial page load — the rule the directional-plot export set.
-      await exporter(q.data);
+      // pdfmake and SheetJS are both imported at click time so neither ships in
+      // the initial page load — the rule the directional-plot export set.
+      await (kind === "pdf" ? exporter(q.data) : xlsxExporter?.(q.data));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
 
@@ -762,12 +788,21 @@ function ReportPanel<T>({ queryKey, enabled, load, render, exporter, empty }: {
     <div>
       <div className="flex items-center justify-end gap-2 mb-3">
         {error && <span className="text-xs text-red-600 mr-auto">{error}</span>}
+        {xlsxExporter && (
+          <button
+            onClick={() => void onExport("xlsx")}
+            disabled={exporting !== null}
+            className="h-8 px-3 text-xs rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors duration-150"
+          >
+            {exporting === "xlsx" ? "Generating…" : "Excel"}
+          </button>
+        )}
         <button
-          onClick={() => void onExport()}
-          disabled={exporting}
+          onClick={() => void onExport("pdf")}
+          disabled={exporting !== null}
           className="h-8 px-3 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors duration-150"
         >
-          {exporting ? "Generating…" : "PDF"}
+          {exporting === "pdf" ? "Generating…" : "PDF"}
         </button>
       </div>
       {render(q.data)}

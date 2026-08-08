@@ -514,7 +514,7 @@ export interface Report09Payload extends ReportEnvelope {
 export interface WellRef {
   id: string; name: string;
   apiUwi: string | null; licenseNo: string | null; field: string | null;
-  county: string | null; stateProvince: string | null;
+  county: string | null; stateProvince: string | null; wellType: string | null;
   groundElevation: number | null; kbElevation: number | null; spudDate: string | null;
 }
 export interface MultiWellEnvelope extends ReportEnvelope {
@@ -543,6 +543,32 @@ export interface SafetyIncidentReportRow {
 export interface Report17Payload extends MultiWellEnvelope {
   incidents: SafetyIncidentReportRow[];
   totals: HeaderRow;
+}
+
+export interface KpiRow {
+  wellName: string;
+  afeSuppAmt: number | null; fieldEst: number | null; afeLessFieldEst: number | null;
+  costPerDepth: number | null; drilledTotalDepth: number | null;
+  totalTimeLogHr: number | null; totalProblemHr: number | null; pctProblemTime: number | null;
+  drillingHr: number | null; avgRopMHr: number | null; personnelHr: number | null;
+}
+export interface Report13Payload extends MultiWellEnvelope {
+  filters: HeaderRow;
+  rows: KpiRow[];
+  grandTotal: KpiRow;
+}
+
+export interface PhasePivotRow {
+  jobCategory: string; phaseType1: string; phaseType2: string;
+  count: number; avg: number | null; min: number | null; max: number | null;
+  /** Population standard deviation; null for a single observation. */
+  stdDev: number | null;
+  sum: number | null;
+}
+export interface Report16Payload extends MultiWellEnvelope {
+  filters: HeaderRow;
+  rows: PhasePivotRow[];
+  grandTotal: PhasePivotRow;
 }
 
 export interface CasingStringListItem {

@@ -37,7 +37,7 @@ const DEMO_WELL = "Sample 11 - Full Data";
 const DEMO_DAY = "1405/02/11";
 
 /** The reports with an assembler today; the rest still carry a "soon" badge. */
-const BUILT = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "15", "17"] as const;
+const BUILT = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "13", "15", "16", "17"] as const;
 
 /** The four totals report 01 computes, exactly as the sample prints them. */
 const EXPECTED_TOTALS = [
@@ -292,6 +292,71 @@ test.describe("Well Reports", () => {
       const { statSync, readFileSync } = await import("node:fs");
       expect(statSync(path).size).toBeGreaterThan(5_000);
       expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    });
+  }
+
+  // Reports 13 and 16 are the two pivots, and the first reports in the suite
+  // with a spreadsheet export. Their figures are cross-checked against reports
+  // that compute the same quantities a different way — 13's cost totals against
+  // report 01's, 16's phase sum against report 10's cumulative column.
+  test("report 13's KPI row agrees with report 01's cost totals", async ({ page }) => {
+    await page.getByTestId("report-13").click();
+    await expect(page.getByText("Drilling KPIs").first()).toBeVisible({ timeout: 20_000 });
+
+    // AFE+Supp = 10,218,000 + 125,000; the variance is report 01's own figure.
+    await expect(page.getByText("10,343,000.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("10,127,291.47", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("215,708.53", { exact: true }).first()).toBeVisible();
+    // 12 days × 24 hr, of which 8 were trouble.
+    await expect(page.getByText("288.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("2.78", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Grand Total", { exact: true })).toBeVisible();
+  });
+
+  test("report 16 pivots the phase spine, and its sum matches report 10", async ({ page }) => {
+    await page.getByTestId("report-16").click();
+    await expect(page.getByText("Phase Summary Pivot").first()).toBeVisible({ timeout: 20_000 });
+
+    // Eight phases; their durations sum to 25.46 days — the very figure report
+    // 10's last cumulative cell prints, reached by a different route.
+    await expect(page.getByText("25.46", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("10.23", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Drill-Deviation Control").first()).toBeVisible();
+    await expect(page.getByText("Grand Total", { exact: true })).toBeVisible();
+  });
+
+  for (const type of ["13", "16"] as const) {
+    test(`report ${type} exports a PDF and a spreadsheet`, async ({ page }, testInfo) => {
+      test.setTimeout(90_000);
+      await page.getByTestId(`report-${type}`).click();
+      await expect(page.getByRole("button", { name: "PDF" })).toBeVisible({ timeout: 20_000 });
+      const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+      const { statSync, readFileSync } = await import("node:fs");
+
+      const [pdf] = await Promise.all([
+        page.waitForEvent("download", { timeout: 60_000 }),
+        page.getByRole("button", { name: "PDF" }).click(),
+      ]);
+      const pdfPath = join(dir, pdf.suggestedFilename());
+      await pdf.saveAs(pdfPath);
+      await testInfo.attach(`report-${type}.pdf`, { path: pdfPath, contentType: "application/pdf" });
+      expect(statSync(pdfPath).size).toBeGreaterThan(4_000);
+      expect(readFileSync(pdfPath).subarray(0, 5).toString()).toBe("%PDF-");
+
+      // The spreadsheet is the point of these two — a picture of a pivot is
+      // not something an engineer can sum, sort or chart.
+      const [xlsx] = await Promise.all([
+        page.waitForEvent("download", { timeout: 60_000 }),
+        page.getByRole("button", { name: "Excel" }).click(),
+      ]);
+      expect(xlsx.suggestedFilename()).toMatch(/\.xlsx$/);
+      const xlsxPath = join(dir, xlsx.suggestedFilename());
+      await xlsx.saveAs(xlsxPath);
+      await testInfo.attach(`report-${type}.xlsx`, { path: xlsxPath });
+      expect(statSync(xlsxPath).size).toBeGreaterThan(2_000);
+      // "PK" — a .xlsx is a zip. A file that opens as anything else would still
+      // download happily and fail only in Excel.
+      expect(readFileSync(xlsxPath).subarray(0, 2).toString()).toBe("PK");
     });
   }
 

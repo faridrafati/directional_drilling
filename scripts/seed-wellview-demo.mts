@@ -829,6 +829,10 @@ async function seedProgressDays(wellId: string, userId: string, jobId: string) {
       data: {
         wellId, userId, jobId, serialNo: offset + 1, reportDate, status: "submitted",
         previousDepth: previous, midnightDepth: depth,
+        // Report 13's "Drilling Hrs" column and its Avg. ROP are built from
+        // this, not from the coded log: it is the field that MEANS rotating
+        // hours, and one source beats reconciling two.
+        drillingTime: log.filter(([, code2]) => code2 === "DRLG").reduce((h, e) => h + e[2], 0),
         holeSize: "17-1/2\" H.S.",
         operations: { create: operations },
         intervalProblems: {
@@ -848,6 +852,14 @@ async function seedProgressDays(wellId: string, userId: string, jobId: string) {
         },
         safetyIncidents: {
           create: (INCIDENTS[offset] ?? []).map((i, k) => ({ order: k, ...i })),
+        },
+        // Report 13's Personnel Hrs column adds these up across the job.
+        companies: {
+          create: [
+            { order: 0, company: "NABORS", personnelType: "Contractor", count: 28, totWorkTimeHr: 336 },
+            { order: 1, company: "POGC", personnelType: "Operator", count: 4, totWorkTimeHr: 48 },
+            { order: 2, company: "Schlumberger", personnelType: "Service", count: 6, totWorkTimeHr: 72 },
+          ],
         },
       },
     });
