@@ -1263,18 +1263,22 @@ function EventsAndHse({ draft, set, disabled }: SubformProps) {
         cols={[
           { key: "time", label: "Time", width: "w-20", placeholder: "18:20" },
           { key: "category", label: "Category", type: "select", width: "w-28",
-            options: ["Near Miss", "Incident", "Accident"].map((v) => ({ value: v, label: v })) },
+            options: ["Near Miss", "Unsafe Activity", "First Aid", "Illness", "Incident", "Accident"]
+              .map((v) => ({ value: v, label: v })),
+            title: "Report 17 prints this as its \"Type\" column" },
           { key: "type", label: "Type", width: "w-28" },
           { key: "subType", label: "Sub type", width: "w-28" },
           { key: "cause", label: "Cause" },
           { key: "lostTime", label: "Lost time?", type: "bool", width: "w-20" },
           { key: "severity", label: "Severity", width: "w-24" },
+          { key: "com", label: "Com",
+            title: "What happened, in full — report 17 is essentially this column" },
         ] as Col<ReportBody["safetyIncidents"][number]>[]}
         rows={draft.safetyIncidents} onChange={(v) => set("safetyIncidents", v)}
         disabled={disabled} minRows={2} addLabel="incident" testId="incident"
         blank={() => ({
           order: 0, time: null, category: null, type: null, subType: null,
-          cause: null, lostTime: null, severity: null,
+          cause: null, lostTime: null, severity: null, com: null,
         })}
       />
 

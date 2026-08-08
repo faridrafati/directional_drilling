@@ -209,7 +209,7 @@ const safetyCheckSchema = z.object({ order: int0, time: str, type: str, des: str
 /** Report 07 page 2's "Safety Incidents". */
 const safetyIncidentSchema = z.object({
   order: int0, time: str, category: str, type: str, subType: str, cause: str,
-  lostTime: boolOrNull, severity: str,
+  lostTime: boolOrNull, severity: str, com: str,
 });
 /** Report 07 page 2's "Interval Problems"; the time log references these by ordinal. */
 const intervalProblemSchema = z.object({

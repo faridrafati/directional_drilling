@@ -23,6 +23,7 @@ import { buildReport10, buildReport11 } from "./phases.js";
 import { buildReport04, buildReport05 } from "./casing.js";
 import { buildReport08 } from "./directional.js";
 import { buildReport09 } from "./summary.js";
+import { buildReport15, buildReport17, resolveWells } from "./multiwell.js";
 
 /** How a report is parameterized — the picker builds itself from this. */
 export type ReportParam = "well" | "job" | "date" | "dateRange" | "bhaRun" | "casingString" | "wells";
@@ -63,9 +64,9 @@ export const REPORT_CATALOG: CatalogEntry[] = [
   { type: "12", title: "Daily Drilling Summary 2", category: "Cost & Multi-well", params: ["wells", "date"], exports: ["pdf"], available: false, blurb: "One block per well for a single day." },
   { type: "13", title: "Drilling KPIs", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf", "xlsx"], available: false, blurb: "The KPI pivot." },
   { type: "14", title: "Drilling Offsets", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf"], available: false, blurb: "Days-vs-depth and cost curves for offset wells." },
-  { type: "15", title: "Problem Cost by Accountable Party", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf"], available: false, blurb: "Problem cost pivoted on who it is charged to." },
+  { type: "15", title: "Problem Cost by Accountable Party", category: "Cost & Multi-well", params: ["wells", "dateRange"], exports: ["pdf"], available: true, blurb: "Problem cost pivoted on who it is charged to, stacked by problem kind." },
   { type: "16", title: "Phase Summary Pivot", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf", "xlsx"], available: false, blurb: "Phase days and cost across wells." },
-  { type: "17", title: "Safety Incidents", category: "Cost & Multi-well", params: ["wells", "dateRange"], exports: ["pdf"], available: false, blurb: "Incidents across wells." },
+  { type: "17", title: "Safety Incidents", category: "Cost & Multi-well", params: ["wells", "dateRange"], exports: ["pdf"], available: true, blurb: "Every incident across the selected wells, oldest first." },
   { type: "18", title: "Daily Geological", category: "Geology", params: ["well", "date"], exports: ["pdf"], available: false, blurb: "The day's geology: tops, lithology, samples, gas and shows." },
   { type: "19", title: "Formation Performance", category: "Geology", params: ["well"], exports: ["pdf"], available: false, blurb: "Drilling performance per formation." },
   { type: "20", title: "Geological Program", category: "Geology", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "The prognosed programme and its sampling requirements." },
@@ -84,7 +85,7 @@ export const REPORT_CATALOG: CatalogEntry[] = [
 export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.get("/entry/report-data/catalog", { preHandler: requireUser }, async () => REPORT_CATALOG);
 
-  app.get<{ Params: { type: string }; Querystring: { wellId?: string; jobId?: string; date?: string; bhaRunId?: string; casingStringId?: string } }>(
+  app.get<{ Params: { type: string }; Querystring: { wellId?: string; jobId?: string; date?: string; bhaRunId?: string; casingStringId?: string; wellIds?: string; from?: string; to?: string } }>(
     "/entry/report-data/:type", { preHandler: requireUser }, async (req, reply) => {
       const { type } = req.params;
       const entry = REPORT_CATALOG.find((r) => r.type === type);
@@ -121,6 +122,14 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
           if (!(await mayUseWell(prisma, req, wellId))) return reply.code(403).send({ error: "not your well" });
           return (await buildReport05(prisma, wellId)) ?? reply.code(404).send({ error: "no such well" });
         }
+        case "15":
+          return buildReport15(
+            prisma, await wellSet(req, req.query.wellIds), dateRange(req.query.from, req.query.to),
+          );
+        case "17":
+          return buildReport17(
+            prisma, await wellSet(req, req.query.wellIds), dateRange(req.query.from, req.query.to),
+          );
         case "08": {
           const wellId = (req.query.wellId ?? "").trim();
           if (!wellId) return reply.code(400).send({ error: "this report needs a wellId" });
@@ -166,6 +175,24 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
     const payload = await build(id);
     if (!payload) return reply.code(404).send({ error: "no such report" });
     return payload;
+  }
+
+  /**
+   * The well set for a multi-well report.
+   *
+   * `wellIds` is a comma-separated list; an empty one means "every well I may
+   * use". Authorization happens INSIDE `resolveWells` — a stale id in the list
+   * is dropped rather than failing the whole request, and the payload reports
+   * how many were dropped so the page can say so.
+   */
+  async function wellSet(req: FastifyRequest, wellIds: string | undefined) {
+    const ids = (wellIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    return resolveWells(prisma, req, ids);
+  }
+
+  /** The optional Jalali from/to a multi-well report is filtered by. */
+  function dateRange(from: string | undefined, to: string | undefined) {
+    return { from: (from ?? "").trim() || undefined, to: (to ?? "").trim() || undefined };
   }
 
   /** Shared preamble for every job-scoped report: resolve, then authorize. */

@@ -509,6 +509,42 @@ export interface Report09Payload extends ReportEnvelope {
   schematicOmitted: true;
 }
 
+// ── the multi-well reports (12–17) ──────────────────────────────────────────
+/** The identity every multi-well report prints for each well in its set. */
+export interface WellRef {
+  id: string; name: string;
+  apiUwi: string | null; licenseNo: string | null; field: string | null;
+  county: string | null; stateProvince: string | null;
+  groundElevation: number | null; kbElevation: number | null; spudDate: string | null;
+}
+export interface MultiWellEnvelope extends ReportEnvelope {
+  wells: WellRef[];
+  /** Requested wells the caller may not use — the page says so rather than hiding it. */
+  droppedWells: number;
+}
+
+export interface ProblemCostCell {
+  party: string; kind: string; cost: number; lostTimeHr: number | null; count: number;
+}
+export interface Report15Payload extends MultiWellEnvelope {
+  parties: { party: string; cost: number; lostTimeHr: number | null; count: number }[];
+  kinds: string[];
+  cells: ProblemCostCell[];
+  totals: HeaderRow;
+}
+
+export interface SafetyIncidentReportRow {
+  type: string | null; subType: string | null; date: string; time: string | null;
+  severity: string | null; cause: string | null;
+  /** Tri-state: blank where nobody answered, which is not the same as "No". */
+  lostTime: boolean | null;
+  com: string | null; jobType: string | null; wellName: string;
+}
+export interface Report17Payload extends MultiWellEnvelope {
+  incidents: SafetyIncidentReportRow[];
+  totals: HeaderRow;
+}
+
 export interface CasingStringListItem {
   id: string; description: string | null; setDepthMkb: number | null; runDate: string | null;
 }

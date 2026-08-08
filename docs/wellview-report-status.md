@@ -76,6 +76,16 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | 10 | Phases - Plan vs Actual | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 | 11 | Phase Summary Graph | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 
+## Tier 3 — foundation
+
+| Item | Status |
+|---|---|
+| `EntrySafetyIncident.com` — the narrative report 17 is essentially made of | 2026-08-08 |
+| Multi-well spine (`resolveWells`, `WellRef`, the shared well-set block) | 2026-08-08 |
+| Multi-well API (`?wellIds=` comma list, `?from=`/`?to=` inclusive Jalali range) | 2026-08-08 |
+| Reports page — well-set picker and the date-range inputs | 2026-08-08 |
+| Entry UI — incident Com column and the sample's own category list | 2026-08-08 |
+
 ## Tier 3 — cost & multi-well
 
 | # | Report | Spec read | Schema | Entry | Assembler | Preview | PDF | Verified |
@@ -84,9 +94,9 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | 12 | Multi-well Daily Drilling Summary 2 | — | — | — | — | — | — | — |
 | 13 | Multi-well Drilling KPIs (XLSX) | — | — | — | — | — | — | — |
 | 14 | Multi-well Drilling Offsets | — | — | — | — | — | — | — |
-| 15 | Problem Cost by Accountable Party | — | — | — | — | — | — | — |
+| 15 | Problem Cost by Accountable Party | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 | 16 | Multi-well Phase Summary Pivot (XLSX) | — | — | — | — | — | — | — |
-| 17 | Multi-well Safety Incidents | — | — | — | — | — | — | — |
+| 17 | Multi-well Safety Incidents | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 
 ## Tier 4 — geology
 
@@ -305,6 +315,30 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
 - **2026-08-08 — reports 08 and 09 have no wellbore schematic.** Both samples draw one — 08 down the
   left rail, 09 down the left column. Same reason as 02 and 04: the shared component is a Tier 4/5
   deliverable, and both the preview and the PDF say so where it would be.
+- **2026-08-08 — a multi-well report filters the well set, it does not 403.** Asking for ten wells
+  and being allowed six is a normal answer to "summarize my wells", and refusing the whole request
+  because one id was stale would be useless. The payload reports how many were dropped and the page
+  says so in amber — a silently shorter report is a wrong report.
+- **2026-08-08 — an empty well set means EVERY well the account may use.** That is what a company man
+  opening a cross-well summary almost always wants, and it means the page has something to show
+  before anything is ticked. The picker draws every box ticked in that state, so unticking one means
+  "all except this one"; ticking the last one back collapses the set to empty again, so "all" stays
+  one state rather than two that print the same report.
+- **2026-08-08 — the multi-well date filter is INCLUSIVE at both ends.** Not `jalaliInRange`, whose
+  end bound is exclusive — right for a phase whose interval runs up to the next one's start, wrong
+  for a filter somebody typed. It also keeps a row whose date will not parse: a safety log that
+  silently hides a badly-typed row is worse than one that shows it.
+- **2026-08-08 — report 15's stack key is "Type - Sub Type", with the blank printed.** The sample
+  stacks "Rig Failure -(blank)" beside "Hole Trouble -Tight Hole". A problem with no sub-type is a
+  different bar from one with a sub-type, and collapsing them would understate one of them.
+- **2026-08-08 — report 17 prints an unanswered "Lost time?" as blank, and counts it.** Folding it
+  into "No" would make a gap in the record look like an answer. The totals row names the count.
+- **2026-08-08 — report 17's "Type" prefers `type` over `category`.** The sample has two levels where
+  we store three; `category` carries the values matching its Type column ("Near Miss", "First Aid"),
+  and `type` is the more specific middle level, so it wins where it is filled.
+- **2026-08-08 — `EntrySafetyIncident.com` was missing and is the report.** The other eight columns
+  are how you find the row; this is what happened. The daily incident grid gained it, along with the
+  sample's own category values.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

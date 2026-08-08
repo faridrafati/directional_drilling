@@ -1521,6 +1521,9 @@ model EntrySafetyIncident {
   /// unanswered is not the same as answered "no".
   lostTime Boolean?
   severity String?
+  /// The narrative. Report 17 is essentially this column — the other eight are
+  /// how you find the row, this is what happened.
+  com      String?
   report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])

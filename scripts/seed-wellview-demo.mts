@@ -586,7 +586,12 @@ async function seedDay(
         create: [{ order: 0, time: "02:15", type: "Safety Meeting", des: "Safety meeting to run 20\" casing" }],
       },
       safetyIncidents: {
-        create: [{ order: 0, time: "18:20", category: "Near Miss", cause: "Loss of ROV control signal", lostTime: false }],
+        create: [{
+          order: 0, time: "18:20", category: "Near Miss", cause: "Loss of ROV control signal",
+          lostTime: false,
+          com: "While clearing rig floor, rig hand inadvertently released line holding back tongs. "
+            + "Tongs swung forward and narrowly missed hitting driller in the shoulder.",
+        }],
       },
       mudVolumes: {
         create: [
@@ -722,6 +727,45 @@ main()
  * 17-1/2" hole, and lost time is coded with the letter of the operation that was
  * in progress and the U indicator, not with a letter of its own.
  */
+/**
+ * The job's safety incidents, by day offset — report 17's whole subject.
+ *
+ * Written as the sample writes them: a category, sometimes a sub-type and a
+ * cause, and a narrative that says what actually happened. `lostTime` is left
+ * NULL on one of them on purpose — the report prints that blank rather than
+ * folding it into "No", because an unanswered question is a gap in the record.
+ */
+const INCIDENTS: Record<number, {
+  time: string; category: string; subType?: string; cause?: string;
+  severity?: string; lostTime: boolean | null; com: string;
+}[]> = {
+  3: [{
+    time: "09:40", category: "Unsafe Activity", lostTime: false,
+    com: "While performing a choke drill, driller noticed that someone had left spare tools lying "
+      + "on the catwalk. Driller had to clear the catwalk of debris before proceeding to the choke manifold.",
+  }],
+  5: [{
+    time: "14:05", category: "First Aid", severity: "Minor", lostTime: false,
+    com: "AD was helping to rig up drilling bails when his hand became caught in the elevator latch. "
+      + "Latch cut his thumb and severed part of his fingernail, requiring bandages from the medic. No LTA.",
+  }],
+  7: [{
+    time: "03:20", category: "Near Miss", cause: "Dropped object", lostTime: false,
+    com: "While rigging up the cement head to casing, a cementing hand dropped his sledge hammer. "
+      + "Hammer landed approximately 6 inches from the foot of a rig hand.",
+  }],
+  9: [{
+    time: "11:50", category: "Illness", subType: "Poisoning", cause: "Food", lostTime: null,
+    com: "Two crew reported to the medic with stomach upset after the night meal. Galley inspected; "
+      + "no source confirmed. Lost-time classification pending the medic's report.",
+  }],
+  11: [{
+    time: "22:15", category: "Unsafe Activity", lostTime: false,
+    com: "Service hand testing the adjustable stabilizer was using a pipe wrench that was not rig "
+      + "approved. He had retrieved the wrench from his own toolbox and it had a cracked handle.",
+  }],
+};
+
 async function seedProgressDays(wellId: string, userId: string, jobId: string) {
   //   day  depth   [letter, code2, hours, problem hours, remark]
   const days: [number, number, [string, string, number, number, string][]][] = [
@@ -791,11 +835,19 @@ async function seedProgressDays(wellId: string, userId: string, jobId: string) {
           create: problems.map(({ entry }, k) => ({
             order: k,
             problemType: entry[1] === "RIGR" ? "Rig Failure" : "Hole Trouble",
-            problemSubType: entry[4],
+            problemSubType: entry[1] === "RIGR" ? "Top Drive" : "Tight Hole",
             startDate: reportDate,
             accountableParty: entry[1] === "RIGR" ? "Contractor" : "Operator",
+            // Report 15 pivots on cost, so a problem without one is a bar that
+            // silently is not there. The rate is the day's own trouble, priced
+            // at the rig's hourly operating cost.
+            estCost: Math.round(entry[3] * 4_800),
             estLostTimeHr: entry[3],
+            comment: entry[4],
           })),
+        },
+        safetyIncidents: {
+          create: (INCIDENTS[offset] ?? []).map((i, k) => ({ order: k, ...i })),
         },
       },
     });

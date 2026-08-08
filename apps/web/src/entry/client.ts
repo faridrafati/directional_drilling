@@ -327,6 +327,8 @@ export interface SafetyCheckRow {
 export interface SafetyIncidentRow {
   order: number; time: string | null; category: string | null; type: string | null;
   subType: string | null; cause: string | null; lostTime: boolean | null; severity: string | null;
+  /** The narrative. Report 17 is essentially this column. */
+  com: string | null;
 }
 /** Report 07 page 2's "Interval Problems"; the time log references these by row. */
 export interface IntervalProblemRow {

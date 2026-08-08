@@ -37,7 +37,7 @@ const DEMO_WELL = "Sample 11 - Full Data";
 const DEMO_DAY = "1405/02/11";
 
 /** The reports with an assembler today; the rest still carry a "soon" badge. */
-const BUILT = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"] as const;
+const BUILT = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "15", "17"] as const;
 
 /** The four totals report 01 computes, exactly as the sample prints them. */
 const EXPECTED_TOTALS = [
@@ -284,6 +284,81 @@ test.describe("Well Reports", () => {
       const dir = mkdtempSync(join(tmpdir(), "wellview-"));
       const [download] = await Promise.all([
         page.waitForEvent("download", { timeout: 30_000 }),
+        page.getByRole("button", { name: "PDF" }).click(),
+      ]);
+      const path = join(dir, download.suggestedFilename());
+      await download.saveAs(path);
+      await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
+      const { statSync, readFileSync } = await import("node:fs");
+      expect(statSync(path).size).toBeGreaterThan(5_000);
+      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    });
+  }
+
+  // Reports 15 and 17 are the first MULTI-well pages: they are scoped to a set
+  // of wells rather than one, and default to every well the account may use.
+  // Neither takes the Well picker, so neither is selected here.
+  test("report 17 lists every incident across the well set", async ({ page }) => {
+    await page.getByTestId("report-17").click();
+    await expect(page.getByText("Safety Incidents", { exact: true }).first())
+      .toBeVisible({ timeout: 20_000 });
+
+    // The set is named, not implied: a reader cannot otherwise tell whether a
+    // well is absent because it was clean or because it was never selected.
+    await expect(page.getByTestId("well-set-picker")).toContainText("All wells");
+    await expect(page.getByText(DEMO_WELL).first()).toBeVisible();
+
+    // Six incidents, oldest first, each with the narrative that IS the report.
+    await expect(page.getByText(/rig hand inadvertently released line/)).toBeVisible();
+    await expect(page.getByText(/severed part of his fingernail/)).toBeVisible();
+    // One is deliberately unanswered — printed as a blank and counted, never
+    // folded into "No".
+    await expect(page.getByText("Lost Time Unanswered", { exact: true })).toBeVisible();
+    await expect(page.getByText("1", { exact: true }).first()).toBeVisible();
+  });
+
+  test("report 15 pivots problem cost on the accountable party", async ({ page }) => {
+    await page.getByTestId("report-15").click();
+    await expect(page.getByText("Problem Cost by Accountable Party").first())
+      .toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("#wellview-problem-cost svg").first()).toBeVisible();
+
+    // Contractor 2,500 + 16,800; Operator 19,200; 38,500 across three problems.
+    for (const value of ["2,500.00", "16,800.00", "19,200.00", "38,500.00"]) {
+      await expect(page.getByText(value, { exact: true }).first()).toBeVisible();
+    }
+    // The sub-type is part of the stack's identity — "Rig Failure" alone and
+    // "Rig Failure - Top Drive" are different bars.
+    await expect(page.getByText("Rig Failure - Top Drive").first()).toBeVisible();
+  });
+
+  test("the well set can be narrowed, and the report follows it", async ({ page }) => {
+    await page.getByTestId("report-17").click();
+    await expect(page.getByText(/rig hand inadvertently released line/)).toBeVisible({ timeout: 20_000 });
+
+    // Untick the demo well: in "all" mode every box is drawn ticked, so one
+    // click means "all except this one" — and its incidents must leave.
+    await page.getByTestId("well-set-picker").click();
+    await page.locator("label", { hasText: DEMO_WELL }).locator("input[type=checkbox]").click();
+    await page.getByTestId("well-set-picker").click();      // fold it away
+
+    await expect(page.getByText(/rig hand inadvertently released line/)).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.getByTestId("well-set-picker")).not.toContainText("All wells");
+  });
+
+  for (const type of ["15", "17"] as const) {
+    test(`report ${type} exports a PDF`, async ({ page }, testInfo) => {
+      test.setTimeout(90_000);
+      await page.getByTestId(`report-${type}`).click();
+      await expect(page.getByRole("button", { name: "PDF" })).toBeVisible({ timeout: 20_000 });
+      // 15 rasterizes its chart; let the preview finish drawing first.
+      if (type === "15") {
+        await expect(page.locator("#wellview-problem-cost svg").first()).toBeVisible({ timeout: 20_000 });
+        await page.waitForTimeout(700);
+      }
+      const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 60_000 }),
         page.getByRole("button", { name: "PDF" }).click(),
       ]);
       const path = join(dir, download.suggestedFilename());

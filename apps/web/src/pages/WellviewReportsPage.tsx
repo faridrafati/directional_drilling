@@ -22,6 +22,7 @@ import {
   type Report01Payload, type Report02Payload, type Report03Payload,
   type Report04Payload, type Report05Payload,
   type Report08Payload, type Report09Payload,
+  type Report15Payload, type Report17Payload,
   type Report10Payload, type Report11Payload,
 } from "../entry/wellview.js";
 import { Report01Preview } from "../components/wellview/ReportPreview.js";
@@ -31,6 +32,7 @@ import { Report10Preview, Report11Preview } from "../components/wellview/PhasePr
 import { Report04Preview, Report05Preview } from "../components/wellview/CasingPreview.js";
 import { Report08Preview } from "../components/wellview/DirectionalPreview.js";
 import { Report09Preview } from "../components/wellview/SummaryPreview.js";
+import { Report15Preview, Report17Preview } from "../components/wellview/MultiWellPreview.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -49,6 +51,15 @@ function Inner() {
   const [date, setDate] = useState<string>("");
   const [bhaRunId, setBhaRunId] = useState<string>("");
   const [casingStringId, setCasingStringId] = useState<string>("");
+  /**
+   * The multi-well reports' set. EMPTY means "every well I may use" — which is
+   * what a company man opening a cross-well summary almost always wants, and it
+   * means the page shows something before anything is ticked.
+   */
+  const [wellIds, setWellIds] = useState<string[]>([]);
+  /** The multi-well date filter, both bounds inclusive and both optional. */
+  const [from, setFrom] = useState<string>("");
+  const [to, setTo] = useState<string>("");
   const [selected, setSelected] = useState<string>("01");
 
   const catalogQ = useQuery({
@@ -112,6 +123,9 @@ function Inner() {
   const bhaRuns = bhaQ.data ?? [];
   const casingStrings = casingQ.data ?? [];
   const wellName = wells.find((w) => w.id === wellId)?.name ?? "";
+  /** What a multi-well request posts: the ticked ids, or nothing for "all". */
+  const wellSetParam = wellIds.length ? wellIds.join(",") : "";
+  const rangeParams = { ...(from ? { from } : {}), ...(to ? { to } : {}) };
 
   return (
     <div className="h-full flex flex-col p-3 sm:p-6">
@@ -217,6 +231,35 @@ function Inner() {
                             </select>
                             )}
                           </Picker>
+                        )}
+                        {entry.params.includes("wells") && (
+                          <WellSetPicker
+                            wells={wells}
+                            value={wellIds}
+                            onChange={setWellIds}
+                          />
+                        )}
+                        {entry.params.includes("dateRange") && (
+                          <>
+                            <Picker label="From">
+                              {(id) => (
+                                <input
+                                  id={id} value={from} onChange={(e) => setFrom(e.target.value)}
+                                  placeholder="1405/02/10"
+                                  className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white w-[110px]"
+                                />
+                              )}
+                            </Picker>
+                            <Picker label="To">
+                              {(id) => (
+                                <input
+                                  id={id} value={to} onChange={(e) => setTo(e.target.value)}
+                                  placeholder="1405/03/05"
+                                  className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white w-[110px]"
+                                />
+                              )}
+                            </Picker>
+                          </>
                         )}
                         {entry.params.includes("casingString") && (
                           <Picker label="Casing string">
@@ -365,6 +408,28 @@ function Inner() {
                         exporter={async (p) => (await import("../export/wellview/casing.js")).exportReport05Pdf(p)}
                         empty="Pick a well above."
                       />
+                    ) : entry.type === "15" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "15", wellSetParam, from, to]}
+                        enabled
+                        load={() => wellviewApi.reportData<Report15Payload>("15", {
+                          ...(wellSetParam ? { wellIds: wellSetParam } : {}), ...rangeParams,
+                        })}
+                        render={(p) => <Report15Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/multiwell.js")).exportReport15Pdf(p)}
+                        empty="No well available."
+                      />
+                    ) : entry.type === "17" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "17", wellSetParam, from, to]}
+                        enabled
+                        load={() => wellviewApi.reportData<Report17Payload>("17", {
+                          ...(wellSetParam ? { wellIds: wellSetParam } : {}), ...rangeParams,
+                        })}
+                        render={(p) => <Report17Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/multiwell.js")).exportReport17Pdf(p)}
+                        empty="No well available."
+                      />
                     ) : entry.type === "08" ? (
                       <ReportPanel
                         queryKey={["wellview", "report", "08", wellId]}
@@ -438,6 +503,76 @@ function Picker({ label, children }: {
     <div className="flex flex-col gap-0.5">
       <label htmlFor={id} className="text-[10px] uppercase tracking-wide text-gray-400">{label}</label>
       {children(id)}
+    </div>
+  );
+}
+
+/**
+ * The multi-well set picker.
+ *
+ * A dropdown of checkboxes rather than a `<select multiple>`: a native multi
+ * select needs ctrl-click to add a well and silently clears the lot on a plain
+ * click, which on a report that costs a page of output is a trap. Empty means
+ * "all my wells", stated on the button so nobody has to guess what no ticks
+ * does.
+ */
+function WellSetPicker({ wells, value, onChange }: {
+  wells: { id: string; name: string }[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = value.length === 0
+    ? `All wells (${wells.length})`
+    : `${value.length} of ${wells.length} wells`;
+
+  /**
+   * Ticking, with "empty means all" made to behave the way it looks.
+   *
+   * In "all" mode every box is drawn ticked, so clicking one has to UNtick that
+   * well and leave the rest — not select it alone, which is what treating the
+   * empty set literally would do. And once every well is ticked the set goes
+   * back to empty, so "all" stays one state rather than two that print the same
+   * report.
+   */
+  const toggle = (id: string) => {
+    const current = value.length === 0 ? wells.map((w) => w.id) : value;
+    const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+    onChange(next.length === wells.length ? [] : next);
+  };
+
+  return (
+    <div className="flex flex-col gap-0.5 relative">
+      <span className="text-[10px] uppercase tracking-wide text-gray-400">Wells</span>
+      <button
+        type="button" onClick={() => setOpen((v) => !v)} data-testid="well-set-picker"
+        className="h-8 border border-gray-300 rounded-md px-2 text-xs bg-white min-w-[160px] text-left hover:bg-gray-50 transition-colors duration-150"
+      >
+        {label} <span className="text-gray-400 ml-1">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1 z-20 w-[260px] max-h-[300px] overflow-y-auto bg-white border border-gray-300 rounded-md shadow-lg p-1.5">
+          <div className="flex gap-2 px-1 pb-1.5 mb-1 border-b border-gray-100">
+            <button type="button" onClick={() => onChange([])}
+              className="text-[11px] text-blue-600 hover:underline">All wells</button>
+            <button type="button" onClick={() => onChange(wells.map((w) => w.id))}
+              className="text-[11px] text-blue-600 hover:underline">Tick every well</button>
+          </div>
+          {wells.length === 0 && (
+            <div className="px-1 py-2 text-[11px] text-gray-400">No well assigned to this account.</div>
+          )}
+          {wells.map((w) => (
+            <label key={w.id} className="flex items-center gap-2 px-1 py-1 text-xs hover:bg-gray-50 rounded cursor-pointer">
+              <input
+                type="checkbox" className="h-3.5 w-3.5"
+                checked={value.length === 0 || value.includes(w.id)}
+                onChange={() => toggle(w.id)}
+              />
+              <span className="truncate">{w.name}</span>
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
