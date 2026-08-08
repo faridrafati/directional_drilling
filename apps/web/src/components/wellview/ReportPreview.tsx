@@ -55,9 +55,13 @@ export function HeaderGrid({ rows }: { rows: HeaderRow[] }) {
               </div>
               <div
                 className={`text-[11px] leading-tight text-gray-900 truncate ${typeof cell.value === "number" ? "text-right tabular-nums" : ""}`}
-                title={headerValue(cell.value)}
+                title={headerValue(cell.value, cell.kind)}
               >
-                {headerValue(cell.value) || " "}
+                {/* The cell's OWN kind, not the default. Dropping it printed every
+                    whole-number header — a tally's joint count, a daily report
+                    number — as "8.00", because `headerValue` falls back to money
+                    for any number that does not say otherwise. */}
+                {headerValue(cell.value, cell.kind) || " "}
               </div>
             </div>
           ))}

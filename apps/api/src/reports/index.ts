@@ -20,9 +20,10 @@ import { buildReport01 } from "./01-afe-vs-field-est.js";
 import { buildDailyReport } from "./daily.js";
 import { buildReport02, buildReport03 } from "./bha.js";
 import { buildReport10, buildReport11 } from "./phases.js";
+import { buildReport04, buildReport05 } from "./casing.js";
 
 /** How a report is parameterized — the picker builds itself from this. */
-export type ReportParam = "well" | "job" | "date" | "dateRange" | "bhaRun" | "wells";
+export type ReportParam = "well" | "job" | "date" | "dateRange" | "bhaRun" | "casingString" | "wells";
 
 export interface CatalogEntry {
   type: string;
@@ -49,8 +50,8 @@ export const REPORT_CATALOG: CatalogEntry[] = [
   { type: "01", title: "AFE vs Field Est vs Final Invoice", category: "Cost & Multi-well", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "Authorized budget against field estimate and final invoice, by cost code." },
   { type: "02", title: "BHA Detail", category: "Engineering", params: ["well", "bhaRun"], exports: ["pdf"], available: true, blurb: "One page per BHA run: header, bit, components, parameters, nozzles, sensors." },
   { type: "03", title: "Bit Summary", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "Every bit run on the well, one row each." },
-  { type: "04", title: "Casing, Liner and Cement", category: "Engineering", params: ["well"], exports: ["pdf"], available: false, blurb: "One string: tally, cement job, stages, fluids, additives, schematic." },
-  { type: "05", title: "Casing Summary", category: "Engineering", params: ["well"], exports: ["pdf"], available: false, blurb: "Every casing string with its component tally." },
+  { type: "04", title: "Casing, Liner and Cement", category: "Engineering", params: ["well", "casingString"], exports: ["pdf"], available: true, blurb: "One string: tally, cement job, stages, fluids, additives." },
+  { type: "05", title: "Casing Summary", category: "Engineering", params: ["well"], exports: ["pdf"], available: true, blurb: "Every casing string with its component tally." },
   { type: "06", title: "Daily Drilling", category: "Daily", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "The one-page morning report." },
   { type: "07", title: "Daily Drilling — Detail", category: "Daily", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "The legal-size daily report: problems, lessons, kicks, losses, incidents." },
   { type: "08", title: "Directional Plot — Plan vs Actual", category: "Engineering", params: ["well"], exports: ["pdf"], available: false, blurb: "Plan and vertical-section plots with the station table. Exists today on the calculation page." },
@@ -81,7 +82,7 @@ export const REPORT_CATALOG: CatalogEntry[] = [
 export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.get("/entry/report-data/catalog", { preHandler: requireUser }, async () => REPORT_CATALOG);
 
-  app.get<{ Params: { type: string }; Querystring: { wellId?: string; jobId?: string; date?: string; bhaRunId?: string } }>(
+  app.get<{ Params: { type: string }; Querystring: { wellId?: string; jobId?: string; date?: string; bhaRunId?: string; casingStringId?: string } }>(
     "/entry/report-data/:type", { preHandler: requireUser }, async (req, reply) => {
       const { type } = req.params;
       const entry = REPORT_CATALOG.find((r) => r.type === type);
@@ -103,6 +104,20 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
           if (!run) return reply.code(404).send({ error: "no such BHA run" });
           if (!(await mayUseWell(prisma, req, run.wellId))) return reply.code(403).send({ error: "not your well" });
           return (await buildReport02(prisma, bhaRunId)) ?? reply.code(404).send({ error: "no such BHA run" });
+        }
+        case "04": {
+          const casingStringId = (req.query.casingStringId ?? "").trim();
+          if (!casingStringId) return reply.code(400).send({ error: "this report needs a casingStringId" });
+          const str = await prisma.casingString.findUnique({ where: { id: casingStringId }, select: { wellId: true } });
+          if (!str) return reply.code(404).send({ error: "no such casing string" });
+          if (!(await mayUseWell(prisma, req, str.wellId))) return reply.code(403).send({ error: "not your well" });
+          return (await buildReport04(prisma, casingStringId)) ?? reply.code(404).send({ error: "no such casing string" });
+        }
+        case "05": {
+          const wellId = (req.query.wellId ?? "").trim();
+          if (!wellId) return reply.code(400).send({ error: "this report needs a wellId" });
+          if (!(await mayUseWell(prisma, req, wellId))) return reply.code(403).send({ error: "not your well" });
+          return (await buildReport05(prisma, wellId)) ?? reply.code(404).send({ error: "no such well" });
         }
         case "03": {
           const wellId = (req.query.wellId ?? "").trim();

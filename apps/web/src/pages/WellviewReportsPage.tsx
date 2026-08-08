@@ -20,12 +20,14 @@ import {
   wellviewApi,
   type CatalogEntry, type DailyPayload, type JobListItem,
   type Report01Payload, type Report02Payload, type Report03Payload,
+  type Report04Payload, type Report05Payload,
   type Report10Payload, type Report11Payload,
 } from "../entry/wellview.js";
 import { Report01Preview } from "../components/wellview/ReportPreview.js";
 import { DailyPreview } from "../components/wellview/DailyPreview.js";
 import { Report02Preview, Report03Preview } from "../components/wellview/BhaPreview.js";
 import { Report10Preview, Report11Preview } from "../components/wellview/PhasePreview.js";
+import { Report04Preview, Report05Preview } from "../components/wellview/CasingPreview.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -43,6 +45,7 @@ function Inner() {
   const [jobId, setJobId] = useState<string>("");
   const [date, setDate] = useState<string>("");
   const [bhaRunId, setBhaRunId] = useState<string>("");
+  const [casingStringId, setCasingStringId] = useState<string>("");
   const [selected, setSelected] = useState<string>("01");
 
   const catalogQ = useQuery({
@@ -53,6 +56,11 @@ function Inner() {
   const jobsQ = useQuery({
     queryKey: ["wellview", "jobs", wellId],
     queryFn: () => wellviewApi.jobsForWell(wellId),
+    enabled: !!user && !!wellId,
+  });
+  const casingQ = useQuery({
+    queryKey: ["wellview", "casingStrings", wellId],
+    queryFn: () => wellviewApi.casingStrings(wellId),
     enabled: !!user && !!wellId,
   });
   const bhaQ = useQuery({
@@ -73,7 +81,7 @@ function Inner() {
     if (!wellId && wells.length) setWellId(wells[0].id);
   }, [wells, wellId]);
   // A well change invalidates the job — never carry another well's job across.
-  useEffect(() => { setJobId(""); setDate(""); setBhaRunId(""); }, [wellId]);
+  useEffect(() => { setJobId(""); setDate(""); setBhaRunId(""); setCasingStringId(""); }, [wellId]);
   useEffect(() => {
     const list = jobsQ.data ?? [];
     if (!jobId && list.length) setJobId(list[0].id);
@@ -88,6 +96,10 @@ function Inner() {
     const list = bhaQ.data ?? [];
     if (!bhaRunId && list.length) setBhaRunId(list[list.length - 1].id);   // the latest run
   }, [bhaQ.data, bhaRunId]);
+  useEffect(() => {
+    const list = casingQ.data ?? [];
+    if (!casingStringId && list.length) setCasingStringId(list[list.length - 1].id);   // the deepest string
+  }, [casingQ.data, casingStringId]);
 
   const catalog = catalogQ.data ?? [];
   const entry = catalog.find((c) => c.type === selected) ?? null;
@@ -95,6 +107,7 @@ function Inner() {
   // Newest first: a report is nearly always wanted for the most recent day.
   const days = [...(daysQ.data ?? [])].sort((a, b) => b.serialNo - a.serialNo);
   const bhaRuns = bhaQ.data ?? [];
+  const casingStrings = casingQ.data ?? [];
   const wellName = wells.find((w) => w.id === wellId)?.name ?? "";
 
   return (
@@ -202,6 +215,27 @@ function Inner() {
                             )}
                           </Picker>
                         )}
+                        {entry.params.includes("casingString") && (
+                          <Picker label="Casing string">
+                            {(id) => (
+                            <select
+                              id={id}
+                              value={casingStringId}
+                              onChange={(e) => setCasingStringId(e.target.value)}
+                              disabled={casingStrings.length === 0}
+                              className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white min-w-[190px] disabled:bg-gray-50 disabled:text-gray-400"
+                            >
+                              {casingStrings.length === 0 && <option value="">— no strings —</option>}
+                              {casingStrings.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {[c.description ?? "Casing", c.setDepthMkb === null ? null : `${c.setDepthMkb.toFixed(1)} mKB`]
+                                    .filter(Boolean).join(" · ")}
+                                </option>
+                              ))}
+                            </select>
+                            )}
+                          </Picker>
+                        )}
                         {entry.params.includes("bhaRun") && (
                           <Picker label="BHA run">
                             {(id) => (
@@ -299,6 +333,33 @@ function Inner() {
                         load={() => wellviewApi.reportData<Report03Payload>("03", { wellId, ...(jobId ? { jobId } : {}) })}
                         render={(p) => <Report03Preview payload={p} />}
                         exporter={async (p) => (await import("../export/wellview/bha.js")).exportReport03Pdf(p)}
+                        empty="Pick a well above."
+                      />
+                    ) : entry.params.includes("casingString") && !casingQ.isLoading && casingStrings.length === 0 ? (
+                      <Notice>
+                        <span className="font-medium text-gray-700">{wellName || "This well"}</span> has no
+                        casing strings recorded, and this report covers one.
+                        <div className="mt-1.5 text-xs text-gray-400">
+                          Strings, their tallies and their cement jobs are entered under
+                          Well data → Casing &amp; cement.
+                        </div>
+                      </Notice>
+                    ) : entry.type === "04" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "04", casingStringId]}
+                        enabled={!!casingStringId}
+                        load={() => wellviewApi.reportData<Report04Payload>("04", { casingStringId })}
+                        render={(p) => <Report04Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/casing.js")).exportReport04Pdf(p)}
+                        empty="Pick a casing string above."
+                      />
+                    ) : entry.type === "05" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "05", wellId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report05Payload>("05", { wellId })}
+                        render={(p) => <Report05Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/casing.js")).exportReport05Pdf(p)}
                         empty="Pick a well above."
                       />
                     ) : entry.type === "10" ? (

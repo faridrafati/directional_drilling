@@ -261,3 +261,142 @@ async function indexOfCode(page: Page, code1: string): Promise<number> {
   }
   return -1;
 }
+
+/**
+ * The casing spine, typed by hand — the same claim for reports 04 and 05.
+ *
+ * Adds a string with a two-line tally and a cement job to whichever well the
+ * editor opens on, saves it, then checks report 05 prints the sums the tally
+ * implies. Removes the string again at the end, always: a leftover string would
+ * change every later run of the report tests.
+ */
+const STRING_DES = `E2E string ${STAMP}`;
+
+test("enter a casing string, its tally and its cement by hand, then print report 05", async ({ page }) => {
+  test.setTimeout(120_000);
+  try {
+    await runCasingFlow(page);
+  } finally {
+    await removeCasingString(page);
+  }
+});
+
+async function openCasingPanel(page: Page) {
+  await signIn(page, "/ddr-entry");
+  await page.getByRole("button", { name: "Well data" }).click();
+  await page.getByRole("button", { name: "Casing & cement" }).click();
+  // Wait for the panel to have LOADED before touching it — the save posts every
+  // string it holds, so acting while it still says "Loading casing…" would post
+  // an empty list and delete the well's real strings.
+  await expect(page.getByTestId("save-casing")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("holesec-r0-sectionDes")).toBeVisible({ timeout: 15_000 });
+}
+
+async function saveCasing(page: Page) {
+  await page.getByTestId("save-casing").click();
+  await expect(page.getByText(/^Saved /)).toBeVisible({ timeout: 15_000 });
+}
+
+async function runCasingFlow(page: Page) {
+  await openCasingPanel(page);
+  // The entry page labels its wells "<name> — <rig>"; the reports page labels
+  // them by name alone, so the rig half is dropped before it is used there.
+  const wellName = (await page.locator("select").first().locator("option:checked").textContent())!
+    .trim().split(" — ")[0];
+
+  // How many strings the well already has — the new one lands after them.
+  const existing = await page.locator('[data-testid^="casing-string-"]').count();
+  await page.getByTestId("add-casing-string").click();
+  const block = page.getByTestId(`casing-string-${existing}`);
+  await expect(block).toBeVisible();
+
+  // ── the string's own facts ───────────────────────────────────────────────
+  await page.getByLabel("Description", { exact: true }).first().fill(STRING_DES);
+  await page.getByLabel("Run date", { exact: true }).fill("1405/02/14");
+  await page.getByLabel("Set depth (mKB)", { exact: true }).fill("1200.5");
+  await page.getByLabel("Set tension (kN)", { exact: true }).fill("640");
+  await page.getByLabel("String nominal OD (in)", { exact: true }).fill("9 5/8");
+  await page.getByLabel("String min drift (in)", { exact: true }).fill("8.535");
+  await page.getByLabel("Centralizers", { exact: true }).fill("1/joint through the shoe track.");
+
+  // ── two tally lines: 100 joints and a shoe ───────────────────────────────
+  const tally = `tally${existing}`;
+  await page.getByTestId(`${tally}-r0-jts`).fill("100");
+  await page.getByTestId(`${tally}-r0-itemDes`).selectOption({ label: "Casing Joint(s)" });
+  await page.getByTestId(`${tally}-r0-odIn`).fill("9 5/8");
+  await page.getByTestId(`${tally}-r0-idIn`).fill("8.681");
+  await page.getByTestId(`${tally}-r0-massPerLenKgM`).fill("70.2");
+  await page.getByTestId(`${tally}-r0-grade`).fill("L-80");
+  await page.getByTestId(`${tally}-r0-lenM`).fill("1199.75");
+  await page.getByTestId(`${tally}-r1-jts`).fill("1");
+  await page.getByTestId(`${tally}-r1-itemDes`).selectOption({ label: "Float Shoe" });
+  await page.getByTestId(`${tally}-r1-lenM`).fill("0.5");
+
+  // ── one cement job, one stage, one fluid, one additive ───────────────────
+  await page.getByTestId(`add-cement-${existing}`).click();
+  await expect(page.getByLabel("Cementing start date")).toBeVisible();
+  await page.getByLabel("Cementing start date").fill("1405/02/14");
+  await page.getByLabel("Cementing end date").fill("1405/02/14");
+  await page.getByLabel("Evaluation method").fill("CBL");
+  await page.getByLabel("Top depth (mKB)").fill("400");
+  await page.getByLabel("Bottom depth (mKB)").fill("1200");
+  await page.getByLabel("Full return?").selectOption("true");
+  const fluid = `cement${existing}-0-fluid0`;
+  await page.getByTestId(`${fluid}-r0-fluidType`).selectOption({ label: "Tail" });
+  await page.getByTestId(`${fluid}-r0-fluidDescription`).fill("Neat class G");
+  await page.getByTestId(`${fluid}-r0-amountSacks`).fill("260");
+  await page.getByTestId(`${fluid}-r0-volumePumpedM3`).fill("31.5");
+  await page.getByTestId(`${fluid}-r0-densityPpg`).fill("15.8");
+  const additive = `cement${existing}-0-add0-0`;
+  await expect(page.getByTestId(`${additive}-r0-additive`)).toBeVisible();
+  await page.getByTestId(`${additive}-r0-additive`).fill("HR-5");
+  await page.getByTestId(`${additive}-r0-additiveType`).selectOption({ label: "Retarder" });
+  await page.getByTestId(`${additive}-r0-concentration`).fill("0.2 %BWOC");
+
+  await saveCasing(page);
+
+  // ── it comes back from the server, not from the draft ────────────────────
+  await page.reload();
+  await page.getByRole("button", { name: "Well data" }).click();
+  await page.getByRole("button", { name: "Casing & cement" }).click();
+  await expect(page.getByText(STRING_DES).first()).toBeVisible({ timeout: 15_000 });
+
+  // ── and report 05 prints what the tally adds up to ───────────────────────
+  await signIn(page, "/well-reports");
+  await page.getByTestId("report-05").click();
+  await page.getByLabel("Well", { exact: true }).selectOption({ label: wellName });
+  await expect(page.getByText(`${STRING_DES}, 1200.5mKB`)).toBeVisible({ timeout: 20_000 });
+  // 100 + 1 joints; 1199.75 + 0.5 m — summed from the tally, never the set depth.
+  await expect(page.getByText("101", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("1,200.25", { exact: true }).first()).toBeVisible();
+
+  // ── report 04 finds the same string in its picker, with its cement ───────
+  await page.getByTestId("report-04").click();
+  await page.getByLabel("Well", { exact: true }).selectOption({ label: wellName });
+  const stringPicker = page.getByLabel("Casing string", { exact: true });
+  const stringLabel = (await stringPicker.locator("option", { hasText: STRING_DES })
+    .first().textContent())!.trim();
+  await stringPicker.selectOption({ label: stringLabel });
+  await expect(page.getByText("Neat class G")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("0.2 %BWOC")).toBeVisible();
+}
+
+/** Take the string back out — runs even when the flow above failed part-way. */
+async function removeCasingString(page: Page) {
+  try {
+    await openCasingPanel(page);
+    const header = page.locator('[data-testid^="casing-string-"]', { hasText: STRING_DES });
+    if (!(await header.count())) return;
+    // The panel opens its FIRST string by default, so clicking blindly would
+    // collapse the very block the Remove button lives in — which is how a
+    // failed run once left its string behind.
+    if ((await header.first().getAttribute("aria-expanded")) !== "true") {
+      await header.first().click();
+    }
+    await expect(page.getByRole("button", { name: "Remove string" })).toBeVisible();
+    page.once("dialog", (d) => void d.accept());
+    await page.getByRole("button", { name: "Remove string" }).click();
+    await expect(page.getByText(STRING_DES)).toHaveCount(0);
+    await saveCasing(page);
+  } catch { /* cleanup must never fail the run it is cleaning up after */ }
+}

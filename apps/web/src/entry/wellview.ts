@@ -132,7 +132,7 @@ export interface CostCode {
 export interface HeaderCell {
   label: string;
   value: string | number | null;
-  kind?: "money" | "decimal" | "int" | "text";
+  kind?: "money" | "decimal" | "int" | "in3" | "text";
   span?: number;
 }
 export type HeaderRow = HeaderCell[];
@@ -372,6 +372,98 @@ export interface Report11Payload extends ReportEnvelope {
   }[];
 }
 
+// ── reports 04 / 05 ─────────────────────────────────────────────────────────
+export interface CasingComponentRow {
+  jts: number | null; itemDes: string | null; odIn: string | null; idIn: number | null;
+  massPerLenKgM: number | null; grade: string | null; topThread: string | null;
+  topMkb: number | null; btmMkb: number | null; lenM: number | null;
+  pBurstPsi: number | null; pCollapsePsi: number | null;
+}
+export interface CasingStringBlock {
+  caption: string;
+  properties: HeaderRow;
+  components: CasingComponentRow[];
+  totals: HeaderRow;
+}
+export interface Report05Payload extends ReportEnvelope { strings: CasingStringBlock[] }
+export interface CementFluidBlock {
+  fluid: HeaderRow[];
+  additives: { additive: string | null; additiveType: string | null; concentration: string | null }[];
+}
+export interface Report04Payload extends ReportEnvelope {
+  runCaption: string;
+  wellbore: HeaderRow;
+  sections: { sectionDes: string | null; sizeIn: string | null; actTopMkb: number | null; actBtmMkb: number | null }[];
+  wellhead: { des: string | null; make: string | null; model: string | null; sn: string | null; wpTopPsi: number | null }[];
+  lastMudCheck: HeaderRow;
+  casing: CasingStringBlock;
+  cement: {
+    header: HeaderRow[];
+    stages: { header: HeaderRow[]; fluids: CementFluidBlock[] }[];
+  } | null;
+  schematicOmitted: true;
+}
+/* ── the casing / cement entry sheet (what PUT /wells/:id/casing accepts) ──── */
+export interface HoleSectionRow {
+  order: number; wellboreId: string | null; sectionDes: string | null; sizeIn: string | null;
+  actTopMkb: number | null; actBtmMkb: number | null;
+}
+export interface CasingTallyRow {
+  order: number; jts: number | null; itemDes: string | null; odIn: string | null;
+  idIn: number | null; massPerLenKgM: number | null; grade: string | null; topThread: string | null;
+  topMkb: number | null; btmMkb: number | null; lenM: number | null;
+  pBurstPsi: number | null; pCollapsePsi: number | null;
+}
+export interface CementAdditiveRow {
+  order: number; additive: string | null; additiveType: string | null; concentration: string | null;
+}
+export interface CementFluidRow {
+  order: number; fluidType: string | null; fluidDescription: string | null; amountSacks: number | null;
+  cementClass: string | null; volumePumpedM3: number | null;
+  estimatedTopMkb: number | null; estimatedBtmMkb: number | null;
+  yieldLPerSack: number | null; mixWaterLPerSack: number | null; freeWaterPct: number | null;
+  densityPpg: number | null; plasticViscosityCp: number | null;
+  thickeningTimeHr: number | null; compressiveStrengthPsi: number | null;
+  additives: CementAdditiveRow[];
+}
+export interface CementStageRow {
+  order: number;
+  topDepthMkb: number | null; bottomDepthMkb: number | null;
+  /** Tri-state: null is "nobody answered", which report 04 prints as a blank. */
+  fullReturn: boolean | null;
+  volCementM3: number | null; topPlug: boolean | null; bottomPlug: boolean | null;
+  qPumpInitM3Min: number | null; qPumpFinalM3Min: number | null; avgPumpRateM3Min: number | null;
+  finalPumpPressurePsi: number | null; plugBumpPressurePsi: number | null;
+  pipeReciprocated: boolean | null; strokeM: number | null; reciprocationRateSpm: number | null;
+  pipeRotated: boolean | null; pipeRpm: number | null;
+  taggedDepthMkb: number | null; tagMethod: string | null;
+  depthPlugDrilledOutMkb: number | null; drillOutDiameterIn: string | null; drillOutDate: string | null;
+  fluids: CementFluidRow[];
+}
+export interface CementJobRow {
+  order: number; wellboreId: string | null; description: string | null;
+  startDate: string | null; endDate: string | null;
+  evaluationMethod: string | null; evaluationResults: string | null; comment: string | null;
+  stages: CementStageRow[];
+}
+export interface CasingStringRow {
+  id: string | null; order: number; wellboreId: string | null;
+  description: string | null; runDate: string | null;
+  setDepthMkb: number | null; setTensionKn: number | null;
+  stringNominalOdIn: string | null; stringMinDriftIn: number | null;
+  centralizers: string | null; scratchers: string | null;
+  components: CasingTallyRow[];
+  cementJobs: CementJobRow[];
+}
+export interface CasingSheet {
+  holeSections: HoleSectionRow[];
+  strings: CasingStringRow[];
+}
+
+export interface CasingStringListItem {
+  id: string; description: string | null; setDepthMkb: number | null; runDate: string | null;
+}
+
 export interface BhaRunListItem {
   id: string; bhaNo: number | null; name: string | null;
   depthInMkb: number | null; depthOutMkb: number | null;
@@ -381,7 +473,7 @@ export interface CatalogEntry {
   type: string;
   title: string;
   category: "Daily" | "Engineering" | "Cost & Multi-well" | "Geology" | "Completion";
-  params: ("well" | "job" | "date" | "dateRange" | "bhaRun" | "wells")[];
+  params: ("well" | "job" | "date" | "dateRange" | "bhaRun" | "casingString" | "wells")[];
   exports: ("pdf" | "xlsx")[];
   available: boolean;
   blurb: string;
@@ -397,6 +489,10 @@ export const wellviewApi = {
   saveJob: (id: string, body: JobBody) => entryApi.put<JobDetail>(`/jobs/${id}`, body),
   deleteJob: (id: string) => entryApi.del<void>(`/jobs/${id}`),
   attachReports: (id: string) => entryApi.post<{ attached: number }>(`/jobs/${id}/attach-reports`),
+  casing: (wellId: string) => entryApi.get<CasingSheet>(`/wells/${wellId}/casing`),
+  saveCasing: (wellId: string, body: CasingSheet) =>
+    entryApi.put<void>(`/wells/${wellId}/casing`, body),
+  casingStrings: (wellId: string) => entryApi.get<CasingStringListItem[]>(`/wells/${wellId}/casing-strings`),
   bhaRuns: (wellId: string) => entryApi.get<BhaRunListItem[]>(`/wells/${wellId}/bha-runs`),
   registers: (wellId: string) => entryApi.get<WellRegisters>(`/wells/${wellId}/registers`),
   saveRegisters: (wellId: string, body: Omit<WellRegisters, "mudPumps" | "rigId">) =>

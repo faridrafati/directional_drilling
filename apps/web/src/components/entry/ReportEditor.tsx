@@ -1460,12 +1460,14 @@ function WellheadAndScr({ draft, set, disabled }: SubformProps) {
           { key: "sizeIn", label: "Size (in)", type: "num", width: "w-24" },
           { key: "type", label: "Type", width: "w-32", title: "Casing head, casing spool, tubing head, BOP…" },
           { key: "make", label: "Make", width: "w-28" },
+          { key: "model", label: "Model", width: "w-28" },
+          { key: "sn", label: "SN", width: "w-28", title: "Serial number — report 04 prints it, and it is what ties a spool to its certificate" },
           { key: "wpPsi", label: "WP (psi)", type: "num", width: "w-28", title: "Working pressure" },
           { key: "com", label: "Com" },
         ] as Col<ReportBody["wellheads"][number]>[]}
         rows={draft.wellheads} onChange={(v) => set("wellheads", v)} disabled={disabled} minRows={2}
         addLabel="wellhead component"
-        blank={() => ({ order: 0, installDate: null, sizeIn: null, type: null, make: null, wpPsi: null, com: null })}
+        blank={() => ({ order: 0, installDate: null, sizeIn: null, type: null, make: null, model: null, sn: null, wpPsi: null, com: null })}
       />
       <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">slow circulation rates</span>}>Well control — SCR</Section>
       <RowTable

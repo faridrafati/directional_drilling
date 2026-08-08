@@ -42,6 +42,16 @@ const str = z.preprocess(
   z.string().nullable(),
 ).default(null);
 const int0 = z.preprocess((v) => (blank(v) ? 0 : Number(v)), z.number().int()).default(0);
+/**
+ * Tri-state yes/no. Unanswered is NOT "no": report 04 prints a blank cell for a
+ * question nobody answered and "No" for one answered no, and the difference is
+ * the whole point of the column.
+ */
+const bool = z.preprocess(
+  (v) => (blank(v) ? null : v === "true" || v === true ? true : v === "false" || v === false ? false : null),
+  z.boolean().nullable(),
+).default(null);
+
 /** A client-minted cuid on a new row, or the stored id on an existing one. */
 const rowId = z.preprocess(
   (v) => (blank(v) ? null : String(v).trim() || null),
@@ -154,6 +164,63 @@ const registersSchema = z.object({
 const mudPumpSchema = z.object({
   id: rowId, order: int0, pumpNo: str, manufacturer: str, model: str,
   ratingHp: num, rodDiaIn: num, strokeIn: num, linerSizeIn: str, volPerStkBbl: num,
+});
+
+// ── casing, cement and hole sections (reports 04 / 05) ─────────────────────
+/**
+ * The hole the string was run in. Nothing points into these, so replace-all.
+ */
+const holeSectionSchema = z.object({
+  order: int0, wellboreId: str, sectionDes: str, sizeIn: str,
+  actTopMkb: num, actBtmMkb: num,
+});
+const casingComponentSchema = z.object({
+  order: int0, jts: num, itemDes: str, odIn: str, idIn: num,
+  massPerLenKgM: num, grade: str, topThread: str,
+  topMkb: num, btmMkb: num, lenM: num, pBurstPsi: num, pCollapsePsi: num,
+});
+const cementAdditiveSchema = z.object({
+  order: int0, additive: str, additiveType: str, concentration: str,
+});
+const cementFluidSchema = z.object({
+  order: int0, fluidType: str, fluidDescription: str, amountSacks: num,
+  cementClass: str, volumePumpedM3: num, estimatedTopMkb: num, estimatedBtmMkb: num,
+  yieldLPerSack: num, mixWaterLPerSack: num, freeWaterPct: num, densityPpg: num,
+  plasticViscosityCp: num, thickeningTimeHr: num, compressiveStrengthPsi: num,
+  additives: z.array(cementAdditiveSchema).default([]),
+});
+const cementStageSchema = z.object({
+  order: int0, topDepthMkb: num, bottomDepthMkb: num, fullReturn: bool,
+  volCementM3: num, topPlug: bool, bottomPlug: bool,
+  qPumpInitM3Min: num, qPumpFinalM3Min: num, avgPumpRateM3Min: num,
+  finalPumpPressurePsi: num, plugBumpPressurePsi: num,
+  pipeReciprocated: bool, strokeM: num, reciprocationRateSpm: num,
+  pipeRotated: bool, pipeRpm: num,
+  taggedDepthMkb: num, tagMethod: str,
+  depthPlugDrilledOutMkb: num, drillOutDiameterIn: str, drillOutDate: jalaliish,
+  fluids: z.array(cementFluidSchema).default([]),
+});
+const cementJobSchema = z.object({
+  order: int0, wellboreId: str, description: str,
+  startDate: jalaliish, endDate: jalaliish,
+  evaluationMethod: str, evaluationResults: str, comment: str,
+  stages: z.array(cementStageSchema).default([]),
+});
+/**
+ * A casing string. Id-stable, NOT replace-all: a daily casing-run row carries
+ * `casingStringId`, and re-minting the id on every save would silently unlink
+ * the day the string was run from the string itself.
+ */
+const casingStringSchema = z.object({
+  id: rowId, order: int0, wellboreId: str, description: str, runDate: jalaliish,
+  setDepthMkb: num, setTensionKn: num, stringNominalOdIn: str, stringMinDriftIn: num,
+  centralizers: str, scratchers: str,
+  components: z.array(casingComponentSchema).default([]),
+  cementJobs: z.array(cementJobSchema).default([]),
+});
+const casingSaveSchema = z.object({
+  holeSections: z.array(holeSectionSchema).default([]),
+  strings: z.array(casingStringSchema).default([]),
 });
 
 const costCodeSchema = z.object({
@@ -491,6 +558,105 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
         depthInMkb: r.drillStrings[0]?.depthInMkb ?? null,
         depthOutMkb: r.depthOutMkb,
       }));
+    });
+
+  /** The well's casing strings, for report 04's picker. */
+  app.get<{ Params: { wellId: string } }>(
+    "/entry/wells/:wellId/casing-strings", { preHandler: requireUser }, async (req, reply) => {
+      const { wellId } = req.params;
+      if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+      return prisma.casingString.findMany({
+        where: { wellId }, orderBy: { order: "asc" },
+        select: { id: true, description: true, setDepthMkb: true, runDate: true },
+      });
+    });
+
+  // ══ casing, cement and hole sections (reports 04 / 05) ═══════════════════
+  app.get<{ Params: { wellId: string } }>(
+    "/entry/wells/:wellId/casing", { preHandler: requireUser }, async (req, reply) => {
+      const { wellId } = req.params;
+      if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+      const [holeSections, strings] = await Promise.all([
+        prisma.holeSection.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
+        prisma.casingString.findMany({
+          where: { wellId }, orderBy: { order: "asc" },
+          include: {
+            components: { orderBy: { order: "asc" } },
+            cementJobs: {
+              orderBy: { order: "asc" },
+              include: {
+                stages: {
+                  orderBy: { order: "asc" },
+                  include: {
+                    fluids: {
+                      orderBy: { order: "asc" },
+                      include: { additives: { orderBy: { order: "asc" } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+      ]);
+      return { holeSections, strings };
+    });
+
+  app.put<{ Params: { wellId: string }; Body: unknown }>(
+    "/entry/wells/:wellId/casing", { preHandler: requireUser }, async (req, reply) => {
+      const { wellId } = req.params;
+      if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+      let body: z.infer<typeof casingSaveSchema>;
+      try { body = casingSaveSchema.parse(req.body); } catch (e) { return badReq(reply, e); }
+
+      const kept = body.strings.map((s) => s.id).filter((x): x is string => !!x);
+      await prisma.$transaction(async (tx) => {
+        // Hole sections carry no inbound references — replace-all.
+        await tx.holeSection.deleteMany({ where: { wellId } });
+        if (body.holeSections.length) {
+          await tx.holeSection.createMany({ data: body.holeSections.map((h) => ({ ...h, wellId })) });
+        }
+
+        await tx.casingString.deleteMany({
+          where: { wellId, id: { notIn: kept.length ? kept : ["-"] } },
+        });
+        for (const s of body.strings) {
+          const { id, components, cementJobs, ...data } = s;
+          const stringId = id
+            ? (await tx.casingString.upsert({
+                where: { id }, create: { id, wellId, ...data }, update: data,
+              })).id
+            : (await tx.casingString.create({ data: { wellId, ...data } })).id;
+
+          // The tally and the cement hang off the string and nothing hangs off
+          // them, so within a string it is the daily editor's replace-all.
+          await tx.casingComponent.deleteMany({ where: { casingStringId: stringId } });
+          if (components.length) {
+            await tx.casingComponent.createMany({
+              data: components.map((c) => ({ ...c, jts: c.jts === null ? null : Math.round(c.jts), casingStringId: stringId })),
+            });
+          }
+          await tx.cementJob.deleteMany({ where: { casingStringId: stringId } });
+          for (const j of cementJobs) {
+            const { stages, ...jobData } = j;
+            const job = await tx.cementJob.create({ data: { casingStringId: stringId, ...jobData } });
+            for (const st of stages) {
+              const { fluids, ...stageData } = st;
+              const stage = await tx.cementStage.create({ data: { cementJobId: job.id, ...stageData } });
+              for (const f of fluids) {
+                const { additives, ...fluidData } = f;
+                const fluid = await tx.cementFluid.create({ data: { cementStageId: stage.id, ...fluidData } });
+                if (additives.length) {
+                  await tx.cementFluidAdditive.createMany({
+                    data: additives.map((a) => ({ ...a, cementFluidId: fluid.id })),
+                  });
+                }
+              }
+            }
+          }
+        }
+      });
+      return reply.code(204).send();
     });
 
   // ══ cost codes (admin) ═══════════════════════════════════════════════════

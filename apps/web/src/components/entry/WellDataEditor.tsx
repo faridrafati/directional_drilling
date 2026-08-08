@@ -33,6 +33,7 @@ import {
   type WvCodeTables,
 } from "../../entry/wellview.js";
 import { Section, TextField, NumField, RowTable, type Col } from "./fields.js";
+import { CasingPanel } from "./CasingPanel.js";
 
 /**
  * Keys `filled()` must ignore when deciding whether a row is worth saving.
@@ -156,6 +157,12 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
    * rather than inside it — they exist whether or not a job does.
    */
   const [showRegisters, setShowRegisters] = useState(false);
+  /**
+   * The casing strings, their tallies and their cement — reports 04 and 05.
+   * Well-level too, and big enough that it gets its own panel rather than a
+   * seventh section inside the registers.
+   */
+  const [showCasing, setShowCasing] = useState(false);
   // Associated by htmlFor rather than by wrapping: a <label> around a <select>
   // absorbs the selected option into the field's accessible name.
   const jobPickerId = useId();
@@ -171,6 +178,13 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
     enabled: !!jobId,
   });
   const codesQ = useQuery({ queryKey: ["wellview", "codes"], queryFn: wellviewApi.codes });
+  // Same key as RegistersPanel's — react-query serves both from one fetch. The
+  // casing panel needs the well's holes to offer them as a wellbore choice.
+  const registersQ = useQuery({
+    queryKey: ["wellview", "registers", wellId],
+    queryFn: () => wellviewApi.registers(wellId),
+    enabled: !!wellId,
+  });
   const costCodesQ = useQuery({ queryKey: ["wellview", "costCodes"], queryFn: wellviewApi.costCodes });
 
   const jobs = jobsQ.data ?? [];
@@ -252,6 +266,16 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
           >
             Well registers
           </button>
+          <button
+            type="button" onClick={() => setShowCasing((v) => !v)}
+            className={`h-9 px-3 text-xs rounded-md border transition-colors duration-150 ${
+              showCasing
+                ? "border-blue-500 bg-blue-50 text-blue-800"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            Casing &amp; cement
+          </button>
           {isAdmin && (
             <button
               type="button" onClick={() => setShowCodes((v) => !v)}
@@ -271,6 +295,12 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
       {showRegisters && (
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden shrink-0">
           <RegistersPanel wellId={wellId} />
+        </div>
+      )}
+
+      {showCasing && (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden shrink-0">
+          <CasingPanel wellId={wellId} wellbores={registersQ.data?.wellbores ?? []} />
         </div>
       )}
 

@@ -128,7 +128,8 @@ const casingSchema = z.object({
 });
 /** a.json `wellhead_component` — the stack as installed, one row per spool/head. */
 const wellheadSchema = z.object({
-  order: int0, installDate: str, sizeIn: num, type: str, make: str, wpPsi: num, com: str,
+  order: int0, installDate: str, sizeIn: num, type: str, make: str,
+  model: str, sn: str, wpPsi: num, com: str,
 });
 /** a.json `well_control_scr` — slow circulation rates, one row per pump / rate. */
 const scrRateSchema = z.object({

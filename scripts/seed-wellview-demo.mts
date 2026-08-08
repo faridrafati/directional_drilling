@@ -296,6 +296,114 @@ async function main() {
     },
   });
 
+  // ── the hole sections, casing strings and their cement (reports 04 / 05) ──
+  await prisma.holeSection.deleteMany({ where: { wellId: well.id } });
+  const sections = [
+    { sectionDes: "Conductor", sizeIn: "26", actTopMkb: 0, actBtmMkb: 98 },
+    { sectionDes: "Surface", sizeIn: "17 1/2", actTopMkb: 98, actBtmMkb: 299 },
+    { sectionDes: "Production", sizeIn: "12 1/4", actTopMkb: 299, actBtmMkb: 2_752 },
+  ];
+  for (const [i, h] of sections.entries()) {
+    await prisma.holeSection.create({
+      data: { wellId: well.id, wellboreId: wellbores[0]?.id ?? null, order: i, ...h },
+    });
+  }
+
+  await prisma.casingString.deleteMany({ where: { wellId: well.id } });
+  // Tallies are given with Len AND both depths, as the sample prints them — the
+  // report derives none of the three from the other two.
+  const strings = [
+    {
+      description: "Conductor Pipe", runDate: day(0), setDepthMkb: 98.0, setTensionKn: 289,
+      stringNominalOdIn: "20", stringMinDriftIn: 17.5,
+      centralizers: "Two every 5th joint", scratchers: "None",
+      tally: [
+        { jts: 7, itemDes: "Casing Joint(s)", odIn: "20", idIn: 18.75, massPerLenKgM: 192.5, grade: "X-56", topThread: "RL-4S", topMkb: 0, btmMkb: 86.1, lenM: 86.1, pBurstPsi: 2840, pCollapsePsi: 1410 },
+        { jts: 1, itemDes: "Float Shoe", odIn: "20", idIn: 18.75, massPerLenKgM: 192.5, grade: "X-56", topThread: "RL-4S", topMkb: 86.1, btmMkb: 98.0, lenM: 11.9, pBurstPsi: 2840, pCollapsePsi: 1410 },
+      ],
+      cement: null as null | Record<string, unknown>,
+    },
+    {
+      description: "Surface Casing", runDate: day(1), setDepthMkb: 298.5, setTensionKn: 412,
+      stringNominalOdIn: "13 3/8", stringMinDriftIn: 12.41,
+      centralizers: "2/joint on shoe track.", scratchers: "None",
+      tally: [
+        { jts: 24, itemDes: "Casing Joint(s)", odIn: "13 3/8", idIn: 12.415, massPerLenKgM: 101.2, grade: "K-55", topThread: "BTC", topMkb: 0, btmMkb: 273.4, lenM: 273.4, pBurstPsi: 3450, pCollapsePsi: 1950 },
+        { jts: 1, itemDes: "Float Collar", odIn: "13 3/8", idIn: 12.415, massPerLenKgM: 101.2, grade: "K-55", topThread: "BTC", topMkb: 273.4, btmMkb: 273.8, lenM: 0.35, pBurstPsi: 3450, pCollapsePsi: 1950 },
+        { jts: 2, itemDes: "Casing Joint(s)", odIn: "13 3/8", idIn: 12.415, massPerLenKgM: 101.2, grade: "K-55", topThread: "BTC", topMkb: 273.8, btmMkb: 298.0, lenM: 24.2, pBurstPsi: 3450, pCollapsePsi: 1950 },
+        { jts: 1, itemDes: "Float Shoe", odIn: "13 3/8", idIn: 12.415, massPerLenKgM: 101.2, grade: "K-55", topThread: "BTC", topMkb: 298.0, btmMkb: 298.5, lenM: 0.53, pBurstPsi: 3450, pCollapsePsi: 1950 },
+      ],
+      cement: {
+        description: "Surface Casing Cement", startDate: day(1), endDate: day(1),
+        evaluationMethod: "Temperature Log", evaluationResults: "Ran temp log to confirm TOC",
+        comment: "Job was successful; full returns throughout.",
+        stage: {
+          topDepthMkb: 0, bottomDepthMkb: 298.0, fullReturn: true, topPlug: true, bottomPlug: true,
+          qPumpInitM3Min: 1.6, qPumpFinalM3Min: 0.5, avgPumpRateM3Min: 1.2,
+          finalPumpPressurePsi: 350, plugBumpPressurePsi: 1_500,
+          pipeReciprocated: true, strokeM: 10.7, reciprocationRateSpm: 3,
+          pipeRotated: true, pipeRpm: 18,
+          taggedDepthMkb: 271.0, tagMethod: "Drill Bit",
+          depthPlugDrilledOutMkb: 298.6, drillOutDiameterIn: "12 1/4", drillOutDate: day(3),
+        },
+        fluids: [
+          {
+            fluidType: "Lead", fluidDescription: "Class G + 8% bentonite", amountSacks: 340,
+            cementClass: "G", volumePumpedM3: 42.5, estimatedTopMkb: 0, estimatedBtmMkb: 220.0,
+            yieldLPerSack: 125, mixWaterLPerSack: 21.4, freeWaterPct: 1.2,
+            densityPpg: 12.6, plasticViscosityCp: 28, thickeningTimeHr: 4.2, compressiveStrengthPsi: 980,
+            additives: [
+              { additive: "Kwik Seal", additiveType: "Lost Circulation Additive", concentration: "0.25 %BWOC" },
+              { additive: "HR-5", additiveType: "Retarder", concentration: "0.15 %BWOC" },
+            ],
+          },
+          {
+            fluidType: "Tail", fluidDescription: "Neat", amountSacks: 120,
+            cementClass: "G", volumePumpedM3: 14.8, estimatedTopMkb: 220.0, estimatedBtmMkb: 298.0,
+            yieldLPerSack: 33.2, mixWaterLPerSack: 18.0, freeWaterPct: 0.4,
+            densityPpg: 15.8, plasticViscosityCp: 36, thickeningTimeHr: 2.6, compressiveStrengthPsi: 1_880,
+            additives: [{ additive: "CaCl2", additiveType: "Accelerator", concentration: "2 %BWOC" }],
+          },
+        ],
+      },
+    },
+  ];
+
+  for (const [i, st] of strings.entries()) {
+    const { tally, cement, ...data } = st;
+    const created = await prisma.casingString.create({
+      data: {
+        wellId: well.id, wellboreId: wellbores[0]?.id ?? null, order: i, ...data,
+        components: { create: tally.map((t, k) => ({ order: k, ...t })) },
+      },
+    });
+    if (!cement) continue;
+    const { stage, fluids, ...jobData } = cement as {
+      stage: Record<string, unknown>;
+      fluids: (Record<string, unknown> & { additives: Record<string, unknown>[] })[];
+    } & Record<string, unknown>;
+    await prisma.cementJob.create({
+      data: {
+        casingStringId: created.id, wellboreId: wellbores[0]?.id ?? null, order: 0,
+        ...(jobData as object),
+        stages: {
+          create: [{
+            order: 0, ...(stage as object),
+            fluids: {
+              create: fluids.map((f, k) => {
+                const { additives, ...fluid } = f;
+                return {
+                  order: k, ...(fluid as object),
+                  additives: { create: additives.map((a, j) => ({ order: j, ...(a as object) })) },
+                };
+              }),
+            },
+          }],
+        },
+      },
+    });
+  }
+
   // ── the BHA run reports 02 and 03 are scoped to ─────────────────────────
   // Created before the day, because the day's drill string, bit and drilled
   // interval all point AT it — that link is what turns per-day slices into a run.
@@ -480,6 +588,14 @@ async function seedDay(
       },
       casing: {
         create: [{ order: 0, casing: "20\" Surface Casing", runDate: reportDate, depth: 298.5, joints: 26 }],
+      },
+      // The stack as landed — report 04 prints one row per component, deduped
+      // to the newest record of each.
+      wellheads: {
+        create: [
+          { order: 0, installDate: day(0), sizeIn: 20.75, type: "Casing Head", make: "Cameron", model: "SSMC", sn: "92355-233", wpPsi: 10_000 },
+          { order: 1, installDate: day(1), sizeIn: 13.625, type: "Casing Spool", make: "Cameron", model: "SSMC", sn: "33455-352", wpPsi: 10_000 },
+        ],
       },
       formationTops: {
         create: [

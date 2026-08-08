@@ -277,6 +277,8 @@ model EntryWell {
   jobs                   Job[]
   wellbores              EntryWellbore[]
   bhaRuns                EntryBhaRun[]
+  holeSections           HoleSection[]
+  casingStrings          CasingString[]
   lessons                EntryIntervalLesson[]
   kicks                  EntryKick[]
   lostCirculation        EntryLostCirculation[]
@@ -596,18 +598,23 @@ model EntryChemical {
 
 /// Casing / liner run — a.json `casing_string` unioned with the DR.xls columns.
 model EntryCasingRun {
-  id       String      @id @default(cuid())
-  reportId String
-  order    Int         @default(0)
-  casing   String? /// csg_des
+  id             String        @id @default(cuid())
+  reportId       String
+  order          Int           @default(0)
+  casing         String? /// csg_des
   /// set_depth_mkb — the shoe depth.
-  depth    Float?
-  joints   Float?
+  depth          Float?
+  joints         Float?
   // ── a.json casing_string additions ──
-  runDate  String? /// run_date, as printed
-  topMkb   Float? /// top_mkb — top of the string / liner hanger
-  com      String?
-  report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  runDate        String? /// run_date, as printed
+  topMkb         Float? /// top_mkb — top of the string / liner hanger
+  com            String?
+  /// The well-level string this day's run belongs to (reports 04 and 05).
+  /// Nullable: the daily editor never sets it, and a run nobody has recognised
+  /// simply stays unlinked.
+  casingStringId String?
+  report         EntryReport   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  casingString   CasingString? @relation(fields: [casingStringId], references: [id], onDelete: SetNull)
 
   @@index([reportId, order])
 }
@@ -862,6 +869,11 @@ model EntryWellheadComponent {
   sizeIn      Float? /// size_in
   type        String?
   make        String?
+  /// Model and serial number. NOT in a.json's `wellhead_component`, but report
+  /// 04 prints both beside the make — the archive simply never carried them, and
+  /// a spool without its serial cannot be traced back to its certificate.
+  model       String?
+  sn          String?
   wpPsi       Float? /// wp_psi — working pressure
   com         String?
   report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
@@ -1410,6 +1422,9 @@ model EntryWellbore {
   well               EntryWell                @relation(fields: [wellId], references: [id], onDelete: Cascade)
   drillingParameters EntryDrillingParameter[]
   bhaRuns            EntryBhaRun[]
+  holeSections       HoleSection[]
+  casingStrings      CasingString[]
+  cementJobs         CementJob[]
 
   @@index([wellId, order])
 }
@@ -1652,4 +1667,203 @@ model EntryBhaSensor {
   bhaRun       EntryBhaRun @relation(fields: [bhaRunId], references: [id], onDelete: Cascade)
 
   @@index([bhaRunId, order])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  WellView report suite — Tier 2: casing, liner and cement (reports 04, 05)
+//
+//  The daily EntryCasingRun rows record "a string was run to this depth today".
+//  These are the strings themselves: their tally joint by joint, their cement
+//  job, and the hole sections they were run into. Well-level, because a casing
+//  string outlives every day of the well and is printed on reports for years
+//  afterwards.
+//
+//  The daily rows are NOT replaced. They stay as the crew's record of the day,
+//  and `EntryCasingRun.casingStringId` bridges one to the other when a run is
+//  recognised — nullable, so nothing that already saves stops saving.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A hole section — report 04's "Sections" block: what size was drilled, and
+/// between which depths. Well-level, and pointed at a wellbore because a
+/// sidetrack drills its own sections.
+model HoleSection {
+  id         String   @id @default(cuid())
+  wellId     String
+  wellboreId String?
+  order      Int      @default(0)
+  /// "Section Des" — e.g. "Surface", "Intermediate".
+  sectionDes String?
+  /// Hole size in inches, as printed: TEXT because the sheet shows 17 1/2.
+  sizeIn     String?
+  actTopMkb  Float?
+  actBtmMkb  Float?
+  createdAt  DateTime @default(now())
+
+  well     EntryWell      @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+
+  @@index([wellId, order])
+}
+
+/// A casing or liner string — the row grain of report 05 and the subject of
+/// report 04's page.
+model CasingString {
+  id                String   @id @default(cuid())
+  wellId            String
+  wellboreId        String?
+  order             Int      @default(0)
+  /// "Structural Casing", "Conductor Pipe", "Surface Casing", "Production Casing".
+  description       String?
+  /// Run date as printed — the same free-text convention as the daily rows.
+  runDate           String?
+  setDepthMkb       Float?
+  /// Set tension. The samples print kips; we print kN.
+  setTensionKn      Float?
+  /// "String Nominal OD (in)" — TEXT, the sheet prints 13 3/8.
+  stringNominalOdIn String?
+  stringMinDriftIn  Float?
+  /// Free text exactly as the sample prints it ("2/joint on shoe track.").
+  centralizers      String?
+  scratchers        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  well       EntryWell         @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore   EntryWellbore?    @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+  components CasingComponent[]
+  cementJobs CementJob[]
+  dailyRuns  EntryCasingRun[]
+
+  @@index([wellId, order])
+}
+
+/// One line of a string's tally. `Len` and the depths are the printed columns;
+/// the sample gives all three, so none is derived from the others — a tally
+/// with a gap in it is a real thing and must survive the round trip.
+model CasingComponent {
+  id             String  @id @default(cuid())
+  casingStringId String
+  order          Int     @default(0)
+  jts            Int?
+  itemDes        String? /// "Casing Joint(s)", "Float Collar", "Float Shoe", "Cross Over"
+  /// TEXT: the sheet prints 13 3/8 beside 10.752 in the same column.
+  odIn           String?
+  idIn           Float?
+  /// Mass per unit length in kg/m — METRIC, to match `lenM`. The samples print
+  /// lb/ft; carrying both units in one tally is how a string weight ends up
+  /// 3.28× wrong.
+  massPerLenKgM  Float?
+  grade          String? /// X-52, K-55, L-80
+  topThread      String? /// RL-4HT, BTC, VAM, LTC
+  topMkb         Float?
+  btmMkb         Float?
+  lenM           Float?
+  pBurstPsi      Float?
+  pCollapsePsi   Float?
+
+  casingString CasingString @relation(fields: [casingStringId], references: [id], onDelete: Cascade)
+
+  @@index([casingStringId, order])
+}
+
+/// A cement job on a string — report 04's "Cement" block.
+model CementJob {
+  id                String   @id @default(cuid())
+  casingStringId    String
+  wellboreId        String?
+  order             Int      @default(0)
+  description       String? /// "Surface Casing Cement"
+  startDate         String?
+  endDate           String?
+  evaluationMethod  String? /// "Temperature Log", "CBL", "USIT"
+  evaluationResults String?
+  comment           String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  casingString CasingString   @relation(fields: [casingStringId], references: [id], onDelete: Cascade)
+  wellbore     EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+  stages       CementStage[]
+
+  @@index([casingStringId, order])
+}
+
+/// One stage of a cement job — the pumping record.
+model CementStage {
+  id                     String   @id @default(cuid())
+  cementJobId            String
+  order                  Int      @default(0)
+  topDepthMkb            Float?
+  bottomDepthMkb         Float?
+  /// "Full Return?" — nullable, because unanswered is not the same as "no".
+  fullReturn             Boolean?
+  volCementM3            Float?
+  topPlug                Boolean?
+  bottomPlug             Boolean?
+  qPumpInitM3Min         Float?
+  qPumpFinalM3Min        Float?
+  avgPumpRateM3Min       Float?
+  finalPumpPressurePsi   Float?
+  plugBumpPressurePsi    Float?
+  pipeReciprocated       Boolean?
+  strokeM                Float?
+  reciprocationRateSpm   Float?
+  pipeRotated            Boolean?
+  pipeRpm                Float?
+  taggedDepthMkb         Float?
+  tagMethod              String? /// "Drill Bit", "Tubing", "Wireline"
+  depthPlugDrilledOutMkb Float?
+  drillOutDiameterIn     String?
+  drillOutDate           String?
+
+  cementJob CementJob     @relation(fields: [cementJobId], references: [id], onDelete: Cascade)
+  fluids    CementFluid[]
+
+  @@index([cementJobId, order])
+}
+
+/// A fluid pumped in a stage — lead, tail, spacer, flush.
+model CementFluid {
+  id                     String  @id @default(cuid())
+  cementStageId          String
+  order                  Int     @default(0)
+  fluidType              String? /// "Lead" | "Tail" | "Spacer" | "Flush"
+  fluidDescription       String? /// "Neat", "Class G + 35% silica"
+  amountSacks            Float?
+  cementClass            String? /// G, H, A
+  volumePumpedM3         Float?
+  estimatedTopMkb        Float?
+  estimatedBtmMkb        Float?
+  /// Yield in LITRES per sack — the sample prints ft³/sack.
+  ///
+  /// Litres, not m³: a class G slurry yields about 0.033 m³/sack, and this
+  /// suite prints measurements to two decimals, so m³ would have printed that
+  /// as "0.03" — a 10% error on a figure a cement volume is calculated from.
+  yieldLPerSack          Float?
+  /// Mix water in litres per sack — the sample prints gal/sack.
+  mixWaterLPerSack       Float?
+  freeWaterPct           Float?
+  densityPpg             Float?
+  plasticViscosityCp     Float?
+  thickeningTimeHr       Float?
+  compressiveStrengthPsi Float?
+
+  cementStage CementStage           @relation(fields: [cementStageId], references: [id], onDelete: Cascade)
+  additives   CementFluidAdditive[]
+
+  @@index([cementStageId, order])
+}
+
+/// An additive in a cement fluid — report 04's last block.
+model CementFluidAdditive {
+  id            String  @id @default(cuid())
+  cementFluidId String
+  order         Int     @default(0)
+  additive      String? /// "Kwik Seal"
+  additiveType  String? /// "Lost Circulation Additive", "Retarder", "Accelerator"
+  concentration String? /// free text: the sheet prints "0.25 %BWOC", "2 lb/sk"
+
+  cementFluid CementFluid @relation(fields: [cementFluidId], references: [id], onDelete: Cascade)
+
+  @@index([cementFluidId, order])
 }

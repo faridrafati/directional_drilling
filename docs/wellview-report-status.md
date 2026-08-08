@@ -48,12 +48,24 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | 02 | BHA Detail | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 | 03 | Bit Summary | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 
+## Tier 2 — foundation
+
+| Item | Status |
+|---|---|
+| `HoleSection` · `CasingString` · `CasingComponent` · `CementJob` · `CementStage` · `CementFluid` · `CementFluidAdditive` | 2026-08-07 |
+| `EntryCasingRun.casingStringId` — the daily run bridged onto the string master | 2026-08-07 |
+| `EntryWellheadComponent.model` / `.sn` — report 04 prints both beside the make | 2026-08-07 |
+| Casing / cement API (`GET`+`PUT /entry/wells/:id/casing`, `GET …/casing-strings`) | 2026-08-07 |
+| Entry UI — Casing & cement panel (hole sections, strings, tallies, cement jobs → stages → fluids → additives) | 2026-08-07 |
+| Entry UI — wellhead Model and SN columns on the daily sheet | 2026-08-07 |
+| E2E — a casing string, its tally and its cement typed entirely by hand, then printed | 2026-08-07 |
+
 ## Tier 2 — well engineering
 
 | # | Report | Spec read | Schema | Entry | Assembler | Preview | PDF | Verified |
 |---|---|---|---|---|---|---|---|---|
-| 04 | Casing, Liner and Cement | — | — | — | — | — | — | — |
-| 05 | Casing Summary | — | — | — | — | — | — | — |
+| 04 | Casing, Liner and Cement | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
+| 05 | Casing Summary | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 | 08 | Directional Plot | — | n/a | n/a | — | exists | exists | — |
 | 09 | Drilling Summary 1 | — | — | — | — | — | — | — |
 | 10 | Phases - Plan vs Actual | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
@@ -186,6 +198,51 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
 - **2026-08-07 — report 11 labels its bars with the phase's SECOND type.** "Drill-Vertical", not
   "Production · Drill-Vertical" — the pair does not fit on the axis, which is why the sample does the
   same. The full name is in the tooltip and in report 10's table.
+- **2026-08-07 — a casing string is a MASTER, and the daily run points at it.** `EntryCasingRun` (the
+  day's "we ran casing" row) keeps its own columns and gains a nullable `casingStringId`. The string,
+  its tally, its hole section and its cement live at well level because they outlive the day: the
+  cement is pumped the next shift and the plug is drilled out three days later. The link is
+  `onDelete: SetNull`, so deleting a string never deletes the day that ran it.
+- **2026-08-07 — the casing sheet saves id-stable at the string level, replace-all below it.** A
+  daily run row carries `casingStringId`, so re-minting string ids each save would silently unlink
+  the day the string was run. Nothing points into a tally row, a cement stage, a fluid or an
+  additive, so inside a string they are deleted and re-created exactly like a daily child table.
+- **2026-08-07 — report 05 prints a Joints / String Length roll-up the sample does not have.** The
+  sample ends each string at its last tally row. Ours adds one labelled summary line, summed from the
+  tally rather than read from the set depth — on the demo string those differ by 0.02 m, which is
+  exactly the kind of tally error the line is there to expose.
+- **2026-08-07 — "Vol Cement" is derived when it is left blank.** WellView prints the stored figure,
+  including `0.0`. Ours prints what was typed when something was, and otherwise adds up the fluids'
+  pumped volumes — a stage whose ticket did not state a total still prints one, and the entry panel
+  says so.
+- **2026-08-07 — report 04's "Last Mud Check" is the newest check ON OR BEFORE the run date**, not
+  the newest on the well. A cement job is judged against the mud it was pumped through.
+- **2026-08-07 — inch diameters print to three decimals (`kind: "in3"`).** A casing ID and a drift are
+  quoted to a thousandth: the sample prints 12.415, and the suite's usual two decimals turned that
+  into 12.42 — the digit a drift check actually turns on.
+- **2026-08-07 — cement yield is stored and printed in L/sack, not m³/sack.** A class G slurry yields
+  about 0.033 m³/sack, which at the suite's two decimals printed as "0.03" — a 10% error on the figure
+  a slurry volume is calculated from. Renamed rather than deprecated because the column was
+  introduced by the migration immediately before, so no database outside the demo seed ever held a
+  value under the old name.
+- **2026-08-07 — the header grid honours the cell's own `kind`.** It was calling `headerValue(value)`
+  without it, so every whole-number header — a tally's joint count, a daily report number — printed
+  as "8.00". The PDF renderer had been passing it all along; only the on-screen preview dropped it.
+- **2026-08-07 — the tally's "Item Des" column is fixed-width, not flexible.** As the flex column it
+  was squeezed to about 52 pt by the eleven fixed ones and every "Casing Joint(s)" wrapped onto a
+  second line the sample does not have. The slack now comes out of P Collapse.
+- **2026-08-07 — report 04's schematic is not drawn**, for the same reason as report 02's: the shared
+  wellbore schematic is a Tier 4/5 deliverable. Both the preview and the PDF say so where the
+  sample's left rail would be.
+- **2026-08-07 — report 04 runs to two pages where the sample runs to one.** The sample puts the
+  schematic down the left rail and the data blocks in a narrow right column; ours prints the blocks
+  full width, and the demo cement job has two fluids and three additives where the sample has one of
+  each. Block order and labels are the sample's.
+- **2026-08-07 — a wellhead component's size prints as a decimal (`20.75"`), not a fraction
+  (`20-3/4"`).** `EntryWellheadComponent.sizeIn` is a `Float` inherited from `a.json`, and the rule
+  for this work is that existing `Entry*` models are never restructured. The new columns beside it —
+  `model` and `sn` — are additive, because report 04 prints both and the archive simply never carried
+  them.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

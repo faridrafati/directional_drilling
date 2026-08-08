@@ -32,10 +32,12 @@ export interface HeaderCell {
   /**
    * "money" and "decimal" both print thousands separators and two decimals;
    * they are distinguished so a currency column can diverge later without
-   * touching every measurement. "int" prints no decimals. Default for a number
-   * is "decimal"; a string is always "text".
+   * touching every measurement. "int" prints no decimals. "in3" prints THREE —
+   * a casing ID or drift is quoted to a thousandth of an inch, and rounding
+   * 12.415 to 12.42 loses the very digit a drift check turns on. Default for a
+   * number is "decimal"; a string is always "text".
    */
-  kind?: "money" | "decimal" | "int" | "text";
+  kind?: "money" | "decimal" | "int" | "in3" | "text";
   /** Cells this one spans in its row. Default 1. */
   span?: number;
 }

@@ -201,7 +201,8 @@ export interface CasingRow {
 /** One wellhead spool / housing — a.json `wellhead_component`. */
 export interface WellheadRow {
   order: number; installDate: string | null; sizeIn: number | null; type: string | null;
-  make: string | null; wpPsi: number | null; com: string | null;
+  make: string | null; model: string | null; sn: string | null;
+  wpPsi: number | null; com: string | null;
 }
 /** One slow-circulation rate — a.json `well_control_scr`, one row per pump / rate. */
 export interface ScrRateRow {

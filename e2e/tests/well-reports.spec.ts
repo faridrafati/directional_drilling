@@ -27,7 +27,7 @@ const PASSWORD = process.env.ENTRY_PASSWORD ?? "admin";
 const DEMO_WELL = "Sample 11 - Full Data";
 
 /** The reports with an assembler today; the rest still carry a "soon" badge. */
-const BUILT = ["01", "02", "03", "06", "07", "10", "11"] as const;
+const BUILT = ["01", "02", "03", "04", "05", "06", "07", "10", "11"] as const;
 
 /** The four totals report 01 computes, exactly as the sample prints them. */
 const EXPECTED_TOTALS = [
@@ -202,6 +202,69 @@ test.describe("Well Reports", () => {
   });
 
   for (const type of ["02", "03"] as const) {
+    test(`report ${type} exports a PDF`, async ({ page }, testInfo) => {
+      await page.getByTestId(`report-${type}`).click();
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      await expect(page.getByRole("button", { name: "PDF" })).toBeVisible({ timeout: 15_000 });
+      const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 30_000 }),
+        page.getByRole("button", { name: "PDF" }).click(),
+      ]);
+      const path = join(dir, download.suggestedFilename());
+      await download.saveAs(path);
+      await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
+      const { statSync, readFileSync } = await import("node:fs");
+      expect(statSync(path).size).toBeGreaterThan(5_000);
+      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    });
+  }
+
+  // Reports 04 and 05 read the casing spine. The figures asserted here are the
+  // ones `scripts/seed-wellview-demo.mts` types into the tally — 298.48 m is the
+  // SUM of the four tally lengths, not the string's set depth (298.5), and the
+  // two differing by 0.02 m is exactly why the report sums rather than reusing
+  // the depth.
+  test("report 05 sums each string's tally", async ({ page }) => {
+    await page.getByTestId("report-05").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Conductor Pipe, 98.0mKB")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Surface Casing, 298.5mKB")).toBeVisible();
+    // Joints: 7 + 1 and 24 + 1 + 2 + 1. Length: the tally's own metres.
+    await expect(page.getByText("298.48", { exact: true }).first()).toBeVisible();
+    for (const jts of ["8", "28"]) {
+      await expect(page.getByText(jts, { exact: true }).first()).toBeVisible();
+    }
+  });
+
+  test("report 04 prints one string with its hole, its mud and its cement", async ({ page }) => {
+    await page.getByTestId("report-04").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    // The string picker appears and defaults to the first string on the well.
+    const picker = page.getByLabel("Casing string", { exact: true });
+    await expect(picker).toBeVisible({ timeout: 15_000 });
+    await expect(picker).not.toHaveValue("");
+    // selectOption matches an option's label EXACTLY, so the visible text is
+    // read off the option first rather than guessed from its description.
+    const label = (await picker.locator("option", { hasText: "Surface Casing" })
+      .first().textContent())!.trim();
+    await picker.selectOption({ label });
+
+    await expect(page.getByText("Cement", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    // Hole sections, the string's own block, and the cement stage's figures.
+    await expect(page.getByText("17 1/2", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Class G + 8% bentonite")).toBeVisible();
+    // Vol cement is DERIVED — 42.5 + 14.8 pumped, because the stage leaves it blank.
+    await expect(page.getByText("57.30", { exact: true }).first()).toBeVisible();
+    // The last mud check is the newest one on or before the run date, not the
+    // newest on the well.
+    await expect(page.getByText("KCl-Polymer", { exact: true }).first()).toBeVisible();
+    // The schematic the sample draws beside these blocks is declared missing
+    // rather than left as a silent gap.
+    await expect(page.getByText(/vertical wellbore schematic/)).toBeVisible();
+  });
+
+  for (const type of ["04", "05"] as const) {
     test(`report ${type} exports a PDF`, async ({ page }, testInfo) => {
       await page.getByTestId(`report-${type}`).click();
       await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });

@@ -42,7 +42,7 @@ export interface HeaderCell {
   label: string;
   value: string | number | null;
   /** How the assembler wants the number printed — see the API's `chrome.ts`. */
-  kind?: "money" | "decimal" | "int" | "text";
+  kind?: "money" | "decimal" | "int" | "in3" | "text";
   span?: number;
 }
 export type HeaderRow = HeaderCell[];
@@ -78,6 +78,8 @@ export function headerValue(
   if (v === null || v === undefined || v === "") return "";
   if (typeof v !== "number") return String(v);
   if (kind === "int") return v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  // An inch diameter is quoted to a thousandth: 12.415, not 12.42.
+  if (kind === "in3") return decimal(v, 3);
   return money(v);   // "money" and "decimal" print identically today
 }
 
