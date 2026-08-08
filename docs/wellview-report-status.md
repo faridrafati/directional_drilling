@@ -59,6 +59,11 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | Entry UI — Casing & cement panel (hole sections, strings, tallies, cement jobs → stages → fluids → additives) | 2026-08-07 |
 | Entry UI — wellhead Model and SN columns on the daily sheet | 2026-08-07 |
 | E2E — a casing string, its tally and its cement typed entirely by hand, then printed | 2026-08-07 |
+| `WellPlanStation` — the directional plan, separate from the daily surveys | 2026-08-08 |
+| `EntryWell.area` / `.county` / `.ewDistance` / `.ewRef` / `.nsDistance` / `.nsRef` — report 09's band | 2026-08-08 |
+| Entry UI — the WellView header band on the well form (it was seeded but un-typeable) | 2026-08-08 |
+| Entry UI — Directional plan table in the Well registers panel | 2026-08-08 |
+| `chartCapture.ts` — the capture-or-throw rule shared by every charted report | 2026-08-08 |
 
 ## Tier 2 — well engineering
 
@@ -66,8 +71,8 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 |---|---|---|---|---|---|---|---|---|
 | 04 | Casing, Liner and Cement | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 | 05 | Casing Summary | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
-| 08 | Directional Plot | — | n/a | n/a | — | exists | exists | — |
-| 09 | Drilling Summary 1 | — | — | — | — | — | — | — |
+| 08 | Directional Plot | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
+| 09 | Drilling Summary 1 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 | 10 | Phases - Plan vs Actual | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 | 11 | Phase Summary Graph | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
 
@@ -243,6 +248,63 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   for this work is that existing `Entry*` models are never restructured. The new columns beside it —
   `model` and `sn` — are additive, because report 04 prints both and the archive simply never carried
   them.
+- **2026-08-08 — the directional PLAN is its own table, not more survey rows.** `EntrySurvey` belongs
+  to the day it was shot and is replaced wholesale when that day is re-saved; the plan is issued once
+  for the well by the directional company and does not move when a day does. Merging them would make
+  "plan vs actual" impossible to state. Report 08 draws one curve from each.
+- **2026-08-08 — NS / EW / VS are printed as ENTERED, never re-derived.** Report 08 does not run a
+  minimum-curvature closure over inc/azi to fill in missing offsets. The directional company's own
+  listing is what the well is steered against, and a second, silently different set of offsets
+  computed here would be indefensible the moment the two disagreed. A station without the offset a
+  panel needs is dropped from that panel; the curve breaks where the data does.
+- **2026-08-08 — each curve gets its own Recharts `data` array.** A merged array needs one X key,
+  and the plan and the actual do not share X values — interleaving them into rows where each series
+  fills only its own keys left every row missing the other series' axis key, and one curve silently
+  vanished. This was caught by screenshotting the panel, not by the type checker.
+- **2026-08-08 — plot legends sit ABOVE their axes.** Recharts positions an `insideBottom` axis label
+  against the chart box rather than the plot area, so a bottom legend and "VS (m)" print on the same
+  line whatever height is reserved for the key.
+- **2026-08-08 — report 08 prints a station listing the sample does not have.** The sample is plots
+  only. The listing is on its own page (a 200-station survey must never push the plots off theirs)
+  and it is what makes the plots auditable — a reader can check a point rather than measure it off a
+  rasterized axis.
+- **2026-08-08 — report 09 reads the OPERATIONS LOG, not the Time Breakdown table.** The breakdown
+  table is optional and usually empty; the from/to clock is the one that is actually kept. A
+  dashboard built on the breakdown table printed four blank panels for a job whose every hour is
+  logged.
+- **2026-08-08 — report 09's NPT hours come from the log's `probHr`, its NAMES from the problem
+  register.** The first is the clock; `estLostTimeHr` is an estimate typed before the trouble was
+  over. The interval points at its problem row by the same 1-based ordinal report 07 prints.
+- **2026-08-08 — panels 1 and 3 share one denominator: the job's total logged hours.** Each panel's
+  own subtotal would let the two read as if they described different jobs, and NPT — a slice of the
+  same clock — would come out as a share of itself.
+- **2026-08-08 — report 09 prints each panel's figures beside its bars.** A bar chart answers "which
+  is biggest"; a morning meeting also asks "by how much", and reading a percentage off a rasterized
+  axis is guesswork. Both come from one payload, so they cannot disagree. It is why the report runs
+  to two pages where the sample runs to one — that, and the sample's narrow right column.
+- **2026-08-08 — report 09's panels rasterize at 1.5×, not 2×.** They print side by side at about
+  half the page width, so 2× was resolution nobody could see, and the four rasters together took the
+  export past thirty seconds.
+- **2026-08-08 — a spanned header cell is N star columns merged with `colSpan`.** pdfmake's table
+  widths understand `"*"` and numbers only; the weighted `"2*"` that `labelValueGrid` used to emit
+  reached its number parser as a literal string and threw "unsupported number: 25.52*6.500" from
+  deep inside the layout engine, naming nothing. Report 09's header was the first to use a span.
+- **2026-08-08 — the well form gained the WellView header band.** `apiUwi`, `licenseNo`,
+  `stateProvince`, the four elevations and now `area` / `county` / the surface offsets were added
+  with the Tier 0 schema and seeded, but there was nowhere to TYPE them: the form stopped at the
+  DR.xls fields. Every report in the suite prints that band.
+- **2026-08-08 — the demo well now carries twelve days, not one.** Report 09's panels are job-wide,
+  and one showcase day gives them a single bar and a single point. The eleven added days are
+  deliberately thin — a depth, a coded log that sums to 24 hours, a problem on two of them. Day-scoped
+  specs therefore NAME the day they mean; the picker defaults to whichever day the list starts with.
+- **2026-08-08 — the demo day's operation letters were wrong and are fixed.** Every interval was
+  stamped "G" (Casing/Liner Job) because nothing grouped by letter. Report 09's time panel does, and
+  a whole day under one letter is not a breakdown. Letters now follow what the interval was doing;
+  lost time keeps the letter of the operation in progress and takes the U indicator, which is what
+  the OIEC procedure asks for.
+- **2026-08-08 — reports 08 and 09 have no wellbore schematic.** Both samples draw one — 08 down the
+  left rail, 09 down the left column. Same reason as 02 and 04: the shared component is a Tier 4/5
+  deliverable, and both the preview and the PDF say so where it would be.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

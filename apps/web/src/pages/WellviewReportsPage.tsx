@@ -21,6 +21,7 @@ import {
   type CatalogEntry, type DailyPayload, type JobListItem,
   type Report01Payload, type Report02Payload, type Report03Payload,
   type Report04Payload, type Report05Payload,
+  type Report08Payload, type Report09Payload,
   type Report10Payload, type Report11Payload,
 } from "../entry/wellview.js";
 import { Report01Preview } from "../components/wellview/ReportPreview.js";
@@ -28,6 +29,8 @@ import { DailyPreview } from "../components/wellview/DailyPreview.js";
 import { Report02Preview, Report03Preview } from "../components/wellview/BhaPreview.js";
 import { Report10Preview, Report11Preview } from "../components/wellview/PhasePreview.js";
 import { Report04Preview, Report05Preview } from "../components/wellview/CasingPreview.js";
+import { Report08Preview } from "../components/wellview/DirectionalPreview.js";
+import { Report09Preview } from "../components/wellview/SummaryPreview.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -361,6 +364,24 @@ function Inner() {
                         render={(p) => <Report05Preview payload={p} />}
                         exporter={async (p) => (await import("../export/wellview/casing.js")).exportReport05Pdf(p)}
                         empty="Pick a well above."
+                      />
+                    ) : entry.type === "08" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "08", wellId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report08Payload>("08", { wellId })}
+                        render={(p) => <Report08Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/directional.js")).exportReport08Pdf(p)}
+                        empty="Pick a well above."
+                      />
+                    ) : entry.type === "09" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "09", jobId]}
+                        enabled={!!jobId}
+                        load={() => wellviewApi.reportData<Report09Payload>("09", { jobId })}
+                        render={(p) => <Report09Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/summary.js")).exportReport09Pdf(p)}
+                        empty="Pick a job above."
                       />
                     ) : entry.type === "10" ? (
                       <ReportPanel

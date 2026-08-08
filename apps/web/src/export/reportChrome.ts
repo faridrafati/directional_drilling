@@ -118,13 +118,34 @@ export function labelValueGrid(rows: HeaderRow[], opts?: { align?: "left" | "rig
   const stack: Content[] = [];
   for (const row of rows) {
     if (row.length === 0) continue;
-    const widths = row.map((c) => (c.span && c.span > 1 ? `${c.span}*` : "*"));
+    // A SPAN is N equal star columns merged with colSpan, not one "2*" column.
+    // pdfmake's table widths understand "*" and numbers only — a weighted star
+    // reaches its number parser as the literal string and throws
+    // "unsupported number: 25.52*6.500" from deep inside the layout engine,
+    // with nothing naming the cell that caused it.
+    const widths: string[] = [];
+    for (const c of row) widths.push(...Array.from({ length: span(c) }, () => "*"));
+
+    // The builder returns an OBJECT cell, not the `TableCell` union — a spanned
+    // cell has to be spread to add `colSpan`, and `TableCell` includes `string`.
+    type CellObject = { text: string; style: string; alignment?: "left" | "right" };
+    const line = (build: (c: HeaderCell) => CellObject): TableCell[] => {
+      const cells: TableCell[] = [];
+      for (const c of row) {
+        const n = span(c);
+        cells.push(n > 1 ? { ...build(c), colSpan: n } : build(c));
+        // pdfmake wants the spanned-over cells present but empty.
+        for (let k = 1; k < n; k += 1) cells.push({});
+      }
+      return cells;
+    };
+
     stack.push({
       table: {
         widths,
         body: [
-          row.map((c): TableCell => ({ text: c.label, style: "cellLabel" })),
-          row.map((c): TableCell => ({
+          line((c) => ({ text: c.label, style: "cellLabel" })),
+          line((c) => ({
             text: headerValue(c.value, c.kind),
             style: "cellValue",
             alignment: opts?.align ?? (typeof c.value === "number" ? "right" : "left"),
@@ -135,6 +156,12 @@ export function labelValueGrid(rows: HeaderRow[], opts?: { align?: "left" | "rig
     });
   }
   return { stack, margin: [0, 0, 0, 3] };
+}
+
+/** A cell's column count: at least 1, whole, and never wider than a sane row. */
+function span(c: HeaderCell): number {
+  const n = c.span ?? 1;
+  return Number.isFinite(n) && n > 1 ? Math.min(Math.floor(n), 12) : 1;
 }
 
 /** Thin rules on every edge, in the samples' hairline grey. */

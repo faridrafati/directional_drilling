@@ -209,6 +209,14 @@ function WellForm({ rigs, well, options, onCancel, onSaved }: {
     spudDate: well?.spudDate ?? "", rigReleasedDate: well?.rigReleasedDate ?? "",
     rtElevation: well?.rtElevation ?? "", waterDepth: well?.waterDepth ?? "",
     finalForecastDepth: well?.finalForecastDepth ?? "", forecastDays: well?.forecastDays ?? "",
+    // The WellView header band. Every report in that suite prints these, and
+    // until now there was nowhere to type them.
+    apiUwi: well?.apiUwi ?? "", licenseNo: well?.licenseNo ?? "",
+    stateProvince: well?.stateProvince ?? "", area: well?.area ?? "", county: well?.county ?? "",
+    groundElevation: well?.groundElevation ?? "", casingFlangeElevation: well?.casingFlangeElevation ?? "",
+    kbGroundDistance: well?.kbGroundDistance ?? "", kbCasingFlangeDistance: well?.kbCasingFlangeDistance ?? "",
+    ewDistance: well?.ewDistance ?? "", ewRef: well?.ewRef ?? "",
+    nsDistance: well?.nsDistance ?? "", nsRef: well?.nsRef ?? "",
     active: well?.active ?? true,
   }));
   const [error, setError] = useState<string | null>(null);
@@ -276,6 +284,30 @@ function WellForm({ rigs, well, options, onCancel, onSaved }: {
         <label className="flex items-center gap-2 min-h-[44px] sm:min-h-0 sm:mt-4 text-sm sm:text-xs text-gray-600">
           <input type="checkbox" className="h-5 w-5 sm:h-4 sm:w-4" checked={f.active} onChange={(e) => set("active", e.target.checked)} /> Active
         </label>
+      </div>
+      <div className="text-[11px] sm:text-[10px] font-semibold uppercase tracking-wide text-gray-500 mt-3 mb-1 pt-2 border-t border-blue-200">
+        WellView header band
+        <span className="ml-2 font-normal normal-case tracking-normal text-gray-400">
+          printed at the top of every report in the Well Reports suite
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-2">
+        {F("API / UWI", "apiUwi", "text", "100/02-02-050-20W5/00")}
+        {F("License #", "licenseNo", "text", "8818838")}
+        {F("State / province", "stateProvince", "text", "Bushehr")}
+        {F("Area", "area", "text", "South")}
+        {F("County", "county", "text")}
+        {F("Ground elevation (m)", "groundElevation", "number")}
+        {F("Casing flange elevation (m)", "casingFlangeElevation", "number")}
+        {/* Stored, never derived from RT − ground: the sample prints the
+            casing-flange distance while both ground figures are blank, which
+            proves the four are independent entries. */}
+        {F("KB–ground distance (m)", "kbGroundDistance", "number")}
+        {F("KB–casing flange distance (m)", "kbCasingFlangeDistance", "number")}
+        {F("East/west distance (m)", "ewDistance", "number")}
+        {F("E/W ref", "ewRef", "text", "E")}
+        {F("North/south distance (m)", "nsDistance", "number")}
+        {F("N/S ref", "nsRef", "text", "N")}
       </div>
       <p className="text-xs sm:text-[10px] text-gray-500 mt-2">
         The list fields offer the company's known values (from the DDR archive plus wells already registered) —

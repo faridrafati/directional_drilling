@@ -142,7 +142,7 @@ export interface ReportEnvelope {
   title: string;
   wellName: string;
   identityRight?: string | null;
-  headerVariant: "standard" | "dailyDrilling" | "wellJob" | "none";
+  headerVariant: "standard" | "dailyDrilling" | "wellJob" | "plot" | "summary" | "none";
   header: HeaderRow[];
   printedOn: string;
 }
@@ -279,6 +279,12 @@ export interface BhaRunRow {
   comment: string | null;
   sensors: { order: number; sensorType: string | null; distFromBitM: number | null; note: string | null }[];
 }
+/** One station of the directional PLAN — the actual comes from the daily surveys. */
+export interface PlanStationRow {
+  order: number; md: number | null; inc: number | null; azi: number | null;
+  tvd: number | null; ns: number | null; ew: number | null; vs: number | null;
+  dls: number | null; comment: string | null;
+}
 export interface WellRegisters {
   wellbores: WellboreRow[];
   bhaRuns: BhaRunRow[];
@@ -286,6 +292,7 @@ export interface WellRegisters {
   kicks: KickRow[];
   lostCirculation: LostCirculationRow[];
   mudPumps: MudPumpRow[];
+  planStations: PlanStationRow[];
   rigId: string;
 }
 
@@ -458,6 +465,48 @@ export interface CasingStringRow {
 export interface CasingSheet {
   holeSections: HoleSectionRow[];
   strings: CasingStringRow[];
+}
+
+// ── reports 08 / 09 ─────────────────────────────────────────────────────────
+/** One point on a directional curve. Nulls are gaps, never zeros. */
+export interface PlotStation {
+  md: number | null; inc: number | null; azi: number | null; tvd: number | null;
+  ns: number | null; ew: number | null; vs: number | null;
+  /** The plan carries one — "KOP", "Target A". */
+  comment?: string | null;
+  /** The actual carries one: the day the station was shot. */
+  date?: string | null;
+}
+export interface Report08Payload extends ReportEnvelope {
+  header: HeaderRow[];
+  plan: PlotStation[];
+  actual: PlotStation[];
+  extents: HeaderRow;
+  /** True when the well has no plan — the page draws the actual alone and says so. */
+  planMissing: boolean;
+}
+
+/** One bar of a report-09 breakdown panel. */
+export interface BreakdownBar {
+  label: string;
+  value: number;
+  percent: number | null;
+}
+export interface ProgressPoint {
+  jobDay: number;
+  date: string;
+  endDepth: number | null;
+  cumFieldEst: number | null;
+}
+export interface Report09Payload extends ReportEnvelope {
+  header: HeaderRow[];
+  jobRow: HeaderRow;
+  timeByCode: BreakdownBar[];
+  costByDes: BreakdownBar[];
+  nptByDes: BreakdownBar[];
+  progress: ProgressPoint[];
+  totalHours: number | null;
+  schematicOmitted: true;
 }
 
 export interface CasingStringListItem {

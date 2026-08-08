@@ -11,11 +11,10 @@
  *     and no file is produced. A blank chart on a signed report is worse than an
  *     error, and the same rule already governs the directional plot.
  *
- * Recharts renders its legend as an HTML sibling of the SVG, so it is read with
- * `readChartLegend` and redrawn here as vector swatches — the printed key then
- * names the series the chart actually has.
+ * The capture-or-throw rule and the vector legend live in `chartCapture.ts`,
+ * shared with reports 08 and 09.
  */
-import type { CanvasElement, Content, TDocumentDefinitions } from "pdfmake/interfaces";
+import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
 import { pdfMake } from "../pdfmakeSetup.js";
 import {
   PAGE_MARGINS, REPORT_STYLES,
@@ -23,10 +22,7 @@ import {
   reportFooter, reportTable, sectionBar, titleBand,
   type ReportColumn,
 } from "../reportChrome.js";
-import {
-  rasterizeSvgElement, readChartLegend,
-  type ChartLegendItem, type SvgRasterResult,
-} from "../svgRaster.js";
+import { captureChart, legendRow } from "./chartCapture.js";
 import type { PhaseRow, Report10Payload, Report11Payload } from "../../entry/wellview.js";
 import { PHASE_BAR_CHART_ID, PHASE_CHART_ID } from "../../components/wellview/PhasePreview.js";
 
@@ -58,73 +54,6 @@ const PHASE_COLUMNS: ReportColumn<PhaseRow>[] = [
   { header: "Actual Phase Cum Field Est (Cost)", width: 48, align: "right", cell: (p) => money(p.cumActualCost) },
   { header: "Cost/Depth (Cost/m)", width: "*", align: "right", cell: (p) => headerValue(p.costPerDepth) },
 ];
-
-/** One plot as the report needs it: the picture, and what the picture means. */
-interface CapturedChart {
-  raster: SvgRasterResult;
-  legend: ChartLegendItem[];
-}
-
-/**
- * Find the live chart by the id its preview stamps, and rasterize it.
- *
- * Throws with a user-facing message when it is not on screen — the caller lets
- * that surface rather than downloading a report with a hole in it.
- */
-async function captureChart(containerId: string, label: string): Promise<CapturedChart> {
-  const svg = document.getElementById(containerId)?.querySelector("svg");
-  if (!svg) {
-    throw new Error(
-      `the ${label} is not on screen — let the preview finish drawing before exporting`,
-    );
-  }
-  let raster: SvgRasterResult;
-  try {
-    raster = await rasterizeSvgElement(svg as SVGSVGElement, { scale: 2, background: "#ffffff" });
-  } catch (err) {
-    throw new Error(`could not capture the ${label} — ${err instanceof Error ? err.message : String(err)}`);
-  }
-  let legend: ChartLegendItem[] = [];
-  // An unreadable legend costs the report a key, not the report.
-  try { legend = readChartLegend(svg as SVGSVGElement); } catch { legend = []; }
-  return { raster, legend };
-}
-
-const SWATCH_W = 14;
-const SWATCH_H = 9;
-
-/** The chart's own key, redrawn as vector shapes so it prints as it looks. */
-function legendRow(items: ChartLegendItem[]): Content | null {
-  if (items.length === 0) return null;
-  const cells: Content[] = [];
-  const widths: Array<number | string> = [];
-  for (const item of items) {
-    cells.push({ canvas: swatch(item) }, { text: item.label, style: "cellLabel" });
-    widths.push(SWATCH_W, "auto");
-  }
-  return {
-    table: { widths, body: [cells] },
-    layout: {
-      hLineWidth: () => 0, vLineWidth: () => 0,
-      paddingTop: () => 0, paddingBottom: () => 0,
-      paddingLeft: (i: number) => (i === 0 ? 0 : i % 2 === 0 ? 8 : 3),
-      paddingRight: () => 0,
-    },
-    margin: [0, 4, 0, 0],
-  };
-}
-
-function swatch(item: ChartLegendItem): CanvasElement[] {
-  const cy = SWATCH_H / 2;
-  switch (item.shape) {
-    case "line":
-      return [{ type: "line", x1: 0, y1: cy, x2: SWATCH_W, y2: cy, lineWidth: 2, lineColor: item.color }];
-    case "square":
-      return [{ type: "rect", x: 1, y: cy - 3.5, w: 7, h: 7, color: item.color }];
-    default:
-      return [{ type: "ellipse", x: SWATCH_W / 2, y: cy, r1: 3.5, r2: 3.5, color: item.color }];
-  }
-}
 
 export async function buildReport10Doc(payload: Report10Payload): Promise<TDocumentDefinitions> {
   const chart = await captureChart(PHASE_CHART_ID, "phase depth-and-cost graph");

@@ -25,9 +25,19 @@ const PASSWORD = process.env.ENTRY_PASSWORD ?? "admin";
 
 /** The well `scripts/seed-wellview-demo.mts` creates. */
 const DEMO_WELL = "Sample 11 - Full Data";
+/**
+ * The one day the seed writes up IN FULL. The well now carries eleven more,
+ * lighter days so report 09's job-wide panels have something to break down, so
+ * a day-scoped report must NAME the day it means — the picker defaults to
+ * whichever day the list happens to start with.
+ *
+ * Selected by VALUE, not label: the option reads "1405/02/11 · #2", so matching
+ * on the label would also have to track the day's serial number.
+ */
+const DEMO_DAY = "1405/02/11";
 
 /** The reports with an assembler today; the rest still carry a "soon" badge. */
-const BUILT = ["01", "02", "03", "04", "05", "06", "07", "10", "11"] as const;
+const BUILT = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"] as const;
 
 /** The four totals report 01 computes, exactly as the sample prints them. */
 const EXPECTED_TOTALS = [
@@ -137,6 +147,7 @@ test.describe("Well Reports", () => {
       await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
       const dates = await page.getByLabel("Date", { exact: true }).locator("option").allTextContents();
       test.skip(dates.length === 0, "no day filed on the demo well");
+      await page.getByLabel("Date", { exact: true }).selectOption(DEMO_DAY);
 
       // The time log must account for the whole 24 hours — that is what the
       // sample's "Cum Dur" column reaching 24.00 asserts.
@@ -151,6 +162,7 @@ test.describe("Well Reports", () => {
     test(`report ${type} exports a PDF`, async ({ page }, testInfo) => {
       await page.getByTestId(`report-${type}`).click();
       await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      await page.getByLabel("Date", { exact: true }).selectOption(DEMO_DAY);
       await expect(page.getByText("hr of 24")).toBeVisible({ timeout: 15_000 });
 
       const dir = mkdtempSync(join(tmpdir(), "wellview-"));
@@ -279,6 +291,79 @@ test.describe("Well Reports", () => {
       await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
       const { statSync, readFileSync } = await import("node:fs");
       expect(statSync(path).size).toBeGreaterThan(5_000);
+      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    });
+  }
+
+  // Reports 08 and 09 are the two chart-only pages. Both rasterize their live
+  // Recharts surfaces, so both assert the SVG is mounted before exporting —
+  // the export throws rather than printing a blank panel, and a test that did
+  // not wait would be testing that error message.
+  test("report 08 draws the plan against the actual", async ({ page }) => {
+    await page.getByTestId("report-08").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Vertical Section", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("#wellview-vs-plot svg").first()).toBeVisible();
+    await expect(page.locator("#wellview-plan-plot svg").first()).toBeVisible();
+
+    // The extents line states what each curve reached: 9 plan stations to
+    // 2,760 mKB, 4 surveys to 299. If the two tables were ever merged these
+    // would collapse into one number.
+    await expect(page.getByText("2,760.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("299.00", { exact: true }).first()).toBeVisible();
+    // Both curves are in the station listing, each labelled with its source.
+    await expect(page.getByText("TD — Target A")).toBeVisible();
+    await expect(page.getByText("KOP", { exact: true })).toBeVisible();
+  });
+
+  test("report 09 breaks the job down four ways", async ({ page }) => {
+    await page.getByTestId("report-09").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText(/Time Breakdown by Code 1/)).toBeVisible({ timeout: 20_000 });
+    for (const id of [
+      "#wellview-summary-time", "#wellview-summary-cost",
+      "#wellview-summary-npt", "#wellview-summary-progress",
+    ]) {
+      await expect(page.locator(`${id} svg`).first()).toBeVisible();
+    }
+    // 12 days × 24 h. Both percentage panels are shares of THIS number, which
+    // is what stops NPT reading as a share of itself.
+    await expect(page.getByText("288.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("12", { exact: true }).first()).toBeVisible();
+    // The header band report 09 adds over the standard one.
+    // `.first()`: "Total Depth (mKB)" is in the header band AND the job row —
+    // the report states it twice, exactly as the sample does.
+    for (const label of ["Area", "Operator", "County", "E/W Ref", "N/S Ref", "Total Depth (mKB)"]) {
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+    }
+  });
+
+  for (const [type, chartId] of [
+    ["08", "#wellview-vs-plot"],
+    ["09", "#wellview-summary-progress"],
+  ] as const) {
+    test(`report ${type} exports a PDF with its charts`, async ({ page }, testInfo) => {
+      // Longer than the 30 s default on purpose: 09 rasterizes FOUR panels and
+      // lays them out on a legal-size landscape page with a 28-row table, and
+      // the default budget covers the click-to-download round trip alone.
+      test.setTimeout(120_000);
+      await page.getByTestId(`report-${type}`).click();
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      await expect(page.locator(`${chartId} svg`).first()).toBeVisible({ timeout: 20_000 });
+      await page.waitForTimeout(700);
+
+      const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 90_000 }),
+        page.getByRole("button", { name: "PDF" }).click(),
+      ]);
+      const path = join(dir, download.suggestedFilename());
+      await download.saveAs(path);
+      await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
+      const { statSync, readFileSync } = await import("node:fs");
+      // Rasterized panels make the file substantially bigger than a table-only
+      // report — a thin file here means an image never made it in.
+      expect(statSync(path).size).toBeGreaterThan(20_000);
       expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
     });
   }

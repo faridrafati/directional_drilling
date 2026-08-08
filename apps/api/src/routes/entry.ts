@@ -272,6 +272,15 @@ const wellSchema = z.object({
   finalForecastDepth: num, forecastDays: num,
   // Typed once per well: coordinates stay TEXT so the DMS reads exactly as printed.
   latitude: str, longitude: str, elevationNote: str, comment: str,
+  // ── the WellView header band every report in the suite prints ──
+  // These were added with the Tier 0 schema and seeded, but there was nowhere to
+  // TYPE them: the well form stopped at the DR.xls fields, so a user could not
+  // fill the block their own reports print. They are ordinary optional fields —
+  // a well with none of them still saves.
+  apiUwi: str, licenseNo: str, stateProvince: str, area: str, county: str,
+  groundElevation: num, casingFlangeElevation: num,
+  kbGroundDistance: num, kbCasingFlangeDistance: num,
+  ewDistance: num, ewRef: str, nsDistance: num, nsRef: str,
   active: z.boolean().default(true),
 });
 

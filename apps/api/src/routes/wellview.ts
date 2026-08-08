@@ -152,12 +152,21 @@ const bhaRunSchema = z.object({
     order: int0, sensorType: str, distFromBitM: num, note: str,
   })).default([]),
 });
+/**
+ * One station of the DIRECTIONAL PLAN. Replace-all: nothing points into a plan
+ * station, and the plan is re-issued as a whole listing when it changes.
+ */
+const planStationSchema = z.object({
+  order: int0, md: num, inc: num, azi: num, tvd: num,
+  ns: num, ew: num, vs: num, dls: num, comment: str,
+});
 const registersSchema = z.object({
   wellbores: z.array(wellboreSchema).default([]),
   bhaRuns: z.array(bhaRunSchema).default([]),
   lessons: z.array(lessonSchema).default([]),
   kicks: z.array(kickSchema).default([]),
   lostCirculation: z.array(lostCirculationSchema).default([]),
+  planStations: z.array(planStationSchema).default([]),
 });
 /** The rig's mud pumps. Id-stable for the same reason as the wellbores: the
  *  day's slow-circulation readings hang off them. */
@@ -440,7 +449,7 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
       if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
       const well = await prisma.entryWell.findUnique({ where: { id: wellId }, select: { rigId: true } });
       if (!well) return reply.code(404).send({ error: "not found" });
-      const [wellbores, bhaRuns, lessons, kicks, lostCirculation, mudPumps] = await Promise.all([
+      const [wellbores, bhaRuns, lessons, kicks, lostCirculation, mudPumps, planStations] = await Promise.all([
         prisma.entryWellbore.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
         prisma.entryBhaRun.findMany({
           where: { wellId }, orderBy: { bhaNo: "asc" },
@@ -456,6 +465,7 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
         // The pumps belong to the RIG, not the well — served here so the well's
         // editor can show them without a second round trip.
         prisma.entryMudPump.findMany({ where: { rigId: well.rigId }, orderBy: { order: "asc" } }),
+        prisma.wellPlanStation.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
       ]);
       return {
         wellbores,
@@ -467,7 +477,7 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
             order: s.order, sensorType: s.sensorType, distFromBitM: s.distFromBitM, note: s.note,
           })),
         })),
-        lessons, kicks, lostCirculation, mudPumps, rigId: well.rigId,
+        lessons, kicks, lostCirculation, mudPumps, planStations, rigId: well.rigId,
       };
     });
 
@@ -494,9 +504,11 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
         await tx.entryIntervalLesson.deleteMany({ where: { wellId } });
         await tx.entryKick.deleteMany({ where: { wellId } });
         await tx.entryLostCirculation.deleteMany({ where: { wellId } });
+        await tx.wellPlanStation.deleteMany({ where: { wellId } });
         if (body.lessons.length) await tx.entryIntervalLesson.createMany({ data: body.lessons.map((r) => ({ ...r, wellId })) });
         if (body.kicks.length) await tx.entryKick.createMany({ data: body.kicks.map((r) => ({ ...r, wellId })) });
         if (body.lostCirculation.length) await tx.entryLostCirculation.createMany({ data: body.lostCirculation.map((r) => ({ ...r, wellId })) });
+        if (body.planStations.length) await tx.wellPlanStation.createMany({ data: body.planStations.map((r) => ({ ...r, wellId })) });
 
         // The runs themselves come from the daily save; this only fills in the
         // facts that belong to the run as a whole. Scoped to this well so a

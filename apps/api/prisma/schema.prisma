@@ -268,6 +268,18 @@ model EntryWell {
   kbGroundDistance       Float?
   /// KB–Casing flange distance, metres.
   kbCasingFlangeDistance Float?
+  // ── report 09's header band (the three rows above its schematic) ──
+  /// "Area" — the operating area, a coarser grouping than `location`, which is
+  /// the surface legal location.
+  area                   String?
+  county                 String?
+  /// Surface offset from the legal subdivision corner, with its reference
+  /// letter. Two numbers and two letters, exactly as the sheet prints them:
+  /// "800.0 E" is not the same statement as "-800.0 W".
+  ewDistance             Float?
+  ewRef                  String?
+  nsDistance             Float?
+  nsRef                  String?
   active                 Boolean                @default(true)
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
@@ -282,6 +294,7 @@ model EntryWell {
   lessons                EntryIntervalLesson[]
   kicks                  EntryKick[]
   lostCirculation        EntryLostCirculation[]
+  planStations           WellPlanStation[]
 
   @@unique([rigId, name])
   @@index([rigId])
@@ -1686,6 +1699,36 @@ model EntryBhaSensor {
 /// A hole section — report 04's "Sections" block: what size was drilled, and
 /// between which depths. Well-level, and pointed at a wellbore because a
 /// sidetrack drills its own sections.
+/// One station of the DIRECTIONAL PLAN — the trajectory the well was designed
+/// to follow, typed from the plan listing the directional company issues.
+///
+/// Separate from `EntrySurvey`, which is the ACTUAL: a survey belongs to the day
+/// it was shot and is replaced wholesale when that day is re-saved, whereas the
+/// plan is issued once for the well and does not change when a day does. Report
+/// 08 draws one curve from each, and merging them into one table would make
+/// "plan vs actual" impossible to state.
+model WellPlanStation {
+  id     String @id @default(cuid())
+  wellId String
+  order  Int    @default(0)
+  md     Float?
+  inc    Float?
+  azi    Float?
+  tvd    Float?
+  /// North/south and east/west offsets from the surface location, metres.
+  ns     Float?
+  ew     Float?
+  /// Vertical section — the offset projected onto the plan's VS azimuth.
+  vs     Float?
+  dls    Float?
+  /// Free text: "KOP", "End of build", "Target A".
+  comment String?
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
 model HoleSection {
   id         String   @id @default(cuid())
   wellId     String

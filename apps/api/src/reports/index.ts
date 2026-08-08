@@ -21,6 +21,8 @@ import { buildDailyReport } from "./daily.js";
 import { buildReport02, buildReport03 } from "./bha.js";
 import { buildReport10, buildReport11 } from "./phases.js";
 import { buildReport04, buildReport05 } from "./casing.js";
+import { buildReport08 } from "./directional.js";
+import { buildReport09 } from "./summary.js";
 
 /** How a report is parameterized — the picker builds itself from this. */
 export type ReportParam = "well" | "job" | "date" | "dateRange" | "bhaRun" | "casingString" | "wells";
@@ -54,8 +56,8 @@ export const REPORT_CATALOG: CatalogEntry[] = [
   { type: "05", title: "Casing Summary", category: "Engineering", params: ["well"], exports: ["pdf"], available: true, blurb: "Every casing string with its component tally." },
   { type: "06", title: "Daily Drilling", category: "Daily", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "The one-page morning report." },
   { type: "07", title: "Daily Drilling — Detail", category: "Daily", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "The legal-size daily report: problems, lessons, kicks, losses, incidents." },
-  { type: "08", title: "Directional Plot — Plan vs Actual", category: "Engineering", params: ["well"], exports: ["pdf"], available: false, blurb: "Plan and vertical-section plots with the station table. Exists today on the calculation page." },
-  { type: "09", title: "Drilling Summary 1", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "The one-sheet dashboard: cost, time, NPT and depth-vs-days." },
+  { type: "08", title: "Directional Plot — Plan vs Actual", category: "Engineering", params: ["well"], exports: ["pdf"], available: true, blurb: "The planned trajectory against the surveys actually shot, in plan and vertical section." },
+  { type: "09", title: "Drilling Summary 1", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "The one-sheet dashboard: time by code, cost by description, NPT and depth-vs-days." },
   { type: "10", title: "Phases — Plan vs Actual", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "Each phase planned against actual, with the days-and-cost graph." },
   { type: "11", title: "Phase Summary Graph", category: "Engineering", params: ["well", "job"], exports: ["pdf"], available: true, blurb: "Phase durations and costs as bars." },
   { type: "12", title: "Daily Drilling Summary 2", category: "Cost & Multi-well", params: ["wells", "date"], exports: ["pdf"], available: false, blurb: "One block per well for a single day." },
@@ -119,6 +121,13 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
           if (!(await mayUseWell(prisma, req, wellId))) return reply.code(403).send({ error: "not your well" });
           return (await buildReport05(prisma, wellId)) ?? reply.code(404).send({ error: "no such well" });
         }
+        case "08": {
+          const wellId = (req.query.wellId ?? "").trim();
+          if (!wellId) return reply.code(400).send({ error: "this report needs a wellId" });
+          if (!(await mayUseWell(prisma, req, wellId))) return reply.code(403).send({ error: "not your well" });
+          return (await buildReport08(prisma, wellId)) ?? reply.code(404).send({ error: "no such well" });
+        }
+        case "09": return jobReport(req, reply, (jobId) => buildReport09(prisma, jobId));
         case "03": {
           const wellId = (req.query.wellId ?? "").trim();
           if (!wellId) return reply.code(400).send({ error: "this report needs a wellId" });

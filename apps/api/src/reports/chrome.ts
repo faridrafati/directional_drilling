@@ -48,6 +48,8 @@ export type HeaderVariant =
   | "standard"      // 01, 04, 05 — 6 + 6, drilling elevations
   | "dailyDrilling" // 06, 07     — 3 × 6, with the cost and weather cells
   | "wellJob"       // 10, 11     — well row, then a job row
+  | "plot"          // 08         — one row of 8, no field/state/spud
+  | "summary"       // 09         — 3 rows, with the surface offsets and TD
   | "none";         // 02, 15, 17, 19, 20, 25 — identity line only
 
 /** What every report's envelope carries. */
@@ -81,6 +83,16 @@ export interface WellHeaderSource {
   kbCasingFlangeDistance: number | null;
   spudDate: string | null;
   rigReleasedDate: string | null;
+  // ── report 09's wider band only ──
+  client?: string | null;
+  area?: string | null;
+  county?: string | null;
+  latitude?: string | null;
+  longitude?: string | null;
+  ewDistance?: number | null;
+  ewRef?: string | null;
+  nsDistance?: number | null;
+  nsRef?: string | null;
 }
 
 /**
@@ -105,6 +117,66 @@ export function standardWellHeader(w: WellHeaderSource): HeaderRow[] {
       { label: "Casing Flange Elevation (m)", value: w.casingFlangeElevation, kind: "decimal" },
       { label: "KB-Ground Distance (m)", value: w.kbGroundDistance, kind: "decimal" },
       { label: "KB-Casing Flange Distance (m)", value: w.kbCasingFlangeDistance, kind: "decimal" },
+      { label: "Spud Date", value: w.spudDate },
+      { label: "Rig Release Date", value: w.rigReleasedDate },
+    ],
+  ];
+}
+
+/**
+ * Report 08's header: ONE row of eight.
+ *
+ * Not `standardWellHeader` with cells removed — the sample drops Field Name,
+ * State/Province, Spud Date and Rig Release Date entirely and puts the four
+ * elevations on the same row as the identifiers. A plot page has one band above
+ * the plots, not two.
+ */
+export function plotWellHeader(w: WellHeaderSource): HeaderRow[] {
+  return [[
+    { label: "API/UWI", value: w.apiUwi },
+    { label: "Surface Legal Location", value: w.location },
+    { label: "License #", value: w.licenseNo },
+    { label: "Well Configuration Type", value: w.profile },
+    { label: "Ground Elevation (m)", value: w.groundElevation, kind: "decimal" },
+    { label: "Casing Flange Elevation (m)", value: w.casingFlangeElevation, kind: "decimal" },
+    { label: "KB-Ground Distance (m)", value: w.kbGroundDistance, kind: "decimal" },
+    { label: "KB-Casing Flange Distance (m)", value: w.kbCasingFlangeDistance, kind: "decimal" },
+  ]];
+}
+
+/**
+ * Report 09's header: three rows, the widest band in the suite.
+ *
+ * `totalDepth` is passed in rather than read off the well — it is the deepest
+ * depth the daily rows reached, which is a fact about the REPORTS, not about
+ * the well record.
+ */
+export function summaryWellHeader(w: WellHeaderSource, totalDepth: number | null): HeaderRow[] {
+  return [
+    [
+      { label: "API/UWI", value: w.apiUwi },
+      { label: "Field Name", value: w.field },
+      { label: "Area", value: w.area ?? null },
+      { label: "Operator", value: w.client ?? null },
+      { label: "County", value: w.county ?? null },
+      { label: "State/Province", value: w.stateProvince },
+    ],
+    [
+      { label: "Surface Legal Location", value: w.location, span: 2 },
+      { label: "East/West Distance (m)", value: w.ewDistance ?? null, kind: "decimal" },
+      { label: "E/W Ref", value: w.ewRef ?? null },
+      { label: "North/South Distance (m)", value: w.nsDistance ?? null, kind: "decimal" },
+      { label: "N/S Ref", value: w.nsRef ?? null },
+      // Printed as stored: the DMS text, never re-derived into decimal degrees.
+      { label: "Latitude (°)", value: w.latitude ?? null },
+      { label: "Longitude (°)", value: w.longitude ?? null },
+    ],
+    [
+      { label: "Gr Elev (m)", value: w.groundElevation, kind: "decimal" },
+      { label: "CF Elev (m)", value: w.casingFlangeElevation, kind: "decimal" },
+      { label: "KB-Ground Distance (m)", value: w.kbGroundDistance, kind: "decimal" },
+      { label: "KB-Casing Flange Distance (m)", value: w.kbCasingFlangeDistance, kind: "decimal" },
+      { label: "Total Depth (mKB)", value: totalDepth, kind: "decimal" },
       { label: "Spud Date", value: w.spudDate },
       { label: "Rig Release Date", value: w.rigReleasedDate },
     ],

@@ -29,7 +29,8 @@ import {
   wellviewApi, newRowId,
   type AfeRow, type CostCode, type CostItemRow, type JobBody, type JobDetail,
   type BhaRunRow, type JobListItem, type JobPhaseRow, type KickRow, type LessonRow,
-  type LostCirculationRow, type MudPumpRow, type WellRegisters, type WellboreRow,
+  type LostCirculationRow, type MudPumpRow, type PlanStationRow,
+  type WellRegisters, type WellboreRow,
   type WvCodeTables,
 } from "../../entry/wellview.js";
 import { Section, TextField, NumField, RowTable, type Col } from "./fields.js";
@@ -847,6 +848,7 @@ function RegistersPanel({ wellId }: { wellId: string }) {
         lessons: filledRows(draft.lessons),
         kicks: filledRows(draft.kicks),
         lostCirculation: filledRows(draft.lostCirculation),
+        planStations: filledRows(draft.planStations),
       });
       await wellviewApi.saveMudPumps(draft.rigId, filledRows(draft.mudPumps));
       await qc.invalidateQueries({ queryKey: ["wellview", "registers", wellId] });
@@ -1034,6 +1036,38 @@ function RegistersPanel({ wellId }: { wellId: string }) {
         })}
         addLabel="Loss" minRows={1} testId="loss"
       />
+      <div className="bg-gray-50 text-gray-500 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border-y border-gray-200">
+        Directional plan &mdash; report 08&rsquo;s planned curve
+      </div>
+      <RowTable
+        cols={[
+          { key: "md", label: "MD (mKB)", type: "num", width: "w-24" },
+          { key: "inc", label: "Inc (°)", type: "num", width: "w-20" },
+          { key: "azi", label: "Azi (°)", type: "num", width: "w-20" },
+          { key: "tvd", label: "TVD (mKB)", type: "num", width: "w-24" },
+          { key: "ns", label: "NS (m)", type: "num", width: "w-24", signed: true,
+            title: "Negative is south — the plan listing's own sign convention" },
+          { key: "ew", label: "EW (m)", type: "num", width: "w-24", signed: true,
+            title: "Negative is west" },
+          { key: "vs", label: "VS (m)", type: "num", width: "w-24", signed: true,
+            title: "Vertical section: the offset projected onto the plan's VS azimuth" },
+          { key: "dls", label: "DLS (°/30m)", type: "num", width: "w-24" },
+          { key: "comment", label: "Comment", placeholder: "KOP" },
+        ] as Col<PlanStationRow>[]}
+        rows={draft.planStations}
+        onChange={(rows) => set("planStations", rows)}
+        blank={() => ({
+          order: 0, md: null, inc: null, azi: null, tvd: null,
+          ns: null, ew: null, vs: null, dls: null, comment: null,
+        })}
+        addLabel="Plan station" minRows={2} testId="plan"
+      />
+      <div className="px-2 py-1.5 text-[11px] text-gray-400 leading-snug border-t border-gray-100">
+        This is the PLAN, typed from the directional company&rsquo;s listing. The actual curve report
+        08 draws beside it comes from the surveys entered on the daily sheets &mdash; nothing here is
+        re-typed from a survey.
+      </div>
+
       <div className="px-2 py-1.5 text-[11px] text-gray-400 leading-snug border-t border-gray-100">
         The day&rsquo;s lost volume stays on the daily mud check. These rows are the EVENT — an
         interval, a total, and the dates it spans — and report 07 reprints one on every day its

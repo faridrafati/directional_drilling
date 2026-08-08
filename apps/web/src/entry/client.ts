@@ -85,6 +85,16 @@ export interface EntryWell {
   elevationNote: string | null;
   /** Free text; on jack-ups the leg penetration, "Leg Pen.(m): FWD/STBD/PORT". */
   comment: string | null;
+  // ── the WellView header band, printed by every report in that suite ──
+  apiUwi: string | null; licenseNo: string | null; stateProvince: string | null;
+  /** Coarser than `location`, which is the surface legal location. */
+  area: string | null; county: string | null;
+  groundElevation: number | null; casingFlangeElevation: number | null;
+  kbGroundDistance: number | null; kbCasingFlangeDistance: number | null;
+  /** Surface offset from the subdivision corner, with its reference letter —
+   *  "800.0 E" is not the same statement as "-800.0 W". */
+  ewDistance: number | null; ewRef: string | null;
+  nsDistance: number | null; nsRef: string | null;
   active: boolean; rig: EntryRig;
   _count?: { reports: number; assignments?: number };
 }

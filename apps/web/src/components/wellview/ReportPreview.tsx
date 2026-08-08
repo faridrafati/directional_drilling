@@ -157,9 +157,14 @@ export function PreviewFooter({ printedOn }: { printedOn: string }) {
 }
 
 /** The white sheet a preview sits on, sized like the printed page. */
-export function PreviewSheet({ children }: { children: React.ReactNode }) {
+export function PreviewSheet({ children, wide }: {
+  children: React.ReactNode;
+  /** For the landscape reports — their PDFs are wider than letter portrait, and
+   *  a preview pinched to 850px would wrap columns the printed page does not. */
+  wide?: boolean;
+}) {
   return (
-    <div className="bg-white border border-gray-300 shadow-sm mx-auto p-3 max-w-[850px]">
+    <div className={`bg-white border border-gray-300 shadow-sm mx-auto p-3 ${wide ? "max-w-[1180px]" : "max-w-[850px]"}`}>
       {children}
     </div>
   );

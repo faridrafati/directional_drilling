@@ -146,6 +146,14 @@ async function main() {
     casingFlangeElevation: 0.0,
     kbGroundDistance: 18.5,
     kbCasingFlangeDistance: 64.0,
+    // Report 09's band adds these to the block above.
+    client: "POGC",
+    area: "South",
+    county: "Genaveh",
+    ewDistance: 800.0,
+    ewRef: "E",
+    nsDistance: 1_350.0,
+    nsRef: "N",
   };
   const well = await prisma.entryWell.upsert({
     where: { rigId_name: { rigId: rig.id, name: WELL_NAME } },
@@ -296,6 +304,29 @@ async function main() {
     },
   });
 
+  // ── the directional plan (report 08's planned curve) ────────────────────
+  // A vertical hold to the kick-off, a build to 42° through the intermediate
+  // section, then tangent to TD on a 118° azimuth. NS/EW/VS are the plan
+  // listing's own closure, typed as issued — the app never recomputes them.
+  await prisma.wellPlanStation.deleteMany({ where: { wellId: well.id } });
+  const planStations: [number, number, number, number, number, number, number, string | null][] = [
+    //  md      inc    azi     tvd      ns      ew      vs   comment
+    [0, 0, 0, 0, 0, 0, 0, "Surface"],
+    [420, 0, 0, 420.0, 0, 0, 0, "KOP"],
+    [600, 9.0, 118, 599.1, -6.6, 12.5, 14.1, null],
+    [900, 24.0, 118, 887.4, -46.6, 87.6, 99.2, null],
+    [1_200, 39.0, 118, 1_146.1, -128.6, 241.9, 274.0, "End of build"],
+    [1_500, 42.0, 118, 1_370.9, -223.6, 420.5, 476.4, null],
+    [2_000, 42.0, 118, 1_742.5, -380.7, 715.9, 811.0, null],
+    [2_500, 42.0, 118, 2_114.1, -537.9, 1_011.4, 1_145.7, null],
+    [2_760, 42.0, 118, 2_307.4, -619.6, 1_165.0, 1_319.7, "TD — Target A"],
+  ];
+  await prisma.wellPlanStation.createMany({
+    data: planStations.map(([md, inc, azi, tvd, ns, ew, vs, comment], i) => ({
+      wellId: well.id, order: i, md, inc, azi, tvd, ns, ew, vs, comment,
+    })),
+  });
+
   // ── the hole sections, casing strings and their cement (reports 04 / 05) ──
   await prisma.holeSection.deleteMany({ where: { wellId: well.id } });
   const sections = [
@@ -426,6 +457,7 @@ async function main() {
   // ── one fully-filled day, so reports 06 and 07 have something to print ──
   const admin = await prisma.entryUser.findFirst({ where: { role: "admin" }, orderBy: { createdAt: "asc" } });
   if (admin) await seedDay(well.id, admin.id, job.id, wellbores[0]?.id ?? null, pumps, bhaRun.id);
+  if (admin) await seedProgressDays(well.id, admin.id, job.id);
 
   // Attach any daily reports already filed on this well, so the day-scoped
   // reports have a job to hang off.
@@ -524,13 +556,22 @@ async function seedDay(
         ],
       },
       operations: {
-        create: log.map(([from, to, detail, code2, problem, remark], i) => ({
-          order: i, fromTime: from, toTime: to,
-          opCode: `G${Number(detail)}-P`, opLetter: "G", opDetail: detail,
-          timeIndicator: problem ? "T" : "P", opCode2: code2,
-          isProblem: problem, probHr: problem ? 0.5 : null, problemRef: problem ? 1 : null,
-          remarks: remark,
-        })),
+        create: log.map(([from, to, detail, code2, problem, remark], i) => {
+          // The MAIN OPERATION letter follows what the interval was actually
+          // doing, taken from its alpha code. Every row used to be stamped "G"
+          // (Casing/Liner Job) because nothing grouped by letter; report 09's
+          // time panel does, and a whole day under one letter is not a
+          // breakdown.
+          const letter = code2 === "CMT" ? "H" : code2 === "CSG" ? "G" : "E";
+          return {
+            order: i, fromTime: from, toTime: to,
+            opCode: `${letter}${Number(detail)}-${problem ? "U" : "P"}`,
+            opLetter: letter, opDetail: detail,
+            timeIndicator: problem ? "U" : "P", opCode2: code2,
+            isProblem: problem, probHr: problem ? 0.5 : null, problemRef: problem ? 1 : null,
+            remarks: remark,
+          };
+        }),
       },
       intervalProblems: {
         create: [{
@@ -603,10 +644,14 @@ async function seedDay(
           { order: 1, formation: "Mishan", progTopMd: 245, depth: 248.2 },
         ],
       },
+      // NS / EW / VS are carried because report 08 plots them; a station without
+      // them simply does not appear on the plan view.
       surveys: {
         create: [
-          { order: 0, md: 150, inc: 0.4, azi: 118, tvd: 149.98 },
-          { order: 1, md: 270, inc: 0.9, azi: 122, tvd: 269.9 },
+          { order: 0, md: 150, inc: 0.4, azi: 118, tvd: 149.98, ns: -0.2, ew: 0.5, vs: 0.5, dls: 0.1 },
+          { order: 1, md: 210, inc: 0.6, azi: 120, tvd: 209.96, ns: -0.5, ew: 1.0, vs: 1.1, dls: 0.1 },
+          { order: 2, md: 270, inc: 0.9, azi: 122, tvd: 269.9, ns: -0.9, ew: 1.7, vs: 1.9, dls: 0.15 },
+          { order: 3, md: 299, inc: 1.1, azi: 121, tvd: 298.6, ns: -1.2, ew: 2.2, vs: 2.5, dls: 0.2 },
         ],
       },
       drillingParameters: {
@@ -661,3 +706,100 @@ async function seedDay(
 main()
   .catch((e) => { console.error(e); process.exitCode = 1; })
   .finally(() => void prisma.$disconnect());
+
+/**
+ * The rest of the job's days, in outline.
+ *
+ * Report 09's four panels are a JOB-wide dashboard: one showcase day gives them
+ * a single bar and a single point, which proves nothing about the arithmetic.
+ * These days are deliberately thin — a depth, a coded time log that sums to 24
+ * hours, and a problem on two of them — because that is the shape of a real
+ * job's other days beside the one somebody wrote up in full.
+ *
+ * Each day's log is coded with the OIEC main-operation letters the app seeds, so
+ * report 09's time panel names its bars from the same table the entry editor
+ * validates against. They are all E (Drilling): this stretch of the job IS the
+ * 17-1/2" hole, and lost time is coded with the letter of the operation that was
+ * in progress and the U indicator, not with a letter of its own.
+ */
+async function seedProgressDays(wellId: string, userId: string, jobId: string) {
+  //   day  depth   [letter, code2, hours, problem hours, remark]
+  const days: [number, number, [string, string, number, number, string][]][] = [
+    [2, 512, [["E", "DRLG", 18, 0, "Drill 17-1/2\" hole"], ["E", "CIRC", 3, 0, "Circulate and condition mud"], ["E", "TRIP", 3, 0, "Wiper trip"]]],
+    [3, 748, [["E", "DRLG", 21, 0, "Drill 17-1/2\" hole"], ["E", "CIRC", 3, 0, "Circulate bottoms up"]]],
+    [4, 905, [["E", "DRLG", 14.5, 0, "Drill 17-1/2\" hole"], ["E", "TRIP", 4.5, 0, "POOH for bit change"], ["E", "RIGR", 5, 3.5, "Top drive fault — repair"]]],
+    [5, 1_180, [["E", "DRLG", 19, 0, "Drill 17-1/2\" hole"], ["E", "TRIP", 5, 0, "RIH with new bit"]]],
+    [6, 1_402, [["E", "DRLG", 20, 0, "Drill 17-1/2\" hole"], ["E", "SURV", 2, 0, "Survey and orient"], ["E", "CIRC", 2, 0, "Circulate"]]],
+    [7, 1_610, [["E", "DRLG", 16, 0, "Drill 17-1/2\" hole"], ["E", "HOLE", 4, 4, "Tight hole — ream and work string"], ["E", "CIRC", 4, 0, "Circulate hole clean"]]],
+    [8, 1_845, [["E", "DRLG", 22, 0, "Drill 17-1/2\" hole"], ["E", "SURV", 2, 0, "Survey"]]],
+    [9, 2_090, [["E", "DRLG", 21.5, 0, "Drill 17-1/2\" hole"], ["E", "CIRC", 2.5, 0, "Circulate"]]],
+    [10, 2_336, [["E", "DRLG", 20, 0, "Drill 17-1/2\" hole"], ["E", "TRIP", 4, 0, "Short trip"]]],
+    [11, 2_562, [["E", "DRLG", 19, 0, "Drill 17-1/2\" hole"], ["E", "CIRC", 3, 0, "Circulate"], ["E", "SURV", 2, 0, "Survey"]]],
+    // The last day changes MAIN OPERATION mid-shift: drilling stops at TD and
+    // the wireline unit takes the well, which is letter J, not E.
+    [12, 2_752, [["E", "DRLG", 12, 0, "Drill to TD"], ["E", "CIRC", 4, 0, "Circulate hole clean"], ["E", "TRIP", 3, 0, "POOH"], ["J", "LOG", 5, 0, "Rig up wireline and run open-hole logs"]]],
+  ];
+
+  /** "07:30" for 7.5 hours past midnight — the log is a clock, not a duration. */
+  const clock = (hours: number) => {
+    const total = Math.round(hours * 60) % 1440;
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  };
+
+  let previous = 299.0;
+  for (const [offset, depth, log] of days) {
+    const reportDate = day(offset);
+    const existing = await prisma.entryReport.findUnique({
+      where: { wellId_reportDate: { wellId, reportDate } },
+    });
+    if (existing) await prisma.entryReport.delete({ where: { id: existing.id } });
+
+    // Problems get their own register row so report 09's NPT panel has a NAME
+    // to group by — the operations reference it by ordinal, exactly as the
+    // daily editor's "Prob Ref #" does.
+    const problems = log
+      .map((entry, i) => ({ entry, i }))
+      .filter(({ entry }) => entry[3] > 0);
+
+    let elapsed = 0;
+    const operations = log.map(([letter, code2, hours, probHr, remarks], i) => {
+      const from = clock(elapsed);
+      elapsed += hours;
+      const problemIndex = problems.findIndex((p) => p.i === i);
+      return {
+        order: i,
+        opCode: `${letter}-${probHr > 0 ? "U" : "P"}`,
+        opLetter: letter,
+        timeIndicator: probHr > 0 ? "U" : "P",
+        opCode2: code2,
+        isProblem: probHr > 0,
+        probHr: probHr > 0 ? probHr : null,
+        problemRef: problemIndex >= 0 ? problemIndex + 1 : null,
+        fromTime: from,
+        toTime: clock(elapsed),
+        remarks,
+      };
+    });
+
+    await prisma.entryReport.create({
+      data: {
+        wellId, userId, jobId, serialNo: offset + 1, reportDate, status: "submitted",
+        previousDepth: previous, midnightDepth: depth,
+        holeSize: "17-1/2\" H.S.",
+        operations: { create: operations },
+        intervalProblems: {
+          create: problems.map(({ entry }, k) => ({
+            order: k,
+            problemType: entry[1] === "RIGR" ? "Rig Failure" : "Hole Trouble",
+            problemSubType: entry[4],
+            startDate: reportDate,
+            accountableParty: entry[1] === "RIGR" ? "Contractor" : "Operator",
+            estLostTimeHr: entry[3],
+          })),
+        },
+      },
+    });
+    previous = depth;
+  }
+  console.log(`progress days   ${days.length} light days seeded (job days 3-13)`);
+}
