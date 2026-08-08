@@ -545,6 +545,44 @@ export interface Report17Payload extends MultiWellEnvelope {
   totals: HeaderRow;
 }
 
+export interface MultiTimeLogRow {
+  startDate: string; endDate: string;
+  durHr: number | null; cumDurHr: number | null;
+  code1: string | null; code2: string | null; com: string | null;
+}
+export interface WellDayBlock {
+  wellId: string;
+  rigName: string | null;
+  identity: HeaderRow;
+  figures: HeaderRow[];
+  dailyContacts: string | null;
+  operationsSummary: string | null;
+  operationsNextPeriod: string | null;
+  timeLog: MultiTimeLogRow[];
+  /** Set when the well filed no day; the block prints this instead. */
+  noDay: string | null;
+}
+export interface Report12Payload extends MultiWellEnvelope {
+  /** The cap the blocks were chosen under, when one was given. */
+  asOf: string | null;
+  blocks: WellDayBlock[];
+}
+
+export interface OffsetPoint { x: number; y: number }
+export interface OffsetSeries { wellId: string; wellName: string; points: OffsetPoint[] }
+export interface OffsetPlot {
+  key: "daysDepth" | "spudDepth" | "daysCost" | "depthCost" | "mudDepth";
+  title: string; xLabel: string; yLabel: string;
+  /** True where the Y axis grows DOWNWARD — every depth axis in this suite. */
+  yReversed: boolean;
+  series: OffsetSeries[];
+  emptyReason: string | null;
+}
+export interface Report14Payload extends MultiWellEnvelope {
+  plots: OffsetPlot[];
+  totals: HeaderRow;
+}
+
 export interface KpiRow {
   wellName: string;
   afeSuppAmt: number | null; fieldEst: number | null; afeLessFieldEst: number | null;
@@ -584,7 +622,7 @@ export interface CatalogEntry {
   type: string;
   title: string;
   category: "Daily" | "Engineering" | "Cost & Multi-well" | "Geology" | "Completion";
-  params: ("well" | "job" | "date" | "dateRange" | "bhaRun" | "casingString" | "wells")[];
+  params: ("well" | "job" | "date" | "dateRange" | "asOf" | "bhaRun" | "casingString" | "wells")[];
   exports: ("pdf" | "xlsx")[];
   available: boolean;
   blurb: string;

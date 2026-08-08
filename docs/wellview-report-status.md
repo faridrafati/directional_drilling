@@ -87,15 +87,17 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | Entry UI — incident Com column and the sample's own category list | 2026-08-08 |
 | XLSX export path for the suite (`export/wellview/pivots.ts`), Excel button on `ReportPanel` | 2026-08-08 |
 | `WellRef.wellType` — report 16's filter block names it | 2026-08-08 |
+| `asOf` report param, distinct from `dateRange` — a cap, not a window | 2026-08-08 |
+| Demo seed — a second, faster, shallower OFFSET well with its own days and mud programme | 2026-08-08 |
 
 ## Tier 3 — cost & multi-well
 
 | # | Report | Spec read | Schema | Entry | Assembler | Preview | PDF | Verified |
 |---|---|---|---|---|---|---|---|---|
 | 01 | AFE vs Field Est vs Final Invoice | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 | 2026-08-07 |
-| 12 | Multi-well Daily Drilling Summary 2 | — | — | — | — | — | — | — |
+| 12 | Multi-well Daily Drilling Summary 2 | 2026-08-08 | n/a | n/a | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 | 13 | Multi-well Drilling KPIs (XLSX) | 2026-08-08 | n/a | n/a | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
-| 14 | Multi-well Drilling Offsets | — | — | — | — | — | — | — |
+| 14 | Multi-well Drilling Offsets | 2026-08-08 | n/a | n/a | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 | 15 | Problem Cost by Accountable Party | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 | 16 | Multi-well Phase Summary Pivot (XLSX) | 2026-08-08 | n/a | n/a | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
 | 17 | Multi-well Safety Incidents | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 | 2026-08-08 |
@@ -373,6 +375,39 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   and variance reproduce report 01's four totals by a different route, and 16's phase-duration Sum of
   25.46 days is the very figure report 10's last cumulative cell prints. Both are asserted in the E2E
   specs, so a change that breaks one of the pair fails loudly.
+- **2026-08-08 — report 12 shows each well's LATEST day, not one shared date.** The sample settles
+  it: its three blocks are dated 2002-04-14, 2001-06-27 and 2001-06-28 — three wells whose campaigns
+  did not overlap at all. A fleet summary answers "where is each of my wells", and a well that filed
+  nothing yesterday still has a last known position.
+- **2026-08-08 — `asOf` is a separate report param from `dateRange`.** A range is a window rows are
+  filtered into; "as of" is a cap on which day gets chosen. Report 12 has no meaning for a lower
+  bound, and sharing the param would have rendered a From box the report ignores.
+- **2026-08-08 — a well with no day gets a block that SAYS so.** An absent well reads as nothing; a
+  present one reads as "not drilling". The difference matters when the list is what you check
+  against at a morning meeting.
+- **2026-08-08 — report 12 prints "Days From Spud" even when it comes out NEGATIVE.** One demo well
+  has a legacy-imported day that predates its spud date, and the block prints −368.00. That is what
+  the data says, and hiding it would hide the inconsistency rather than the symptom. Same doctrine as
+  everywhere else in the suite: store what is entered, derive what is printed.
+- **2026-08-08 — "ahead" is PLANNED minus ACTUAL.** A positive Phase/Job Days Ahead means ahead of
+  schedule, which is the only reading of the word that does not need a footnote beside it.
+- **2026-08-08 — report 14's two day axes are different MEASUREMENTS, not one derived from the
+  other.** "Actual days" counts from a well's first filed report; "days from spud" counts from its
+  spud date. They diverge by exactly as long as the rig sat on location, and the sample plots both
+  because the first flatters a well that was late to spud. A well with no spud date has no series on
+  the second plot rather than a guessed one.
+- **2026-08-08 — an offset plot's colour is keyed on the WELL, not on the series' position.** A well
+  missing from one plot would otherwise shift every colour after it, and the same well would be blue
+  on one page and orange on the next.
+- **2026-08-08 — a plot with nothing to draw is not captured.** It prints its reason instead.
+  Demanding an SVG for every plot would fail the whole five-page export over a well that merely has
+  no mud checks.
+- **2026-08-08 — the demo seed gained a second well.** Report 14 compares wells against each other,
+  and an offset curve against nothing is not a comparison. "Sample 12 - Offset" is deliberately
+  thinner than the showcase well — a spud date, a job with dated cost lines and phases, and twelve
+  days carrying depth and a mud check — because that is what an offset actually looks like in the
+  database. It is drilled faster and shallower so the curves separate, and it spudded four days
+  after the rig arrived so the two day axes genuinely differ.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

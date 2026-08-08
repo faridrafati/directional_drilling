@@ -35,9 +35,15 @@ const DEMO_WELL = "Sample 11 - Full Data";
  * on the label would also have to track the day's serial number.
  */
 const DEMO_DAY = "1405/02/11";
+/**
+ * The second well the seed drills, so the multi-well reports have something to
+ * compare against — deliberately faster and shallower than the demo well.
+ */
+const OFFSET_WELL = "Sample 12 - Offset";
 
 /** The reports with an assembler today; the rest still carry a "soon" badge. */
-const BUILT = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "13", "15", "16", "17"] as const;
+const BUILT = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11",
+  "12", "13", "14", "15", "16", "17"] as const;
 
 /** The four totals report 01 computes, exactly as the sample prints them. */
 const EXPECTED_TOTALS = [
@@ -295,6 +301,80 @@ test.describe("Well Reports", () => {
     });
   }
 
+  // Reports 12 and 14 close Tier 3. Both compare wells against each other, so
+  // the seed carries a second, faster, shallower offset well — an offset curve
+  // against nothing is not a comparison.
+
+  test("report 12 gives every well its own block, on its own latest day", async ({ page }) => {
+    await page.getByTestId("report-12").click();
+    await expect(page.getByText("Daily Drilling Summary 2").first()).toBeVisible({ timeout: 20_000 });
+
+    // Both drilled wells get a block, each showing ITS last day — the demo well
+    // reached 2,752 mKB and the offset 2,112, on their own final reports.
+    await expect(page.getByText(DEMO_WELL).first()).toBeVisible();
+    await expect(page.getByText(OFFSET_WELL).first()).toBeVisible();
+    await expect(page.getByText("2,752.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("2,112.00", { exact: true }).first()).toBeVisible();
+
+    // The block carries the day's crew and narrative, not just its figures.
+    await expect(page.getByText("Daily Contacts", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/Drilled ahead to/).first()).toBeVisible();
+  });
+
+  test("report 12's As-of cap re-reads an older meeting", async ({ page }) => {
+    await page.getByTestId("report-12").click();
+    await expect(page.getByText("2,752.00", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+
+    // Cap at 1405/02/13. The demo well's block must fall back to that day's
+    // depth (748, not its final 2,752), and the offset well — which had not
+    // spudded — must SAY so rather than vanishing: an absent well reads as
+    // nothing, a present one as "not drilling yet".
+    await page.getByLabel("As of", { exact: true }).fill("1405/02/13");
+    await expect(page.getByText("748.00", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("2,752.00", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/No daily report filed on or before 1405\/02\/13/).first()).toBeVisible();
+  });
+
+  test("report 14 draws five offset plots, one series per well", async ({ page }) => {
+    await page.getByTestId("report-14").click();
+    await expect(page.getByText("Actual Days Vs Depth").first()).toBeVisible({ timeout: 20_000 });
+
+    for (const key of ["daysDepth", "spudDepth", "daysCost", "depthCost", "mudDepth"]) {
+      await expect(page.locator(`#wellview-offset-${key} svg`).first()).toBeVisible();
+    }
+    // The two day axes are DIFFERENT measurements — the second exists because
+    // the first flatters a well that was late to spud.
+    await expect(page.getByText("Days from Spud Vs Depth").first()).toBeVisible();
+    await expect(page.getByText("Mud WT. Vs Check Depth").first()).toBeVisible();
+    // Two wells have days; 24 day-points and 13 mud checks between them.
+    await expect(page.getByText("Wells With Days", { exact: true })).toBeVisible();
+    await expect(page.getByText("24", { exact: true }).first()).toBeVisible();
+  });
+
+  for (const type of ["12", "14"] as const) {
+    test(`report ${type} exports a PDF`, async ({ page }, testInfo) => {
+      test.setTimeout(120_000);
+      await page.getByTestId(`report-${type}`).click();
+      await expect(page.getByRole("button", { name: "PDF" })).toBeVisible({ timeout: 20_000 });
+      if (type === "14") {
+        // Five rasters: let every plot finish drawing before the capture.
+        await expect(page.locator("#wellview-offset-mudDepth svg").first()).toBeVisible({ timeout: 20_000 });
+        await page.waitForTimeout(900);
+      }
+      const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 90_000 }),
+        page.getByRole("button", { name: "PDF" }).click(),
+      ]);
+      const path = join(dir, download.suggestedFilename());
+      await download.saveAs(path);
+      await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
+      const { statSync, readFileSync } = await import("node:fs");
+      expect(statSync(path).size).toBeGreaterThan(5_000);
+      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    });
+  }
+
   // Reports 13 and 16 are the two pivots, and the first reports in the suite
   // with a spreadsheet export. Their figures are cross-checked against reports
   // that compute the same quantities a different way — 13's cost totals against
@@ -313,16 +393,34 @@ test.describe("Well Reports", () => {
     await expect(page.getByText("Grand Total", { exact: true })).toBeVisible();
   });
 
-  test("report 16 pivots the phase spine, and its sum matches report 10", async ({ page }) => {
+  test("report 16 pivots the phase spine across the set", async ({ page }) => {
     await page.getByTestId("report-16").click();
     await expect(page.getByText("Phase Summary Pivot").first()).toBeVisible({ timeout: 20_000 });
 
-    // Eight phases; their durations sum to 25.46 days — the very figure report
-    // 10's last cumulative cell prints, reached by a different route.
-    await expect(page.getByText("25.46", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("10.23", { exact: true }).first()).toBeVisible();
+    // Two wells drilled the same phase kinds, so those groups have a spread —
+    // which is the whole point of a pivot with Min, Max and StdDev in it.
     await expect(page.getByText("Drill-Deviation Control").first()).toBeVisible();
+    await expect(page.getByText("Run and Cement Casing").first()).toBeVisible();
     await expect(page.getByText("Grand Total", { exact: true })).toBeVisible();
+    // 13 measured phases across the two wells, 39.58 days between them.
+    await expect(page.getByText("39.58", { exact: true }).first()).toBeVisible();
+  });
+
+  test("report 16 narrowed to one well matches report 10's cumulative", async ({ page }) => {
+    await page.getByTestId("report-16").click();
+    await expect(page.getByText("Grand Total", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    // Narrow to the demo well alone. Its eight phases sum to 25.46 days — the
+    // very figure report 10's last cumulative cell prints, reached by a wholly
+    // different route. Cross-checking the two is why this test exists.
+    await page.getByTestId("well-set-picker").click();
+    for (const other of ["Dehloran-099", OFFSET_WELL]) {
+      await page.locator("label", { hasText: other }).locator("input[type=checkbox]").click();
+    }
+    await page.getByTestId("well-set-picker").click();
+
+    await expect(page.getByText("25.46", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("39.58", { exact: true })).toHaveCount(0);
   });
 
   for (const type of ["13", "16"] as const) {

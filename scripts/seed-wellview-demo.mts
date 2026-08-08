@@ -458,6 +458,7 @@ async function main() {
   const admin = await prisma.entryUser.findFirst({ where: { role: "admin" }, orderBy: { createdAt: "asc" } });
   if (admin) await seedDay(well.id, admin.id, job.id, wellbores[0]?.id ?? null, pumps, bhaRun.id);
   if (admin) await seedProgressDays(well.id, admin.id, job.id);
+  if (admin) await seedOffsetWell(rig.id, admin.id, codeIds);
 
   // Attach any daily reports already filed on this well, so the day-scoped
   // reports have a job to hang off.
@@ -829,6 +830,18 @@ async function seedProgressDays(wellId: string, userId: string, jobId: string) {
       data: {
         wellId, userId, jobId, serialNo: offset + 1, reportDate, status: "submitted",
         previousDepth: previous, midnightDepth: depth,
+        // Report 12 prints these on whichever day is a well's LATEST — which is
+        // one of these light days, not the showcase one.
+        description: `Drilled ahead to ${depth} mKB.`,
+        opsNextPeriod: log.some(([, c2]) => c2 === "LOG")
+          ? "Complete logging suite, then run production casing."
+          : "Continue drilling 17-1/2\" hole.",
+        supervisors: {
+          create: [
+            { order: 0, jobContact: "Hossein Nazari", position: "Drilling Foreman", mobile: "0912 100 4455" },
+            { order: 1, jobContact: "Mehdi Sadeghi", position: "Rig Manager", mobile: "0912 100 6677" },
+          ],
+        },
         // Report 13's "Drilling Hrs" column and its Avg. ROP are built from
         // this, not from the coded log: it is the field that MEANS rotating
         // hours, and one source beats reconciling two.
@@ -866,4 +879,137 @@ async function seedProgressDays(wellId: string, userId: string, jobId: string) {
     previous = depth;
   }
   console.log(`progress days   ${days.length} light days seeded (job days 3-13)`);
+}
+
+/**
+ * A second well on the same rig, so the OFFSET reports have something to compare
+ * against.
+ *
+ * Deliberately thinner than the showcase well: a spud date, a job with its cost
+ * lines and phases, and a run of days carrying depth and a mud check. That is
+ * what an offset actually looks like in the database — another well that was
+ * drilled, not a second demo fixture. It is also drilled FASTER and SHALLOWER,
+ * so report 14's curves separate instead of lying on top of each other, and it
+ * spudded four days after the rig arrived, so its "actual days" and "days from
+ * spud" axes genuinely differ — which is the whole reason the sample plots both.
+ */
+async function seedOffsetWell(
+  rigId: string,
+  userId: string,
+  codeIds: Map<string, string>,
+): Promise<void> {
+  const OFFSET_NAME = "Sample 12 - Offset";
+  const wellData = {
+    field: "Akuinu",
+    location: "Block 6, Pad 3",
+    wellType: "Development",
+    profile: "Vertical",
+    contractor: "NABORS",
+    client: "POGC",
+    // Four days after the rig moved on: the "actual days" axis starts at the
+    // first REPORT, the "days from spud" axis here.
+    spudDate: day(4),
+    rigReleasedDate: day(22),
+    rtElevation: 24.5,
+    apiUwi: "0987656790",
+    licenseNo: "8818839",
+    stateProvince: "Bushehr",
+    county: "Genaveh",
+    area: "South",
+    groundElevation: 6.2,
+    kbGroundDistance: 18.5,
+    latitude: "26° 45' 12.40\" N",
+    longitude: "52° 07' 55.10\" E",
+  };
+  const offset = await prisma.entryWell.upsert({
+    where: { rigId_name: { rigId, name: OFFSET_NAME } },
+    create: { rigId, name: OFFSET_NAME, ...wellData },
+    update: wellData,
+  });
+
+  await prisma.job.deleteMany({ where: { wellId: offset.id } });
+  const job = await prisma.job.create({
+    data: {
+      wellId: offset.id, order: 0, name: "Drilling - offset",
+      category: "Drilling", primaryJobType: "Drilling - original",
+      status1: "Complete",
+      startDate: day(4), endDate: day(22),
+      targetDepth: 2_100,
+      afes: { create: [{ order: 0, afeNumber: "9876544", description: "Offset well", amount: 7_400_000, approvedDate: day(2) }] },
+      phases: {
+        create: [
+          { order: 0, phaseType1: "Mob and Rig up", phaseType2: "Mob and Rig up", actualStartDate: `${day(3)} 06:00`, actualEndDate: `${day(4)} 12:00`, plan: { create: { durMostLikelyDays: 1.1 } } },
+          { order: 1, phaseType1: "Surface", phaseType2: "Drill-Vertical", actualStartDate: `${day(4)} 12:00`, actualEndDate: `${day(6)} 08:00`, plan: { create: { durMostLikelyDays: 1.6 } } },
+          { order: 2, phaseType1: "Surface", phaseType2: "Run and Cement Casing", actualStartDate: `${day(6)} 08:00`, actualEndDate: `${day(7)} 04:00`, plan: { create: { durMostLikelyDays: 0.9 } } },
+          { order: 3, phaseType1: "Production", phaseType2: "Drill-Vertical", actualStartDate: `${day(7)} 04:00`, actualEndDate: `${day(16)} 18:00`, plan: { create: { durMostLikelyDays: 9.0 } } },
+          { order: 4, phaseType1: "Production", phaseType2: "Log", actualStartDate: `${day(16)} 18:00`, actualEndDate: `${day(17)} 09:00`, plan: { create: { durMostLikelyDays: 0.5 } } },
+        ],
+      },
+    },
+  });
+
+  // A handful of cost lines against codes the demo already created, dated
+  // across the campaign so report 14's cost curves have a shape.
+  const costLines: [string, string, number, number][] = [
+    ["7000", "7010", 4, 1_980_000],   // Rig Operating Rate
+    ["3000", "3110", 6, 402_000],     // Drilling & completion fluids
+    ["2700", "2760", 7, 168_000],     // Casing - Surface
+    ["4000", "4110", 12, 610_000],    // Directional Drilling Services
+    ["7000", "7010", 14, 1_640_000],
+    ["5000", "5210", 17, 96_000],     // Electric logging
+  ];
+  for (const [code1, code2, offsetDay, amount] of costLines) {
+    const costCodeId = codeIds.get(`${code1}/${code2}`) ?? null;
+    await prisma.costItem.create({
+      data: {
+        jobId: job.id, order: 0, costCodeId,
+        fieldEstimate: amount, costDate: day(offsetDay),
+      },
+    });
+  }
+
+  //  offset day, midnight depth, mud density (ppg), mud check depth
+  const days: [number, number, number, number][] = [
+    [5, 260, 9.1, 260], [6, 640, 9.2, 640], [7, 705, 9.2, 705],
+    [8, 980, 9.4, 980], [9, 1_255, 9.5, 1_255], [10, 1_460, 9.6, 1_460],
+    [11, 1_690, 9.8, 1_690], [12, 1_845, 9.9, 1_845], [13, 1_970, 10.1, 1_970],
+    [14, 2_040, 10.2, 2_040], [15, 2_095, 10.2, 2_095], [16, 2_112, 10.3, 2_112],
+  ];
+  let previous = 0;
+  for (const [offsetDay, depth, density, checkDepth] of days) {
+    const reportDate = day(offsetDay);
+    const existing = await prisma.entryReport.findUnique({
+      where: { wellId_reportDate: { wellId: offset.id, reportDate } },
+    });
+    if (existing) await prisma.entryReport.delete({ where: { id: existing.id } });
+    await prisma.entryReport.create({
+      data: {
+        wellId: offset.id, userId, jobId: job.id, serialNo: offsetDay - 4,
+        reportDate, status: "submitted",
+        previousDepth: previous, midnightDepth: depth,
+        description: `Drilled ahead to ${depth} mKB.`,
+        opsNextPeriod: "Continue drilling 12-1/4\" hole.",
+        drillingTime: 18,
+        operations: {
+          create: [
+            { order: 0, opCode: "E3-P", opLetter: "E", opDetail: "03", timeIndicator: "P", opCode2: "DRLG", fromTime: "00:00", toTime: "18:00", remarks: "Drill 12-1/4\" hole" },
+            { order: 1, opCode: "E7-P", opLetter: "E", opDetail: "07", timeIndicator: "P", opCode2: "CIRC", fromTime: "18:00", toTime: "21:00", remarks: "Circulate and condition mud" },
+            { order: 2, opCode: "E4-P", opLetter: "E", opDetail: "04", timeIndicator: "P", opCode2: "TRIP", fromTime: "21:00", toTime: "00:00", remarks: "Survey and short trip" },
+          ],
+        },
+        supervisors: {
+          create: [
+            { order: 0, jobContact: "Reza Ahmadi", position: "Drilling Foreman", mobile: "0912 300 1188" },
+            { order: 1, jobContact: "Ali Karimi", position: "Rig Manager", mobile: "0912 300 2299" },
+          ],
+        },
+        mud: { create: { mudSystem: "KCl-Polymer", depthMkb: checkDepth, densityMinPpg: density - 0.1, densityMaxPpg: density } },
+        companies: {
+          create: [{ order: 0, company: "NABORS", personnelType: "Contractor", count: 26, totWorkTimeHr: 312 }],
+        },
+      },
+    });
+    previous = depth;
+  }
+  console.log(`offset well     ${OFFSET_NAME} — ${days.length} days, ${costLines.length} cost lines`);
 }

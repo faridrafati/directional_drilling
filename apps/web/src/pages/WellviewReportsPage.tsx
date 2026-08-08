@@ -22,6 +22,7 @@ import {
   type Report01Payload, type Report02Payload, type Report03Payload,
   type Report04Payload, type Report05Payload,
   type Report08Payload, type Report09Payload,
+  type Report12Payload, type Report14Payload,
   type Report13Payload, type Report16Payload,
   type Report15Payload, type Report17Payload,
   type Report10Payload, type Report11Payload,
@@ -35,6 +36,7 @@ import { Report08Preview } from "../components/wellview/DirectionalPreview.js";
 import { Report09Preview } from "../components/wellview/SummaryPreview.js";
 import { Report15Preview, Report17Preview } from "../components/wellview/MultiWellPreview.js";
 import { Report13Preview, Report16Preview } from "../components/wellview/PivotPreview.js";
+import { Report12Preview, Report14Preview } from "../components/wellview/OffsetPreview.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -241,6 +243,17 @@ function Inner() {
                             onChange={setWellIds}
                           />
                         )}
+                        {entry.params.includes("asOf") && (
+                          <Picker label="As of">
+                            {(id) => (
+                              <input
+                                id={id} value={to} onChange={(e) => setTo(e.target.value)}
+                                placeholder="1405/02/22"
+                                className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white w-[120px]"
+                              />
+                            )}
+                          </Picker>
+                        )}
                         {entry.params.includes("dateRange") && (
                           <>
                             <Picker label="From">
@@ -409,6 +422,27 @@ function Inner() {
                         render={(p) => <Report05Preview payload={p} />}
                         exporter={async (p) => (await import("../export/wellview/casing.js")).exportReport05Pdf(p)}
                         empty="Pick a well above."
+                      />
+                    ) : entry.type === "12" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "12", wellSetParam, to]}
+                        enabled
+                        load={() => wellviewApi.reportData<Report12Payload>("12", {
+                          ...(wellSetParam ? { wellIds: wellSetParam } : {}), ...(to ? { to } : {}),
+                        })}
+                        render={(p) => <Report12Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/offsets.js")).exportReport12Pdf(p)}
+                        empty="No well available."
+                      />
+                    ) : entry.type === "14" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "14", wellSetParam]}
+                        enabled
+                        load={() => wellviewApi.reportData<Report14Payload>("14",
+                          wellSetParam ? { wellIds: wellSetParam } : {})}
+                        render={(p) => <Report14Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/offsets.js")).exportReport14Pdf(p)}
+                        empty="No well available."
                       />
                     ) : entry.type === "13" ? (
                       <ReportPanel
