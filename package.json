@@ -16,7 +16,7 @@
     "build:grd": "npm --workspace packages/grd run build",
     "build:api": "npm --workspace apps/api run build",
     "build:web": "npm --workspace apps/web run build",
-    "test": "npm --workspace packages/shared run test && npm --workspace packages/grd run test",
+    "test": "npm --workspace packages/shared run test && npm --workspace packages/grd run test && npm --workspace apps/api run test",
     "db:migrate": "npm --workspace apps/api run db:migrate",
     "db:generate": "npm --workspace apps/api run db:generate",
     "db:seed:wellview": "tsx scripts/seed-wellview-demo.mts"

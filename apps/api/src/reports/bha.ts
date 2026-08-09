@@ -326,7 +326,12 @@ export async function buildReport03(
     orderBy: { bhaNo: "asc" },
     include: RUN_INCLUDE,
   });
-  const job = jobId ? await prisma.job.findUnique({ where: { id: jobId } }) : null;
+  // Scoped to the well, not looked up by id alone: the caller is authorized for
+  // THIS well, and an unscoped findUnique would hand back any job whose id was
+  // guessed or pasted — its type is printed in the identity line.
+  const job = jobId
+    ? await prisma.job.findFirst({ where: { id: jobId, wellId } })
+    : null;
 
   return {
     type: "03",

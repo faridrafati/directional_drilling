@@ -66,11 +66,21 @@ const bitRunSchema = z.object({
   bitChangeIn: str, bitChangeOut: str,
   // Report 06 prints the bit's own length on the drill-string block.
   lengthM: num,
+  // Reports 02/06/07 print this. It MUST be here even though nothing types it
+  // yet: the PUT deletes and recreates every bit run, so a key absent from this
+  // schema is not merely un-typeable, it is DELETED on the next save of a day
+  // that already had it.
+  itemCost: num,
 });
 /** One item in a string's make-up — a.json `drill_strings[].components`. */
 const drillStringComponentSchema = z.object({
   order: int0, itemDes: str, serv: str, sn: str, odIn: num, idIn: num,
   jts: intOrNull, lenM: num, cumLenM: num, topThread: str, com: str,
+  // The five columns report 02 prints down the right of its component table.
+  // Same reason as bitRunSchema.itemCost: components are recreated wholesale on
+  // every save, so a missing key here silently wipes stored data rather than
+  // just failing to accept new data.
+  massPerLenKgM: num, grade: str, driftIn: num, gaugeIn: num, connections: str,
 });
 /**
  * a.json `drill_strings` — one entry per BHA run in the day, components nested.
@@ -125,6 +135,10 @@ const chemicalSchema = z.object({
 /** a.json `casing_string`. `depth` is set_depth_mkb — the shoe; `topMkb` the hanger. */
 const casingSchema = z.object({
   order: int0, casing: str, depth: num, joints: num, runDate: str, topMkb: num, com: str,
+  // Which STRING this day's run belongs to. Nothing sets it today, so nothing is
+  // lost by its absence — but a run that cannot name its string is a run report
+  // 05 cannot roll up, and the column has been sitting unreachable.
+  casingStringId: str,
 });
 /** a.json `wellhead_component` — the stack as installed, one row per spool/head. */
 const wellheadSchema = z.object({
@@ -194,7 +208,15 @@ const drillingParameterSchema = z.object({
   qGasInjM3Min: num, tInjC: num, pBhAnnPsi: num, tBhC: num,
   pSurfAnnulusPsi: num, tSurfAnnulusC: num, qLiqReturnGpm: num, qGasReturnM3Min: num,
 });
-const timeSchema = z.object({ order: int0, group: str, type: str, activity: str, hours: num });
+// `phaseId` links the entry to a job phase — the same unreachable-link case as
+// casingStringId above: stored, never settable, so report 16's phase spine can
+// only ever be built from the phase table rather than from the day's own hours.
+const timeSchema = z.object({
+  order: int0, group: str, type: str, activity: str, hours: num, phaseId: str,
+  // The OIEC coding a time entry carries in its own right — the same three
+  // columns the operation log codes with, stored here and never accepted.
+  opLetter: str, opDetail: str, timeIndicator: str,
+});
 const operationSchema = z.object({
   order: int0, opCode: str, fromTime: str, toTime: str, remarks: str,
   // ── OIEC coding (advisory) + report 07's problem columns ──

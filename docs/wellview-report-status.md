@@ -572,6 +572,50 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   is not this box's admin password, and every spec then fails on a 401 that looks like a broken app.
   Run it as `ENTRY_USER=… ENTRY_PASSWORD=… npx playwright test`.
 
+### 2026-08-10 — the six-dimension audit, and two defects it found
+
+A second, wider audit ran over the whole mission — entry coverage, fidelity to
+the samples, the export surface, this document against the code, unfinished code,
+and verification debt — with each dimension's claims then attacked by a skeptic.
+65 findings survived. Two were acted on immediately because they were live
+defects rather than gaps, and both are recorded here because both were invisible
+to every test the project had.
+
+- **A no-op save destroyed stored data.** `PUT /entry/reports/:id` deletes and
+  recreates a day's children wholesale, and `z.object()` strips keys it does not
+  declare. Six columns were in Prisma, printed by reports 02/06/07, and ABSENT
+  from their zod schemas — `itemCost` on a bit run, and `driftIn`, `gaugeIn`,
+  `connections`, `massPerLenKgM`, `grade` on a drill-string component. Opening
+  the seeded demo day and pressing Save with nothing edited wiped `gaugeIn` 17.5
+  → null, `connections` "6 5/8 REG" → null and `itemCost` 48,500 → null.
+  Reproduced, fixed, and re-verified round-tripping unchanged.
+- **Report 03 read a job it had not authorized.** The route checks the WELL and
+  then passed `req.query.jobId` into an unscoped `findUnique`, printing that
+  job's `primaryJobType` in the identity line. Now `findFirst({ id, wellId })`,
+  so the job must belong to the well the caller was cleared for.
+
+Why nothing caught either: every test in the suite asserts what a report
+RENDERS, and a report renders a blank cell perfectly happily. The fix is a
+STRUCTURAL test — `apps/api/src/routes/entry-schema-parity.test.ts` — that reads
+schema.prisma and entry.ts and asserts every scalar column of every daily-report
+child is accepted by the schema that parses it. It needs no database and no
+browser. It also brought `apps/api` into `npm test` for the first time; the root
+script ran only `packages/shared` and `packages/grd`, so 9,000 lines of API code
+had never been under `npm test` at all.
+
+Running it across all 30 child models found four more stored-but-unreachable
+columns beyond the six: `casingStringId` on a daily casing run, and `phaseId`,
+`opLetter`, `opDetail`, `timeIndicator` on a time entry. None held data yet, so
+nothing was being lost — but a casing run that cannot name its string is one
+report 05 cannot roll up. All are now accepted; the pickers are still to build.
+
+One note on the guard itself: its first cut matched a zod body with
+`/const X = z\.object\(\{([\s\S]*?)\n\}\)/`, which runs straight past a
+single-line schema into whatever is declared next and returns the union of both
+schemas' keys — a false PASS, which is the one failure mode a guard like this
+must not have. It hid three columns until an unrelated edit made the schema
+multi-line. It now counts braces.
+
 ### 2026-08-09 — the gap audit, and what filling it changed
 
 Every one of the 30 endpoints was hit with a script that flags empty arrays and all-null header
