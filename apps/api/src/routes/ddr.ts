@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 // PDC / roller series as its L05 equivalent.
 import { bitClass } from "@dd/shared/drilling";
 import {
-  ddrAvailable, listWells, listReports, getReport, getWell, getAnalytics,
+  ddrAvailable, ddrDbDir, ddrSearchedPaths, listWells, listReports, getReport, getWell, getAnalytics,
   getFormationMatrix, getLithologyTable, getLithologyGraph, getMudProperties, type FormationMatrixFilters,
   getFormationPrognosis, type FormationPrognosisFilters,
   getMudStock, type MudStockFilters,
@@ -29,9 +29,18 @@ import {
  */
 export async function registerDdrRoutes(app: FastifyInstance, prisma: PrismaClient) {
   const unavailable = (reply: FastifyReply) =>
-    reply.code(503).send({ error: "DDR database not found on this machine" });
+    reply.code(503).send({
+      error: "DDR database not found on this machine",
+      // The paths, not just the verdict: the archive is gitignored and has moved
+      // between layouts, so "not found" without "looked here" is undiagnosable.
+      searched: ddrSearchedPaths(),
+    });
 
-  app.get("/ddr/status", async () => ({ available: ddrAvailable() }));
+  app.get("/ddr/status", async () => ({
+    available: ddrAvailable(),
+    dbDir: ddrDbDir(),
+    searched: ddrSearchedPaths(),
+  }));
 
   app.get("/ddr/search-groups", async (_req, reply) => {
     if (!ddrAvailable()) return unavailable(reply);

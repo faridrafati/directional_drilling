@@ -33,11 +33,51 @@ import {
 type Row = Record<string, unknown>;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DB_DIR = process.env.DDR_DB_DIR ?? join(HERE, "..", "..", "..", "..", "old", "old_report_code");
+const REPO = join(HERE, "..", "..", "..", "..");
+
+/**
+ * WHERE THE LEGACY DBs LIVE — resolved by SEARCHING, not by one hard-coded path.
+ *
+ * new.sqlite is 438 MB and gitignored, so it is wherever a given machine happens
+ * to keep it, and that location has already moved twice: the tree was
+ * `old_report_code/` at fd7119b, became `old/old_report_code/` when the legacy
+ * Delphi trees were relocated in 9b6534d, and on a machine where only the two
+ * .sqlite files were kept rather than the whole Delphi tree they sit in
+ * `sqlite_DB/`. A single hard-coded default turns every one of those layouts
+ * into a bare "not found on this machine" with no clue which path was wanted —
+ * which is exactly how this surfaced.
+ *
+ * The first candidate that actually CONTAINS new.sqlite wins. DDR_DB_DIR still
+ * overrides everything, and remains the answer for a machine that keeps the
+ * archive outside the repo altogether.
+ */
+const DB_CANDIDATES: string[] = [
+  process.env.DDR_DB_DIR,
+  join(REPO, "old", "old_report_code"),
+  join(REPO, "old_report_code"),
+  join(REPO, "sqlite_DB"),
+].filter((d): d is string => !!d);
+
+/** Every place we looked — reported by /ddr/status so a miss is diagnosable. */
+export const ddrSearchedPaths = (): string[] => [...DB_CANDIDATES];
+
+const DB_DIR = DB_CANDIDATES.find((d) => existsSync(join(d, "new.sqlite"))) ?? DB_CANDIDATES[0];
+export const ddrDbDir = (): string => DB_DIR;
+
 const DATA_DB = join(DB_DIR, "new.sqlite");
 const LOOKUP_DB = join(DB_DIR, "DB.sqlite");
-/** Geological lithology pattern tiles (DDR-Delphi/LITHO/<HatchName>.bmp). */
-const LITHO_DIR = join(DB_DIR, "DDR-Delphi", "LITHO");
+/**
+ * Geological lithology pattern tiles (DDR-Delphi/LITHO/<HatchName>.bmp).
+ *
+ * Resolved independently of the DBs: a machine that kept only the two .sqlite
+ * files has no Delphi tree at all, and the tiles may sit beside a DIFFERENT
+ * candidate than the one the DBs were found in. Every reader below already
+ * treats an absent folder as "no tiles", so a miss degrades the hatch patterns
+ * rather than the page.
+ */
+const LITHO_DIR = DB_CANDIDATES
+  .map((d) => join(d, "DDR-Delphi", "LITHO"))
+  .find((d) => existsSync(d)) ?? join(DB_DIR, "DDR-Delphi", "LITHO");
 
 let _data: DatabaseSync | null = null;
 let _lookupConn: DatabaseSync | null = null;

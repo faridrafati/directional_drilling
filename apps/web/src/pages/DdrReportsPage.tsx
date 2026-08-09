@@ -65,7 +65,8 @@ export function DdrReportsPage() {
 
   const statusQ = useQuery({
     queryKey: ["ddr", "status"],
-    queryFn: () => api.get<{ available: boolean }>("/ddr/status"),
+    queryFn: () =>
+      api.get<{ available: boolean; dbDir: string; searched: string[] }>("/ddr/status"),
   });
   const detailQ = useQuery({
     queryKey: ["ddr", "detail", report?.wellCode, report?.serialNo],
@@ -98,7 +99,19 @@ export function DdrReportsPage() {
 
         {statusQ.data && !statusQ.data.available && (
           <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg shadow-sm text-sm text-red-700">
-            The DDR SQLite databases were not found on this machine — search and reports are unavailable.
+            <div>
+              The DDR SQLite databases were not found on this machine — search and reports are unavailable.
+            </div>
+            {/* The paths, not just the verdict. The archive is gitignored and has
+                lived in three different folders, so "not found" on its own sends
+                whoever sees it hunting through the source for the default. */}
+            {statusQ.data.searched?.length > 0 && (
+              <div className="mt-1 text-xs text-red-600/90">
+                Looked for <code className="font-mono">new.sqlite</code> in:{" "}
+                {statusQ.data.searched.join(", ")}. Set <code className="font-mono">DDR_DB_DIR</code>{" "}
+                to point at the folder that holds it.
+              </div>
+            )}
           </div>
         )}
 
