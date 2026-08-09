@@ -316,6 +316,8 @@ const wellSchema = z.object({
   groundElevation: num, casingFlangeElevation: num,
   kbGroundDistance: num, kbCasingFlangeDistance: num,
   ewDistance: num, ewRef: str, nsDistance: num, nsRef: str,
+  // ── the completion header (reports 24, 28, 30) ──
+  thElevation: num, kbTubingHeadDistance: num, otherElevation: num, directionsToWell: str,
   active: z.boolean().default(true),
 });
 

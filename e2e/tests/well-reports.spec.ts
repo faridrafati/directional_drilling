@@ -43,7 +43,8 @@ const OFFSET_WELL = "Sample 12 - Offset";
 
 /** The reports with an assembler today; the rest still carry a "soon" badge. */
 const BUILT = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11",
-  "12", "13", "14", "15", "16", "17", "18", "19", "20", "21"] as const;
+  "12", "13", "14", "15", "16", "17", "18", "19", "20", "21",
+  "22", "23", "24", "25", "26", "27", "28", "29", "30"] as const;
 
 /** The four totals report 01 computes, exactly as the sample prints them. */
 const EXPECTED_TOTALS = [
@@ -289,6 +290,121 @@ test.describe("Well Reports", () => {
       const dir = mkdtempSync(join(tmpdir(), "wellview-"));
       const [download] = await Promise.all([
         page.waitForEvent("download", { timeout: 30_000 }),
+        page.getByRole("button", { name: "PDF" }).click(),
+      ]);
+      const path = join(dir, download.suggestedFilename());
+      await download.saveAs(path);
+      await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
+      const { statSync, readFileSync } = await import("node:fs");
+      expect(statSync(path).size).toBeGreaterThan(5_000);
+      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    });
+  }
+
+  // ── Tier 5: the completion reports ────────────────────────────────────────
+  // Nine reports over the completion tables. Five of them draw the SHARED
+  // schematic, so the loop below asserts the picture is drawn on each rather
+  // than trusting that fixing it once fixed it everywhere.
+  for (const [type, needsDay] of [
+    ["22", false], ["23", true], ["24", false], ["26", false],
+    ["27", false], ["28", false], ["29", false], ["30", false],
+  ] as const) {
+    test(`report ${type} assembles from the completion tables`, async ({ page }) => {
+      test.setTimeout(60_000);
+      await page.getByTestId(`report-${type}`).click();
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      if (needsDay) await page.getByLabel("Date", { exact: true }).selectOption(DEMO_DAY);
+      // Every one of them names the well and reaches its footer, which only
+      // renders once the whole payload has been laid out.
+      //
+      // The identity LABEL, not the well name: the first match for the name is
+      // the hidden <option> inside the well picker, and asserting that would
+      // pass whether or not the report rendered at all.
+      await expect(page.getByText("Report Printed:").first()).toBeVisible({ timeout: 25_000 });
+      await expect(page.getByText("Well Name:", { exact: true }).first()).toBeVisible();
+    });
+  }
+
+  for (const type of ["22", "23", "24", "26", "28", "29"] as const) {
+    test(`report ${type} draws the schematic with the completion string`, async ({ page }) => {
+      test.setTimeout(60_000);
+      await page.getByTestId(`report-${type}`).click();
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      if (type === "23") await page.getByLabel("Date", { exact: true }).selectOption(DEMO_DAY);
+      const svg = page.locator(`#wellview-schematic-${type} svg`).first();
+      await expect(svg).toBeVisible({ timeout: 25_000 });
+      expect(await svg.locator("rect").count()).toBeGreaterThan(4);
+    });
+  }
+
+  test("report 26 reads a perforation's state off the END of its history", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.getByTestId("report-26").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Perforation Statuses").first()).toBeVisible({ timeout: 25_000 });
+
+    // Three perforations; the third was squeezed, so only two are open now —
+    // and the squeeze is still printed, because it is why that zone is dead.
+    await expect(page.getByText("Currently Open", { exact: true })).toBeVisible();
+    await expect(page.getByText("Squeezed").first()).toBeVisible();
+    await expect(page.getByText(/Water cut rose/)).toBeVisible();
+  });
+
+  test("report 27 prints the newest period first and plots the decline", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.getByTestId("report-27").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText(/Most Recent at Top/)).toBeVisible({ timeout: 25_000 });
+    await expect(page.locator("#wellview-production-curve svg").first()).toBeVisible();
+    // 12 periods; the gas rate has its OWN axis because MCF/day is an order of
+    // magnitude from the liquid rates.
+    await expect(page.getByText("Rate reservoir gas").first()).toBeVisible();
+    await expect(page.getByText("Cum Oil (bbl)", { exact: true })).toBeVisible();
+  });
+
+  test("report 25 stacks failure cost and keeps the unclassified separate", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.getByTestId("report-25").click();
+    await expect(page.getByText("Cost of Failure by Type").first()).toBeVisible({ timeout: 25_000 });
+    await expect(page.locator("#wellview-failure-cost svg").first()).toBeVisible();
+    // 186,000 + 94,500 + 240,000 + 38,000 + 42,000.
+    await expect(page.getByText("600,500.00", { exact: true }).first()).toBeVisible();
+    // The unclassified failure is its own bar, not folded into "Other".
+    await expect(page.getByText("(blank)").first()).toBeVisible();
+    await expect(page.getByText("Unclassified", { exact: true })).toBeVisible();
+  });
+
+  test("report 29 draws the prognosis beside what was built", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.getByTestId("report-29").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Proposed", { exact: true })).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByText("Actual", { exact: true })).toBeVisible();
+    // TWO pictures, not one overlaid.
+    await expect(page.locator("#wellview-schematic-29-proposed svg").first()).toBeVisible();
+    await expect(page.locator("#wellview-schematic-29 svg").first()).toBeVisible();
+    // Planned TD 2,760 against an actual 2,752 — a 8 m difference.
+    await expect(page.getByText("2,760.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Difference (m)", { exact: true })).toBeVisible();
+  });
+
+  for (const [type, needsDay] of [
+    ["22", false], ["23", true], ["24", false], ["25", false], ["26", false],
+    ["27", false], ["28", false], ["29", false], ["30", false],
+  ] as const) {
+    test(`report ${type} exports a PDF`, async ({ page }, testInfo) => {
+      test.setTimeout(120_000);
+      await page.getByTestId(`report-${type}`).click();
+      if (type !== "25") {
+        await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      }
+      if (needsDay) await page.getByLabel("Date", { exact: true }).selectOption(DEMO_DAY);
+      await expect(page.getByRole("button", { name: "PDF" })).toBeVisible({ timeout: 25_000 });
+      // Let every SVG on the page finish drawing — the export captures them.
+      await page.waitForTimeout(1_200);
+      const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 90_000 }),
         page.getByRole("button", { name: "PDF" }).click(),
       ]);
       const path = join(dir, download.suggestedFilename());

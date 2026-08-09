@@ -33,6 +33,8 @@ const COLOURS = {
   holeEdge: "#a8a093",
   casing: "#9aa4b2",
   casingEdge: "#475569",
+  completion: "#fbbf24",
+  completionEdge: "#b45309",
   cement: "#b9c7d6",
   cementEdge: "#64748b",
   shoe: "#1f2937",
@@ -180,6 +182,30 @@ export function WellboreSchematic({ payload, width = 260, height = 420, reportTy
         {payload.casingStrings.map((c, i) =>
           band(c, halfWidth(c.odIn, widestIn, maxHalf) * 0.74, COLOURS.casing, COLOURS.casingEdge, `csg-${i}`))}
 
+        {/* the completion string, INSIDE the casing and in its own colour: a
+            reader has to be able to tell tubing from the pipe it hangs in */}
+        {payload.completionItems.map((c, i) => {
+          const half = Math.max(2.5, halfWidth(c.odIn, widestIn, maxHalf) * 0.4);
+          const y1 = scale.yOf(c.topMkb);
+          const y2 = scale.yOf(c.btmMkb);
+          const h = Math.max(1.5, y2 - y1);
+          return (
+            <g key={`comp-${i}`}>
+              <rect
+                x={centre - half} y={y1} width={half * 2} height={h}
+                fill={COLOURS.completion} stroke={COLOURS.completionEdge} strokeWidth={0.6}
+              />
+              {/* Short items (a valve, a nipple) are the ones worth naming; a
+                  2,300 m tubing run needs no label to be recognised. */}
+              {h < 26 && (
+                <text x={centre + half + 4} y={y1 + 5} fontSize={6} fill="#78350f">
+                  {(c.label ?? "").slice(0, 24)}
+                </text>
+              )}
+            </g>
+          );
+        })}
+
         {/* shoes: a mark at a depth, never a band */}
         {payload.shoes.map((s, i) => {
           const y = scale.yOf(s.topMkb);
@@ -219,6 +245,7 @@ export function SchematicLegend() {
     ["Open hole", COLOURS.hole],
     ["Cement", COLOURS.cement],
     ["Casing", COLOURS.casing],
+    ["Completion", COLOURS.completion],
     ["Shoe", COLOURS.shoe],
   ];
   return (

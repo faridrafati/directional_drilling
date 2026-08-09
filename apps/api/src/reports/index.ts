@@ -29,6 +29,10 @@ import { buildReport12 } from "./dailyMulti.js";
 import { buildReport14 } from "./offsets.js";
 import { buildReport18, buildReport19, buildReport20 } from "./geology.js";
 import { buildReport21 } from "./schematic.js";
+import {
+  buildReport22, buildReport24, buildReport26, buildReport28, buildReport29, buildReport30,
+} from "./completion.js";
+import { buildReport23, buildReport25, buildReport27 } from "./production.js";
 
 /** How a report is parameterized — the picker builds itself from this. */
 /**
@@ -85,15 +89,15 @@ export const REPORT_CATALOG: CatalogEntry[] = [
   { type: "19", title: "Formation Performance", category: "Geology", params: ["well"], exports: ["pdf"], available: true, blurb: "Every formation predicted against drilled, with the ROP through each." },
   { type: "20", title: "Geological Program", category: "Geology", params: ["well"], exports: ["pdf"], available: true, blurb: "The programme: prognosed formations, sampling requirements and the contact sheet." },
   { type: "21", title: "Geological Schematic", category: "Geology", params: ["well"], exports: ["pdf"], available: true, blurb: "The wellbore section with its formations, lithology, mud and drilling parameters." },
-  { type: "22", title: "Complete Well Summary", category: "Completion", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "The whole well dossier." },
-  { type: "23", title: "Daily Completion and Workover", category: "Completion", params: ["well", "date"], exports: ["pdf"], available: false, blurb: "The daily completion report with its schematic." },
-  { type: "24", title: "Downhole Well Profile", category: "Completion", params: ["well"], exports: ["pdf"], available: false, blurb: "Casing, tubing, rods and perforations against depth." },
-  { type: "25", title: "Cost of Failure by Type", category: "Completion", params: ["wells"], exports: ["pdf", "xlsx"], available: false, blurb: "Failure cost pivot and graphs." },
-  { type: "26", title: "Perforations", category: "Completion", params: ["well"], exports: ["pdf"], available: false, blurb: "Every perforation run with its statuses." },
-  { type: "27", title: "Production & Maintenance History", category: "Completion", params: ["well"], exports: ["pdf"], available: false, blurb: "Production periods against maintenance events." },
-  { type: "28", title: "Schematic — Current", category: "Completion", params: ["well"], exports: ["pdf"], available: false, blurb: "The wellbore as it stands." },
-  { type: "29", title: "Schematic — Proposed vs Actual", category: "Completion", params: ["well"], exports: ["pdf"], available: false, blurb: "Proposed beside actual." },
-  { type: "30", title: "Well Summary", category: "Completion", params: ["well"], exports: ["pdf"], available: false, blurb: "The well's whole life on two pages." },
+  { type: "22", title: "Complete Well Summary", category: "Completion", params: ["well"], exports: ["pdf"], available: true, blurb: "Everything the well is: schematic, sections, formations, casing, tubing and perforations." },
+  { type: "23", title: "Daily Completion and Workover", category: "Completion", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "One completion or workover day, beside the schematic it produced." },
+  { type: "24", title: "Downhole Well Profile", category: "Completion", params: ["well"], exports: ["pdf"], available: true, blurb: "The schematic with the wellhead, casing, perforations and tubing beside it." },
+  { type: "25", title: "Cost of Failure by Type", category: "Completion", params: ["wells"], exports: ["pdf", "xlsx"], available: true, blurb: "Failure cost per well, stacked by failure type." },
+  { type: "26", title: "Perforations", category: "Completion", params: ["well"], exports: ["pdf"], available: true, blurb: "Every perforation with its gun, its pressures and its status history." },
+  { type: "27", title: "Production & Maintenance History", category: "Completion", params: ["well"], exports: ["pdf"], available: true, blurb: "Production period by period, with the oil, water and gas rate curves." },
+  { type: "28", title: "Schematic — Current", category: "Completion", params: ["well"], exports: ["pdf"], available: true, blurb: "The well as it stands now, and the job that made it so." },
+  { type: "29", title: "Schematic — Proposed vs Actual", category: "Completion", params: ["well"], exports: ["pdf"], available: true, blurb: "The prognosis drawn against what was actually built." },
+  { type: "30", title: "Well Summary", category: "Completion", params: ["well"], exports: ["pdf"], available: true, blurb: "The register: wellheads, wellbores, casing strings and their cement." },
 ];
 
 export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaClient) {
@@ -138,6 +142,15 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
         }
         // 12 takes the range's UPPER bound only: "as of" is a cap on which day
         // each well's block is chosen from, not a window to filter days into.
+        case "22": return wellReport(req, reply, (id) => buildReport22(prisma, id));
+        case "23": return dayReport(req, reply, (id) => buildReport23(prisma, id));
+        case "24": return wellReport(req, reply, (id) => buildReport24(prisma, id));
+        case "25": return buildReport25(prisma, await wellSet(req, req.query.wellIds));
+        case "26": return wellReport(req, reply, (id) => buildReport26(prisma, id));
+        case "27": return wellReport(req, reply, (id) => buildReport27(prisma, id));
+        case "28": return wellReport(req, reply, (id) => buildReport28(prisma, id));
+        case "29": return wellReport(req, reply, (id) => buildReport29(prisma, id));
+        case "30": return wellReport(req, reply, (id) => buildReport30(prisma, id));
         case "21": {
           const wellId = (req.query.wellId ?? "").trim();
           if (!wellId) return reply.code(400).send({ error: "this report needs a wellId" });
@@ -235,6 +248,27 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
   /** The optional Jalali from/to a multi-well report is filtered by. */
   function dateRange(from: string | undefined, to: string | undefined) {
     return { from: (from ?? "").trim() || undefined, to: (to ?? "").trim() || undefined };
+  }
+
+  /**
+   * Shared preamble for a WELL-scoped report: resolve, then authorize.
+   *
+   * Nine reports repeating the same six lines is where one of them eventually
+   * forgets the access check.
+   */
+  async function wellReport<T>(
+    req: FastifyRequest<{ Querystring: { wellId?: string } }>,
+    reply: FastifyReply,
+    build: (wellId: string) => Promise<T | null>,
+  ) {
+    const wellId = (req.query.wellId ?? "").trim();
+    if (!wellId) return reply.code(400).send({ error: "this report needs a wellId" });
+    if (!(await mayUseWell(prisma, req, wellId))) {
+      return reply.code(403).send({ error: "not your well" });
+    }
+    const payload = await build(wellId);
+    if (!payload) return reply.code(404).send({ error: "no such well" });
+    return payload;
   }
 
   /** Shared preamble for every job-scoped report: resolve, then authorize. */

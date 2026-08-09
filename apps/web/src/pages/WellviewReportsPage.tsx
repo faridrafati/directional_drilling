@@ -25,6 +25,9 @@ import {
   type Report12Payload, type Report14Payload,
   type Report18Payload, type Report19Payload, type Report20Payload,
   type Report21Payload,
+  type Report22Payload, type Report23Payload, type Report24Payload, type Report25Payload,
+  type Report26Payload, type Report27Payload, type Report28Payload, type Report29Payload,
+  type Report30Payload,
   type Report13Payload, type Report16Payload,
   type Report15Payload, type Report17Payload,
   type Report10Payload, type Report11Payload,
@@ -41,6 +44,11 @@ import { Report13Preview, Report16Preview } from "../components/wellview/PivotPr
 import { Report12Preview, Report14Preview } from "../components/wellview/OffsetPreview.js";
 import { Report18Preview, Report19Preview, Report20Preview } from "../components/wellview/GeologyPreview.js";
 import { Report21Preview } from "../components/wellview/SchematicPreview.js";
+import {
+  Report22Preview, Report23Preview, Report24Preview,
+  Report26Preview, Report28Preview, Report29Preview, Report30Preview,
+} from "../components/wellview/CompletionPreview.js";
+import { Report25Preview, Report27Preview } from "../components/wellview/ProductionPreview.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -426,6 +434,88 @@ function Inner() {
                         render={(p) => <Report05Preview payload={p} />}
                         exporter={async (p) => (await import("../export/wellview/casing.js")).exportReport05Pdf(p)}
                         empty="Pick a well above."
+                      />
+                    ) : entry.type === "22" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "22", wellId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report22Payload>("22", { wellId })}
+                        render={(p) => <Report22Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/completion.js")).exportReport22Pdf(p)}
+                        empty="Pick a well above."
+                      />
+                    ) : entry.type === "24" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "24", wellId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report24Payload>("24", { wellId })}
+                        render={(p) => <Report24Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/completion.js")).exportReport24Pdf(p)}
+                        empty="Pick a well above."
+                      />
+                    ) : entry.type === "26" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "26", wellId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report26Payload>("26", { wellId })}
+                        render={(p) => <Report26Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/completion.js")).exportReport26Pdf(p)}
+                        empty="Pick a well above."
+                      />
+                    ) : entry.type === "27" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "27", wellId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report27Payload>("27", { wellId })}
+                        render={(p) => <Report27Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/completion.js")).exportReport27Pdf(p)}
+                        empty="Pick a well above."
+                      />
+                    ) : entry.type === "28" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "28", wellId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report28Payload>("28", { wellId })}
+                        render={(p) => <Report28Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/completion.js")).exportReport28Pdf(p)}
+                        empty="Pick a well above."
+                      />
+                    ) : entry.type === "29" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "29", wellId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report29Payload>("29", { wellId })}
+                        render={(p) => <Report29Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/completion.js")).exportReport29Pdf(p)}
+                        empty="Pick a well above."
+                      />
+                    ) : entry.type === "30" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "30", wellId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report30Payload>("30", { wellId })}
+                        render={(p) => <Report30Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/completion.js")).exportReport30Pdf(p)}
+                        empty="Pick a well above."
+                      />
+                    ) : entry.type === "23" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "23", wellId, date]}
+                        enabled={!!wellId && !!date}
+                        load={() => wellviewApi.reportData<Report23Payload>("23", { wellId, date })}
+                        render={(p) => <Report23Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/completion.js")).exportReport23Pdf(p)}
+                        empty="Pick a day above."
+                      />
+                    ) : entry.type === "25" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "25", wellSetParam]}
+                        enabled
+                        load={() => wellviewApi.reportData<Report25Payload>("25",
+                          wellSetParam ? { wellIds: wellSetParam } : {})}
+                        render={(p) => <Report25Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/completion.js")).exportReport25Pdf(p)}
+                        empty="No well available."
                       />
                     ) : entry.type === "21" ? (
                       <ReportPanel

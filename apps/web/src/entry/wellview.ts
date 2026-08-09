@@ -558,6 +558,86 @@ export interface Report17Payload extends MultiWellEnvelope {
   totals: HeaderRow;
 }
 
+/* ── the well's completion sheet (Tier 5) ──────────────────────────────────── */
+/**
+ * A COMPLETION ZONE — what a perforation is shot into and production allocated
+ * to. Separate from a reservoir: a zone can commingle two reservoirs, and a
+ * reservoir can be completed in two zones.
+ */
+export interface WellZoneRow {
+  id: string | null; order: number; wellboreId: string | null;
+  name: string | null; topMkb: number | null; btmMkb: number | null; status: string | null;
+}
+export interface ReservoirRow {
+  order: number; name: string | null; topMkb: number | null; btmMkb: number | null;
+  datumDepthM: number | null; fluidType: string | null;
+}
+export interface PerforationStatusRow {
+  order: number; date: string | null; status: string | null; com: string | null;
+}
+export interface PerforationRow {
+  order: number; zoneId: string | null; date: string | null; time: string | null;
+  topMkb: number | null; btmMkb: number | null;
+  company: string | null; conveyanceMethod: string | null;
+  gunSizeIn: string | null; carrierMake: string | null;
+  shotDensityPerM: number | null; chargeType: string | null; phasingDeg: number | null;
+  orientation: string | null; orientationMethod: string | null;
+  overUnderBalanced: string | null; pOverUnderPsi: number | null;
+  flMdBeforeMkb: number | null; flMdAfterMkb: number | null;
+  pSurfInitPsi: number | null; pFinalSurfPsi: number | null;
+  referenceLog: string | null;
+  statuses: PerforationStatusRow[];
+}
+export interface TubingComponentRow {
+  order: number; itemDes: string | null; jts: number | null;
+  make: string | null; model: string | null;
+  odIn: string | null; idIn: number | null; massPerLenKgM: number | null;
+  grade: string | null; lenM: number | null;
+  topMkb: number | null; btmMkb: number | null; serialNo: string | null;
+}
+export interface TubingStringRow {
+  order: number; wellboreId: string | null; description: string | null;
+  runDate: string | null; stringLengthM: number | null; setDepthMkb: number | null;
+  components: TubingComponentRow[];
+}
+export interface PlugBackRow {
+  order: number; date: string | null; depthMkb: number | null;
+  method: string | null; com: string | null;
+}
+export interface DeviationSurveyRow {
+  order: number; date: string | null; des: string | null;
+  proposed: boolean | null; definitive: boolean | null; company: string | null;
+}
+export interface ProductionPeriodRow {
+  order: number; zoneId: string | null;
+  startDate: string | null; endDate: string | null; activityType: string | null;
+  prodTimeDays: number | null; downTimeDays: number | null;
+  volOilBbl: number | null; volWaterBbl: number | null; volResGasMcf: number | null;
+  qOilBblD: number | null; qWaterBblD: number | null; qResGasMcfD: number | null;
+  waterGasRatioPct: number | null; com: string | null;
+}
+export interface EquipmentFailureRow {
+  order: number; date: string | null; failureType: string | null;
+  componentDes: string | null; cost: number | null;
+  accountableParty: string | null; com: string | null;
+}
+export interface StimulationRow {
+  order: number; zoneId: string | null; date: string | null; time: string | null;
+  type: string | null; deliveryMode: string | null; company: string | null;
+  volumeM3: number | null; com: string | null;
+}
+export interface CompletionSheet {
+  zones: WellZoneRow[];
+  reservoirs: ReservoirRow[];
+  perforations: PerforationRow[];
+  tubingStrings: TubingStringRow[];
+  plugBacks: PlugBackRow[];
+  deviationSurveys: DeviationSurveyRow[];
+  productionPeriods: ProductionPeriodRow[];
+  equipmentFailures: EquipmentFailureRow[];
+  stimulations: StimulationRow[];
+}
+
 /* ── the shared wellbore schematic (02, 04, 09, 21, 24, 28, 29) ───────────── */
 /** One drawn interval, in metres below KB. */
 export interface SchematicInterval {
@@ -575,8 +655,147 @@ export interface SchematicPayload {
   formations: SchematicInterval[];
   /** Shoes are a mark at a depth: top and btm are the same number. */
   shoes: SchematicInterval[];
+  /** The completion string inside the casing — tubing, TRSSV, packer. */
+  completionItems: SchematicInterval[];
   /** Why the picture is empty, when it is — printed instead of a blank frame. */
   emptyReason: string | null;
+}
+
+/* ── Tier 5: the completion reports (22–30) ────────────────────────────────── */
+export interface PerforationBlock {
+  header: HeaderRow[];
+  statuses: { date: string | null; status: string | null; com: string | null }[];
+}
+export interface TubingBlock {
+  caption: string;
+  header: HeaderRow;
+  components: {
+    itemDes: string | null; jts: number | null; make: string | null; model: string | null;
+    odIn: string | null; idIn: number | null; massPerLenKgM: number | null;
+    grade: string | null; lenM: number | null;
+    topMkb: number | null; btmMkb: number | null; serialNo: string | null;
+  }[];
+}
+
+export interface Report22Payload extends ReportEnvelope {
+  identity: HeaderRow[];
+  caption: string;
+  schematic: SchematicPayload;
+  wellbore: HeaderRow;
+  holeSections: { sizeIn: string | null; actTopMkb: number | null; actBtmMkb: number | null }[];
+  plugBacks: { date: string | null; depthMkb: number | null; method: string | null; com: string | null }[];
+  formations: {
+    name: string | null; elementType: string | null; h2sConcPct: number | null;
+    finalTopMd: number | null; finalTopTvd: number | null;
+  }[];
+  deviationSurveys: { date: string | null; des: string | null; proposed: boolean | null; definitive: boolean | null }[];
+  reservoirs: { name: string | null; topMkb: number | null; btmMkb: number | null; datumDepthM: number | null }[];
+  casingStrings: {
+    caption: string; runDate: string | null; centralizers: string | null;
+    scratchers: string | null; minDriftIn: number | null;
+  }[];
+  tubingStrings: TubingBlock[];
+  perforations: { date: string | null; zone: string | null; topMkb: number | null; btmMkb: number | null }[];
+  totals: HeaderRow;
+}
+
+export interface Report23Payload extends ReportEnvelope {
+  identityRight: string | null;
+  completionHeader: HeaderRow;
+  caption: string;
+  schematic: SchematicPayload;
+  jobHeader: HeaderRow[];
+  dailyReadings: HeaderRow;
+  contacts: { jobContact: string | null; title: string | null; mobile: string | null }[];
+  timeLog: {
+    startTime: string | null; endTime: string | null; durHr: number | null;
+    code1: string | null; code2: string | null; com: string | null;
+  }[];
+  fluids: { fluid: string | null; toWellBbl: number | null; fromWellBbl: number | null }[];
+  safetyChecks: { time: string | null; des: string | null; type: string | null; com: string | null }[];
+  logs: { time: string | null; type: string | null; topMkb: number | null; btmMkb: number | null }[];
+  perforations: { date: string | null; zone: string | null; topMkb: number | null; btmMkb: number | null; status: string | null }[];
+  stimulations: { date: string | null; time: string | null; zone: string | null; type: string | null; deliveryMode: string | null; company: string | null }[];
+}
+
+export interface Report24Payload extends ReportEnvelope {
+  completionHeader: HeaderRow;
+  caption: string;
+  schematic: SchematicPayload;
+  wellhead: { des: string | null; make: string | null; model: string | null; sn: string | null; wpTopPsi: number | null }[];
+  casingStrings: {
+    description: string | null; odIn: string | null; massPerLenKgM: number | null;
+    grade: string | null; topThread: string | null; setDepthMkb: number | null;
+  }[];
+  perforations: { date: string | null; topMkb: number | null; btmMkb: number | null; zone: string | null }[];
+  tubingStrings: TubingBlock[];
+}
+
+export interface FailureCostCell {
+  well: string; failureType: string; cost: number; count: number;
+}
+export interface Report25Payload extends MultiWellEnvelope {
+  wellTotals: { well: string; cost: number; count: number }[];
+  failureTypes: string[];
+  cells: FailureCostCell[];
+  totals: HeaderRow;
+}
+
+export interface Report26Payload extends ReportEnvelope {
+  completionHeader: HeaderRow;
+  caption: string;
+  schematic: SchematicPayload;
+  perforations: PerforationBlock[];
+  totals: HeaderRow;
+}
+
+export interface ProductionRow {
+  startDate: string | null; endDate: string | null;
+  activityType: string | null; zone: string | null;
+  prodTimeDays: number | null; downTimeDays: number | null;
+  volResGasMcf: number | null; volOilBbl: number | null; volWaterBbl: number | null;
+  qResGasMcfD: number | null; qOilBblD: number | null; qWaterBblD: number | null;
+  waterGasRatioPct: number | null;
+}
+export interface Report27Payload extends ReportEnvelope {
+  filterLine: string | null;
+  rows: ProductionRow[];
+  curve: { endDate: string; qOilBblD: number | null; qWaterBblD: number | null; qResGasMcfD: number | null }[];
+  totals: HeaderRow;
+}
+
+export interface Report28Payload extends ReportEnvelope {
+  completionHeader: HeaderRow;
+  caption: string;
+  mostRecentJob: HeaderRow | null;
+  totalDepthLine: string | null;
+  schematic: SchematicPayload;
+}
+
+export interface Report29Payload extends ReportEnvelope {
+  caption: string;
+  actual: SchematicPayload;
+  proposed: SchematicPayload;
+  comparison: HeaderRow;
+  noProposal: string | null;
+}
+
+export interface Report30Payload extends ReportEnvelope {
+  identity: HeaderRow[];
+  elevations: HeaderRow;
+  directionsToWell: string | null;
+  wellhead: { type: string | null; make: string | null; wpPsi: number | null; service: string | null }[];
+  wellbores: { name: string | null; parent: string | null; profile: string | null; koMdMkb: number | null }[];
+  casingStrings: {
+    description: string | null; runDate: string | null; odIn: string | null; idIn: number | null;
+    massPerLenKgM: number | null; grade: string | null; setDepthMkb: number | null;
+  }[];
+  cementJobs: {
+    caption: string; company: string | null;
+    stage: HeaderRow;
+    fluids: { description: string | null; type: string | null; amountSacks: number | null; cementClass: string | null }[];
+  }[];
+  totals: HeaderRow;
 }
 
 /* ── report 21 ─────────────────────────────────────────────────────────────── */
@@ -823,6 +1042,9 @@ export const wellviewApi = {
   attachReports: (id: string) => entryApi.post<{ attached: number }>(`/jobs/${id}/attach-reports`),
   casing: (wellId: string) => entryApi.get<CasingSheet>(`/wells/${wellId}/casing`),
   geology: (wellId: string) => entryApi.get<GeologySheet>(`/wells/${wellId}/geology`),
+  completion: (wellId: string) => entryApi.get<CompletionSheet>(`/wells/${wellId}/completion`),
+  saveCompletion: (wellId: string, body: CompletionSheet) =>
+    entryApi.put<void>(`/wells/${wellId}/completion`, body),
   saveGeology: (wellId: string, body: GeologySheet) =>
     entryApi.put<void>(`/wells/${wellId}/geology`, body),
   saveCasing: (wellId: string, body: CasingSheet) =>

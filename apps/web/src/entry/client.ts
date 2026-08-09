@@ -95,6 +95,9 @@ export interface EntryWell {
    *  "800.0 E" is not the same statement as "-800.0 W". */
   ewDistance: number | null; ewRef: string | null;
   nsDistance: number | null; nsRef: string | null;
+  // ── the completion header (reports 24, 28, 30) ──
+  thElevation: number | null; kbTubingHeadDistance: number | null;
+  otherElevation: number | null; directionsToWell: string | null;
   active: boolean; rig: EntryRig;
   _count?: { reports: number; assignments?: number };
 }

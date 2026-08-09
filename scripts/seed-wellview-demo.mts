@@ -154,6 +154,11 @@ async function main() {
     ewRef: "E",
     nsDistance: 1_350.0,
     nsRef: "N",
+    // Reports 24, 28 and 30 print the completion datum.
+    thElevation: 24.9,
+    kbTubingHeadDistance: 18.9,
+    otherElevation: 18.0,
+    directionsToWell: "Head 42 km south on the Genaveh road, then 6 km east on the pad access track.",
   };
   const well = await prisma.entryWell.upsert({
     where: { rigId_name: { rigId: rig.id, name: WELL_NAME } },
@@ -368,6 +373,134 @@ async function main() {
       { wellId: well.id, order: 2, topDes: "Cuttings", topMkb: 300, btmMkb: 2_752,
         wellboreId: wellbores[0]?.id ?? null, rqdBy: "Operations Geology", sampledBy: "Geoservices",
         com: "Every 5 m; every 3 m through the Asmari." },
+    ],
+  });
+
+  // ── the completion (Tier 5: reports 22-30) ──────────────────────────────
+  // Zones are created FIRST and by hand, because the perforations, production
+  // periods and stimulations below all reference one.
+  await prisma.wellZone.deleteMany({ where: { wellId: well.id } });
+  const upper = await prisma.wellZone.create({
+    data: { wellId: well.id, order: 0, wellboreId: wellbores[0]?.id ?? null,
+      name: "Upper Asmari", topMkb: 2_380, btmMkb: 2_440, status: "Open" },
+  });
+  const lower = await prisma.wellZone.create({
+    data: { wellId: well.id, order: 1, wellboreId: wellbores[0]?.id ?? null,
+      name: "Lower Asmari", topMkb: 2_460, btmMkb: 2_520, status: "Squeezed" },
+  });
+
+  await prisma.reservoir.deleteMany({ where: { wellId: well.id } });
+  await prisma.reservoir.createMany({
+    data: [
+      { wellId: well.id, order: 0, name: "Asmari", topMkb: 1_598, btmMkb: 2_344, datumDepthM: 2_200, fluidType: "Oil" },
+      { wellId: well.id, order: 1, name: "Blue Heron", topMkb: 2_612, btmMkb: 2_752, datumDepthM: 2_680, fluidType: "Gas" },
+    ],
+  });
+
+  await prisma.perforation.deleteMany({ where: { wellId: well.id } });
+  const perfs: [string, string, number, number, string][] = [
+    [upper.id, day(21), 2_390, 2_404, "Open"],
+    [upper.id, day(21), 2_412, 2_426, "Open"],
+    [lower.id, day(23), 2_470, 2_486, "Squeezed"],
+  ];
+  for (const [zoneId, date, top, btm, status] of perfs) {
+    await prisma.perforation.create({
+      data: {
+        wellId: well.id, zoneId, order: perfs.findIndex((p) => p[2] === top),
+        date, time: "09:15", topMkb: top, btmMkb: btm,
+        company: "Schlumberger", conveyanceMethod: "Tubing", gunSizeIn: "3 3/8",
+        carrierMake: "HSD", shotDensityPerM: 13, chargeType: "Deep Penetrating",
+        phasingDeg: 60, overUnderBalanced: "Under", pOverUnderPsi: 450,
+        flMdBeforeMkb: 1_200, flMdAfterMkb: 980, pFinalSurfPsi: 320,
+        referenceLog: "CBL/VDL run 2",
+        statuses: {
+          create: status === "Squeezed"
+            ? [
+              { order: 0, date, status: "Open", com: "Flowed to test separator." },
+              { order: 1, date: day(25), status: "Squeezed", com: "Water cut rose to 38%; squeezed with cement." },
+            ]
+            : [{ order: 0, date, status: "Open", com: "Flowed to test separator." }],
+        },
+      },
+    });
+  }
+
+  await prisma.tubingString.deleteMany({ where: { wellId: well.id } });
+  await prisma.tubingString.create({
+    data: {
+      wellId: well.id, order: 0, wellboreId: wellbores[0]?.id ?? null,
+      description: "Production String", runDate: day(24),
+      stringLengthM: 2_360, setDepthMkb: 2_360,
+      components: {
+        create: [
+          { order: 0, itemDes: "Tubing", jts: 195, make: "Vallourec", model: "VAM TOP", odIn: "3 1/2", idIn: 2.992, massPerLenKgM: 13.7, grade: "L-80", lenM: 2_318, topMkb: 0, btmMkb: 2_318 },
+          { order: 1, itemDes: "TRSSV", jts: 1, make: "Halliburton", model: "DSS-8", odIn: "4 1/2", idIn: 2.813, lenM: 1.4, topMkb: 420, btmMkb: 421.4, serialNo: "TR-99321" },
+          { order: 2, itemDes: "Communications nipple", jts: 1, make: "Halliburton", odIn: "4 1/2", idIn: 2.813, lenM: 0.6, topMkb: 421.4, btmMkb: 422.0 },
+          { order: 3, itemDes: "Packer", jts: 1, make: "Baker", model: "SAB-3", odIn: "5 1/2", idIn: 2.875, lenM: 2.1, topMkb: 2_340, btmMkb: 2_342.1, serialNo: "PK-4410" },
+          { order: 4, itemDes: "Wireline entry guide", jts: 1, odIn: "3 1/2", idIn: 2.992, lenM: 0.3, topMkb: 2_359.7, btmMkb: 2_360 },
+        ],
+      },
+    },
+  });
+
+  await prisma.plugBack.deleteMany({ where: { wellId: well.id } });
+  await prisma.plugBack.createMany({
+    data: [
+      { wellId: well.id, order: 0, date: day(20), depthMkb: 2_700, method: "Cement", com: "Isolate the water leg below the Blue Heron." },
+      { wellId: well.id, order: 1, date: day(25), depthMkb: 2_455, method: "Bridge Plug", com: "Isolate the Lower Asmari after the squeeze." },
+    ],
+  });
+
+  await prisma.deviationSurveyRecord.deleteMany({ where: { wellId: well.id } });
+  await prisma.deviationSurveyRecord.createMany({
+    data: [
+      { wellId: well.id, order: 0, date: day(-14), des: "Proposed Trajectory", proposed: true, definitive: false, company: "Sperry" },
+      { wellId: well.id, order: 1, date: day(19), des: "Main Hole Survey", proposed: false, definitive: true, company: "Schlumberger" },
+    ],
+  });
+
+  // Twelve months of production, declining — report 27 plots the curves and
+  // report 22 quotes the latest.
+  await prisma.productionPeriod.deleteMany({ where: { wellId: well.id } });
+  await prisma.productionPeriod.createMany({
+    data: Array.from({ length: 12 }, (_, i) => {
+      const decline = Math.pow(0.96, i);
+      const oil = Math.round(41_200 * decline);
+      const water = Math.round(6_800 * (1 + i * 0.08));
+      const gas = Math.round(18_400 * decline);
+      const days = i === 4 ? 27 : 30;
+      return {
+        wellId: well.id, zoneId: upper.id, order: i,
+        startDate: day(30 + i * 30), endDate: day(30 + (i + 1) * 30),
+        activityType: "Produce",
+        prodTimeDays: days, downTimeDays: 30 - days,
+        volOilBbl: oil, volWaterBbl: water, volResGasMcf: gas,
+        qOilBblD: Number((oil / days).toFixed(2)),
+        qWaterBblD: Number((water / days).toFixed(2)),
+        qResGasMcfD: Number((gas / days).toFixed(2)),
+        waterGasRatioPct: Number(((water / (water + oil)) * 100).toFixed(1)),
+        com: i === 4 ? "Three days down replacing the ESP." : null,
+      };
+    }),
+  });
+
+  await prisma.equipmentFailure.deleteMany({ where: { wellId: well.id } });
+  await prisma.equipmentFailure.createMany({
+    data: [
+      { wellId: well.id, order: 0, date: day(150), failureType: "Wear", componentDes: "ESP pump stage", cost: 186_000, accountableParty: "Contractor" },
+      { wellId: well.id, order: 1, date: day(158), failureType: "Parted", componentDes: "Sucker rod", cost: 94_500, accountableParty: "Operator" },
+      { wellId: well.id, order: 2, date: day(206), failureType: "Collapse", componentDes: "Production casing at 2,180 m", cost: 240_000, accountableParty: "Operator" },
+      { wellId: well.id, order: 3, date: day(240), failureType: "Wear", componentDes: "TRSSV seal", cost: 38_000, accountableParty: "Contractor" },
+      // Deliberately unclassified: report 25 stacks it as "(blank)".
+      { wellId: well.id, order: 4, date: day(268), failureType: null, componentDes: "Downhole gauge cable", cost: 42_000, accountableParty: "Operator", com: "Unclassified pending teardown." },
+    ],
+  });
+
+  await prisma.stimulation.deleteMany({ where: { wellId: well.id } });
+  await prisma.stimulation.createMany({
+    data: [
+      { wellId: well.id, order: 0, zoneId: upper.id, date: day(22), time: "11:00", type: "Acid", deliveryMode: "Coiled Tubing", company: "Halliburton", volumeM3: 48, com: "15% HCl over the upper perfs." },
+      { wellId: well.id, order: 1, zoneId: lower.id, date: day(26), time: "07:30", type: "Scale Squeeze", deliveryMode: "Bullhead", company: "Halliburton", volumeM3: 22 },
     ],
   });
 

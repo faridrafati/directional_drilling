@@ -127,19 +127,31 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | 20 | Geological Program | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
 | 21 | Geological Schematic | 2026-08-09 | 2026-08-09 | n/a | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
 
+## Tier 5 — foundation
+
+| Item | Status |
+|---|---|
+| `WellZone` · `Reservoir` · `Perforation` · `PerforationStatus` | 2026-08-09 |
+| `TubingString` · `TubingComponent` · `PlugBack` · `DeviationSurveyRecord` | 2026-08-09 |
+| `ProductionPeriod` · `EquipmentFailure` · `Stimulation` | 2026-08-09 |
+| `EntryWell.thElevation` / `.kbTubingHeadDistance` / `.otherElevation` / `.directionsToWell` | 2026-08-09 |
+| Completion API (`GET`+`PUT /entry/wells/:id/completion`) | 2026-08-09 |
+| Entry UI — Completion panel (nine folding sections), well-form completion datum | 2026-08-09 |
+| The schematic gains the COMPLETION STRING — tubing, TRSSV, packer, in its own colour | 2026-08-09 |
+
 ## Tier 5 — completion & production
 
 | # | Report | Spec read | Schema | Entry | Assembler | Preview | PDF | Verified |
 |---|---|---|---|---|---|---|---|---|
-| 22 | Complete Well Summary | — | — | — | — | — | — | — |
-| 23 | Daily Completion and Workover | — | — | — | — | — | — | — |
-| 24 | Downhole Well Profile | — | — | — | — | — | — | — |
-| 25 | Cost of Failure by Type | — | — | — | — | — | — | — |
-| 26 | Perforations | — | — | — | — | — | — | — |
-| 27 | Production & Maintenance History | — | — | — | — | — | — | — |
-| 28 | Schematic - Current | — | — | — | — | — | — | — |
-| 29 | Schematic - Proposed vs Actual | — | — | — | — | — | — | — |
-| 30 | Well Summary | — | — | — | — | — | — | — |
+| 22 | Complete Well Summary| 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
+| 23 | Daily Completion and Workover| 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
+| 24 | Downhole Well Profile| 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
+| 25 | Cost of Failure by Type| 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
+| 26 | Perforations| 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
+| 27 | Production & Maintenance History| 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
+| 28 | Schematic - Current| 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
+| 29 | Schematic - Proposed vs Actual| 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
+| 30 | Well Summary| 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
 
 ## Decisions and known deviations
 
@@ -502,6 +514,44 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
 - **2026-08-09 — report 21 leaves Q Flow off its parameter plot.** At 700–1,100 gpm it is two orders
   of magnitude above WOB and ROP, and one shared axis would flatten the other three curves into the
   floor. The page says so rather than leaving a reader to wonder where it went.
+- **2026-08-09 — a ZONE is not a reservoir.** A zone can commingle two reservoirs and a reservoir can
+  be completed in two zones, so perforations, production periods and stimulations reference a
+  `WellZone` while `Reservoir` stays the geological body. Zones save id-stable for exactly that
+  reason — re-minting their ids each save would unlink every one of those rows.
+- **2026-08-09 — "current" is DERIVED, never a stored flag.** Reports 26, 28 and 29 all say
+  "current": the deepest plug-back caps the well, the newest perforation status decides whether a
+  zone is open, and the completion string with the latest run date is the one in the hole. A stored
+  boolean would be a second source of truth that goes stale the first time somebody forgets to tick
+  it.
+- **2026-08-09 — a perforation's status is a HISTORY, not a state.** Report 26 prints every status
+  and reads "currently open" off the end of it. "Squeezed in 1405/02/25" is why a zone is dead, and
+  a report that showed only the current state could not say why.
+- **2026-08-09 — report 23 lists only what had happened ON OR BEFORE its day.** A workover sheet
+  that lists a perforation shot next week is a plan, not a record.
+- **2026-08-09 — report 29 draws TWO schematics, not one overlaid.** The proposed and the actual are
+  different wells until the bit reaches TD, they do not share a depth extent, and overlaying them
+  would put a prognosed formation top and a drilled one on the same band with no way to tell which
+  is which. The proposed side carries the prognosis and the plan's TD but NO casing: this
+  application does not store a designed casing programme, and drawing the actual casing there would
+  make the comparison meaningless.
+- **2026-08-09 — report 25 keeps an unclassified failure as its own bar, "(blank)".** The sample
+  labels it that way, and folding it into "Other" would claim somebody made a judgement they did not.
+- **2026-08-09 — report 27's gas rate gets its own axis.** In MCF/day it is an order of magnitude
+  from the liquid rates, and one shared scale would flatten the oil decline the report exists to
+  show. It is also the only plot in the suite whose X axis is a DATE: production is read against the
+  calendar, not against the well.
+- **2026-08-09 — production stores VOLUMES and RATES both.** An allocated rate from the operator is
+  not always the volume over the days, and report 27 prints whichever the operator reported rather
+  than recomputing one from the other.
+- **2026-08-09 — the schematic gained the completion string.** Tubing, the TRSSV and the packer nest
+  inside the casing in their own colour and are numbered as the samples number them ("2-1; Tubing").
+  Short items are labelled and a 2,300 m tubing run is not — it needs no label to be recognised.
+- **2026-08-09 — a schematic with nothing to draw is never fatal to an export.** A well with no
+  casing string entered yet is a normal state, and throwing would make the report unusable exactly
+  when somebody is trying to see what IS entered. The page prints the reason instead.
+- **2026-08-09 — nine well-scoped reports share one route preamble.** `wellReport()` resolves and
+  authorizes; nine copies of the same six lines is where one of them eventually forgets the access
+  check.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

@@ -36,6 +36,7 @@ import {
 import { Section, TextField, NumField, RowTable, type Col } from "./fields.js";
 import { CasingPanel } from "./CasingPanel.js";
 import { GeologyPanel } from "./GeologyPanel.js";
+import { CompletionPanel } from "./CompletionPanel.js";
 
 /**
  * Keys `filled()` must ignore when deciding whether a row is worth saving.
@@ -175,6 +176,12 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
    * reports 18 to 21. Well-level like the casing, and equally big.
    */
   const [showGeology, setShowGeology] = useState(false);
+  /**
+   * The completion side — zones, perforations, tubing, production, failures.
+   * Tier 5's reports are built from it, and like the casing and the geology it
+   * outlives any one day.
+   */
+  const [showCompletion, setShowCompletion] = useState(false);
   // Associated by htmlFor rather than by wrapping: a <label> around a <select>
   // absorbs the selected option into the field's accessible name.
   const jobPickerId = useId();
@@ -298,6 +305,16 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
           >
             Geology
           </button>
+          <button
+            type="button" onClick={() => setShowCompletion((v) => !v)}
+            className={`h-9 px-3 text-xs rounded-md border transition-colors duration-150 ${
+              showCompletion
+                ? "border-blue-500 bg-blue-50 text-blue-800"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            Completion
+          </button>
           {isAdmin && (
             <button
               type="button" onClick={() => setShowCodes((v) => !v)}
@@ -329,6 +346,12 @@ export function WellDataEditor({ wellId, wellName, isAdmin }: {
       {showGeology && (
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden shrink-0">
           <GeologyPanel wellId={wellId} wellbores={registersQ.data?.wellbores ?? []} />
+        </div>
+      )}
+
+      {showCompletion && (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden shrink-0">
+          <CompletionPanel wellId={wellId} wellbores={registersQ.data?.wellbores ?? []} />
         </div>
       )}
 

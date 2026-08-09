@@ -217,6 +217,8 @@ function WellForm({ rigs, well, options, onCancel, onSaved }: {
     kbGroundDistance: well?.kbGroundDistance ?? "", kbCasingFlangeDistance: well?.kbCasingFlangeDistance ?? "",
     ewDistance: well?.ewDistance ?? "", ewRef: well?.ewRef ?? "",
     nsDistance: well?.nsDistance ?? "", nsRef: well?.nsRef ?? "",
+    thElevation: well?.thElevation ?? "", kbTubingHeadDistance: well?.kbTubingHeadDistance ?? "",
+    otherElevation: well?.otherElevation ?? "", directionsToWell: well?.directionsToWell ?? "",
     active: well?.active ?? true,
   }));
   const [error, setError] = useState<string | null>(null);
@@ -308,6 +310,12 @@ function WellForm({ rigs, well, options, onCancel, onSaved }: {
         {F("E/W ref", "ewRef", "text", "E")}
         {F("North/south distance (m)", "nsDistance", "number")}
         {F("N/S ref", "nsRef", "text", "N")}
+        {/* Once a well is completed the TUBING HEAD is the datum the completion
+            is measured from; on some wells it differs from the casing flange. */}
+        {F("Tubing head elevation (m)", "thElevation", "number")}
+        {F("KB–tubing head distance (m)", "kbTubingHeadDistance", "number")}
+        {F("Other elevation (m)", "otherElevation", "number")}
+        {F("Directions to well", "directionsToWell", "text", "Take the chopper to the reference lat/long.")}
       </div>
       <p className="text-xs sm:text-[10px] text-gray-500 mt-2">
         The list fields offer the company's known values (from the DDR archive plus wells already registered) —

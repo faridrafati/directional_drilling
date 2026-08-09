@@ -55,6 +55,13 @@ export interface SchematicPayload {
   /** Shoes are drawn as a mark, not a band — top and btm are the same depth. */
   shoes: SchematicInterval[];
   /**
+   * The COMPLETION string, inside the casing: tubing, the TRSSV, the packer.
+   * The Tier 5 samples label these on the picture ("2-1; Tubing", "2-4; TRSSV"),
+   * which is why they are their own list rather than more casing — they nest
+   * inside it and a reader has to be able to tell them apart.
+   */
+  completionItems: SchematicInterval[];
+  /**
    * Why the picture is empty, when it is. The page prints this instead of an
    * empty frame, so "nothing entered" never looks like "nothing there".
    */
@@ -84,7 +91,7 @@ export async function buildSchematic(
   prisma: PrismaClient,
   wellId: string,
 ): Promise<SchematicPayload> {
-  const [holes, strings, formations] = await Promise.all([
+  const [holes, strings, formations, tubing] = await Promise.all([
     prisma.holeSection.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
     prisma.casingString.findMany({
       where: { wellId },
@@ -98,6 +105,11 @@ export async function buildSchematic(
       },
     }),
     prisma.wellFormation.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
+    prisma.tubingString.findMany({
+      where: { wellId },
+      orderBy: { order: "asc" },
+      include: { components: { orderBy: { order: "asc" } } },
+    }),
   ]);
 
   const holeSections: SchematicInterval[] = holes
@@ -184,7 +196,23 @@ export async function buildSchematic(
     }];
   });
 
-  const everything = [...holeSections, ...casingStrings, ...cementIntervals, ...formationBands, ...shoes];
+  // The completion string, numbered as the samples number it: string index,
+  // then item index, then what the item is — "2-1; Tubing".
+  const completionItems: SchematicInterval[] = tubing.flatMap((t, ti) =>
+    t.components.flatMap((c, ci) => {
+      const top = c.topMkb;
+      const btm = c.btmMkb ?? (top !== null && c.lenM !== null ? top + c.lenM : null);
+      if (top === null || btm === null) return [];
+      return [{
+        topMkb: top,
+        btmMkb: btm,
+        label: `${ti + 2}-${ci + 1}; ${c.itemDes ?? "item"}`,
+        odIn: parseInches(c.odIn),
+        detail: [t.description, c.make, c.model].filter(Boolean).join(" · ") || null,
+      }];
+    }));
+
+  const everything = [...holeSections, ...casingStrings, ...cementIntervals, ...formationBands, ...shoes, ...completionItems];
   const maxDepthMkb = everything.length
     ? Math.max(...everything.map((i) => Math.max(i.topMkb, i.btmMkb)))
     : null;
@@ -196,9 +224,11 @@ export async function buildSchematic(
     cementIntervals,
     formations: formationBands,
     shoes,
+    completionItems,
     emptyReason: everything.length === 0
-      ? "Nothing to draw: this well has no hole section, casing string or formation with a depth. "
-        + "They are entered under Well data → Casing & cement and Well data → Geology."
+      ? "Nothing to draw: this well has no hole section, casing string, formation or completion "
+        + "item with a depth. They are entered under Well data → Casing & cement, → Geology and "
+        + "→ Completion."
       : null,
   };
 }

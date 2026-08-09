@@ -280,6 +280,16 @@ model EntryWell {
   ewRef                  String?
   nsDistance             Float?
   nsRef                  String?
+  // ── Tier 5's completion header (reports 24, 28, 30) ──
+  /// Tubing-head elevation and the KB distance to it. Distinct from the casing
+  /// flange pair above: once a well is completed the tubing head is the datum
+  /// the completion is measured from, and on some wells the two differ.
+  thElevation            Float?
+  kbTubingHeadDistance   Float?
+  /// "Other Elevation" — report 30 prints it beside the other four.
+  otherElevation         Float?
+  /// Free text: "Take chopper to above reference lat/long." (report 30).
+  directionsToWell       String?
   active                 Boolean                @default(true)
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
@@ -297,6 +307,15 @@ model EntryWell {
   planStations           WellPlanStation[]
   formations             WellFormation[]
   samplingRequirements   GeoSamplingRequirement[]
+  reservoirs             Reservoir[]
+  zones                  WellZone[]
+  perforations           Perforation[]
+  tubingStrings          TubingString[]
+  plugBacks              PlugBack[]
+  deviationSurveys       DeviationSurveyRecord[]
+  productionPeriods      ProductionPeriod[]
+  equipmentFailures      EquipmentFailure[]
+  stimulations           Stimulation[]
 
   @@unique([rigId, name])
   @@index([rigId])
@@ -1473,6 +1492,8 @@ model EntryWellbore {
   casingStrings      CasingString[]
   cementJobs         CementJob[]
   samplingRequirements GeoSamplingRequirement[]
+  zones                WellZone[]
+  tubingStrings        TubingString[]
 
   @@index([wellId, order])
 }
@@ -1903,6 +1924,250 @@ model EntryLogRun {
   report EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
+}
+
+/// A reservoir the well penetrates — report 22 lists them.
+model Reservoir {
+  id             String  @id @default(cuid())
+  wellId         String
+  order          Int     @default(0)
+  name           String?
+  topMkb         Float?
+  btmMkb         Float?
+  /// The datum depth the reservoir's pressures are referred to.
+  datumDepthM    Float?
+  fluidType      String? /// "Oil" | "Gas" | "Water" | "Condensate"
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
+/// A COMPLETION ZONE — what a perforation is shot into and what production is
+/// allocated to. Named separately from `Reservoir` because a zone can commingle
+/// two reservoirs ("ABC Commingled" in report 27's sample) and a reservoir can
+/// be completed in two zones.
+model WellZone {
+  id         String  @id @default(cuid())
+  wellId     String
+  wellboreId String?
+  order      Int     @default(0)
+  name       String?
+  topMkb     Float?
+  btmMkb     Float?
+  /// "Open" | "Squeezed" | "Isolated" | "Abandoned".
+  status     String?
+
+  well              EntryWell          @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore          EntryWellbore?     @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+  perforations      Perforation[]
+  productionPeriods ProductionPeriod[]
+  stimulations      Stimulation[]
+
+  @@index([wellId, order])
+}
+
+/// One perforated interval — reports 24 and 26, and the completion schematic.
+model Perforation {
+  id                String  @id @default(cuid())
+  wellId            String
+  zoneId            String?
+  order             Int     @default(0)
+  date              String? /// Jalali, as printed
+  time              String?
+  topMkb            Float?
+  btmMkb            Float?
+  company           String?
+  conveyanceMethod  String? /// "Tubing" | "Wireline" | "Coiled Tubing" | "TCP"
+  gunSizeIn         String? /// TEXT: the sheet prints 3 3/8
+  carrierMake       String?
+  shotDensityPerM   Float? /// shots per metre — the samples print shots/ft
+  chargeType        String?
+  phasingDeg        Float?
+  orientation       String?
+  orientationMethod String?
+  /// "Over" | "Under" — and by how much.
+  overUnderBalanced String?
+  pOverUnderPsi     Float?
+  flMdBeforeMkb     Float? /// fluid level before
+  flMdAfterMkb      Float?
+  pSurfInitPsi      Float?
+  pFinalSurfPsi     Float?
+  referenceLog      String?
+
+  well     EntryWell           @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  zone     WellZone?           @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  statuses PerforationStatus[]
+
+  @@index([wellId, order])
+}
+
+/// A perforation's status over time — report 26 prints the history, not just
+/// the current state, because "squeezed in 2015" is why a zone is dead.
+model PerforationStatus {
+  id            String  @id @default(cuid())
+  perforationId String
+  order         Int     @default(0)
+  date          String?
+  status        String? /// "Open" | "Squeezed" | "Plugged" | "Isolated"
+  com           String?
+
+  perforation Perforation @relation(fields: [perforationId], references: [id], onDelete: Cascade)
+
+  @@index([perforationId, order])
+}
+
+/// A completion / tubing string — reports 24 and 30, and the schematic's
+/// completion side ("2-1; Tubing", "2-4; TRSSV").
+model TubingString {
+  id             String  @id @default(cuid())
+  wellId         String
+  wellboreId     String?
+  order          Int     @default(0)
+  description    String?
+  runDate        String?
+  stringLengthM  Float?
+  setDepthMkb    Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  well       EntryWell        @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore   EntryWellbore?   @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+  components TubingComponent[]
+
+  @@index([wellId, order])
+}
+
+/// One item in a completion string, top down — the same shape as a casing
+/// tally, because that is what it is.
+model TubingComponent {
+  id             String  @id @default(cuid())
+  tubingStringId String
+  order          Int     @default(0)
+  itemDes        String? /// "Tubing" | "TRSSV" | "Communications nipple" | "Packer"
+  jts            Int?
+  make           String?
+  model          String?
+  /// TEXT, like every other size column in this suite: the sheet prints 2 7/8.
+  odIn           String?
+  idIn           Float?
+  massPerLenKgM  Float?
+  grade          String?
+  lenM           Float?
+  topMkb         Float?
+  btmMkb         Float?
+  serialNo       String?
+
+  tubingString TubingString @relation(fields: [tubingStringId], references: [id], onDelete: Cascade)
+
+  @@index([tubingStringId, order])
+}
+
+/// A plug-back — report 22's "Plug Back Total Depths".
+model PlugBack {
+  id       String  @id @default(cuid())
+  wellId   String
+  order    Int     @default(0)
+  date     String?
+  depthMkb Float?
+  method   String? /// "Cement" | "Bridge Plug" | "Sand"
+  com      String?
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
+/// A deviation survey AS A RECORD — report 22 lists which surveys exist and
+/// which is definitive. The stations themselves are `EntrySurvey` (actual) and
+/// `WellPlanStation` (proposed); this is the index over them.
+model DeviationSurveyRecord {
+  id           String   @id @default(cuid())
+  wellId       String
+  order        Int      @default(0)
+  date         String?
+  des          String?
+  /// Proposed rather than shot.
+  proposed     Boolean?
+  /// The one the well is officially positioned by.
+  definitive   Boolean?
+  company      String?
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
+/// One production period — report 27's table and its rate curves.
+///
+/// VOLUMES are what is measured and RATES are what is derived, but both are
+/// stored: an allocated rate from the operator is not always the volume over
+/// the days, and report 27 prints whichever the operator reported.
+model ProductionPeriod {
+  id              String  @id @default(cuid())
+  wellId          String
+  zoneId          String?
+  order           Int     @default(0)
+  startDate       String?
+  endDate         String?
+  /// "Produce" | "Inject" | "Shut In" | "Workover".
+  activityType    String?
+  prodTimeDays    Float?
+  downTimeDays    Float?
+  volOilBbl       Float?
+  volWaterBbl     Float?
+  volResGasMcf    Float?
+  qOilBblD        Float?
+  qWaterBblD      Float?
+  qResGasMcfD     Float?
+  waterGasRatioPct Float?
+  com             String?
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  zone WellZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+
+  @@index([wellId, order])
+}
+
+/// A downhole equipment failure — report 25 pivots cost on `failureType`.
+model EquipmentFailure {
+  id              String  @id @default(cuid())
+  wellId          String
+  order           Int     @default(0)
+  date            String?
+  /// "Wear" | "Worn" | "Parted" | "Collapse" | "Hole" | "Other" — report 25's
+  /// stack, printed with "(blank)" where nobody classified it.
+  failureType     String?
+  componentDes    String?
+  /// What it cost to put right.
+  cost            Float?
+  /// Who the cost is charged to, as the interval problems record it.
+  accountableParty String?
+  com             String?
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
+/// A stimulation or treatment — report 23's own section.
+model Stimulation {
+  id           String  @id @default(cuid())
+  wellId       String
+  zoneId       String?
+  order        Int     @default(0)
+  date         String?
+  time         String?
+  type         String? /// "Acid" | "Frac" | "Scale Squeeze" | "Solvent"
+  deliveryMode String? /// "Bullhead" | "Coiled Tubing" | "Tubing"
+  company      String?
+  volumeM3     Float?
+  com          String?
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  zone WellZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+
+  @@index([wellId, order])
 }
 
 /// One station of the DIRECTIONAL PLAN — the trajectory the well was designed

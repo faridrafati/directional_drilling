@@ -261,6 +261,75 @@ const geologySaveSchema = z.object({
   samplingRequirements: z.array(samplingRequirementSchema).default([]),
 });
 
+// ── the well's COMPLETION (Tier 5: reports 22–30) ──────────────────────────
+/**
+ * Zones save ID-STABLE. Perforations, production periods and stimulations all
+ * carry a `zoneId`, and re-minting zone ids on every save would silently unlink
+ * every one of them. Everything else here has nothing pointing into it and
+ * saves replace-all, children and all.
+ */
+const zoneSchema = z.object({
+  id: rowId, order: int0, wellboreId: str, name: str,
+  topMkb: num, btmMkb: num, status: str,
+});
+const reservoirSchema = z.object({
+  order: int0, name: str, topMkb: num, btmMkb: num, datumDepthM: num, fluidType: str,
+});
+const perforationStatusSchema = z.object({
+  order: int0, date: jalaliish, status: str, com: str,
+});
+const perforationSchema = z.object({
+  order: int0, zoneId: str, date: jalaliish, time: str,
+  topMkb: num, btmMkb: num, company: str, conveyanceMethod: str,
+  gunSizeIn: str, carrierMake: str, shotDensityPerM: num, chargeType: str,
+  phasingDeg: num, orientation: str, orientationMethod: str,
+  overUnderBalanced: str, pOverUnderPsi: num,
+  flMdBeforeMkb: num, flMdAfterMkb: num, pSurfInitPsi: num, pFinalSurfPsi: num,
+  referenceLog: str,
+  statuses: z.array(perforationStatusSchema).default([]),
+});
+const tubingComponentSchema = z.object({
+  order: int0, itemDes: str, jts: num, make: str, model: str,
+  odIn: str, idIn: num, massPerLenKgM: num, grade: str,
+  lenM: num, topMkb: num, btmMkb: num, serialNo: str,
+});
+const tubingStringSchema = z.object({
+  order: int0, wellboreId: str, description: str, runDate: jalaliish,
+  stringLengthM: num, setDepthMkb: num,
+  components: z.array(tubingComponentSchema).default([]),
+});
+const plugBackSchema = z.object({
+  order: int0, date: jalaliish, depthMkb: num, method: str, com: str,
+});
+const deviationSurveySchema = z.object({
+  order: int0, date: jalaliish, des: str, proposed: bool, definitive: bool, company: str,
+});
+const productionPeriodSchema = z.object({
+  order: int0, zoneId: str, startDate: jalaliish, endDate: jalaliish, activityType: str,
+  prodTimeDays: num, downTimeDays: num,
+  volOilBbl: num, volWaterBbl: num, volResGasMcf: num,
+  qOilBblD: num, qWaterBblD: num, qResGasMcfD: num, waterGasRatioPct: num, com: str,
+});
+const equipmentFailureSchema = z.object({
+  order: int0, date: jalaliish, failureType: str, componentDes: str,
+  cost: num, accountableParty: str, com: str,
+});
+const stimulationSchema = z.object({
+  order: int0, zoneId: str, date: jalaliish, time: str, type: str,
+  deliveryMode: str, company: str, volumeM3: num, com: str,
+});
+const completionSaveSchema = z.object({
+  zones: z.array(zoneSchema).default([]),
+  reservoirs: z.array(reservoirSchema).default([]),
+  perforations: z.array(perforationSchema).default([]),
+  tubingStrings: z.array(tubingStringSchema).default([]),
+  plugBacks: z.array(plugBackSchema).default([]),
+  deviationSurveys: z.array(deviationSurveySchema).default([]),
+  productionPeriods: z.array(productionPeriodSchema).default([]),
+  equipmentFailures: z.array(equipmentFailureSchema).default([]),
+  stimulations: z.array(stimulationSchema).default([]),
+});
+
 const costCodeSchema = z.object({
   id: rowId,
   // NOT .min(1): the admin grid keeps spare blank rows on screen like every
@@ -736,6 +805,110 @@ export async function registerWellviewRoutes(app: FastifyInstance, prisma: Prism
           await tx.geoSamplingRequirement.createMany({
             data: body.samplingRequirements.map((r) => ({ ...r, wellId })),
           });
+        }
+      });
+      return reply.code(204).send();
+    });
+
+  // ══ the well's completion (Tier 5) ═══════════════════════════════════════
+  const COMPLETION_INCLUDE = {
+    zones: { orderBy: { order: "asc" } },
+    reservoirs: { orderBy: { order: "asc" } },
+    perforations: {
+      orderBy: { order: "asc" },
+      include: { statuses: { orderBy: { order: "asc" } } },
+    },
+    tubingStrings: {
+      orderBy: { order: "asc" },
+      include: { components: { orderBy: { order: "asc" } } },
+    },
+    plugBacks: { orderBy: { order: "asc" } },
+    deviationSurveys: { orderBy: { order: "asc" } },
+    productionPeriods: { orderBy: { order: "asc" } },
+    equipmentFailures: { orderBy: { order: "asc" } },
+    stimulations: { orderBy: { order: "asc" } },
+  } as const;
+
+  app.get<{ Params: { wellId: string } }>(
+    "/entry/wells/:wellId/completion", { preHandler: requireUser }, async (req, reply) => {
+      const { wellId } = req.params;
+      if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+      const well = await prisma.entryWell.findUnique({
+        where: { id: wellId }, select: COMPLETION_INCLUDE,
+      });
+      if (!well) return reply.code(404).send({ error: "not found" });
+      return well;
+    });
+
+  app.put<{ Params: { wellId: string }; Body: unknown }>(
+    "/entry/wells/:wellId/completion", { preHandler: requireUser }, async (req, reply) => {
+      const { wellId } = req.params;
+      if (!(await mayUse(req, wellId))) return reply.code(403).send({ error: "not your well" });
+      let body: z.infer<typeof completionSaveSchema>;
+      try { body = completionSaveSchema.parse(req.body); } catch (e) { return badReq(reply, e); }
+
+      const keptZones = body.zones.map((z) => z.id).filter((x): x is string => !!x);
+      await prisma.$transaction(async (tx) => {
+        // Zones first and id-stable: everything below references them, and a
+        // perforation posted with a zone id minted in THIS save has to find it.
+        await tx.wellZone.deleteMany({
+          where: { wellId, id: { notIn: keptZones.length ? keptZones : ["-"] } },
+        });
+        for (const z of body.zones) {
+          const { id, ...data } = z;
+          if (id) await tx.wellZone.upsert({ where: { id }, create: { id, wellId, ...data }, update: data });
+          else await tx.wellZone.create({ data: { wellId, ...data } });
+        }
+
+        // The rest carry nothing pointing into them.
+        await tx.reservoir.deleteMany({ where: { wellId } });
+        await tx.perforation.deleteMany({ where: { wellId } });
+        await tx.tubingString.deleteMany({ where: { wellId } });
+        await tx.plugBack.deleteMany({ where: { wellId } });
+        await tx.deviationSurveyRecord.deleteMany({ where: { wellId } });
+        await tx.productionPeriod.deleteMany({ where: { wellId } });
+        await tx.equipmentFailure.deleteMany({ where: { wellId } });
+        await tx.stimulation.deleteMany({ where: { wellId } });
+
+        if (body.reservoirs.length) {
+          await tx.reservoir.createMany({ data: body.reservoirs.map((r) => ({ ...r, wellId })) });
+        }
+        for (const p of body.perforations) {
+          const { statuses, ...data } = p;
+          const saved = await tx.perforation.create({ data: { wellId, ...data } });
+          if (statuses.length) {
+            await tx.perforationStatus.createMany({
+              data: statuses.map((st) => ({ ...st, perforationId: saved.id })),
+            });
+          }
+        }
+        for (const t of body.tubingStrings) {
+          const { components, ...data } = t;
+          const saved = await tx.tubingString.create({ data: { wellId, ...data } });
+          if (components.length) {
+            await tx.tubingComponent.createMany({
+              data: components.map((c) => ({
+                ...c,
+                jts: c.jts === null ? null : Math.round(c.jts),
+                tubingStringId: saved.id,
+              })),
+            });
+          }
+        }
+        if (body.plugBacks.length) {
+          await tx.plugBack.createMany({ data: body.plugBacks.map((r) => ({ ...r, wellId })) });
+        }
+        if (body.deviationSurveys.length) {
+          await tx.deviationSurveyRecord.createMany({ data: body.deviationSurveys.map((r) => ({ ...r, wellId })) });
+        }
+        if (body.productionPeriods.length) {
+          await tx.productionPeriod.createMany({ data: body.productionPeriods.map((r) => ({ ...r, wellId })) });
+        }
+        if (body.equipmentFailures.length) {
+          await tx.equipmentFailure.createMany({ data: body.equipmentFailures.map((r) => ({ ...r, wellId })) });
+        }
+        if (body.stimulations.length) {
+          await tx.stimulation.createMany({ data: body.stimulations.map((r) => ({ ...r, wellId })) });
         }
       });
       return reply.code(204).send();
