@@ -1213,6 +1213,10 @@ model Job {
   /// which is the per-DAY summary — the two are different texts.
   summary                  String?
   // ── report 22's job savings/problem block ──
+  /// Report 20's "Geological Objective" — what the well is being drilled to
+  /// find out, which is not the same statement as `summary` (how the drilling
+  /// went) or `targetFormation` (where it stops).
+  geologicalObjective      String?
   possCostSave             Float?
   possTimeSaveHr           Float?
   estProblemCost           Float?

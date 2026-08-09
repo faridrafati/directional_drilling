@@ -27,6 +27,7 @@ import { buildReport15, buildReport17, resolveWells } from "./multiwell.js";
 import { buildReport13, buildReport16 } from "./pivots.js";
 import { buildReport12 } from "./dailyMulti.js";
 import { buildReport14 } from "./offsets.js";
+import { buildReport18, buildReport19, buildReport20 } from "./geology.js";
 
 /** How a report is parameterized — the picker builds itself from this. */
 /**
@@ -79,9 +80,9 @@ export const REPORT_CATALOG: CatalogEntry[] = [
   { type: "15", title: "Problem Cost by Accountable Party", category: "Cost & Multi-well", params: ["wells", "dateRange"], exports: ["pdf"], available: true, blurb: "Problem cost pivoted on who it is charged to, stacked by problem kind." },
   { type: "16", title: "Phase Summary Pivot", category: "Cost & Multi-well", params: ["wells"], exports: ["pdf", "xlsx"], available: true, blurb: "How long each kind of phase takes, across every selected well." },
   { type: "17", title: "Safety Incidents", category: "Cost & Multi-well", params: ["wells", "dateRange"], exports: ["pdf"], available: true, blurb: "Every incident across the selected wells, oldest first." },
-  { type: "18", title: "Daily Geological", category: "Geology", params: ["well", "date"], exports: ["pdf"], available: false, blurb: "The day's geology: tops, lithology, samples, gas and shows." },
-  { type: "19", title: "Formation Performance", category: "Geology", params: ["well"], exports: ["pdf"], available: false, blurb: "Drilling performance per formation." },
-  { type: "20", title: "Geological Program", category: "Geology", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "The prognosed programme and its sampling requirements." },
+  { type: "18", title: "Daily Geological", category: "Geology", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "The wellsite geologist's daily sheet: gas, cuttings, lithology, shows and logs." },
+  { type: "19", title: "Formation Performance", category: "Geology", params: ["well"], exports: ["pdf"], available: true, blurb: "Every formation predicted against drilled, with the ROP through each." },
+  { type: "20", title: "Geological Program", category: "Geology", params: ["well"], exports: ["pdf"], available: true, blurb: "The programme: prognosed formations, sampling requirements and the contact sheet." },
   { type: "21", title: "Geological Schematic", category: "Geology", params: ["well"], exports: ["pdf"], available: false, blurb: "Formation, lithology, mud and casing tracks against depth." },
   { type: "22", title: "Complete Well Summary", category: "Completion", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "The whole well dossier." },
   { type: "23", title: "Daily Completion and Workover", category: "Completion", params: ["well", "date"], exports: ["pdf"], available: false, blurb: "The daily completion report with its schematic." },
@@ -136,6 +137,19 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
         }
         // 12 takes the range's UPPER bound only: "as of" is a cap on which day
         // each well's block is chosen from, not a window to filter days into.
+        case "18": return dayReport(req, reply, (id) => buildReport18(prisma, id));
+        case "19": {
+          const wellId = (req.query.wellId ?? "").trim();
+          if (!wellId) return reply.code(400).send({ error: "this report needs a wellId" });
+          if (!(await mayUseWell(prisma, req, wellId))) return reply.code(403).send({ error: "not your well" });
+          return (await buildReport19(prisma, wellId)) ?? reply.code(404).send({ error: "no such well" });
+        }
+        case "20": {
+          const wellId = (req.query.wellId ?? "").trim();
+          if (!wellId) return reply.code(400).send({ error: "this report needs a wellId" });
+          if (!(await mayUseWell(prisma, req, wellId))) return reply.code(403).send({ error: "not your well" });
+          return (await buildReport20(prisma, wellId)) ?? reply.code(404).send({ error: "no such well" });
+        }
         case "12":
           return buildReport12(
             prisma, await wellSet(req, req.query.wellIds), dateRange(req.query.from, req.query.to).to,

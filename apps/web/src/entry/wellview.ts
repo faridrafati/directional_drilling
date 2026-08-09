@@ -92,6 +92,8 @@ export interface JobHeader {
   targetDepth: number | null;
   targetFormation: string | null;
   summary: string | null;
+  /** Report 20's "Geological Objective" — what the well is drilled to find out. */
+  geologicalObjective: string | null;
   possCostSave: number | null;
   possTimeSaveHr: number | null;
   estProblemCost: number | null;
@@ -551,6 +553,107 @@ export interface SafetyIncidentReportRow {
 export interface Report17Payload extends MultiWellEnvelope {
   incidents: SafetyIncidentReportRow[];
   totals: HeaderRow;
+}
+
+/* ── reports 18 / 19 / 20 ──────────────────────────────────────────────────── */
+/** One formation, as any of the geology reports prints it. */
+export interface FormationRow {
+  name: string | null; lithDes: string | null; elementType: string | null; layerName: string | null;
+  progDepthTopSs: number | null; progTopTvd: number | null;
+  progDepthBtmSs: number | null; progBtmTvd: number | null;
+  drillTopMd: number | null; drillTopTvd: number | null;
+  drillBtmMd: number | null; drillBtmTvd: number | null;
+  finalTopMd: number | null; finalBtmMd: number | null;
+  ropMHr: number | null; pPorePpg: number | null; pFracPpg: number | null;
+  temperatureC: number | null; h2sConcPct: number | null;
+}
+export interface GeoTimeLogRow {
+  startTime: string | null; endTime: string | null;
+  durHr: number | null; cumDurHr: number | null;
+  code1: string | null; code2: string | null; com: string | null;
+}
+export interface GeoMudCheckRow {
+  type: string | null; time: string | null; depthMkb: number | null; densPpg: number | null;
+  pvCp: number | null; ypPa: number | null; filtrateMl: number | null; ph: number | null;
+}
+export interface GeoBhaBlock {
+  caption: string;
+  header: HeaderRow;
+  intervals: {
+    endDepthMkb: number | null; tvdEndMkb: number | null;
+    cumDepthM: number | null; cumDrillTimeHr: number | null;
+    intRopMHr: number | null; rpm: number | null; wob1000Lbf: number | null;
+    wellbore: string | null;
+  }[];
+}
+export interface GeoSampleRow {
+  topMkb: number | null; btmMkb: number | null;
+  volCaPct: number | null; volMgPct: number | null; com: string | null;
+}
+export interface GeoLithologyRow {
+  topMkb: number | null; btmMkb: number | null; des: string | null;
+  volPct: number | null; type: string | null; typeCode: string | null;
+}
+export interface OilShowRow {
+  topMkb: number | null; btmMkb: number | null;
+  showQuality: string | null; showOrigin: string | null; showType: string | null;
+}
+export interface GasShowRow {
+  topMkb: number | null; btmMkb: number | null; showType: string | null;
+  totalGasAvgPct: number | null; totalGasMinPct: number | null; totalGasMaxPct: number | null;
+}
+export interface GeoLogRunRow {
+  time: string | null; runNo: string | null; type: string | null;
+  topMkb: number | null; btmMkb: number | null; loggingCompany: string | null;
+}
+export interface Report18Payload extends ReportEnvelope {
+  identityRight: string | null;
+  depthLine: string | null;
+  dailySummary: HeaderRow;
+  gas: HeaderRow[];
+  narrative: HeaderRow[];
+  timeLog: GeoTimeLogRow[];
+  mudChecks: GeoMudCheckRow[];
+  bhaBlocks: GeoBhaBlock[];
+  formations: FormationRow[];
+  sampleDescriptions: GeoSampleRow[];
+  lithology: GeoLithologyRow[];
+  oilShows: OilShowRow[];
+  gasShows: GasShowRow[];
+  logRuns: GeoLogRunRow[];
+  /** True where the day has a mud check but the model can hold only one. */
+  mudCheckLimitation: boolean;
+}
+
+export interface DrilledIntervalRow {
+  startMkb: number | null; endDepthMkb: number | null;
+  intDepthM: number | null; drillTimeHr: number | null;
+  intRopMHr: number | null; date: string;
+}
+export interface Report19Payload extends ReportEnvelope {
+  wellboreBlocks: { caption: string; header: HeaderRow; intervals: DrilledIntervalRow[] }[];
+  formations: FormationRow[];
+  profile: { depth: number; ropMHr: number | null; name: string | null }[];
+  totals: HeaderRow;
+}
+
+export interface Report20Payload extends ReportEnvelope {
+  wellbores: {
+    name: string | null; profileType: string | null;
+    parentWellbore: string | null; proposedSurvey: string | null;
+  }[];
+  formations: FormationRow[];
+  jobs: HeaderRow[];
+  geologicalObjective: string | null;
+  samplingRequirements: {
+    topDes: string | null; topMkb: number | null;
+    btmDes: string | null; btmMkb: number | null;
+    wellbore: string | null; rqdBy: string | null; sampledBy: string | null; com: string | null;
+  }[];
+  contacts: {
+    company: string | null; contactName: string | null; title: string | null;
+    mobile: string | null; email: string | null; note: string | null;
+  }[];
 }
 
 /* ── the well's geology sheet (reports 18–21) ─────────────────────────────── */

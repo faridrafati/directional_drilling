@@ -43,7 +43,7 @@ const OFFSET_WELL = "Sample 12 - Offset";
 
 /** The reports with an assembler today; the rest still carry a "soon" badge. */
 const BUILT = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11",
-  "12", "13", "14", "15", "16", "17"] as const;
+  "12", "13", "14", "15", "16", "17", "18", "19", "20"] as const;
 
 /** The four totals report 01 computes, exactly as the sample prints them. */
 const EXPECTED_TOTALS = [
@@ -301,6 +301,94 @@ test.describe("Well Reports", () => {
     });
   }
 
+  // Tier 4's geology reads one register — `WellFormation` — from three sides:
+  // 20 prints what was PREDICTED, 18 the register as it stands on a day, and 19
+  // predicted against DRILLED. That is why prognosis and actual are separate
+  // columns, and these specs check each side sees its own.
+  test("report 18 prints the geologist's day beside the driller's", async ({ page }) => {
+    // Longer than the 30 s default: report 18 renders ten tables, and each
+    // text assertion below rescans all of them. It is slow, not flaky — the
+    // same run passes comfortably at 90 s.
+    test.setTimeout(90_000);
+    await page.getByTestId("report-18").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await page.getByLabel("Date", { exact: true }).selectOption(DEMO_DAY);
+    await expect(page.getByText("Daily Summary", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    // Four kinds of gas, each with an average and a maximum.
+    for (const label of ["Avg Background Gas (%)", "Max Connection Gas (%)", "Max Trip Gas (%)"]) {
+      await expect(page.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(page.getByText("31.50", { exact: true }).first()).toBeVisible();
+    // The geologist's narrative, not the driller's.
+    await expect(page.getByText(/Mishan limestone/)).toBeVisible();
+    // Its cost band agrees with report 01's variance, reached a third way.
+    await expect(page.getByText("215,708.53", { exact: true }).first()).toBeVisible();
+    // Cuttings, lithology and both kinds of show.
+    await expect(page.getByText(/sucrosic/)).toBeVisible();
+    await expect(page.getByText("Fluorescence").first()).toBeVisible();
+    await expect(page.getByText("Triple Combo").first()).toBeVisible();
+    // A day holds one mud check; the page says so rather than implying one ran.
+    await expect(page.getByText(/holds one mud check/)).toBeVisible();
+  });
+
+  test("report 19 prints predicted against drilled, and the ROP profile", async ({ page }) => {
+    await page.getByTestId("report-19").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Formations", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+
+    // The register's as-drilled side: a top the driller called and the log-tied
+    // one beside it, which is the comparison the report exists for.
+    await expect(page.getByText("Drill Top MD (mKB)", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Final Top MD (mKB)", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Gachsaran").first()).toBeVisible();
+    // 12 intervals, 2,557 m in 205 hr — the same figures report 13 computes.
+    await expect(page.getByText("2,557.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("12.47", { exact: true }).first()).toBeVisible();
+    await expect(page.locator("#wellview-formation-profile svg").first()).toBeVisible();
+  });
+
+  test("report 20 prints the programme, not the outturn", async ({ page }) => {
+    await page.getByTestId("report-20").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Geological Objective", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    // The prognosis columns — and NOT the as-drilled ones, which are empty by
+    // definition before spud and would read as lost data.
+    await expect(page.getByText("Prog Depth Top SS (m)", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("H2S Conc (%)", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Final Top MD (mKB)", { exact: true })).toHaveCount(0);
+
+    await expect(page.getByText(/Akuinu structure/)).toBeVisible();
+    await expect(page.getByText("Open Hole Logs").first()).toBeVisible();
+    await expect(page.getByText("Bill Frost").first()).toBeVisible();
+  });
+
+  for (const type of ["18", "19", "20"] as const) {
+    test(`report ${type} exports a PDF`, async ({ page }, testInfo) => {
+      test.setTimeout(90_000);
+      await page.getByTestId(`report-${type}`).click();
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      if (type === "18") await page.getByLabel("Date", { exact: true }).selectOption(DEMO_DAY);
+      await expect(page.getByRole("button", { name: "PDF" })).toBeVisible({ timeout: 20_000 });
+      if (type === "19") {
+        await expect(page.locator("#wellview-formation-profile svg").first()).toBeVisible({ timeout: 20_000 });
+        await page.waitForTimeout(700);
+      }
+      const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 60_000 }),
+        page.getByRole("button", { name: "PDF" }).click(),
+      ]);
+      const path = join(dir, download.suggestedFilename());
+      await download.saveAs(path);
+      await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
+      const { statSync, readFileSync } = await import("node:fs");
+      expect(statSync(path).size).toBeGreaterThan(5_000);
+      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    });
+  }
+
   // Reports 12 and 14 close Tier 3. Both compare wells against each other, so
   // the seed carries a second, faster, shallower offset well — an offset curve
   // against nothing is not a comparison.
@@ -397,13 +485,22 @@ test.describe("Well Reports", () => {
     await page.getByTestId("report-16").click();
     await expect(page.getByText("Phase Summary Pivot").first()).toBeVisible({ timeout: 20_000 });
 
+    // Narrowed to the two SEEDED wells before the exact total is asserted. The
+    // pivot counts every phase of every job on every well in the set, so any
+    // other job on the account — a half-finished one, another test's leftover —
+    // moves the figure, and the spec would be testing the database rather than
+    // the report.
+    await page.getByTestId("well-set-picker").click();
+    await page.locator("label", { hasText: "Dehloran-099" }).locator("input[type=checkbox]").click();
+    await page.getByTestId("well-set-picker").click();
+
     // Two wells drilled the same phase kinds, so those groups have a spread —
     // which is the whole point of a pivot with Min, Max and StdDev in it.
     await expect(page.getByText("Drill-Deviation Control").first()).toBeVisible();
     await expect(page.getByText("Run and Cement Casing").first()).toBeVisible();
     await expect(page.getByText("Grand Total", { exact: true })).toBeVisible();
     // 13 measured phases across the two wells, 39.58 days between them.
-    await expect(page.getByText("39.58", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("39.58", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
   });
 
   test("report 16 narrowed to one well matches report 10's cumulative", async ({ page }) => {

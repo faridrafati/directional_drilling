@@ -191,6 +191,13 @@ async function main() {
     summary:
       "No major problems were encountered while drilling this well. "
       + "Note that the well was completed under budget and within the allocated number of days.",
+    // Report 20's own field — what the well is drilled to FIND OUT, which is
+    // neither how the drilling went nor where it stops.
+    geologicalObjective:
+      "Establish the top and thickness of the Blue Heron Shale on the southern flank of the "
+      + "Akuinu structure, and confirm reservoir quality in the Asmari through a cored interval "
+      + "and a full open-hole suite. Secondary objective: pick the Gachsaran anhydrite to "
+      + "calibrate the seismic depth conversion for the next three wells on this pad.",
     possCostSave: 42_000,
     possTimeSaveHr: 18,
     estProblemCost: 2_500,
@@ -517,7 +524,7 @@ async function main() {
   // ── one fully-filled day, so reports 06 and 07 have something to print ──
   const admin = await prisma.entryUser.findFirst({ where: { role: "admin" }, orderBy: { createdAt: "asc" } });
   if (admin) await seedDay(well.id, admin.id, job.id, wellbores[0]?.id ?? null, pumps, bhaRun.id);
-  if (admin) await seedProgressDays(well.id, admin.id, job.id);
+  if (admin) await seedProgressDays(well.id, admin.id, job.id, wellbores[0]?.id ?? null);
   if (admin) await seedOffsetWell(rig.id, admin.id, codeIds);
 
   // Attach any daily reports already filed on this well, so the day-scoped
@@ -875,7 +882,9 @@ function lithologyAt(depth: number): { des: string; type: string; typeCode: stri
   return { des: "Shale, black, organic-rich", type: "Shale", typeCode: "Sh", volPct: 95 };
 }
 
-async function seedProgressDays(wellId: string, userId: string, jobId: string) {
+async function seedProgressDays(
+  wellId: string, userId: string, jobId: string, wellboreId: string | null,
+) {
   //   day  depth   [letter, code2, hours, problem hours, remark]
   const days: [number, number, [string, string, number, number, string][]][] = [
     [2, 512, [["E", "DRLG", 18, 0, "Drill 17-1/2\" hole"], ["E", "CIRC", 3, 0, "Circulate and condition mud"], ["E", "TRIP", 3, 0, "Wiper trip"]]],
@@ -949,6 +958,21 @@ async function seedProgressDays(wellId: string, userId: string, jobId: string) {
             { order: 0, jobContact: "Hossein Nazari", position: "Drilling Foreman", mobile: "0912 100 4455" },
             { order: 1, jobContact: "Mehdi Sadeghi", position: "Rig Manager", mobile: "0912 100 6677" },
           ],
+        },
+        // One drilled interval per day. Report 19 tabulates these and computes
+        // the well's overall ROP from them; a report about intervals with a
+        // single interval in it proves nothing.
+        drillingParameters: {
+          create: [{
+            order: 0, wellboreId,
+            startMkb: previous, endDepthMkb: depth,
+            drillTimeHr: log.filter(([, c2]) => c2 === "DRLG").reduce((h, e) => h + e[2], 0) || null,
+            intRopMHr: null,
+            rpm: 110 + (offset % 5) * 8,
+            wob1000Lbf: 18 + (offset % 4) * 3,
+            qFlowGpm: 760 + (offset % 3) * 40,
+            sppPsi: 2_050 + (offset % 6) * 60,
+          }],
         },
         // One lithology interval per day, so report 21's litho track spans the
         // whole well instead of only the showcase day's 49 metres.

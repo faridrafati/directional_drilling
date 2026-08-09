@@ -114,14 +114,15 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | Entry UI — well-level Geology panel (formation register in three bands, sampling requirements) | 2026-08-09 |
 | Entry UI — daily Geology tab (gas, narrative, samples, lithology, shows, log runs) | 2026-08-09 |
 | Entry UI — job Contacts tab | 2026-08-09 |
+| `Job.geologicalObjective` — report 20's own statement, plus its form field | 2026-08-09 |
 
 ## Tier 4 — geology
 
 | # | Report | Spec read | Schema | Entry | Assembler | Preview | PDF | Verified |
 |---|---|---|---|---|---|---|---|---|
-| 18 | Daily Geological | — | — | — | — | — | — | — |
-| 19 | Formation Performance | — | — | — | — | — | — | — |
-| 20 | Geological Program | — | — | — | — | — | — | — |
+| 18 | Daily Geological | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
+| 19 | Formation Performance | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
+| 20 | Geological Program | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
 | 21 | Geological Schematic | — | — | — | — | — | — | — |
 
 ## Tier 5 — completion & production
@@ -449,6 +450,27 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   and report 18's sample prints TWO checks on its day. Widening it to a one-to-many is a
   restructuring of an existing `Entry*` model, which this work does not do; report 18 prints the
   day's single check. Worth revisiting — a rig commonly runs a morning and an evening check.
+- **2026-08-09 — the register is printed with a DIFFERENT column set on each report.** 20 prints the
+  prognosis alone, because its as-drilled columns are empty by definition before a bit turns and
+  printing them would read as lost data rather than data not yet acquired; 19 prints drilled against
+  final; 18 prints prognosis and drilled tops side by side. One shared table would have to carry
+  every column on every page.
+- **2026-08-09 — report 19 DERIVES Int ROP where the day did not store one.** Metres over hours is
+  the definition of the column, and a blank where both its inputs are present is the report failing
+  to do its arithmetic, not the crew failing to record something.
+- **2026-08-09 — report 18's interval rows carry no TVD.** The day's `endDepthTvd` is the DAY's, not
+  each interval's; printing it on every row would claim a precision the data does not have.
+- **2026-08-09 — a `const` arrow used above its declaration typechecks and throws.** Report 19's
+  interval-metreage helper sat below the block that called it and died at runtime with "Cannot access
+  before initialization" while the compiler was perfectly happy. Caught by exercising the endpoint,
+  which is why every report is called before its page is built.
+- **2026-08-09 — report 16's exact-total spec narrows the well set first.** The pivot counts every
+  phase of every job on every well in the set, so any other job on the account — a half-finished one,
+  another test's leftover — moves the figure, and the spec would be testing the database rather than
+  the report.
+- **2026-08-09 — E2E timings need an idle machine.** A run made while the box was thrashing (load
+  average 19.7) took 38 minutes and failed 19 specs that pass in seconds when idle. Before believing
+  a red suite, check `uptime`.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

@@ -91,6 +91,7 @@ function toBody(j: JobDetail): JobBody {
     mostLikelyPlannedEndDate: j.mostLikelyPlannedEndDate,
     maxPlannedEndDate: j.maxPlannedEndDate, endDate: j.endDate,
     targetDepth: j.targetDepth, targetFormation: j.targetFormation, summary: j.summary,
+    geologicalObjective: j.geologicalObjective,
     possCostSave: j.possCostSave, possTimeSaveHr: j.possTimeSaveHr,
     estProblemCost: j.estProblemCost, estLostTimeHr: j.estLostTimeHr,
     phases: (j.phases ?? []).map((p) => ({
@@ -567,6 +568,9 @@ function JobTab({ draft, set, codes }: { draft: JobBody; set: SetField; codes?: 
       <Section>Summary</Section>
       <TextField label="Job summary" multiline value={draft.summary} onChange={(v) => set("summary", v)}
         placeholder="The job narrative report 01 prints. Not the daily summary — that stays on each day's report." />
+      <TextField label="Geological objective" multiline
+        value={draft.geologicalObjective} onChange={(v) => set("geologicalObjective", v)}
+        placeholder="What the well is drilled to find out — report 20 prints it. Not the same statement as the summary (how it went) or the target formation (where it stops)." />
 
       <Section right={<span className="font-normal normal-case text-gray-500">report 22</span>}>
         Savings &amp; problem cost

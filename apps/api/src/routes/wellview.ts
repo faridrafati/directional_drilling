@@ -106,7 +106,7 @@ const jobHeaderSchema = z.object({
   plannedStartDate: jalaliish, startDate: jalaliish,
   minPlannedEndDate: jalaliish, mostLikelyPlannedEndDate: jalaliish,
   maxPlannedEndDate: jalaliish, endDate: jalaliish,
-  targetDepth: num, targetFormation: str, summary: str,
+  targetDepth: num, targetFormation: str, summary: str, geologicalObjective: str,
   possCostSave: num, possTimeSaveHr: num, estProblemCost: num, estLostTimeHr: num,
 });
 
