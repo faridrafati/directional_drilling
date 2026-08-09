@@ -186,10 +186,17 @@ async function main() {
     name: JOB_NAME,
     category: "Drilling",
     primaryJobType: "Drilling - original",
+    // Reports 10, 13 and 28 all print the secondary type beside the primary:
+    // "what kind of job" and "what kind of that kind".
+    secondaryJobType: "Directional",
     status1: "Job Complete",
     plannedStartDate: day(0),
     startDate: day(0),
+    // Report 11 prints all three planned ends as a range around the likely
+    // one — a single date would hide how wide the plan actually was.
+    minPlannedEndDate: day(23),
     mostLikelyPlannedEndDate: day(25),
+    maxPlannedEndDate: day(29),
     endDate: day(26),
     targetDepth: 2_750,
     targetFormation: "Blue Heron Shale",
@@ -294,7 +301,9 @@ async function main() {
   }
 
   // ── the well's holes and the rig's pumps (reports 06 / 07) ──────────────
-  const holes = [{ name: "Original Hole", kind: "Original Hole", koMdMkb: 421.0 }];
+  // The VS azimuth is the direction the vertical section is projected onto —
+  // report 04 prints it, and it matches the directional plan's own 118°.
+  const holes = [{ name: "Original Hole", kind: "Original Hole", koMdMkb: 421.0, vsAzimuthDeg: 118.0 }];
   await prisma.entryWellbore.deleteMany({ where: { wellId: well.id } });
   const wellbores = [];
   for (const [i, h] of holes.entries()) {
@@ -658,6 +667,7 @@ async function main() {
   const admin = await prisma.entryUser.findFirst({ where: { role: "admin" }, orderBy: { createdAt: "asc" } });
   if (admin) await seedDay(well.id, admin.id, job.id, wellbores[0]?.id ?? null, pumps, bhaRun.id);
   if (admin) await seedProgressDays(well.id, admin.id, job.id, wellbores[0]?.id ?? null);
+  if (admin) await seedCompletionDays(well.id, admin.id, job.id);
   if (admin) await seedOffsetWell(rig.id, admin.id, codeIds);
 
   // Attach any daily reports already filed on this well, so the day-scoped
@@ -1155,6 +1165,131 @@ async function seedProgressDays(
     previous = depth;
   }
   console.log(`progress days   ${days.length} light days seeded (job days 3-13)`);
+}
+
+/**
+ * The COMPLETION days — the two days report 23 exists to print.
+ *
+ * Every other day in this fixture is a drilling day, and a drilling day is the
+ * wrong sample for a completion-and-workover sheet: it reports depth where the
+ * completion sheet reports pressure at the wellhead, and it happens before any
+ * perforation has been shot, so the report's perforation and stimulation panels
+ * come out empty however good the rest of the data is.
+ *
+ * These two sit at job days 23 and 25, AFTER the perforations of day 21/23 and
+ * the acid job of day 22, so the report lists work that had actually happened by
+ * the day it is run for — which is the filter report 23 applies.
+ *
+ * Depth is carried at TD rather than left blank: the hole IS 2,752 m deep on a
+ * completion day. That keeps report 14's depth curve flat across the completion
+ * instead of breaking it, and keeps report 12 — which prints a well's LATEST day
+ * — reading as a real day rather than one with no depth on it.
+ */
+async function seedCompletionDays(
+  wellId: string, userId: string, jobId: string,
+): Promise<void> {
+  const TD = 2_752.0;
+  //  offset  the day's log: [from, to, letter, code2, remark]
+  const days: [number, number, number, string, string, [string, string, string, string, string][]][] = [
+    [22, 23, 0, "Perforated the upper Asmari and acidised it.",
+      "Rig down wireline, prepare to run completion string.", [
+        // The log runs 00:00 to 24:00. A daily sheet accounts for the WHOLE day
+        // — a log that starts at 06:00 leaves six hours the report cannot
+        // explain, and every total built on it is short by them.
+        ["00:00", "06:00", "K", "MONI", "Monitor well on the choke, prepare wireline location"],
+        ["06:00", "08:30", "J", "RUWL", "Rig up wireline unit and pressure test lubricator"],
+        ["08:30", "12:00", "J", "PERF", "Correlate on GR-CCL and perforate 2,390-2,404 m and 2,412-2,426 m"],
+        ["12:00", "14:00", "J", "RDWL", "Rig down guns, recover and inspect"],
+        ["14:00", "19:30", "K", "STIM", "Rig up coiled tubing and pump 48 m3 of 15% HCl across the upper perfs"],
+        ["19:30", "22:00", "K", "FLOW", "Flow back acid to the test tank"],
+        ["22:00", "00:00", "K", "MONI", "Monitor wellhead pressures"],
+      ]],
+    [24, 25, 0, "Squeezed the lower Asmari and ran the completion string.",
+      "Set packer, land tubing hanger and pressure test.", [
+        ["00:00", "06:00", "K", "CIRC", "Circulate and condition brine, rig up squeeze equipment"],
+        ["06:00", "09:00", "K", "SQZE", "Rig up and squeeze the lower Asmari perforations"],
+        ["09:00", "11:30", "K", "WOC", "Wait on cement, then pressure test the squeeze to 3,000 psi"],
+        ["11:30", "18:00", "L", "RIHC", "Run 4-1/2\" completion string with TRSSV, packer and seal assembly"],
+        ["18:00", "21:00", "L", "SETP", "Space out and set the production packer at 2,340 m"],
+        ["21:00", "00:00", "L", "TEST", "Pressure test tubing and annulus"],
+      ]],
+  ];
+
+  for (const [offset, serialNo, _spare, description, next, log] of days) {
+    void _spare;
+    const reportDate = day(offset);
+    const existing = await prisma.entryReport.findUnique({
+      where: { wellId_reportDate: { wellId, reportDate } },
+    });
+    if (existing) await prisma.entryReport.delete({ where: { id: existing.id } });
+
+    // The pressures BUILD as the well is completed and then are bled off for
+    // the squeeze — a pair of constants would print as data without being any.
+    const pTub = offset === 22 ? 1_240 : 2_980;
+    const pCas = offset === 22 ? 180 : 320;
+
+    await prisma.entryReport.create({
+      data: {
+        wellId, userId, jobId, serialNo, reportDate, status: "submitted",
+        previousDepth: TD, midnightDepth: TD,
+        weather: "Clear", temperatureC: offset === 22 ? 34 : 36,
+        roadCondition: "Dry", holeCondition: "Good",
+        pTubingPsi: pTub, pCasingPsi: pCas,
+        description,
+        opsAtReportTime: offset === 22 ? "MONITORING WELLHEAD PRESSURES" : "PRESSURE TESTING COMPLETION",
+        opsNextPeriod: next,
+        supervisors: {
+          create: [
+            { order: 0, jobContact: "Reza Ahmadi", position: "Completion Supervisor", mobile: "0912 100 8899" },
+            { order: 1, jobContact: "Mehdi Sadeghi", position: "Rig Manager", mobile: "0912 100 6677" },
+          ],
+        },
+        operations: {
+          create: log.map(([from, to, letter, code2, remarks], i) => ({
+            order: i, opCode: `${letter}-P`, opLetter: letter, timeIndicator: "P",
+            opCode2: code2, isProblem: false, fromTime: from, toTime: to, remarks,
+          })),
+        },
+        // Completion fluid, not mud — report 23 prints the same table under its
+        // own heading, and a completion day moves brine.
+        mudVolumes: {
+          create: offset === 22
+            ? [
+                { order: 0, action: "Mixed 1.05 SG CaCl2 brine", toWellBbl: 240 },
+                { order: 1, action: "Returned spent acid to test tank", fromWellBbl: 310 },
+              ]
+            : [
+                { order: 0, action: "Displaced to packer fluid", toWellBbl: 420 },
+                { order: 1, action: "Returned to reserve pit", fromWellBbl: 180 },
+              ],
+        },
+        safetyChecks: {
+          create: offset === 22
+            ? [
+                { order: 0, time: "05:45", type: "Pre-job", des: "Wireline and explosives toolbox talk" },
+                { order: 1, time: "13:45", type: "Pre-job", des: "Acid handling — PPE and eyewash stations checked" },
+              ]
+            : [
+                { order: 0, time: "05:45", type: "Pre-job", des: "Pressure testing exclusion zone briefed" },
+                { order: 1, time: "17:30", type: "Drill", des: "H2S drill — muster and headcount" },
+              ],
+        },
+        logRuns: {
+          create: offset === 22
+            ? [{ order: 0, time: "09:10", runNo: "3", type: "GR-CCL", topMkb: 2_300, btmMkb: 2_440, loggingCompany: "Schlumberger" }]
+            : [{ order: 0, time: "10:15", runNo: "4", type: "CBL", topMkb: 2_440, btmMkb: 2_530, loggingCompany: "Schlumberger" }],
+        },
+        companies: {
+          create: [
+            { order: 0, company: "NABORS", personnelType: "Contractor", count: 22, totWorkTimeHr: 264 },
+            { order: 1, company: "POGC", personnelType: "Operator", count: 4, totWorkTimeHr: 48 },
+            { order: 2, company: "Schlumberger", personnelType: "Service", count: 9, totWorkTimeHr: 108 },
+          ],
+        },
+      },
+    });
+  }
+  console.log(`completion days ${days.length} seeded (job days 23 and 25) — report 23's sample`);
 }
 
 /**

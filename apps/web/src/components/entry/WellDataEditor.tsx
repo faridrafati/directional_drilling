@@ -957,10 +957,11 @@ function RegistersPanel({ wellId }: { wellId: string }) {
           { key: "kind", label: "Kind", type: "select", width: "w-32",
             options: ["Original Hole", "Sidetrack", "Re-drill", "Lateral"].map((v) => ({ value: v, label: v })) },
           { key: "koMdMkb", label: "KO MD (mKB)", type: "num", width: "w-28" },
+          { key: "vsAzimuthDeg", label: "VS Azimuth (°)", type: "num", width: "w-28" },
         ] as Col<WellboreRow>[]}
         rows={draft.wellbores}
         onChange={(rows) => set("wellbores", rows.map((r) => (r.id ? r : { ...r, id: newRowId("wb") })))}
-        blank={() => ({ id: newRowId("wb"), order: 0, name: null, kind: null, koMdMkb: null })}
+        blank={() => ({ id: newRowId("wb"), order: 0, name: null, kind: null, koMdMkb: null, vsAzimuthDeg: null })}
         addLabel="Wellbore" minRows={2} testId="wellbore"
       />
 

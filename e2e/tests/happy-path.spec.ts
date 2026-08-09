@@ -10,7 +10,10 @@
 import { test, expect } from "@playwright/test";
 
 test("create project, add a calculation, run it end-to-end", async ({ page }) => {
-  await page.goto("/");
+  // "/" has redirected to /ddr since the app's landing page moved to Daily
+  // Drilling Reports (8b8cd76); these specs are about the Projects surface, so
+  // they ask for it by name rather than relying on the default route.
+  await page.goto("/projects");
   await page.waitForURL(/\/projects$/);
 
   const projectName = `E2E ${Date.now()}`;
@@ -49,12 +52,16 @@ test("create project, add a calculation, run it end-to-end", async ({ page }) =>
   await wellCard.getByRole("link", { name: "Well Design" }).first().click();
   await page.waitForURL(/\/calculations\//);
 
-  // 6. "+ Add row" now opens the profile picker first (no row is added until
+  // 6. "+ Add profile" opens the profile picker first (no row is added until
   //    the user chooses a profile). The picker appears with a "Select a
   //    profile type first" hint banner.
-  await page.getByRole("button", { name: "+ Add row" }).click();
+  //
+  //    The button was renamed from "+ Add row" and the picker's labels lost
+  //    their "*" for a "★ Azm input" suffix; `exact` keeps "Hold-Curve 3D"
+  //    from also matching "Hold-Curve 3D ★ Azm input".
+  await page.getByRole("button", { name: "+ Add profile" }).click();
   await expect(page.getByText("Select a profile type first")).toBeVisible();
-  await page.getByText("Hold-Curve 3D*", { exact: true }).click();
+  await page.getByText("Hold-Curve 3D", { exact: true }).click();
   await page.getByRole("button", { name: "Apply" }).click();
 
   // 7. HC3D now creates TWO persisted rows: KOP (computed, no inputs) and
@@ -65,12 +72,22 @@ test("create project, add a calculation, run it end-to-end", async ({ page }) =>
 
   // 8. Fill the editable cells for the Target row of HC3D. Per Unit02.pas:rowcolor
   //    ii+1 = { inc, tvd, ns, ew } are editable on the Target row.
-  //    td order: # | Profile | Comment | MD | Inc | Azm | TVD | EW | NS | DLS | DMD | actions
+  //
+  //    Columns are resolved from the HEADER ROW rather than hard-coded by
+  //    position: this table's columns are built dynamically, and inserting one
+  //    (VSEC gained an ⓘ button and a column) silently shifted every index and
+  //    broke this test in a way that read as a product bug.
+  const headers = await page.locator("thead tr").last().locator("th").allTextContents();
+  const columnOf = (name: string) => {
+    const i = headers.findIndex((h) => h.trim().startsWith(name));
+    expect(i, `no "${name}" column — headers were: ${headers.join(" | ")}`).toBeGreaterThan(-1);
+    return i;
+  };
   const cells = targetRow.locator("td");
-  await cells.nth(4).locator("input").fill("45");      // Inc deg
-  await cells.nth(6).locator("input").fill("6000");    // TVD
-  await cells.nth(7).locator("input").fill("2000");    // EW
-  await cells.nth(7).locator("input").press("Tab");
+  await cells.nth(columnOf("Inc")).locator("input").fill("45");
+  await cells.nth(columnOf("TVD")).locator("input").fill("6000");
+  await cells.nth(columnOf("EW")).locator("input").fill("2000");
+  await cells.nth(columnOf("EW")).locator("input").press("Tab");
 
   // 9. Calculate
   await page.getByRole("button", { name: /^Calculate/ }).click();

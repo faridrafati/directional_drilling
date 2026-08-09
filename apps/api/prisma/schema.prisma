@@ -433,6 +433,11 @@ model EntryReport {
   maxTripGasPct       Float?
   avgDrillGasPct      Float?
   maxDrillGasPct      Float?
+  /// Tubing and casing pressure, psi. A COMPLETION day reports these where a
+  /// drilling day reports depth — report 23 prints both, and neither is on the
+  /// drilling sheet.
+  pTubingPsi          Float?
+  pCasingPsi          Float?
   /// The geologist's own narrative, kept apart from the driller's `description`
   /// / `opsAtReportTime` / `opsNextPeriod`: the two are written by different
   /// people about different things, and report 18 prints only these.
@@ -1480,6 +1485,9 @@ model EntryWellbore {
   name      String? /// e.g. "Original Hole", "ST-1"
   /// "Original Hole" | "Sidetrack" | "Re-drill" | "Lateral"
   kind      String?
+  /// The azimuth the vertical section is projected onto, degrees. Report 04
+  /// prints it; without it a VS figure is a number with no direction attached.
+  vsAzimuthDeg Float?
   /// Kick-off measured depth, mKB. EntryReport.kop stays the DR.xls per-day
   /// free text and is NOT migrated into this column.
   koMdMkb   Float?

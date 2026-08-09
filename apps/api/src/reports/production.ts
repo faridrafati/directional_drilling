@@ -169,8 +169,8 @@ export async function buildReport23(
       cell("Road Condition", r.roadCondition),
       // A completion day reports tubing and casing pressure where a drilling
       // day reports depth; neither is on the other's sheet.
-      cell("P Tub (psi)", null),
-      cell("P Cas (psi)", null),
+      cell("P Tub (psi)", r.pTubingPsi, "decimal"),
+      cell("P Cas (psi)", r.pCasingPsi, "decimal"),
       cell("Rig Time (hr)", sumOrNull(r.operations.map((op) => durationHr(op.fromTime, op.toTime))), "decimal"),
     ],
     contacts: r.supervisors.map((s) => ({

@@ -131,7 +131,7 @@ const jobSaveSchema = jobHeaderSchema.extend({
  * would silently unlink every interval from its hole.
  */
 const wellboreSchema = z.object({
-  id: rowId, order: int0, name: str, kind: str, koMdMkb: num,
+  id: rowId, order: int0, name: str, kind: str, koMdMkb: num, vsAzimuthDeg: num,
 });
 /** Reports 07's well-level registers. Nothing points INTO these, so they save
  *  replace-all, exactly like a daily child table. */

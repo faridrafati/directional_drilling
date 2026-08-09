@@ -257,7 +257,7 @@ export interface DailyPayload extends ReportEnvelope {
 }
 
 // ── well- and rig-level registers ───────────────────────────────────────────
-export interface WellboreRow { id: string | null; order: number; name: string | null; kind: string | null; koMdMkb: number | null }
+export interface WellboreRow { id: string | null; order: number; name: string | null; kind: string | null; koMdMkb: number | null; vsAzimuthDeg: number | null }
 export interface LessonRow {
   order: number; lessonType: string | null; startDate: string | null; endDate: string | null;
   startDepthMkb: number | null; endDepthMkb: number | null;

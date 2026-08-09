@@ -555,3 +555,52 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.
+  **All three are fixed as of 2026-08-09**, see the four entries below.
+- **2026-08-09 — `happy-path` now resolves table columns by HEADER TEXT, not by index.** It broke
+  because the segment table gained a VSEC column and every hard-coded index shifted by one. A spec
+  that counts columns re-breaks on the next column; one that looks up "TVD" does not.
+- **2026-08-09 — `mobile-smoke` was rewritten around what mobile actually does.** It asserted a
+  drawer, a hamburger and a "Recent calculations" panel, none of which exist any more. It now checks
+  that the projects surface is reachable at 375 px and that the page does not scroll sideways —
+  which is the property "usable on a phone" actually means.
+- **2026-08-09 — `@dd/grd`'s fixture tests SKIP when the fixture is absent instead of failing.**
+  `TOP_HITH_DEPTH.grd` lives in the gitignored legacy tree, relocated under `old/` in fddb44d, so it
+  is present on a machine with the Delphi reference code and absent on a fresh clone. Four red tests
+  that no clone could ever make green say "the parser is broken"; a skip says "not run here", and
+  only one of those is true. Both paths are tried before skipping.
+- **2026-08-09 — the E2E suite needs credentials passed in.** It defaults to `admin`/`admin`, which
+  is not this box's admin password, and every spec then fails on a 401 that looks like a broken app.
+  Run it as `ENTRY_USER=… ENTRY_PASSWORD=… npx playwright test`.
+
+### 2026-08-09 — the gap audit, and what filling it changed
+
+Every one of the 30 endpoints was hit with a script that flags empty arrays and all-null header
+rows, so that "the report works" and "the report has something to show" stop being the same claim.
+Thirteen reports came back clean. Of the rest, most were FALSE positives worth writing down: a
+report declaring `headerVariant: "none"` carries `header: []` by design and prints `wells`,
+`filters` or a `jobHeader` in its place, `asOf` is null when no cap was passed, and report 29's
+`noProposal` is null precisely because a proposal exists. Five were real:
+
+- **Two fields had nowhere to live, so they were hard-coded `null` in the assembler.** Report 04's
+  Vertical Section Direction and report 23's P Tub / P Cas printed blank on every well, forever,
+  because no column existed. Added `EntryWellbore.vsAzimuthDeg` and `EntryReport.pTubingPsi` /
+  `.pCasingPsi`, both enterable — the VS azimuth on the wellbore grid, the pressures on the daily
+  sheet beside road and hole condition. A cell wired to a literal `null` is worse than a missing
+  cell: it looks like data that was never entered.
+- **Three fields existed and were enterable but unseeded** — the job's secondary type and its min /
+  max planned end dates — so reports 10, 11, 13 and 28 demonstrated blanks. Seeded.
+- **Report 23 had no day it could honestly print.** Every day in the fixture was a DRILLING day: it
+  reports depth where the completion sheet reports wellhead pressure, and all of them fall before
+  the first perforation, so the perforation and stimulation panels came out empty however good the
+  rest of the data was. The fixture gained two completion days at job days 23 and 25 — a perforating
+  and acid day, and a squeeze-and-run-completion day — placed AFTER the perforations of days 21/23
+  and the acid job of day 22, so the report lists work that had actually happened by the day it is
+  run for. That is the filter report 23 applies, and it is now visibly applied: the day-26 scale
+  squeeze is correctly absent from the day-24 sheet.
+- **The completion days carry depth at TD rather than blank.** The hole IS 2,752 m deep on a
+  completion day. Blanking it would break report 14's depth curve and would make report 12 — which
+  prints a well's LATEST day — read as a day with no depth on it.
+- **Their time logs run 00:00 to 24:00, like every other day's.** The first cut started at 06:00 and
+  left six hours the sheet could not explain; reports 09 and 13 caught it as a job total of 324 h
+  where 14 days is 336. A daily report accounts for the whole day, and the two specs that assert
+  those totals were updated from 12 days to 14 rather than the fixture being bent back to fit them.

@@ -408,6 +408,7 @@ export interface ReportBody {
   logRuns: LogRunRow[];
   /** Weather, road and hole condition as reports 06 / 07 print them. */
   weather: string | null; roadCondition: string | null; holeCondition: string | null;
+  pTubingPsi: number | null; pCasingPsi: number | null;
   temperatureC: number | null;
   /** Start depth on the TVD scale; `endDepthTvd` above is its other half. */
   startDepthTvd: number | null;

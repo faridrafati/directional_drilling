@@ -652,9 +652,9 @@ test.describe("Well Reports", () => {
     await expect(page.getByText("10,343,000.00", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("10,127,291.47", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("215,708.53", { exact: true }).first()).toBeVisible();
-    // 12 days × 24 hr, of which 8 were trouble.
-    await expect(page.getByText("288.00", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("2.78", { exact: true }).first()).toBeVisible();
+    // 14 days × 24 hr — 12 drilling, 2 completion — of which 8 were trouble.
+    await expect(page.getByText("336.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("2.38", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Grand Total", { exact: true })).toBeVisible();
   });
 
@@ -838,10 +838,11 @@ test.describe("Well Reports", () => {
     ]) {
       await expect(page.locator(`${id} svg`).first()).toBeVisible();
     }
-    // 12 days × 24 h. Both percentage panels are shares of THIS number, which
-    // is what stops NPT reading as a share of itself.
-    await expect(page.getByText("288.00", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("12", { exact: true }).first()).toBeVisible();
+    // 14 days × 24 h — the 12 drilling days plus the two completion days the
+    // fixture carries for report 23. Both percentage panels are shares of THIS
+    // number, which is what stops NPT reading as a share of itself.
+    await expect(page.getByText("336.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("14", { exact: true }).first()).toBeVisible();
     // The header band report 09 adds over the standard one.
     // `.first()`: "Total Depth (mKB)" is in the header band AND the job row —
     // the report states it twice, exactly as the sample does.

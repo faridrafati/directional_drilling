@@ -8,23 +8,26 @@ import { test, expect } from "@playwright/test";
 
 test.use({ viewport: { width: 375, height: 667 } });   // iPhone SE-ish
 
-test("mobile: sidebar drawer + project creation", async ({ page }) => {
-  await page.goto("/");
+test("mobile: the projects surface is usable at 375px", async ({ page }) => {
+  // "/" has redirected to /ddr since the app's landing page moved to Daily
+  // Drilling Reports (8b8cd76); these specs are about the Projects surface, so
+  // they ask for it by name rather than relying on the default route.
+  await page.goto("/projects");
   await page.waitForURL(/\/projects$/);
 
-  // The hamburger button is visible.
-  const hamburger = page.getByRole("button", { name: "Open navigation" });
-  await expect(hamburger).toBeVisible();
+  // The off-canvas drawer this spec used to exercise — a hamburger, a scrim and
+  // a "Recent calculations" panel — no longer exists anywhere in the app; the
+  // navigation moved into the top bar. What is still worth smoke-testing at
+  // 375px is that the page is USABLE there: the nav reachable, the create form
+  // reachable, and nothing overflowing the viewport sideways.
+  await expect(page.getByRole("link", { name: "Directional Drilling" }).first()).toBeVisible();
 
-  // The sidebar is NOT visible by default (off-canvas).
-  // We can verify by checking the "Recent calculations" header is hidden.
-  // (it lives inside the off-canvas aside, which is translate-x-full).
-  // Opening the drawer reveals it.
-  await hamburger.click();
-  await expect(page.getByText("Recent calculations").first()).toBeVisible();
-
-  // Close via the scrim (click outside the drawer panel).
-  await page.getByRole("button", { name: "Close navigation" }).first().click();
+  // Nothing may scroll the page horizontally on a phone. This is the failure a
+  // desktop-only run never catches and a user hits immediately.
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(1);
 
   // The create form is still usable.
   const projectName = `Mobile ${Date.now()}`;

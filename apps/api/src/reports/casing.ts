@@ -242,7 +242,7 @@ export async function buildReport04(
       cell("Wellbore Name", s.wellbore?.name ?? null),
       cell("Profile Type", well.profile),
       cell("Kick Off Depth (mKB)", s.wellbore?.koMdMkb ?? null, "decimal"),
-      cell("Vertical Section Direction (°)", null),
+      cell("Vertical Section Direction (°)", s.wellbore?.vsAzimuthDeg ?? null, "decimal"),
     ],
     sections: well.holeSections.map((h) => ({
       sectionDes: h.sectionDes, sizeIn: h.sizeIn,

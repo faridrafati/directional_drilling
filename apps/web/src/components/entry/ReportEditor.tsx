@@ -60,6 +60,7 @@ function toBody(r: ReportDetail): ReportBody {
     opsAtReportTime: r.opsAtReportTime, opsNextPeriod: r.opsNextPeriod,
     // ── reports 06 / 07 header cells ──
     weather: r.weather, roadCondition: r.roadCondition, holeCondition: r.holeCondition,
+    pTubingPsi: r.pTubingPsi, pCasingPsi: r.pCasingPsi,
     temperatureC: r.temperatureC, startDepthTvd: r.startDepthTvd, remarks: r.remarks, daysRi: r.daysRi,
     description: r.description, windSpeedDir: r.windSpeedDir, waveVisible: r.waveVisible,
     freshWater: r.freshWater, fuel: r.fuel,
@@ -1483,6 +1484,13 @@ function SummaryWeather({ draft, set, disabled }: SubformProps) {
           <NumField label="Fuel" unit="L" value={draft.fuel} onChange={(v) => set("fuel", v)} disabled={disabled} />
           <TextField label="Road condition" value={draft.roadCondition} onChange={(v) => set("roadCondition", v)} disabled={disabled} placeholder="Dry" />
           <TextField label="Hole condition" value={draft.holeCondition} onChange={(v) => set("holeCondition", v)} disabled={disabled} placeholder="Good" />
+        </div>
+        <div>
+          {/* A completion or workover day reports pressure at the wellhead where
+              a drilling day reports depth. Left blank on a drilling day — report
+              23 prints whichever the day actually has. */}
+          <NumField label="Tubing pressure" unit="psi" value={draft.pTubingPsi} onChange={(v) => set("pTubingPsi", v)} disabled={disabled} />
+          <NumField label="Casing pressure" unit="psi" value={draft.pCasingPsi} onChange={(v) => set("pCasingPsi", v)} disabled={disabled} />
         </div>
       </div>
     </>

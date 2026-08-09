@@ -253,6 +253,8 @@ const reportSaveSchema = z.object({
   formationLoss: num, mudLossUnit: num, mudGains: num,
   // ── reports 06 / 07 header cells ──
   weather: str, roadCondition: str, holeCondition: str, temperatureC: num,
+  // Wellhead pressures — a COMPLETION day's equivalent of a depth reading.
+  pTubingPsi: num, pCasingPsi: num,
   startDepthTvd: num, remarks: str, daysRi: num,
   // ── report 18's daily geological band ──
   // Four KINDS of gas, each with an average and a maximum: a 2% background with
