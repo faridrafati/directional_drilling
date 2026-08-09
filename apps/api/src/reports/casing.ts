@@ -31,6 +31,7 @@ import { compareJalali, jalaliKey } from "@dd/shared";
 import {
   printedOn, standardWellHeader, type HeaderCell, type HeaderRow, type ReportEnvelope,
 } from "./chrome.js";
+import { buildSchematic, type SchematicPayload } from "./schematic.js";
 
 const round = (n: number, dp = 2) => Number(n.toFixed(dp));
 function sumOrNull(values: (number | null | undefined)[], dp = 2): number | null {
@@ -94,7 +95,8 @@ export interface Report04Payload extends ReportEnvelope {
     stages: { header: HeaderRow[]; fluids: CementFluidBlock[] }[];
   } | null;
   /** Report 04 draws a vertical schematic; see the status doc for why we do not. */
-  schematicOmitted: true;
+  /** The wellbore section the sample draws beside these blocks. */
+  schematic: SchematicPayload;
 }
 
 /** The tally + properties block both reports print for one string. */
@@ -191,6 +193,8 @@ export async function buildReport04(
   });
   if (!s) return null;
   const well = s.well;
+  // The sample draws the wellbore section beside these blocks.
+  const schematic = await buildSchematic(prisma, well.id);
 
   // The wellhead as installed, from the daily rows: the newest entry for each
   // component, so a spool re-recorded on a later day prints once.
@@ -345,7 +349,7 @@ export async function buildReport04(
         })),
       }
       : null,
-    schematicOmitted: true,
+    schematic,
   };
 }
 

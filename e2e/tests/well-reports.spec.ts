@@ -43,7 +43,7 @@ const OFFSET_WELL = "Sample 12 - Offset";
 
 /** The reports with an assembler today; the rest still carry a "soon" badge. */
 const BUILT = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11",
-  "12", "13", "14", "15", "16", "17", "18", "19", "20"] as const;
+  "12", "13", "14", "15", "16", "17", "18", "19", "20", "21"] as const;
 
 /** The four totals report 01 computes, exactly as the sample prints them. */
 const EXPECTED_TOTALS = [
@@ -205,8 +205,8 @@ test.describe("Well Reports", () => {
     await expect(page.getByText("299.03", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Sensors", { exact: true })).toBeVisible();
     // The sample's schematic is not drawn; the page says so rather than leaving
-    // a silent gap.
-    await expect(page.getByText(/vertical wellbore schematic/)).toBeVisible();
+    // The schematic is DRAWN now, not apologised for.
+    await expect(page.locator("#wellview-schematic-02 svg").first()).toBeVisible();
   });
 
   test("report 03 lists every run on the well", async ({ page }) => {
@@ -277,9 +277,8 @@ test.describe("Well Reports", () => {
     // The last mud check is the newest one on or before the run date, not the
     // newest on the well.
     await expect(page.getByText("KCl-Polymer", { exact: true }).first()).toBeVisible();
-    // The schematic the sample draws beside these blocks is declared missing
-    // rather than left as a silent gap.
-    await expect(page.getByText(/vertical wellbore schematic/)).toBeVisible();
+    // The schematic is DRAWN now, not apologised for.
+    await expect(page.locator("#wellview-schematic-04 svg").first()).toBeVisible();
   });
 
   for (const type of ["04", "05"] as const) {
@@ -300,6 +299,68 @@ test.describe("Well Reports", () => {
       expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
     });
   }
+
+  // The shared wellbore schematic. It is ONE component over ONE server payload,
+  // drawn by report 21 and by 02, 04 and 09 — which printed an apology in its
+  // place until it existed. These specs check each of the four draws it, so a
+  // change that breaks the picture cannot pass by breaking only three of them.
+  for (const [type, setup] of [
+    ["02", "bhaRun"], ["04", "casingString"], ["09", "job"], ["21", "well"],
+  ] as const) {
+    test(`report ${type} draws the shared wellbore schematic`, async ({ page }) => {
+      test.setTimeout(60_000);
+      await page.getByTestId(`report-${type}`).click();
+      await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+      void setup;
+      const svg = page.locator(`#wellview-schematic-${type} svg`).first();
+      await expect(svg).toBeVisible({ timeout: 25_000 });
+      // Not just present — DRAWN. The picture is a stack of <rect> bands, and an
+      // empty frame is exactly what this component is written to never render.
+      expect(await svg.locator("rect").count()).toBeGreaterThan(4);
+      // The shoes are marks, not bands, and carry the string's size.
+      await expect(page.getByText(/13 3\/8" shoe/).first()).toBeVisible();
+    });
+  }
+
+  test("report 21 composites the schematic with its depth tracks", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.getByTestId("report-21").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Vertical schematic (actual)").first())
+      .toBeVisible({ timeout: 25_000 });
+
+    // Every track reads down ONE depth scale — that is the only thing a
+    // composite log is for.
+    await expect(page.getByText("Eval — Litho")).toBeVisible();
+    await expect(page.getByText("Mud", { exact: true })).toBeVisible();
+    await expect(page.locator("#wellview-21-params svg").first()).toBeVisible();
+    // The formation bands come from the register, the litho from the mud
+    // logger's own log — different tables, same axis.
+    await expect(page.getByText("Blue Heron Shale").first()).toBeVisible();
+    await expect(page.getByText("KCl-Polymer").first()).toBeVisible();
+    // 3 holes, 2 strings, 6 formations, deepest 2,752.
+    await expect(page.getByText("2,752.00", { exact: true }).first()).toBeVisible();
+  });
+
+  test("report 21 exports a PDF with its composite", async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.getByTestId("report-21").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.locator("#wellview-21-params svg").first()).toBeVisible({ timeout: 25_000 });
+    await page.waitForTimeout(900);
+    const dir = mkdtempSync(join(tmpdir(), "wellview-"));
+    const [download] = await Promise.all([
+      page.waitForEvent("download", { timeout: 90_000 }),
+      page.getByRole("button", { name: "PDF" }).click(),
+    ]);
+    const path = join(dir, download.suggestedFilename());
+    await download.saveAs(path);
+    await testInfo.attach("report-21.pdf", { path, contentType: "application/pdf" });
+    const { statSync, readFileSync } = await import("node:fs");
+    // Two rasters make it substantially bigger than a table-only report.
+    expect(statSync(path).size).toBeGreaterThan(20_000);
+    expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+  });
 
   // Tier 4's geology reads one register — `WellFormation` — from three sides:
   // 20 prints what was PREDICTED, 18 the register as it stands on a day, and 19

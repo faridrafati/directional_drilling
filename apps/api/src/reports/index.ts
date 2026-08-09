@@ -28,6 +28,7 @@ import { buildReport13, buildReport16 } from "./pivots.js";
 import { buildReport12 } from "./dailyMulti.js";
 import { buildReport14 } from "./offsets.js";
 import { buildReport18, buildReport19, buildReport20 } from "./geology.js";
+import { buildReport21 } from "./schematic.js";
 
 /** How a report is parameterized — the picker builds itself from this. */
 /**
@@ -83,7 +84,7 @@ export const REPORT_CATALOG: CatalogEntry[] = [
   { type: "18", title: "Daily Geological", category: "Geology", params: ["well", "date"], exports: ["pdf"], available: true, blurb: "The wellsite geologist's daily sheet: gas, cuttings, lithology, shows and logs." },
   { type: "19", title: "Formation Performance", category: "Geology", params: ["well"], exports: ["pdf"], available: true, blurb: "Every formation predicted against drilled, with the ROP through each." },
   { type: "20", title: "Geological Program", category: "Geology", params: ["well"], exports: ["pdf"], available: true, blurb: "The programme: prognosed formations, sampling requirements and the contact sheet." },
-  { type: "21", title: "Geological Schematic", category: "Geology", params: ["well"], exports: ["pdf"], available: false, blurb: "Formation, lithology, mud and casing tracks against depth." },
+  { type: "21", title: "Geological Schematic", category: "Geology", params: ["well"], exports: ["pdf"], available: true, blurb: "The wellbore section with its formations, lithology, mud and drilling parameters." },
   { type: "22", title: "Complete Well Summary", category: "Completion", params: ["well", "job"], exports: ["pdf"], available: false, blurb: "The whole well dossier." },
   { type: "23", title: "Daily Completion and Workover", category: "Completion", params: ["well", "date"], exports: ["pdf"], available: false, blurb: "The daily completion report with its schematic." },
   { type: "24", title: "Downhole Well Profile", category: "Completion", params: ["well"], exports: ["pdf"], available: false, blurb: "Casing, tubing, rods and perforations against depth." },
@@ -137,6 +138,12 @@ export async function registerReportRoutes(app: FastifyInstance, prisma: PrismaC
         }
         // 12 takes the range's UPPER bound only: "as of" is a cap on which day
         // each well's block is chosen from, not a window to filter days into.
+        case "21": {
+          const wellId = (req.query.wellId ?? "").trim();
+          if (!wellId) return reply.code(400).send({ error: "this report needs a wellId" });
+          if (!(await mayUseWell(prisma, req, wellId))) return reply.code(403).send({ error: "not your well" });
+          return (await buildReport21(prisma, wellId)) ?? reply.code(404).send({ error: "no such well" });
+        }
         case "18": return dayReport(req, reply, (id) => buildReport18(prisma, id));
         case "19": {
           const wellId = (req.query.wellId ?? "").trim();

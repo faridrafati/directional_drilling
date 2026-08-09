@@ -23,6 +23,7 @@ import type { BreakdownBar, Report09Payload } from "../../entry/wellview.js";
 import {
   HeaderGrid, IdentityLine, PreviewFooter, PreviewSheet, PreviewTitle, SectionBar,
 } from "./ReportPreview.js";
+import { SchematicLegend, WellboreSchematic } from "./WellboreSchematic.js";
 
 /** Ids the exporter finds the four panels by. */
 export const TIME_PANEL_ID = "wellview-summary-time";
@@ -161,11 +162,9 @@ export function Report09Preview({ payload }: { payload: Report09Payload }) {
           </ResponsiveContainer>
         </div>
       )}
-
-      <div className="border border-t-0 border-gray-400 px-2 py-1 text-[11px] text-gray-500 italic">
-        The sample also prints a directional wellbore schematic down its left column. It is not drawn
-        yet — the shared schematic component arrives with the geological and completion reports.
-      </div>
+      <SectionBar>Schematic</SectionBar>
+      <WellboreSchematic payload={payload.schematic} reportType="09" width={560} height={320} />
+      <SchematicLegend />
 
       <PreviewFooter printedOn={payload.printedOn} />
     </PreviewSheet>

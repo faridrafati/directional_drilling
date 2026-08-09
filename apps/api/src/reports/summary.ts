@@ -40,6 +40,7 @@ import {
 } from "./chrome.js";
 import { compareJalali, jalaliDaysBetween } from "@dd/shared";
 import { durationHr } from "./daily.js";
+import { buildSchematic, type SchematicPayload } from "./schematic.js";
 
 /** One bar of a breakdown panel. */
 export interface BreakdownBar {
@@ -73,8 +74,8 @@ export interface Report09Payload extends ReportEnvelope {
   progress: ProgressPoint[];
   /** Total hours logged: the denominator panels 1 and 3 share. */
   totalHours: number | null;
-  /** The sample draws a wellbore schematic in its left column; we do not yet. */
-  schematicOmitted: true;
+  /** The wellbore section the sample draws down its left column. */
+  schematic: SchematicPayload;
 }
 
 const WELL_SELECT = {
@@ -117,6 +118,7 @@ export async function buildReport09(
   });
   if (!job) return null;
   const well = job.well;
+  const schematic = await buildSchematic(prisma, job.wellId);
 
   // The job's days. A report is on the job when it carries its id; the days are
   // what both the time panels and the progress curve are built from.
@@ -248,6 +250,6 @@ export async function buildReport09(
     nptByDes: bars(byNpt, denominator),
     progress,
     totalHours: denominator === null ? null : round(totalHours),
-    schematicOmitted: true,
+    schematic,
   };
 }

@@ -14,6 +14,8 @@ import {
   reportFooter, reportTable, sectionBar, titleBand,
   type ReportColumn,
 } from "../reportChrome.js";
+import { captureChart } from "./chartCapture.js";
+import { schematicId } from "../../components/wellview/WellboreSchematic.js";
 import type {
   BhaComponentRow, BhaParamRow, BitSummaryRow, Report02Payload, Report03Payload,
 } from "../../entry/wellview.js";
@@ -51,7 +53,7 @@ const PARAM_COLUMNS: ReportColumn<BhaParamRow>[] = [
   { header: "SPP (psi)", width: 38, align: "right", cell: (p) => headerValue(p.sppPsi) },
 ];
 
-export function buildReport02Doc(payload: Report02Payload): TDocumentDefinitions {
+export async function buildReport02Doc(payload: Report02Payload): Promise<TDocumentDefinitions> {
   const content: Content[] = [
     identityLine(payload.wellName, payload.identityRight),
   ];
@@ -99,13 +101,22 @@ export function buildReport02Doc(payload: Report02Payload): TDocumentDefinitions
       { header: "Sand (%)", width: 34, align: "right", cell: (m: typeof payload.mudChecks[number]) => headerValue(m.sandPct) },
       { header: "Solids (%)", width: 36, align: "right", cell: (m: typeof payload.mudChecks[number]) => headerValue(m.solidsPct) },
     ], payload.mudChecks),
-    {
-      text: "The sample also prints a vertical wellbore schematic beside these blocks. "
-        + "It is not drawn yet — the shared schematic component arrives with the geological "
-        + "and completion reports.",
-      style: "cellLabel", italics: true, margin: [0, 4, 0, 0],
-    },
   );
+
+  // The schematic is an SVG like the charts, so it is captured the same way —
+  // the printed picture is the one on screen, and a missing one throws rather
+  // than leaving the page's left rail silently blank.
+  if (!payload.schematic.emptyReason) {
+    const shot = await captureChart(schematicId("02"), "wellbore schematic");
+    content.push(
+      sectionBar("Vertical schematic (actual)"),
+      { image: shot.raster.dataUrl, fit: [520, 300], alignment: "center", margin: [0, 3, 0, 0] },
+    );
+  } else {
+    content.push(sectionBar("Vertical schematic (actual)"), {
+      text: payload.schematic.emptyReason, style: "cellLabel", italics: true, margin: [0, 3, 0, 3],
+    });
+  }
 
   return {
     pageSize: { width: LETTER[0], height: LETTER[1] },
@@ -167,7 +178,7 @@ const slug = (s: string) => s.replace(/\W+/g, "_").replace(/^_+|_+$/g, "");
 
 export async function exportReport02Pdf(payload: Report02Payload): Promise<void> {
   const bha = /BHA#:\s*(\d+)/.exec(payload.identityRight ?? "")?.[1] ?? "";
-  pdfMake.createPdf(buildReport02Doc(payload))
+  pdfMake.createPdf(await buildReport02Doc(payload))
     .download(`${[slug(payload.wellName), bha ? `bha_${bha}` : "", "bha_detail"].filter(Boolean).join("_")}.pdf`);
 }
 

@@ -115,6 +115,8 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | Entry UI — daily Geology tab (gas, narrative, samples, lithology, shows, log runs) | 2026-08-09 |
 | Entry UI — job Contacts tab | 2026-08-09 |
 | `Job.geologicalObjective` — report 20's own statement, plus its form field | 2026-08-09 |
+| **Shared `WellboreSchematic`** — one payload (`reports/schematic.ts`), one component, six reports | 2026-08-09 |
+| Reports 02, 04 and 09 retrofitted: the schematic is DRAWN, not apologised for | 2026-08-09 |
 
 ## Tier 4 — geology
 
@@ -123,7 +125,7 @@ Legend: `—` not started · `WIP` in progress · a date = finished on that date
 | 18 | Daily Geological | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
 | 19 | Formation Performance | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
 | 20 | Geological Program | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
-| 21 | Geological Schematic | — | — | — | — | — | — | — |
+| 21 | Geological Schematic | 2026-08-09 | 2026-08-09 | n/a | 2026-08-09 | 2026-08-09 | 2026-08-09 | 2026-08-09 |
 
 ## Tier 5 — completion & production
 
@@ -471,6 +473,35 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
 - **2026-08-09 — E2E timings need an idle machine.** A run made while the box was thrashing (load
   average 19.7) took 38 minutes and failed 19 specs that pass in seconds when idle. Before believing
   a red suite, check `uptime`.
+- **2026-08-09 — the schematic is ONE payload and ONE component, drawn by six reports.** 02 and 04
+  down a left rail, 09 down a left column, 21 as the centre of a composite, and 24/28/29 to come.
+  They are the same picture at different sizes, so the assembler builds it once as data and every
+  renderer draws the same shapes from the same numbers. Reports 02, 04 and 09 printed an apology in
+  its place from the day they shipped; that text is now gone from both their previews and their PDFs.
+- **2026-08-09 — nothing in the schematic is invented.** Every interval comes from a row somebody
+  typed: hole from `HoleSection`, casing from `CasingString` and its tally, cement from
+  `CementStage`, formations from `WellFormation`, shoes from the tally's own Float Shoe row. A string
+  with neither a set depth nor a tally has no extent and is DROPPED — a picture that invents a depth
+  is worse than one that admits it has none — and an empty payload renders its own reason so
+  "nothing entered" never looks like "nothing there".
+- **2026-08-09 — it is hand-drawn SVG, not Recharts.** A schematic has no series and no axis pair,
+  and its shapes nest by diameter rather than plotting a value. SVG is also what makes the PDF path
+  work: `svgRaster.ts` captures exactly this element, the way the charts are captured, so the printed
+  picture is the one on screen.
+- **2026-08-09 — casing nests by OUTSIDE DIAMETER, parsed out of the tally's text.** The tally stores
+  "13 3/8" and "20" and "10.752" in one column because that is how a tally is written; the drawing
+  needs a number, and a value that will not parse yields null rather than 0, which would draw the
+  string as a hairline at the axis.
+- **2026-08-09 — a formation with no drilled top falls back to its PROGNOSIS, and says so.** A
+  schematic drawn before spud still shows the section, and the band's detail reads "prognosed" —
+  a predicted top drawn as a fact is how a picture starts lying.
+- **2026-08-09 — report 21 captures its tracks as ONE raster, not three.** They share a depth scale,
+  and capturing them separately would let the PDF place them at three slightly different heights —
+  the one failure a composite log cannot survive, because reading across the tracks at a depth is
+  the only thing it is for.
+- **2026-08-09 — report 21 leaves Q Flow off its parameter plot.** At 700–1,100 gpm it is two orders
+  of magnitude above WOB and ROP, and one shared axis would flatten the other three curves into the
+  floor. The page says so rather than leaving a reader to wonder where it went.
 - **2026-08-07 — pre-existing test failures, not caused by this work.** `@dd/grd`'s four `parseGrd`
   tests and the two older E2E specs (`happy-path`, `mobile-smoke`, which still expect `/` to land on
   `/projects` — the app has redirected to `/ddr` since before this branch) fail on `main` too.

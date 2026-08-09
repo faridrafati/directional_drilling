@@ -25,6 +25,7 @@ import {
   type ReportColumn,
 } from "../reportChrome.js";
 import { captureChart, legendRow, type CapturedChart } from "./chartCapture.js";
+import { schematicId } from "../../components/wellview/WellboreSchematic.js";
 import type { BreakdownBar, ProgressPoint, Report09Payload } from "../../entry/wellview.js";
 import {
   COST_PANEL_ID, NPT_PANEL_ID, PROGRESS_PANEL_ID, TIME_PANEL_ID,
@@ -153,12 +154,20 @@ export async function buildReport09Doc(payload: Report09Payload): Promise<TDocum
       ],
       columnGap: 10,
     },
-    {
-      text: "The sample also prints a directional wellbore schematic down its left column. It is not "
-        + "drawn yet — the shared schematic component arrives with the geological and completion reports.",
-      style: "cellLabel", italics: true, margin: [0, 4, 0, 0],
-    },
   ];
+
+  // The schematic is an SVG like the four panels, captured the same way.
+  if (!payload.schematic.emptyReason) {
+    const shot = await captureChart(schematicId("09"), "wellbore schematic");
+    content.push(
+      sectionBar("Schematic"),
+      { image: shot.raster.dataUrl, fit: [560, 320], alignment: "center", margin: [0, 3, 0, 0] },
+    );
+  } else {
+    content.push(sectionBar("Schematic"), {
+      text: payload.schematic.emptyReason, style: "cellLabel", italics: true, margin: [0, 3, 0, 3],
+    });
+  }
 
   return {
     pageSize: { width: LANDSCAPE_LEGAL[0], height: LANDSCAPE_LEGAL[1] },

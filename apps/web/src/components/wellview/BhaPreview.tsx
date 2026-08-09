@@ -13,6 +13,7 @@ import {
   HeaderGrid, IdentityLine, PreviewFooter, PreviewSheet, PreviewTable, PreviewTitle,
   SectionBar, type PreviewColumn,
 } from "./ReportPreview.js";
+import { SchematicLegend, WellboreSchematic } from "./WellboreSchematic.js";
 
 const COMPONENT_COLUMNS: PreviewColumn<BhaComponentRow>[] = [
   { header: "Jts", width: "w-12", align: "right", cell: (c) => headerValue(c.jts, "int") },
@@ -122,12 +123,11 @@ export function Report02Preview({ payload }: { payload: Report02Payload }) {
         emptyText="No mud check while this assembly was in the hole."
       />
 
-      {/* The sample draws a vertical schematic down the left rail. Saying so is
-          better than leaving a silent gap where a picture should be. */}
-      <div className="border border-gray-400 border-t-0 px-1.5 py-1.5 text-[10px] italic text-gray-400">
-        The sample also prints a vertical wellbore schematic beside these blocks. It is not drawn yet —
-        the shared schematic component arrives with the geological and completion reports.
-      </div>
+      {/* The vertical schematic the sample draws down this page's left rail —
+          the shared component, from the shared payload. */}
+      <SectionBar>Vertical schematic (actual)</SectionBar>
+      <WellboreSchematic payload={payload.schematic} reportType="02" width={520} height={300} />
+      <SchematicLegend />
 
       <PreviewFooter printedOn={payload.printedOn} />
     </PreviewSheet>

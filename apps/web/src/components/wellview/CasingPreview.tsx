@@ -14,6 +14,7 @@ import {
   HeaderGrid, IdentityLine, PreviewFooter, PreviewSheet, PreviewTable, PreviewTitle,
   SectionBar, type PreviewColumn,
 } from "./ReportPreview.js";
+import { SchematicLegend, WellboreSchematic } from "./WellboreSchematic.js";
 
 const TALLY_COLUMNS: PreviewColumn<CasingComponentRow>[] = [
   { header: "Jts", width: "w-12", align: "right", cell: (c) => headerValue(c.jts, "int") },
@@ -141,13 +142,11 @@ export function Report04Preview({ payload }: { payload: Report04Payload }) {
         </>
       )}
 
-      {/* The sample draws a vertical schematic down its left rail with the cement
-          intervals called out. Saying so beats a silent gap. */}
-      <div className="border border-gray-400 border-t-0 px-1.5 py-1.5 text-[10px] italic text-gray-400">
-        The sample also prints a vertical wellbore schematic beside these blocks, annotated with the
-        casing and cement intervals. It is not drawn yet — the shared schematic component arrives with
-        the geological and completion reports.
-      </div>
+      {/* The vertical schematic the sample draws beside these blocks, with the
+          cement intervals called out — the shared component. */}
+      <SectionBar>Vertical schematic (actual)</SectionBar>
+      <WellboreSchematic payload={payload.schematic} reportType="04" width={520} height={300} />
+      <SchematicLegend />
 
       <PreviewFooter printedOn={payload.printedOn} />
     </PreviewSheet>

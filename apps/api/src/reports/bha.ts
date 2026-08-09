@@ -24,6 +24,7 @@
  */
 import type { PrismaClient } from "@prisma/client";
 import { compareJalali } from "@dd/shared";
+import { buildSchematic, type SchematicPayload } from "./schematic.js";
 import {
   printedOn, standardWellHeader, type HeaderCell, type HeaderRow, type ReportEnvelope,
 } from "./chrome.js";
@@ -103,8 +104,8 @@ export interface Report02Payload extends ReportEnvelope {
     densPpg: number | null; pvCp: number | null; ypLbf100ft2: number | null;
     ph: number | null; sandPct: number | null; solidsPct: number | null;
   }[];
-  /** Report 02 draws a vertical schematic; see the status doc for why we do not. */
-  schematicOmitted: true;
+  /** The wellbore section the sample draws down this page's left rail. */
+  schematic: SchematicPayload;
 }
 
 export interface BitSummaryRow {
@@ -207,6 +208,9 @@ export async function buildReport02(
   const run = await prisma.entryBhaRun.findUnique({ where: { id: bhaRunId }, include: RUN_INCLUDE });
   if (!run) return null;
   const f = runFigures(run);
+  // The sample draws the wellbore section down this page's left rail; the
+  // shared assembler builds it from the well's own hole, casing and cement.
+  const schematic = await buildSchematic(prisma, run.wellId);
 
   // The make-up is the FIRST day's list — that is the assembly as it was run.
   const makeUp = f.days.find((d) => d.components.length > 0) ?? f.days[0] ?? null;
@@ -306,7 +310,7 @@ export async function buildReport02(
         sandPct: mud.sandPct,
         solidsPct: mud.solidsPct,
       })),
-    schematicOmitted: true,
+    schematic,
   };
 }
 

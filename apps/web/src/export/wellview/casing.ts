@@ -14,6 +14,8 @@ import {
   reportFooter, reportTable, sectionBar, titleBand,
   type ReportColumn,
 } from "../reportChrome.js";
+import { captureChart } from "./chartCapture.js";
+import { schematicId } from "../../components/wellview/WellboreSchematic.js";
 import type {
   CasingComponentRow, CasingStringBlock, Report04Payload, Report05Payload,
 } from "../../entry/wellview.js";
@@ -71,7 +73,7 @@ export function buildReport05Doc(payload: Report05Payload): TDocumentDefinitions
   };
 }
 
-export function buildReport04Doc(payload: Report04Payload): TDocumentDefinitions {
+export async function buildReport04Doc(payload: Report04Payload): Promise<TDocumentDefinitions> {
   const content: Content[] = [
     identityLine(payload.wellName, payload.identityRight),
     labelValueGrid(payload.header),
@@ -126,12 +128,18 @@ export function buildReport04Doc(payload: Report04Payload): TDocumentDefinitions
     );
   }
 
-  content.push({
-    text: "The sample also prints a vertical wellbore schematic beside these blocks, annotated with "
-      + "the casing and cement intervals. It is not drawn yet — the shared schematic component "
-      + "arrives with the geological and completion reports.",
-    style: "cellLabel", italics: true, margin: [0, 4, 0, 0],
-  });
+  // The schematic is an SVG like the charts, so it is captured the same way.
+  if (!payload.schematic.emptyReason) {
+    const shot = await captureChart(schematicId("04"), "wellbore schematic");
+    content.push(
+      sectionBar("Vertical schematic (actual)"),
+      { image: shot.raster.dataUrl, fit: [520, 300], alignment: "center", margin: [0, 3, 0, 0] },
+    );
+  } else {
+    content.push(sectionBar("Vertical schematic (actual)"), {
+      text: payload.schematic.emptyReason, style: "cellLabel", italics: true, margin: [0, 3, 0, 3],
+    });
+  }
 
   return {
     pageSize: { width: LETTER_PORTRAIT[0], height: LETTER_PORTRAIT[1] },
@@ -150,7 +158,7 @@ export function buildReport04Doc(payload: Report04Payload): TDocumentDefinitions
 const slug = (s: string) => s.replace(/\W+/g, "_").replace(/^_+|_+$/g, "");
 
 export async function exportReport04Pdf(payload: Report04Payload): Promise<void> {
-  pdfMake.createPdf(buildReport04Doc(payload))
+  pdfMake.createPdf(await buildReport04Doc(payload))
     .download(`${[slug(payload.wellName), slug(payload.identityRight ?? ""), "casing_cement"].filter(Boolean).join("_")}.pdf`);
 }
 

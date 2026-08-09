@@ -339,7 +339,8 @@ export interface Report02Payload extends ReportEnvelope {
     densPpg: number | null; pvCp: number | null; ypLbf100ft2: number | null;
     ph: number | null; sandPct: number | null; solidsPct: number | null;
   }[];
-  schematicOmitted: true;
+  /** The wellbore section the sample draws beside these blocks. */
+  schematic: SchematicPayload;
 }
 export interface BitSummaryRow {
   bhaNo: number | null; bitRun: string | null; sizeIn: string | null;
@@ -418,7 +419,8 @@ export interface Report04Payload extends ReportEnvelope {
     header: HeaderRow[];
     stages: { header: HeaderRow[]; fluids: CementFluidBlock[] }[];
   } | null;
-  schematicOmitted: true;
+  /** The wellbore section the sample draws beside these blocks. */
+  schematic: SchematicPayload;
 }
 /* ── the casing / cement entry sheet (what PUT /wells/:id/casing accepts) ──── */
 export interface HoleSectionRow {
@@ -516,7 +518,8 @@ export interface Report09Payload extends ReportEnvelope {
   nptByDes: BreakdownBar[];
   progress: ProgressPoint[];
   totalHours: number | null;
-  schematicOmitted: true;
+  /** The wellbore section the sample draws beside these blocks. */
+  schematic: SchematicPayload;
 }
 
 // ── the multi-well reports (12–17) ──────────────────────────────────────────
@@ -552,6 +555,47 @@ export interface SafetyIncidentReportRow {
 }
 export interface Report17Payload extends MultiWellEnvelope {
   incidents: SafetyIncidentReportRow[];
+  totals: HeaderRow;
+}
+
+/* ── the shared wellbore schematic (02, 04, 09, 21, 24, 28, 29) ───────────── */
+/** One drawn interval, in metres below KB. */
+export interface SchematicInterval {
+  topMkb: number; btmMkb: number;
+  label: string | null;
+  /** Outer diameter in INCHES where known — the drawing nests by this. */
+  odIn: number | null;
+  detail: string | null;
+}
+export interface SchematicPayload {
+  maxDepthMkb: number | null;
+  holeSections: SchematicInterval[];
+  casingStrings: SchematicInterval[];
+  cementIntervals: SchematicInterval[];
+  formations: SchematicInterval[];
+  /** Shoes are a mark at a depth: top and btm are the same number. */
+  shoes: SchematicInterval[];
+  /** Why the picture is empty, when it is — printed instead of a blank frame. */
+  emptyReason: string | null;
+}
+
+/* ── report 21 ─────────────────────────────────────────────────────────────── */
+export interface SchematicBand { topMkb: number; btmMkb: number; label: string | null }
+export interface SchematicStation {
+  md: number | null; tvd: number | null; inc: number | null; dls: number | null;
+}
+export interface ParameterPoint {
+  depthMkb: number;
+  densPpg: number | null; intRopMHr: number | null;
+  rpm: number | null; qFlowGpm: number | null; wob1000Lbf: number | null;
+}
+export interface Report21Payload extends ReportEnvelope {
+  caption: string;
+  schematic: SchematicPayload;
+  stations: SchematicStation[];
+  lithology: SchematicBand[];
+  mud: SchematicBand[];
+  parameters: ParameterPoint[];
   totals: HeaderRow;
 }
 

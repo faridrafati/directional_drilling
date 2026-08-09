@@ -24,6 +24,7 @@ import {
   type Report08Payload, type Report09Payload,
   type Report12Payload, type Report14Payload,
   type Report18Payload, type Report19Payload, type Report20Payload,
+  type Report21Payload,
   type Report13Payload, type Report16Payload,
   type Report15Payload, type Report17Payload,
   type Report10Payload, type Report11Payload,
@@ -39,6 +40,7 @@ import { Report15Preview, Report17Preview } from "../components/wellview/MultiWe
 import { Report13Preview, Report16Preview } from "../components/wellview/PivotPreview.js";
 import { Report12Preview, Report14Preview } from "../components/wellview/OffsetPreview.js";
 import { Report18Preview, Report19Preview, Report20Preview } from "../components/wellview/GeologyPreview.js";
+import { Report21Preview } from "../components/wellview/SchematicPreview.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -423,6 +425,15 @@ function Inner() {
                         load={() => wellviewApi.reportData<Report05Payload>("05", { wellId })}
                         render={(p) => <Report05Preview payload={p} />}
                         exporter={async (p) => (await import("../export/wellview/casing.js")).exportReport05Pdf(p)}
+                        empty="Pick a well above."
+                      />
+                    ) : entry.type === "21" ? (
+                      <ReportPanel
+                        queryKey={["wellview", "report", "21", wellId]}
+                        enabled={!!wellId}
+                        load={() => wellviewApi.reportData<Report21Payload>("21", { wellId })}
+                        render={(p) => <Report21Preview payload={p} />}
+                        exporter={async (p) => (await import("../export/wellview/schematic.js")).exportReport21Pdf(p)}
                         empty="Pick a well above."
                       />
                     ) : entry.type === "18" ? (
