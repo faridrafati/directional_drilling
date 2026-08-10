@@ -488,17 +488,23 @@ test.describe("Well Reports", () => {
     await expect(page.getByText("Unclassified", { exact: true })).toBeVisible();
   });
 
-  test("report 29 draws the prognosis beside what was built", async ({ page }) => {
+  test("report 29 draws the designed completion beside the one that was run", async ({ page }) => {
     test.setTimeout(60_000);
     await page.getByTestId("report-29").click();
     await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
-    await expect(page.getByText("Proposed", { exact: true })).toBeVisible({ timeout: 25_000 });
-    await expect(page.getByText("Actual", { exact: true })).toBeVisible();
-    // TWO pictures, not one overlaid.
+    await expect(page.getByText("Proposed (as designed)", { exact: true })).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByText("Actual (as run)", { exact: true })).toBeVisible();
+    // TWO pictures, not one overlaid — the same well with a different STRING in
+    // it. This report used to draw a geological prognosis on the left, which is
+    // a different report from the one its sample prints.
     await expect(page.locator("#wellview-schematic-29-proposed svg").first()).toBeVisible();
     await expect(page.locator("#wellview-schematic-29 svg").first()).toBeVisible();
-    // Planned TD 2,760 against an actual 2,752 — a 8 m difference.
-    await expect(page.getByText("2,760.00", { exact: true }).first()).toBeVisible();
+    // The design set the packer 15 m shallower and left out the communications
+    // nipple: 4 items to 5, and 2,345 against 2,360.
+    await expect(page.getByText("Proposed Items", { exact: true })).toBeVisible();
+    await expect(page.getByText("Actual Items", { exact: true })).toBeVisible();
+    await expect(page.getByText("2,345.00", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("2,360.00", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Difference (m)", { exact: true })).toBeVisible();
   });
 

@@ -180,6 +180,30 @@ function perforationBlock(p: {
   };
 }
 
+/** A rod string and its make-up — reports 24 and 30 print it the same way. */
+export function rodBlocks(strings: {
+  description: string | null; runDate: string | null; setDepthMkb: number | null;
+  stringLengthM?: number | null;
+  components: {
+    itemDes: string | null; odNominalIn: string | null; massPerLenKgM: number | null;
+    grade: string | null; joints: number | null; lenM: number | null;
+    topMkb: number | null; btmMkb: number | null;
+  }[];
+}[]): RodBlock[] {
+  return strings.map((r) => ({
+    caption: r.description ?? "Rod String",
+    header: [
+      cell("Run Date", r.runDate),
+      cell("String Length (m)", r.stringLengthM ?? null, "decimal"),
+      cell("Set Depth (mKB)", r.setDepthMkb, "decimal"),
+    ],
+    components: r.components.map((c) => ({
+      itemDes: c.itemDes, odNominalIn: c.odNominalIn, massPerLenKgM: c.massPerLenKgM,
+      grade: c.grade, joints: c.joints, lenM: c.lenM, topMkb: c.topMkb, btmMkb: c.btmMkb,
+    })),
+  }));
+}
+
 export function tubingBlocks(strings: {
   description: string | null; runDate: string | null;
   stringLengthM: number | null; setDepthMkb: number | null;
@@ -204,7 +228,11 @@ export interface Report24Payload extends ReportEnvelope {
   completionHeader: HeaderRow;
   caption: string;
   schematic: SchematicPayload;
-  wellhead: { des: string | null; make: string | null; model: string | null; sn: string | null; wpTopPsi: number | null }[];
+  wellhead: {
+    des: string | null; make: string | null; model: string | null; sn: string | null;
+    wpPsi: number | null; service: string | null; wpTopPsi: number | null;
+    topRingGasket: string | null; boreMinIn: number | null;
+  }[];
   casingStrings: {
     description: string | null; odIn: string | null; massPerLenKgM: number | null;
     grade: string | null; topThread: string | null; setDepthMkb: number | null;
@@ -213,6 +241,8 @@ export interface Report24Payload extends ReportEnvelope {
     date: string | null; topMkb: number | null; btmMkb: number | null; zone: string | null;
   }[];
   tubingStrings: TubingBlock[];
+  /** The sample prints rod lift beside the tubing — a pumped well has both. */
+  rodStrings: RodBlock[];
 }
 
 export async function buildReport24(
@@ -224,6 +254,7 @@ export async function buildReport24(
     select: {
       ...WELL_HEADER_SELECT, rtElevation: true, kbTubingHeadDistance: true,
       ...COMPLETION_INCLUDE,
+      rodStrings: { orderBy: { order: "asc" }, include: { components: { orderBy: { order: "asc" } } } },
       casingStrings: {
         orderBy: { order: "asc" },
         include: { components: { orderBy: { order: "asc" }, take: 1 } },
@@ -267,8 +298,10 @@ export async function buildReport24(
     caption: [well.profile, well.wellbores[0]?.name ?? null].filter(Boolean).join(" - "),
     schematic,
     wellhead: [...byKey.values()].map((w) => ({
-      des: [w.sizeIn === null ? null : `${w.sizeIn}"`, w.type].filter(Boolean).join(" ") || null,
-      make: w.make, model: w.model, sn: w.sn, wpTopPsi: w.wpPsi,
+      des: w.des ?? ([w.sizeIn === null ? null : `${w.sizeIn}"`, w.type].filter(Boolean).join(" ") || null),
+      make: w.make, model: w.model, sn: w.sn,
+      wpPsi: w.wpPsi, service: w.service, wpTopPsi: w.wpTopPsi,
+      topRingGasket: w.topRingGasket, boreMinIn: w.boreMinIn,
     })),
     casingStrings: well.casingStrings.map((c) => ({
       description: c.description,
@@ -283,6 +316,7 @@ export async function buildReport24(
       zone: [p.zone?.name, well.wellbores[0]?.name].filter(Boolean).join(", ") || null,
     })),
     tubingStrings: tubingBlocks(well.tubingStrings),
+    rodStrings: rodBlocks(well.rodStrings),
   };
 }
 
@@ -414,15 +448,30 @@ export async function buildReport28(
 
 export interface Report29Payload extends ReportEnvelope {
   caption: string;
-  /** As built — hole, casing, cement, completion. */
+  /** The well with the string that was RUN in it. */
   actual: SchematicPayload;
-  /** As designed — the prognosed formations and the planned trajectory's depth. */
+  /** The same well with the DESIGNED string in it. */
   proposed: SchematicPayload;
   comparison: HeaderRow;
-  /** Said on the page when there is no plan to compare against. */
+  /** Said on the page when no completion has been designed to compare against. */
   noProposal: string | null;
 }
 
+/**
+ * Report 29 — the designed completion beside the one that was run.
+ *
+ * WHAT THE SAMPLE ACTUALLY COMPARES
+ * ---------------------------------
+ * This was built to compare a geological PROGNOSIS against the drilled well, on
+ * the strength of the file being called "Proposed vs Actual". The sample says
+ * otherwise: its own title is "Schematic - Current", and its two pictures are a
+ * completion string numbered 1-1 to 1-9 beside one numbered 2-1 to 2-8 — the
+ * same hole, the same casing, a different STRING. It is a completion design
+ * against what was actually run, and nothing to do with formation tops.
+ *
+ * So both sides are now the same well drawn twice, differing only in which
+ * tubing string is inside the casing.
+ */
 export async function buildReport29(
   prisma: PrismaClient,
   wellId: string,
@@ -432,46 +481,29 @@ export async function buildReport29(
     select: {
       ...WELL_HEADER_SELECT,
       wellbores: { orderBy: { order: "asc" } },
-      formations: { orderBy: { order: "asc" } },
-      planStations: { orderBy: { order: "asc" } },
+      tubingStrings: {
+        orderBy: { order: "asc" },
+        include: { components: { orderBy: { order: "asc" } } },
+      },
     },
   });
   if (!well) return null;
 
-  const actual = await buildSchematic(prisma, wellId);
+  const [actual, proposed] = await Promise.all([
+    buildSchematic(prisma, wellId, "run"),
+    buildSchematic(prisma, wellId, "proposed"),
+  ]);
 
-  // The PROPOSED picture is the prognosis: formations at their predicted tops,
-  // and the plan's total depth. It carries no casing, because a design's casing
-  // scheme is not something this application stores — and drawing the actual
-  // casing on the "proposed" side would make the comparison meaningless.
-  const proposedFormations = well.formations
-    .filter((f) => f.progTopTvd !== null && f.progBtmTvd !== null)
-    .map((f) => ({
-      topMkb: f.progTopTvd as number,
-      btmMkb: f.progBtmTvd as number,
-      label: f.name,
-      odIn: null,
-      detail: [f.lithDes, "prognosed"].filter(Boolean).join(" · "),
-    }));
-  const planTd = well.planStations.reduce<number | null>(
-    (deep, p) => (p.md !== null && (deep === null || p.md > deep) ? p.md : deep),
-    null,
-  );
+  const designed = well.tubingStrings.filter((t) => t.proposed === true);
+  const run = well.tubingStrings.filter((t) => t.proposed !== true);
+  const deepest = (
+    strings: { components: { btmMkb: number | null }[] }[],
+  ): number | null => strings
+    .flatMap((t) => t.components.map((c) => c.btmMkb))
+    .reduce<number | null>((deep, d) => (d !== null && (deep === null || d > deep) ? d : deep), null);
 
-  const proposed: SchematicPayload = {
-    maxDepthMkb: planTd ?? (proposedFormations.length
-      ? Math.max(...proposedFormations.map((f) => f.btmMkb)) : null),
-    holeSections: [],
-    casingStrings: [],
-    cementIntervals: [],
-    formations: proposedFormations,
-    shoes: [],
-    completionItems: [],
-    emptyReason: proposedFormations.length === 0 && planTd === null
-      ? "No prognosis to draw: this well has no prognosed formation tops and no directional plan. "
-        + "They are entered under Well data → Geology and → Well registers."
-      : null,
-  };
+  const designedBtm = deepest(designed);
+  const runBtm = deepest(run);
 
   return {
     type: "29",
@@ -484,17 +516,24 @@ export async function buildReport29(
     actual,
     proposed,
     comparison: [
-      cell("Planned TD (mKB)", planTd, "decimal"),
-      cell("Actual Deepest (mKB)", actual.maxDepthMkb, "decimal"),
+      cell("Proposed Items", designed.reduce((n, t) => n + t.components.length, 0), "int"),
+      cell("Actual Items", run.reduce((n, t) => n + t.components.length, 0), "int"),
+      cell("Proposed Btm (mKB)", designedBtm, "decimal"),
+      cell("Actual Btm (mKB)", runBtm, "decimal"),
       cell(
         "Difference (m)",
-        planTd === null || actual.maxDepthMkb === null ? null : round(actual.maxDepthMkb - planTd),
+        designedBtm === null || runBtm === null ? null : round(runBtm - designedBtm),
         "decimal",
       ),
-      cell("Prognosed Formations", proposedFormations.length, "int"),
-      cell("Drilled Formations", actual.formations.length, "int"),
     ],
-    noProposal: proposed.emptyReason,
+    // Not `proposed.emptyReason`: the schematic is only empty when the WELL has
+    // nothing in it, and a well with casing but no designed string draws a
+    // perfectly good picture with an empty string in it — which would say
+    // nothing about why the comparison is missing.
+    noProposal: designed.length === 0
+      ? "No completion has been designed for this well, so there is nothing to compare the "
+        + "string that was run against. Mark a tubing string as proposed under Well data → Completion."
+      : null,
   };
 }
 
@@ -1146,7 +1185,7 @@ export async function buildReport30(
     ],
     directionsToWell: well.directionsToWell,
     wellhead: [...byKey.values()].map((w) => ({
-      type: w.type, make: w.make, wpPsi: w.wpPsi, service: w.com,
+      type: w.type, make: w.make, wpPsi: w.wpPsi, service: w.service,
     })),
     wellbores: well.wellbores.map((w) => ({
       name: w.name,
@@ -1206,17 +1245,7 @@ export async function buildReport30(
       type: l.type, cased: l.cased,
     })),
     tubingStrings: tubingBlocks(well.tubingStrings),
-    rodStrings: well.rodStrings.map((r) => ({
-      caption: r.description ?? "Rod String",
-      header: [
-        cell("Run Date", r.runDate),
-        cell("Set Depth (mKB)", r.setDepthMkb, "decimal"),
-      ],
-      components: r.components.map((c) => ({
-        itemDes: c.itemDes, odNominalIn: c.odNominalIn, massPerLenKgM: c.massPerLenKgM,
-        grade: c.grade, joints: c.joints, lenM: c.lenM, topMkb: c.topMkb, btmMkb: c.btmMkb,
-      })),
-    })),
+    rodStrings: rodBlocks(well.rodStrings),
     // One HeaderRow per pump: the sample prints 23 named properties in a block,
     // not a table, because they are the properties of ONE object.
     rodPumps: well.rodPumps.map((p) => [

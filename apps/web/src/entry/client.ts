@@ -233,6 +233,8 @@ export interface ScrRateRow {
   order: number; pumpNo: string | null; depthMkb: number | null; strokesSpm: number | null;
   effPct: number | null; pPsi: number | null; qFlowGpm: number | null;
   slowSpeed: boolean | null;
+  /** The rig pump this rate was taken on — reports 06/07 print its plant data. */
+  mudPumpId: string | null;
 }
 /** One support vessel alongside — a.json `support_vessels` (offshore only). */
 export interface SupportVesselRow {

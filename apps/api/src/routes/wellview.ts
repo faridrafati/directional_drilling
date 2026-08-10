@@ -294,8 +294,10 @@ const tubingComponentSchema = z.object({
   lenM: num, topMkb: num, btmMkb: num, serialNo: str,
 });
 const tubingStringSchema = z.object({
-  order: int0, wellboreId: str, description: str, runDate: jalaliish,
+  order: int0, wellboreId: str, description: str, runDate: jalaliish, pullDate: jalaliish,
   stringLengthM: num, setDepthMkb: num,
+  // A DESIGNED string rather than one that was run — report 29's left side.
+  proposed: bool,
   components: z.array(tubingComponentSchema).default([]),
 });
 const plugBackSchema = z.object({

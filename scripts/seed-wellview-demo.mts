@@ -454,6 +454,26 @@ async function main() {
     },
   });
 
+  // The completion as DESIGNED, so report 29 has two strings to draw against
+  // each other. Deliberately different from what was run: the design put the
+  // packer 15 m shallower and had no communications nipple, which is exactly the
+  // kind of difference the report exists to show.
+  await prisma.tubingString.create({
+    data: {
+      wellId: well.id, order: 1, wellboreId: wellbores[0]?.id ?? null,
+      description: "Production String — as designed", proposed: true,
+      stringLengthM: 2_345, setDepthMkb: 2_345,
+      components: {
+        create: [
+          { order: 0, itemDes: "Tubing", jts: 194, make: "Vallourec", model: "VAM TOP", odIn: "3 1/2", idIn: 2.992, massPerLenKgM: 13.7, grade: "L-80", lenM: 2_303, topMkb: 0, btmMkb: 2_303 },
+          { order: 1, itemDes: "TRSSV", jts: 1, make: "Halliburton", model: "DSS-8", odIn: "4 1/2", idIn: 2.813, lenM: 1.4, topMkb: 415, btmMkb: 416.4 },
+          { order: 2, itemDes: "Packer", jts: 1, make: "Baker", model: "SAB-3", odIn: "5 1/2", idIn: 2.875, lenM: 2.1, topMkb: 2_325, btmMkb: 2_327.1 },
+          { order: 3, itemDes: "Wireline entry guide", jts: 1, odIn: "3 1/2", idIn: 2.992, lenM: 0.3, topMkb: 2_344.7, btmMkb: 2_345 },
+        ],
+      },
+    },
+  });
+
   await prisma.plugBack.deleteMany({ where: { wellId: well.id } });
   await prisma.plugBack.createMany({
     data: [
@@ -1006,11 +1026,14 @@ async function seedDay(
       wellheads: {
         create: [
           { order: 0, installDate: day(0), sizeIn: 20.75, type: "Casing Head", make: "Cameron", model: "SSMC", sn: "92355-233", wpPsi: 10_000,
-            section: "A", des: "20-3/4\" Casing Head", topConnectionType: "Snapring Lockdown", topSizeIn: 20.75, btmConnectionType: "Welded", btmSizeIn: 30 },
+            section: "A", des: "20-3/4\" Casing Head", topConnectionType: "Snapring Lockdown", topSizeIn: 20.75, btmConnectionType: "Welded", btmSizeIn: 30,
+            service: "Normal", wpTopPsi: 10_000, topRingGasket: "BX-160", boreMinIn: 18.75 },
           { order: 1, installDate: day(1), sizeIn: 13.625, type: "Casing Spool", make: "Cameron", model: "SSMC", sn: "33455-352", wpPsi: 10_000,
-            section: "B", des: "13-5/8\" Casing Spool", topConnectionType: "Snapring Lockdown", topSizeIn: 13.625, btmConnectionType: "Snapring Lockdown", btmSizeIn: 20.75 },
+            section: "B", des: "13-5/8\" Casing Spool", topConnectionType: "Snapring Lockdown", topSizeIn: 13.625, btmConnectionType: "Snapring Lockdown", btmSizeIn: 20.75,
+            service: "Normal", wpTopPsi: 10_000, topRingGasket: "BX-158", boreMinIn: 12.415 },
           { order: 2, installDate: day(24), sizeIn: 11.0, type: "Tubing Head", make: "Cameron", model: "SSMC", sn: "44821-118", wpPsi: 10_000,
-            section: "C", des: "11\" Tubing Head", topConnectionType: "Flange", topSizeIn: 11.0, btmConnectionType: "Snapring Lockdown", btmSizeIn: 13.625 },
+            section: "C", des: "11\" Tubing Head", topConnectionType: "Flange", topSizeIn: 11.0, btmConnectionType: "Snapring Lockdown", btmSizeIn: 13.625,
+            service: "Sour", wpTopPsi: 10_000, topRingGasket: "BX-155", boreMinIn: 8.525 },
         ],
       },
       formationTops: {

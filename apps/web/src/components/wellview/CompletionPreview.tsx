@@ -252,7 +252,11 @@ export function Report24Preview({ payload }: { payload: Report24Payload }) {
           { header: "Make", width: "w-32", cell: (w) => w.make ?? "" },
           { header: "Model", width: "w-32", cell: (w) => w.model ?? "" },
           { header: "SN", width: "w-32", cell: (w) => w.sn ?? "" },
-          { header: "WP Top (psi)", align: "right", cell: (w) => headerValue(w.wpTopPsi) },
+          { header: "WP (psi)", width: "w-28", align: "right", cell: (w) => headerValue(w.wpPsi) },
+          { header: "Service", width: "w-28", cell: (w) => w.service ?? "" },
+          { header: "WP Top (psi)", width: "w-28", align: "right", cell: (w) => headerValue(w.wpTopPsi) },
+          { header: "Top Ring Gasket", width: "w-32", cell: (w) => w.topRingGasket ?? "" },
+          { header: "Bore Min (in)", align: "right", cell: (w) => headerValue(w.boreMinIn, "in3") },
         ] as PreviewColumn<Report24Payload["wellhead"][number]>[]}
         rows={payload.wellhead} emptyText="No wellhead component recorded."
       />
@@ -282,6 +286,10 @@ export function Report24Preview({ payload }: { payload: Report24Payload }) {
 
       <SectionBar>Tubing Strings</SectionBar>
       <TubingBlocks blocks={payload.tubingStrings} />
+
+      <SectionBar>Rod Strings</SectionBar>
+      <RodBlocks blocks={payload.rodStrings} />
+
 
       <PreviewFooter printedOn={payload.printedOn} />
     </PreviewSheet>
@@ -353,20 +361,20 @@ export function Report29Preview({ payload }: { payload: Report29Payload }) {
       <HeaderGrid rows={payload.header} />
       <SectionBar>{payload.caption}</SectionBar>
 
-      {/* TWO pictures, not one overlaid. They are different wells until the bit
-          reaches TD, they do not share a depth extent, and overlaying them would
-          put a prognosed top and a drilled one on the same band with no way to
-          tell which is which. */}
+      {/* TWO pictures, not one overlaid: the same well with a different STRING
+          in it. Overlaying a designed completion on the one that was run would
+          put two items at the same depth with no way to tell which is which —
+          and the differences between them are the whole report. */}
       <div className="border border-gray-400 border-t-0 bg-white p-2 flex gap-4 overflow-x-auto">
         <div>
           <div className="text-[9px] font-semibold uppercase tracking-wide text-gray-500 pb-0.5">
-            Proposed
+            Proposed (as designed)
           </div>
           <WellboreSchematic payload={payload.proposed} reportType="29-proposed" width={330} height={440} />
         </div>
         <div>
           <div className="text-[9px] font-semibold uppercase tracking-wide text-gray-500 pb-0.5">
-            Actual
+            Actual (as run)
           </div>
           <WellboreSchematic payload={payload.actual} reportType="29" width={330} height={440} />
         </div>
@@ -374,9 +382,9 @@ export function Report29Preview({ payload }: { payload: Report29Payload }) {
       <SchematicLegend />
       <HeaderGrid rows={[payload.comparison]} />
       <div className="border border-t-0 border-gray-400 px-2 py-1 text-[11px] text-gray-500 leading-snug">
-        The proposed side carries the prognosis and the plan&rsquo;s total depth, not a casing scheme:
-        this application does not store a designed casing programme, and drawing the ACTUAL casing on
-        the proposed side would make the comparison meaningless.
+        Both sides are the same hole and the same casing — what differs is the completion string
+        inside them. Mark a tubing string as <em>proposed</em> under Well data → Completion to draw it
+        on the left.
       </div>
       <PreviewFooter printedOn={payload.printedOn} />
     </PreviewSheet>

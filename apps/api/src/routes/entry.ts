@@ -148,6 +148,8 @@ const wellheadSchema = z.object({
   // below at what size. A wellhead is a stack, not a list of parts.
   section: str, des: str,
   topConnectionType: str, topSizeIn: num, btmConnectionType: str, btmSizeIn: num,
+  // Report 24's own four columns.
+  service: str, wpTopPsi: num, topRingGasket: str, boreMinIn: num,
 });
 /** a.json `well_control_scr` — slow circulation rates, one row per pump / rate. */
 const scrRateSchema = z.object({

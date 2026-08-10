@@ -25,6 +25,8 @@
  * remount the inputs, dropping focus after each keystroke.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { wellviewApi } from "../../entry/wellview.js";
 import {
   entryApi, type ReportBody, type ReportDetail, type ToolItem, type SolidControlRow,
   type HseDrillRow,
@@ -247,6 +249,15 @@ interface SubformProps {
   draft: ReportBody;
   set: SetField;
   disabled: boolean;
+  /**
+   * The well's holes and the rig's pumps, for the two pickers that turn a typed
+   * row into a row that POINTS at something: a drilled interval at the hole it
+   * was drilled in, and an SCR reading at the pump that produced it. Without
+   * them reports 02, 06 and 07 print the default hole on every row and five
+   * permanently blank pump cells.
+   */
+  wellbores: { id: string | null; name: string | null }[];
+  mudPumps: { id: string | null; pumpNo: string | null; manufacturer: string | null }[];
 }
 
 /** The subforms, in the order the sheet is normally worked through. */
@@ -345,6 +356,13 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
   useEffect(() => { setDraft(toBody(report)); setDirty(false); setError(null); setSavedAt(null); }, [report.id, report.status, report.updatedAt]);
 
   const locked = report.status === "submitted" && !isAdmin;
+  // Fetched once per well and shared by both pickers.
+  const registers = useQuery({
+    queryKey: ["wellview", "registers", report.wellId],
+    queryFn: () => wellviewApi.registers(report.wellId),
+    staleTime: 60_000,
+  });
+
   const set: SetField = (key, value) => { setDraft((d) => ({ ...d, [key]: value })); setDirty(true); };
   const setMud = <K extends keyof NonNullable<ReportBody["mud"]>>(key: K, value: NonNullable<ReportBody["mud"]>[K]) => {
     setDraft((d) => ({ ...d, mud: { ...(d.mud ?? EMPTY_MUD), [key]: value } })); setDirty(true);
@@ -411,7 +429,11 @@ export function ReportEditor({ report, isAdmin, onChanged }: {
   const w = report.well;
   const d = locked;
   const idx = SECTIONS.findIndex((s) => s.id === section);
-  const props: SubformProps = { draft, set, disabled: d };
+  const props: SubformProps = {
+    draft, set, disabled: d,
+    wellbores: registers.data?.wellbores ?? [],
+    mudPumps: registers.data?.mudPumps ?? [],
+  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden text-gray-800">
@@ -741,7 +763,10 @@ function BitRuns({ draft, set, disabled }: SubformProps) {
  * was made: depths in, times, and the parameters held over that interval.
  * Sits next to the bit runs because the two describe the same drilling.
  */
-function DrillingParameters({ draft, set, disabled }: SubformProps) {
+function DrillingParameters({ draft, set, disabled, wellbores }: SubformProps) {
+  const wellboreOptions = wellbores
+    .filter((w) => w.id && w.name)
+    .map((w) => ({ value: w.id as string, label: w.name as string }));
   const drilled = draft.drillingParameters.reduce((a, r) => a + (r.drillTimeHr ?? 0), 0);
   return (
     <>
@@ -768,6 +793,13 @@ function DrillingParameters({ draft, set, disabled }: SubformProps) {
           { key: "soStrWtKlbf", label: "SO str wt (klbf)", type: "num", width: "w-28",
             title: "Slack-off weight" },
           { key: "offBottomTorque", label: "Off-btm torque", type: "num", width: "w-28" },
+          // Which HOLE this interval was drilled in. Without it reports 02, 06
+          // and 07 print the well's first wellbore on every row, which is only
+          // right until somebody sidetracks.
+          ...(wellboreOptions.length
+            ? [{ key: "wellboreId", label: "Wellbore", type: "select", width: "w-40",
+                options: wellboreOptions } as Col<ReportBody["drillingParameters"][number]>]
+            : []),
         ] as Col<ReportBody["drillingParameters"][number]>[]}
         rows={draft.drillingParameters} onChange={(v) => set("drillingParameters", v)} disabled={disabled} minRows={1}
         addLabel="interval"
@@ -1657,7 +1689,16 @@ function HseAndBulk({ draft, set, setHse, disabled }: SubformProps & {
  * circulation rates are re-taken at the same milestones (a new section, a new
  * mud weight). Neither is a daily entry, so neither earns a tab of its own.
  */
-function WellheadAndScr({ draft, set, disabled }: SubformProps) {
+function WellheadAndScr({ draft, set, disabled, mudPumps }: SubformProps) {
+  // An SCR reading belongs to a PUMP. Without the link reports 06 and 07 print
+  // five permanently blank pump cells beside every rate, because they look the
+  // pump up by id and there is none to look up.
+  const pumpOptions = mudPumps
+    .filter((p) => p.id)
+    .map((p) => ({
+      value: p.id as string,
+      label: [p.pumpNo && `#${p.pumpNo}`, p.manufacturer].filter(Boolean).join(" ") || "pump",
+    }));
   return (
     <>
       <Section right={<span className="font-normal normal-case text-[11px] sm:text-[9px] opacity-70">one row per component landed</span>}>Wellhead component</Section>
@@ -1687,10 +1728,14 @@ function WellheadAndScr({ draft, set, disabled }: SubformProps) {
           { key: "effPct", label: "Eff (%)", type: "num", width: "w-24", title: "Volumetric efficiency" },
           { key: "pPsi", label: "P (psi)", type: "num", width: "w-24", title: "Circulating pressure at that rate" },
           { key: "qFlowGpm", label: "Q flow (gpm)", type: "num", width: "w-28" },
+          ...(pumpOptions.length
+            ? [{ key: "mudPumpId", label: "Pump", type: "select", width: "w-40",
+                options: pumpOptions } as Col<ReportBody["scrRates"][number]>]
+            : []),
         ] as Col<ReportBody["scrRates"][number]>[]}
         rows={draft.scrRates} onChange={(v) => set("scrRates", v)} disabled={disabled} minRows={2}
         addLabel="SCR rate"
-        blank={() => ({ order: 0, pumpNo: null, depthMkb: null, strokesSpm: null, slowSpeed: null, effPct: null, pPsi: null, qFlowGpm: null })}
+        blank={() => ({ order: 0, pumpNo: null, mudPumpId: null, depthMkb: null, strokesSpm: null, slowSpeed: null, effPct: null, pPsi: null, qFlowGpm: null })}
       />
       <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
         One SCR row per pump and rate — the pressures are what a kill sheet is worked from, so record the

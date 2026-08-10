@@ -962,6 +962,13 @@ model EntryWellheadComponent {
   topSizeIn         Float?
   btmConnectionType String?
   btmSizeIn         Float?
+  /// Report 24 prints these four beside the make and model. `service` was being
+  /// read off `com` — a comment doing a column's job, so anything typed as a
+  /// remark became the service rating.
+  service           String? /// "Normal" | "Sour" | "H2S"
+  wpTopPsi          Float? /// working pressure at the TOP flange, distinct from wpPsi
+  topRingGasket     String? /// "BX-160", "R-54"
+  boreMinIn         Float?
   com         String?
   report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
@@ -2096,6 +2103,14 @@ model TubingString {
   /// tables against the day, and a string with only a run date can never appear
   /// in the second one.
   pullDate       String?
+  /// A DESIGNED string rather than one that was run.
+  ///
+  /// Report 29 draws "proposed" beside "actual", and its sample's proposed side
+  /// is a completion string somebody designed — items 1-1 to 1-9, against the
+  /// actual's 2-1 to 2-8 — not a geological prognosis. So the two pictures are
+  /// the same well with a different STRING in it, and this is the flag that
+  /// says which one a string is.
+  proposed       Boolean?
   stringLengthM  Float?
   setDepthMkb    Float?
   createdAt      DateTime @default(now())

@@ -53,8 +53,8 @@ const emptyTubingComponent = (): TubingComponentRow => ({
   lenM: null, topMkb: null, btmMkb: null, serialNo: null,
 });
 const emptyTubingString = (): TubingStringRow => ({
-  order: 0, wellboreId: null, description: null, runDate: null,
-  stringLengthM: null, setDepthMkb: null,
+  order: 0, wellboreId: null, description: null, runDate: null, pullDate: null,
+  stringLengthM: null, setDepthMkb: null, proposed: null,
   components: [emptyTubingComponent(), emptyTubingComponent()],
 });
 
@@ -268,6 +268,21 @@ export function CompletionPanel({ wellId, wellbores }: { wellId: string; wellbor
                   onChange={(v) => set("perforations", draft.perforations.map((x, k) => (k === i ? { ...x, pOverUnderPsi: v } : x)))} />
                 <TextField label="Reference log" value={p.referenceLog}
                   onChange={(v) => set("perforations", draft.perforations.map((x, k) => (k === i ? { ...x, referenceLog: v } : x)))} />
+                {/* The six reports 24 and 26 print and the form could not type.
+                    Orientation matters on a deviated well, and the fluid levels
+                    and pressures either side are how the job is judged. */}
+                <TextField label="Orientation" value={p.orientation} placeholder="90° / high side"
+                  onChange={(v) => set("perforations", draft.perforations.map((x, k) => (k === i ? { ...x, orientation: v } : x)))} />
+                <TextField label="Orientation method" value={p.orientationMethod} placeholder="Gyro"
+                  onChange={(v) => set("perforations", draft.perforations.map((x, k) => (k === i ? { ...x, orientationMethod: v } : x)))} />
+                <NumField label="Fluid level before (mKB)" value={p.flMdBeforeMkb}
+                  onChange={(v) => set("perforations", draft.perforations.map((x, k) => (k === i ? { ...x, flMdBeforeMkb: v } : x)))} />
+                <NumField label="Fluid level after (mKB)" value={p.flMdAfterMkb}
+                  onChange={(v) => set("perforations", draft.perforations.map((x, k) => (k === i ? { ...x, flMdAfterMkb: v } : x)))} />
+                <NumField label="P surface initial (psi)" value={p.pSurfInitPsi}
+                  onChange={(v) => set("perforations", draft.perforations.map((x, k) => (k === i ? { ...x, pSurfInitPsi: v } : x)))} />
+                <NumField label="P surface final (psi)" value={p.pFinalSurfPsi}
+                  onChange={(v) => set("perforations", draft.perforations.map((x, k) => (k === i ? { ...x, pFinalSurfPsi: v } : x)))} />
               </div>
             </div>
             <div className="bg-gray-50 text-gray-500 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border-y border-gray-200">
@@ -312,6 +327,17 @@ export function CompletionPanel({ wellId, wellbores }: { wellId: string; wellbor
                   onChange={(v) => set("tubingStrings", draft.tubingStrings.map((x, k) => (k === i ? { ...x, description: v } : x)))} />
                 <TextField label="Run date" value={t.runDate} placeholder="1405/03/05"
                   onChange={(v) => set("tubingStrings", draft.tubingStrings.map((x, k) => (k === i ? { ...x, runDate: v } : x)))} />
+                <TextField label="Pull date" value={t.pullDate} placeholder="1405/06/20"
+                  onChange={(v) => set("tubingStrings", draft.tubingStrings.map((x, k) => (k === i ? { ...x, pullDate: v } : x)))} />
+                {/* Report 29 draws the proposed string on its left and the one
+                    that was run on its right. A string nobody marks is one that
+                    was run — the design is the exception somebody declares. */}
+                <label className="flex items-center gap-2 px-2 py-1.5 text-xs sm:text-[11px] text-gray-700">
+                  <input type="checkbox" className="accent-blue-600"
+                    checked={t.proposed === true}
+                    onChange={(e) => set("tubingStrings", draft.tubingStrings.map((x, k) => (k === i ? { ...x, proposed: e.target.checked ? true : null } : x)))} />
+                  Proposed (a design, not a string that was run)
+                </label>
               </div>
               <div>
                 <NumField label="String length (m)" value={t.stringLengthM}

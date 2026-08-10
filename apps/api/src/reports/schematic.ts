@@ -110,6 +110,15 @@ export function parseInches(value: string | null | undefined): number | null {
 export async function buildSchematic(
   prisma: PrismaClient,
   wellId: string,
+  /**
+   * Which completion string to draw inside the casing.
+   *
+   * "run" is every string that is not a design, and is what five of the six
+   * schematic reports want. "proposed" is the designed string report 29 draws on
+   * its left-hand side: the same hole and the same casing, with a different
+   * string in it, which is the comparison that report exists to make.
+   */
+  completion: "run" | "proposed" = "run",
 ): Promise<SchematicPayload> {
   const [holes, strings, formations, tubing] = await Promise.all([
     prisma.holeSection.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
@@ -126,7 +135,14 @@ export async function buildSchematic(
     }),
     prisma.wellFormation.findMany({ where: { wellId }, orderBy: { order: "asc" } }),
     prisma.tubingString.findMany({
-      where: { wellId },
+      // A string nobody marked is one that was RUN — the design is the exception
+      // somebody has to declare. Written as an explicit OR rather than
+      // `NOT: { proposed: true }`, because SQL's three-valued logic makes
+      // `NOT (proposed = true)` evaluate to NULL for an unmarked row, which
+      // excludes exactly the rows this branch exists to include.
+      where: completion === "proposed"
+        ? { wellId, proposed: true }
+        : { wellId, OR: [{ proposed: null }, { proposed: false }] },
       orderBy: { order: "asc" },
       include: { components: { orderBy: { order: "asc" } } },
     }),
@@ -226,7 +242,9 @@ export async function buildSchematic(
       return [{
         topMkb: top,
         btmMkb: btm,
-        label: `${ti + 2}-${ci + 1}; ${c.itemDes ?? "item"}`,
+        // The samples number the proposed string 1-n and the string that was run
+      // 2-n, so the base depends on which picture this is.
+      label: `${ti + (completion === "proposed" ? 1 : 2)}-${ci + 1}; ${c.itemDes ?? "item"}`,
         odIn: parseInches(c.odIn),
         detail: [t.description, c.make, c.model].filter(Boolean).join(" · ") || null,
       }];

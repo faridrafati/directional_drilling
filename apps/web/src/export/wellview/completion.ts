@@ -494,6 +494,11 @@ export async function buildReport24Doc(p: Report24Payload): Promise<TDocumentDef
       { header: "Model", width: 76, cell: (w: Report24Payload["wellhead"][number]) => w.model ?? "" },
       { header: "SN", width: 76, cell: (w: Report24Payload["wellhead"][number]) => w.sn ?? "" },
       { header: "WP Top (psi)", width: 66, align: "right", cell: (w: Report24Payload["wellhead"][number]) => headerValue(w.wpTopPsi) },
+      { header: "WP (psi)", width: 62, align: "right", cell: (w: Report24Payload["wellhead"][number]) => headerValue(w.wpPsi) },
+      { header: "Service", width: 62, cell: (w: Report24Payload["wellhead"][number]) => w.service ?? "" },
+      { header: "WP Top (psi)", width: 66, align: "right", cell: (w: Report24Payload["wellhead"][number]) => headerValue(w.wpTopPsi) },
+      { header: "Top Ring Gasket", width: 84, cell: (w: Report24Payload["wellhead"][number]) => w.topRingGasket ?? "" },
+      { header: "Bore Min (in)", width: 62, align: "right", cell: (w: Report24Payload["wellhead"][number]) => headerValue(w.boreMinIn, "in3") },
     ], p.wellhead),
     sectionBar("Casing Strings"),
     reportTable([
@@ -513,6 +518,8 @@ export async function buildReport24Doc(p: Report24Payload): Promise<TDocumentDef
     ], p.perforations),
     sectionBar("Tubing Strings"),
     ...tubingContent(p.tubingStrings),
+    sectionBar("Rod Strings"),
+    ...rodContent(p.rodStrings),
   ]);
 }
 

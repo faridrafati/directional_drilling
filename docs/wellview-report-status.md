@@ -606,6 +606,50 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   and earlier `cased` and the wellhead spool). That is three times it has stopped
   a column reaching Prisma without reaching the zod.
 
+### 2026-08-10 — reports 24 and 29, and a decision that rested on a misreading
+
+**Report 29 was reproducing the wrong report.** It compared a geological
+PROGNOSIS against the drilled well, on the strength of the sample file being
+called "Proposed vs Actual". The sample says otherwise: its own title is
+"Schematic - Current", and its two pictures are a completion string numbered
+1-1 to 1-9 beside one numbered 2-1 to 2-8 — the same hole, the same casing, a
+different STRING. It is a completion design against what was actually run, and
+has nothing to do with formation tops. The Decisions entry that authorised the
+old behaviour is superseded by this one.
+
+Both sides are now the same well drawn twice, differing only in which tubing
+string is inside the casing. `TubingString.proposed` says which is a design, and
+`buildSchematic` takes a `"run" | "proposed"` selector. Two things worth
+recording from the fix:
+
+- **`NOT: { proposed: true }` excluded the rows it was meant to include.** SQL's
+  three-valued logic makes `NOT (proposed = true)` evaluate to NULL for an
+  unmarked row, so the "actual" side came back empty on a well whose string was
+  simply never flagged. Written as an explicit `OR [null, false]` now. The bug
+  was visible only because the payload was read back — it typechecked perfectly.
+- **The numbering base belongs to the picture.** The samples number the proposed
+  string 1-n and the run string 2-n, so the base depends on which side is being
+  drawn. Reports 22, 24 and 28 still print 2-n, and still exclude the design.
+
+**Report 24 gained Rod Strings and four wellhead columns** — Service, WP (psi),
+Top Ring Gasket and Bore Min. `service` was being read off the wellhead
+component's `com` field: a comment doing a column's job, so anything typed as a
+remark became the service rating. It has its own column now, and report 30 reads
+that instead. The rod-string block is shared with report 30 rather than written
+twice.
+
+**Eight more printed fields gained an input**, closing the entry-coverage
+finding: the six perforation fields reports 24 and 26 print (orientation and its
+method, the fluid levels either side, and the initial and final surface
+pressures), and the two PICKERS that turn a typed row into a row that points at
+something — an SCR reading at the rig pump that produced it, and a drilled
+interval at the hole it was drilled in. Without the first, reports 06 and 07
+printed five permanently blank pump cells beside every rate; without the second,
+reports 02, 06 and 07 printed the well's first wellbore on every row, which is
+right only until somebody sidetracks. Both pickers needed data the daily editor
+did not have, so it now fetches the well's registers once and shares them.
+
+
 ### 2026-08-10 — the audit's remaining defects
 
 Worked through what the six-dimension audit left after reports 22 and 30. Each of

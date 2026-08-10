@@ -597,7 +597,10 @@ export interface TubingComponentRow {
 }
 export interface TubingStringRow {
   order: number; wellboreId: string | null; description: string | null;
-  runDate: string | null; stringLengthM: number | null; setDepthMkb: number | null;
+  runDate: string | null; pullDate: string | null;
+  stringLengthM: number | null; setDepthMkb: number | null;
+  /** A DESIGNED string rather than one that was run — report 29's left side. */
+  proposed: boolean | null;
   components: TubingComponentRow[];
 }
 export interface PlugBackRow {
@@ -829,13 +832,21 @@ export interface Report24Payload extends ReportEnvelope {
   completionHeader: HeaderRow;
   caption: string;
   schematic: SchematicPayload;
-  wellhead: { des: string | null; make: string | null; model: string | null; sn: string | null; wpTopPsi: number | null }[];
+  wellhead: {
+    des: string | null; make: string | null; model: string | null; sn: string | null;
+    wpPsi: number | null; service: string | null; wpTopPsi: number | null;
+    topRingGasket: string | null; boreMinIn: number | null;
+  }[];
   casingStrings: {
     description: string | null; odIn: string | null; massPerLenKgM: number | null;
     grade: string | null; topThread: string | null; setDepthMkb: number | null;
   }[];
-  perforations: { date: string | null; topMkb: number | null; btmMkb: number | null; zone: string | null }[];
+  perforations: {
+    date: string | null; topMkb: number | null; btmMkb: number | null; zone: string | null;
+  }[];
   tubingStrings: TubingBlock[];
+  /** The sample prints rod lift beside the tubing — a pumped well has both. */
+  rodStrings: RodBlock[];
 }
 
 export interface FailureCostCell {
@@ -906,9 +917,12 @@ export interface Report28Payload extends ReportEnvelope {
 
 export interface Report29Payload extends ReportEnvelope {
   caption: string;
+  /** The well with the string that was RUN in it. */
   actual: SchematicPayload;
+  /** The same well with the DESIGNED string in it. */
   proposed: SchematicPayload;
   comparison: HeaderRow;
+  /** Said on the page when no completion has been designed to compare against. */
   noProposal: string | null;
 }
 
