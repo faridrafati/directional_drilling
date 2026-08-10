@@ -207,18 +207,22 @@ const EMPTY_MUD: NonNullable<ReportBody["mud"]> = {
   depthMkb: null, densityMinPpg: null, densityMaxPpg: null, tFlowlineC: null, filtrateMl: null,
   vis3rpm: null, vis6rpm: null, percentWater: null, lowGravitySolidsPct: null,
   hardnessCaPpm: null, mudLostBbl: null, activeMudVolBbl: null, volMudResBbl: null,
+  filterCake32nds: null, sandPct: null, gel30min: null, potassiumMgL: null,
+  wholeMudAddedBbl: null, mudLostSurfBbl: null,
 };
 
 /** A component row the user hasn't typed into yet. */
 const emptyComponent = (): DrillStringComponentRow => ({
   order: 0, itemDes: null, serv: null, sn: null, odIn: null, idIn: null,
   jts: null, lenM: null, cumLenM: null, com: null,
+  topThread: null, driftIn: null, gaugeIn: null,
+  connections: null, massPerLenKgM: null, grade: null,
 });
 /** A whole new string — header blank, no components until one is added. */
 const emptyDrillString = (): DrillStringRow => ({
   order: 0, name: null, bhaNo: null, depthInMkb: null, dateIn: null, objective: null,
   depthDrilledM: null, drillingTimeHr: null, circulatingTimeHr: null,
-  rotatingTimeHr: null, slidingTimeHr: null, note: null, components: [],
+  rotatingTimeHr: null, slidingTimeHr: null, note: null, stringWtKlbf: null, components: [],
 });
 
 /**
@@ -694,6 +698,10 @@ function BitRuns({ draft, set, disabled }: SubformProps) {
           { key: "meterage", label: "Meterage", type: "num", width: "w-20" },
           { key: "hours", label: "Hours", type: "num", width: "w-16" },
           { key: "bitRevs", label: "Bit revs", type: "num", width: "w-24", title: "Total revolutions turned on the run" },
+          // Both printed by reports 02, 06 and 07. `itemCost` was also being
+          // WIPED by every save until 1a66988.
+          { key: "lengthM", label: "Length (m)", type: "num", width: "w-24", title: "The bit's own length" },
+          { key: "itemCost", label: "Item cost", type: "num", width: "w-24" },
           { key: "wob", label: "WOB (klb)", type: "num", width: "w-20" },
           { key: "rpm", label: "RPM", type: "num", width: "w-16" },
           { key: "torque", label: "Torque on/off", width: "w-24" },
@@ -714,6 +722,7 @@ function BitRuns({ draft, set, disabled }: SubformProps) {
         blank={() => ({
           order: 0, bitNo: null, bitSerialNo: null, size: null, type: null,
           make: null, model: null, bitRevs: null, iadcCode: null,
+          lengthM: null, itemCost: null,
           nozzles: null, tfa: null, meterage: null, hours: null, wob: null, rpm: null,
           torque: null, dullGrade: null, reasonPulled: null, pumpType: null, pumpOutput: null,
           pumpPressure: null, annularVelocity: null, hsi: null, cmtDrilled: null,
@@ -752,13 +761,21 @@ function DrillingParameters({ draft, set, disabled }: SubformProps) {
           { key: "qFlowGpm", label: "Flow (gpm)", type: "num", width: "w-24" },
           { key: "sppPsi", label: "SPP (psi)", type: "num", width: "w-20" },
           { key: "wob1000Lbf", label: "WOB (1000 lbf)", type: "num", width: "w-24" },
+          { key: "drillStrWtKlbf", label: "Drill str wt (klbf)", type: "num", width: "w-28",
+            title: "Hook load while drilling" },
+          { key: "puStrWtKlbf", label: "PU str wt (klbf)", type: "num", width: "w-28",
+            title: "Pick-up weight" },
+          { key: "soStrWtKlbf", label: "SO str wt (klbf)", type: "num", width: "w-28",
+            title: "Slack-off weight" },
+          { key: "offBottomTorque", label: "Off-btm torque", type: "num", width: "w-28" },
         ] as Col<ReportBody["drillingParameters"][number]>[]}
         rows={draft.drillingParameters} onChange={(v) => set("drillingParameters", v)} disabled={disabled} minRows={1}
         addLabel="interval"
         blank={() => ({
           order: 0, startMkb: null, endDepthMkb: null, drillTimeHr: null, slideTimeHr: null,
           circTimeHr: null, intRopMHr: null, drillTq: null, rpm: null, qFlowGpm: null,
-          sppPsi: null, wob1000Lbf: null,
+          sppPsi: null, wob1000Lbf: null, drillStrWtKlbf: null, puStrWtKlbf: null,
+          soStrWtKlbf: null, offBottomTorque: null, wellboreId: null,
         })}
       />
       <p className="px-2 pb-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
@@ -778,6 +795,14 @@ const DS_COMPONENT_COLS: Col<DrillStringComponentRow>[] = [
   { key: "jts", label: "Jts", type: "int", width: "w-16", title: "Joints — a whole number" },
   { key: "lenM", label: "Len (m)", type: "num", width: "w-24", title: "Length of this item" },
   { key: "cumLenM", label: "Cum len (m)", type: "num", width: "w-28", title: "Running total from the bit up" },
+  // The five report 02 prints and nothing could type. They were also being
+  // WIPED by every save until 1a66988 — see entry-schema-parity.test.ts.
+  { key: "topThread", label: "Top thread", width: "w-24", title: "e.g. 6 5/8 REG, NC50" },
+  { key: "driftIn", label: "Drift (in)", type: "num", width: "w-20" },
+  { key: "gaugeIn", label: "Gauge (in)", type: "num", width: "w-20" },
+  { key: "connections", label: "Connections", width: "w-28" },
+  { key: "massPerLenKgM", label: "Wt (kg/m)", type: "num", width: "w-24" },
+  { key: "grade", label: "Grade", width: "w-20", title: "e.g. S135, L80" },
   { key: "com", label: "Com" },
 ];
 
@@ -849,6 +874,8 @@ function DrillStringBlock({ string: s, index, disabled, onPatch, onRemove }: {
           <TextField label="Date in" value={s.dateIn} onChange={(v) => onPatch({ dateIn: v })} disabled={disabled} placeholder="4/30/2026" />
           <TextField label="Objective" value={s.objective} onChange={(v) => onPatch({ objective: v })} disabled={disabled} placeholder="Drill 12-1/4in hole to casing point" />
           <NumField label="Depth drilled" unit="m" value={s.depthDrilledM} onChange={(v) => onPatch({ depthDrilledM: v })} disabled={disabled} />
+          {/* Printed by reports 02, 06 and 07 and typeable nowhere until now. */}
+          <NumField label="String weight" unit="1000 lbf" value={s.stringWtKlbf} onChange={(v) => onPatch({ stringWtKlbf: v })} disabled={disabled} />
         </div>
         <div>
           <NumField label="Drilling time" unit="hr" value={s.drillingTimeHr} onChange={(v) => onPatch({ drillingTimeHr: v })} disabled={disabled} />
@@ -984,6 +1011,10 @@ function MudSubform({ draft, set, setMud, disabled }: SubformProps & {
         <NumField label="ALK" value={m.alkalinity} onChange={(v) => setMud("alkalinity", v)} disabled={disabled} />
         {/* Filtrate IS the water loss — one field, under a.json's name and unit. */}
         <NumField label="Filtrate" unit="ml/30min" value={m.filtrateMl} onChange={(v) => setMud("filtrateMl", v)} disabled={disabled} />
+        <NumField label="Filter cake" unit="1/32 in" value={m.filterCake32nds} onChange={(v) => setMud("filterCake32nds", v)} disabled={disabled} />
+        {/* The THIRD gel reading. A 10-minute gel that has not moved by 30 is
+            a different mud from one that keeps building. */}
+        <NumField label="Gel 30 min" value={m.gel30min} onChange={(v) => setMud("gel30min", v)} disabled={disabled} />
       </div>
       <div>
         <Section>Mud chemistry</Section>
@@ -998,6 +1029,8 @@ function MudSubform({ draft, set, setMud, disabled }: SubformProps & {
         <NumField label="PF" value={m.pf} onChange={(v) => setMud("pf", v)} disabled={disabled} />
         <NumField label="MF" value={m.mf} onChange={(v) => setMud("mf", v)} disabled={disabled} />
         <NumField label="Chloride" unit="mg/l" value={m.chloride} onChange={(v) => setMud("chloride", v)} disabled={disabled} />
+        <NumField label="Potassium" unit="mg/l" value={m.potassiumMgL} onChange={(v) => setMud("potassiumMgL", v)} disabled={disabled} />
+        <NumField label="Sand" unit="%" value={m.sandPct} onChange={(v) => setMud("sandPct", v)} disabled={disabled} />
         {/* Hardness (Ca) IS the calcium reading, in the same ppm; the flowline
             temperature above is the day's mud temperature, in °C. */}
         <NumField label="Hardness (Ca)" unit="ppm" value={m.hardnessCaPpm} onChange={(v) => setMud("hardnessCaPpm", v)} disabled={disabled} />
@@ -1009,6 +1042,8 @@ function MudSubform({ draft, set, setMud, disabled }: SubformProps & {
         <NumField label="Loss @ units" unit="bbl" value={draft.mudLossUnit} onChange={(v) => set("mudLossUnit", v)} disabled={disabled} />
         <NumField label="Mud gains" unit="bbl" value={draft.mudGains} onChange={(v) => set("mudGains", v)} disabled={disabled} />
         <NumField label="Mud lost to hole" unit="bbl" value={m.mudLostBbl} onChange={(v) => setMud("mudLostBbl", v)} disabled={disabled} />
+        <NumField label="Mud lost at surface" unit="bbl" value={m.mudLostSurfBbl} onChange={(v) => setMud("mudLostSurfBbl", v)} disabled={disabled} />
+        <NumField label="Whole mud added" unit="bbl" value={m.wholeMudAddedBbl} onChange={(v) => setMud("wholeMudAddedBbl", v)} disabled={disabled} />
         <NumField label="Active volume" unit="bbl" value={m.activeMudVolBbl} onChange={(v) => setMud("activeMudVolBbl", v)} disabled={disabled} />
         <NumField label="Reserve volume" unit="bbl" value={m.volMudResBbl} onChange={(v) => setMud("volMudResBbl", v)} disabled={disabled} />
       </div>
@@ -1646,13 +1681,15 @@ function WellheadAndScr({ draft, set, disabled }: SubformProps) {
           { key: "pumpNo", label: "Pump #", width: "w-20" },
           { key: "depthMkb", label: "Depth (mKB)", type: "num", width: "w-28", title: "Depth the rate was taken at" },
           { key: "strokesSpm", label: "Strokes (spm)", type: "num", width: "w-28" },
+          { key: "slowSpeed", label: "Slow Spd?", type: "bool", width: "w-24",
+            title: "A slow-circulating-rate reading. Independent of whether an SPM was typed." },
           { key: "effPct", label: "Eff (%)", type: "num", width: "w-24", title: "Volumetric efficiency" },
           { key: "pPsi", label: "P (psi)", type: "num", width: "w-24", title: "Circulating pressure at that rate" },
           { key: "qFlowGpm", label: "Q flow (gpm)", type: "num", width: "w-28" },
         ] as Col<ReportBody["scrRates"][number]>[]}
         rows={draft.scrRates} onChange={(v) => set("scrRates", v)} disabled={disabled} minRows={2}
         addLabel="SCR rate"
-        blank={() => ({ order: 0, pumpNo: null, depthMkb: null, strokesSpm: null, effPct: null, pPsi: null, qFlowGpm: null })}
+        blank={() => ({ order: 0, pumpNo: null, depthMkb: null, strokesSpm: null, slowSpeed: null, effPct: null, pPsi: null, qFlowGpm: null })}
       />
       <p className="px-2 py-2 text-xs sm:text-[10px] text-gray-400 leading-snug">
         One SCR row per pump and rate — the pressures are what a kill sheet is worked from, so record the

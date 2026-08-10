@@ -28,6 +28,10 @@ import {
 import type {
   HeaderRow, KpiRow, MultiWellEnvelope, PhasePivotRow,
   Report13Payload, Report16Payload,
+  Report15Payload,
+  Report25Payload,
+  ProblemCostCell,
+  FailureCostCell
 } from "../../entry/wellview.js";
 
 const LANDSCAPE_LEGAL: [number, number] = [1008, 612];
@@ -255,5 +259,51 @@ export function exportReport16Xlsx(payload: Report16Payload): void {
     header,
     [...payload.rows.map(row), row(payload.grandTotal)],
     [null, null, null, FMT_INT, FMT_DECIMAL, FMT_DECIMAL, FMT_DECIMAL, FMT_DECIMAL, FMT_DECIMAL],
+  );
+}
+
+/* ══ 15 and 25 — the other two pivots ════════════════════════════════════════ */
+
+/**
+ * Reports 15 and 25 are the same SHAPE as 13 and 16 — a pivot with a grand total
+ * — and the catalog already advertised a spreadsheet for 25. It advertised one
+ * nothing could produce: the button was wired to `xlsxExporter` on 13 and 16
+ * only, so 25's Excel promise had no code behind it at all. 15 is here for the
+ * same reason 16 is: a pivot a reader cannot re-pivot is half a pivot.
+ *
+ * Neither payload carries a filter row, so the top block is the WELL SET and the
+ * report's own totals — which is the same information 13 and 16 put there, just
+ * assembled from what these two actually have.
+ */
+const wellSetBlock = (payload: MultiWellEnvelope): HeaderRow => [
+  { label: "Wells", value: payload.wells.map((w) => w.name).join(", ") || "(none)" },
+  ...(payload.droppedWells > 0
+    ? [{ label: "Not shown (no access)", value: payload.droppedWells, kind: "int" as const }]
+    : []),
+];
+
+export function exportReport15Xlsx(payload: Report15Payload): void {
+  const header = ["Accountable Party", "Problem Kind", "Cost", "Lost Time (hr)", "Count"];
+  const row = (c: ProblemCostCell) => [c.party, c.kind, c.cost, c.lostTimeHr, c.count];
+  writeSheet(
+    `${stamp(payload)}_problem_cost_by_party.xlsx`,
+    "Problem Cost",
+    [...wellSetBlock(payload), ...payload.totals],
+    header,
+    payload.cells.map(row),
+    [null, null, FMT_MONEY, FMT_DECIMAL, FMT_INT],
+  );
+}
+
+export function exportReport25Xlsx(payload: Report25Payload): void {
+  const header = ["Well", "Failure Type", "Cost", "Failures"];
+  const row = (c: FailureCostCell) => [c.well, c.failureType, c.cost, c.count];
+  writeSheet(
+    `${stamp(payload)}_cost_of_failure_by_type.xlsx`,
+    "Cost of Failure",
+    [...wellSetBlock(payload), ...payload.totals],
+    header,
+    payload.cells.map(row),
+    [null, null, FMT_MONEY, FMT_INT],
   );
 }

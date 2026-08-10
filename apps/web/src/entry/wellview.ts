@@ -527,7 +527,7 @@ export interface Report09Payload extends ReportEnvelope {
 export interface WellRef {
   id: string; name: string;
   apiUwi: string | null; licenseNo: string | null; field: string | null;
-  county: string | null; stateProvince: string | null; wellType: string | null;
+  county: string | null; country: string | null; stateProvince: string | null; wellType: string | null;
   groundElevation: number | null; kbElevation: number | null; spudDate: string | null;
 }
 export interface MultiWellEnvelope extends ReportEnvelope {

@@ -24,7 +24,7 @@ import type { PrismaClient } from "@prisma/client";
 import { jalaliHoursBetween } from "@dd/shared";
 import { printedOn, type HeaderRow } from "./chrome.js";
 import type { MultiWellEnvelope, ResolvedWells } from "./multiwell.js";
-import { durationHr } from "./daily.js";
+import { durationHr, problemHoursOf } from "./daily.js";
 
 const round = (v: number, dp = 2) => Number(v.toFixed(dp));
 
@@ -129,10 +129,7 @@ export async function buildReport13(
         const dur = durationHr(op.fromTime, op.toTime);
         if (dur !== null) { logHr += dur; anyLog = true; }
         if (!op.isProblem) continue;
-        // The interval's own problem-hours cell, or its whole span when that
-        // cell was left empty — under-reporting NPT on the days that had the
-        // most of it is the one failure mode this column must not have.
-        const p = op.probHr ?? dur;
+        const p = problemHoursOf(op);
         if (p !== null) { problemHr += p; anyProblem = true; }
       }
     }
@@ -205,7 +202,7 @@ export async function buildReport13(
     wells: resolved.wells,
     droppedWells: resolved.dropped,
     filters: [
-      filterLine("Country", resolved.wells.map(() => "Iran")),
+      filterLine("Country", resolved.wells.map((w) => w.country)),
       filterLine("State/Province", resolved.wells.map((w) => w.stateProvince)),
       filterLine("Field Name", resolved.wells.map((w) => w.field)),
       filterLine("County", resolved.wells.map((w) => w.county)),
@@ -323,7 +320,7 @@ export async function buildReport16(
     wells: resolved.wells,
     droppedWells: resolved.dropped,
     filters: [
-      filterLine("Country", resolved.wells.map(() => "Iran")),
+      filterLine("Country", resolved.wells.map((w) => w.country)),
       filterLine("State/Province", resolved.wells.map((w) => w.stateProvince)),
       filterLine("Field Name", resolved.wells.map((w) => w.field)),
       filterLine("Well Type", resolved.wells.map((w) => w.wellType)),

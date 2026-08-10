@@ -16,9 +16,45 @@
  *   ENTRY_USER=admin ENTRY_PASSWORD=… npx playwright test well-reports
  */
 import { test, expect } from "@playwright/test";
-import { mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+/**
+ * The TEXT a generated PDF actually contains.
+ *
+ * Every export assertion in this file used to be "the file is over 5 KB and
+ * starts with %PDF-", which is true of a PDF containing nothing but a title. A
+ * whole class of defect lived under that: report 21 printing one of its three
+ * tracks, report 23 losing a column between the preview and the page, report 03
+ * laying its last columns out past the paper. None of it was visible until
+ * somebody opened the file by hand.
+ *
+ * `scripts/pdf_text.mjs` is the repo's own extractor — a decryptor and content
+ * stream interpreter, written because poppler is not on this box. Shelling out
+ * to it is what makes the printed page assertable, which is the only way a
+ * preview-versus-PDF divergence ever fails a test.
+ */
+function pdfText(path: string): string {
+  return execFileSync("node", [join(REPO, "scripts", "pdf_text.mjs"), path], {
+    encoding: "utf-8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+}
+
+/** Asserts a generated PDF is real AND says what it is supposed to say. */
+function expectPdfContains(path: string, phrases: string[]): void {
+  expect(statSync(path).size).toBeGreaterThan(5_000);
+  expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+  const text = pdfText(path);
+  for (const phrase of phrases) {
+    expect(text, `the generated PDF does not contain "${phrase}"`).toContain(phrase);
+  }
+}
 
 const USER = process.env.ENTRY_USER ?? "admin";
 const PASSWORD = process.env.ENTRY_PASSWORD ?? "admin";
@@ -53,6 +89,28 @@ const EXPECTED_TOTALS = [
   "10,127,291.47",   // Total Field Estimate
   "215,708.53",      // AFE-Field Estimate
 ];
+
+/**
+ * Narrows the well-set picker to exactly `keep`, by unchecking everything else.
+ *
+ * The two specs below used to deselect "Dehloran-099" BY NAME — a well that
+ * exists in this machine's dev database and in no fresh clone, so the suite
+ * could only ever pass here. Naming what to KEEP works on any database: zero
+ * extra wells on a clone, one here, ten on somebody's shared box.
+ */
+async function narrowWellSet(page: import("@playwright/test").Page, keep: string[]): Promise<void> {
+  await page.getByTestId("well-set-picker").click();
+  const labels = page.locator("label", { has: page.locator("input[type=checkbox]") });
+  const n = await labels.count();
+  for (let i = 0; i < n; i += 1) {
+    const label = labels.nth(i);
+    const text = ((await label.textContent()) ?? "").trim();
+    const wanted = keep.some((k) => text.includes(k));
+    const box = label.locator("input[type=checkbox]");
+    if ((await box.isChecked()) !== wanted) await box.click();
+  }
+  await page.getByTestId("well-set-picker").click();
+}
 
 test.describe("Well Reports", () => {
   test.beforeEach(async ({ page }) => {
@@ -180,9 +238,9 @@ test.describe("Well Reports", () => {
       const path = join(dir, download.suggestedFilename());
       await download.saveAs(path);
       await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
-      const { statSync, readFileSync } = await import("node:fs");
-      expect(statSync(path).size).toBeGreaterThan(5_000);
-      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+      // The day's own numbers, read back OUT of the printed page: the well name,
+      // the depth it reached and the 24 hours the time log accounts for.
+      expectPdfContains(path, [DEMO_WELL, "299", "24.00"]);
     });
   }
 
@@ -234,8 +292,9 @@ test.describe("Well Reports", () => {
       await download.saveAs(path);
       await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
       const { statSync, readFileSync } = await import("node:fs");
-      expect(statSync(path).size).toBeGreaterThan(5_000);
-      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+      // Read back OUT of the printed page — a PDF containing only a title also
+      // passes a size check.
+      expectPdfContains(path, [DEMO_WELL]);
     });
   }
 
@@ -296,8 +355,9 @@ test.describe("Well Reports", () => {
       await download.saveAs(path);
       await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
       const { statSync, readFileSync } = await import("node:fs");
-      expect(statSync(path).size).toBeGreaterThan(5_000);
-      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+      // Read back OUT of the printed page — a PDF containing only a title also
+      // passes a size check.
+      expectPdfContains(path, [DEMO_WELL]);
     });
   }
 
@@ -465,8 +525,9 @@ test.describe("Well Reports", () => {
       await download.saveAs(path);
       await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
       const { statSync, readFileSync } = await import("node:fs");
-      expect(statSync(path).size).toBeGreaterThan(5_000);
-      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+      // Read back OUT of the printed page — a PDF containing only a title also
+      // passes a size check.
+      expectPdfContains(path, [DEMO_WELL]);
     });
   }
 
@@ -529,7 +590,7 @@ test.describe("Well Reports", () => {
     const { statSync, readFileSync } = await import("node:fs");
     // Two rasters make it substantially bigger than a table-only report.
     expect(statSync(path).size).toBeGreaterThan(20_000);
-    expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    expectPdfContains(path, [DEMO_WELL]);
   });
 
   // Tier 4's geology reads one register — `WellFormation` — from three sides:
@@ -615,8 +676,9 @@ test.describe("Well Reports", () => {
       await download.saveAs(path);
       await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
       const { statSync, readFileSync } = await import("node:fs");
-      expect(statSync(path).size).toBeGreaterThan(5_000);
-      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+      // Read back OUT of the printed page — a PDF containing only a title also
+      // passes a size check.
+      expectPdfContains(path, [DEMO_WELL]);
     });
   }
 
@@ -689,8 +751,9 @@ test.describe("Well Reports", () => {
       await download.saveAs(path);
       await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
       const { statSync, readFileSync } = await import("node:fs");
-      expect(statSync(path).size).toBeGreaterThan(5_000);
-      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+      // Read back OUT of the printed page — a PDF containing only a title also
+      // passes a size check.
+      expectPdfContains(path, [DEMO_WELL]);
     });
   }
 
@@ -721,9 +784,7 @@ test.describe("Well Reports", () => {
     // other job on the account — a half-finished one, another test's leftover —
     // moves the figure, and the spec would be testing the database rather than
     // the report.
-    await page.getByTestId("well-set-picker").click();
-    await page.locator("label", { hasText: "Dehloran-099" }).locator("input[type=checkbox]").click();
-    await page.getByTestId("well-set-picker").click();
+    await narrowWellSet(page, [DEMO_WELL, OFFSET_WELL]);
 
     // Two wells drilled the same phase kinds, so those groups have a spread —
     // which is the whole point of a pivot with Min, Max and StdDev in it.
@@ -741,11 +802,7 @@ test.describe("Well Reports", () => {
     // Narrow to the demo well alone. Its eight phases sum to 25.46 days — the
     // very figure report 10's last cumulative cell prints, reached by a wholly
     // different route. Cross-checking the two is why this test exists.
-    await page.getByTestId("well-set-picker").click();
-    for (const other of ["Dehloran-099", OFFSET_WELL]) {
-      await page.locator("label", { hasText: other }).locator("input[type=checkbox]").click();
-    }
-    await page.getByTestId("well-set-picker").click();
+    await narrowWellSet(page, [DEMO_WELL]);
 
     await expect(page.getByText("25.46", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("39.58", { exact: true })).toHaveCount(0);
@@ -767,7 +824,13 @@ test.describe("Well Reports", () => {
       await pdf.saveAs(pdfPath);
       await testInfo.attach(`report-${type}.pdf`, { path: pdfPath, contentType: "application/pdf" });
       expect(statSync(pdfPath).size).toBeGreaterThan(4_000);
-      expect(readFileSync(pdfPath).subarray(0, 5).toString()).toBe("%PDF-");
+      // These two are pivots ACROSS the set, so they print "Well Name (All)"
+      // and never an individual well — the assertion is the report's own title
+      // and the filter block every pivot carries.
+      expectPdfContains(pdfPath, [
+        type === "13" ? "Drilling KPIs" : "Phase Summary Pivot",
+        "Filters",
+      ]);
 
       // The spreadsheet is the point of these two — a picture of a pivot is
       // not something an engineer can sum, sort or chart.
@@ -856,8 +919,9 @@ test.describe("Well Reports", () => {
       await download.saveAs(path);
       await testInfo.attach(`report-${type}.pdf`, { path, contentType: "application/pdf" });
       const { statSync, readFileSync } = await import("node:fs");
-      expect(statSync(path).size).toBeGreaterThan(5_000);
-      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+      // Read back OUT of the printed page — a PDF containing only a title also
+      // passes a size check.
+      expectPdfContains(path, [DEMO_WELL]);
     });
   }
 
@@ -931,7 +995,7 @@ test.describe("Well Reports", () => {
       // Rasterized panels make the file substantially bigger than a table-only
       // report — a thin file here means an image never made it in.
       expect(statSync(path).size).toBeGreaterThan(20_000);
-      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+      expectPdfContains(path, [DEMO_WELL]);
     });
   }
 
@@ -984,7 +1048,7 @@ test.describe("Well Reports", () => {
       // A rasterized chart makes the file substantially bigger than a table-only
       // report — a thin file here means the image never made it in.
       expect(statSync(path).size).toBeGreaterThan(20_000);
-      expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+      expectPdfContains(path, [DEMO_WELL]);
     });
   }
 
@@ -1004,9 +1068,9 @@ test.describe("Well Reports", () => {
     await testInfo.attach("report-01.pdf", { path, contentType: "application/pdf" });
 
     // A pdfmake failure downloads a 0-byte file rather than throwing, so size is
-    // the assertion that actually catches a broken document definition.
-    const { statSync, readFileSync } = await import("node:fs");
-    expect(statSync(path).size).toBeGreaterThan(5_000);
-    expect(readFileSync(path).subarray(0, 5).toString()).toBe("%PDF-");
+    // one assertion that catches a broken document definition — and the four
+    // totals read back out of the page are the one that catches a document that
+    // builds but prints the wrong thing.
+    expectPdfContains(path, [DEMO_WELL, ...EXPECTED_TOTALS]);
   });
 });

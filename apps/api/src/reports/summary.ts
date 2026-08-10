@@ -39,7 +39,7 @@ import {
   printedOn, summaryWellHeader, type HeaderRow, type ReportEnvelope,
 } from "./chrome.js";
 import { compareJalali, jalaliDaysBetween } from "@dd/shared";
-import { durationHr } from "./daily.js";
+import { durationHr, problemHoursOf } from "./daily.js";
 import { buildSchematic, type SchematicPayload } from "./schematic.js";
 
 /** One bar of a breakdown panel. */
@@ -191,10 +191,7 @@ export async function buildReport09(
     const problemAt = new Map(r.intervalProblems.map((p) => [p.order + 1, p.problemType]));
     for (const op of r.operations) {
       if (!op.isProblem) continue;
-      // Fall back to the interval's own span: a day can mark trouble on the log
-      // and leave the separate problem-hours cell empty, and dropping it would
-      // under-report NPT on exactly the days that had the most of it.
-      const hours = op.probHr ?? durationHr(op.fromTime, op.toTime);
+      const hours = problemHoursOf(op);
       if (hours === null) continue;
       const key = (op.problemRef === null ? null : problemAt.get(op.problemRef)) ?? "Unclassified";
       byNpt.set(key, (byNpt.get(key) ?? 0) + hours);

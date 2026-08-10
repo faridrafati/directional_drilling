@@ -146,11 +146,21 @@ export function PreviewTable<T>({ columns, rows, emptyText }: {
   );
 }
 
-/** The footer strip, matching the PDF's. */
+/**
+ * The footer strip, matching the PDF's.
+ *
+ * It used to print "Page 1/1". The preview is ONE continuous scroll — it is not
+ * paginated at all — so that was false on every report whose PDF runs to more
+ * than a page, which is most of them: 22 prints five and 30 prints three. A page
+ * number the reader cannot use is worse than none, because it invites them to
+ * believe the whole report is in front of them.
+ *
+ * Where the page number was, the preview now says what it actually is.
+ */
 export function PreviewFooter({ printedOn }: { printedOn: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 px-1 pt-1.5 text-[10px] text-gray-500">
-      <span>Page 1/1</span>
+      <span className="text-gray-400">Preview — page breaks are decided when the PDF is made</span>
       <span>Report Printed:&nbsp;&nbsp;&nbsp;{printedOn}</span>
     </div>
   );

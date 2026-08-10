@@ -152,6 +152,8 @@ const wellheadSchema = z.object({
 /** a.json `well_control_scr` — slow circulation rates, one row per pump / rate. */
 const scrRateSchema = z.object({
   order: int0, pumpNo: str, depthMkb: num, strokesSpm: num, effPct: num, pPsi: num, qFlowGpm: num,
+  // A FLAG, not a derivation — see the note on EntryScrRate.slowSpeed.
+  slowSpeed: boolOrNull,
   // The rig pump this reading belongs to — 06 / 07 print one block per pump.
   mudPumpId: str,
 });
@@ -343,7 +345,7 @@ const wellSchema = z.object({
   // TYPE them: the well form stopped at the DR.xls fields, so a user could not
   // fill the block their own reports print. They are ordinary optional fields —
   // a well with none of them still saves.
-  apiUwi: str, licenseNo: str, stateProvince: str, area: str, county: str,
+  apiUwi: str, licenseNo: str, country: str, stateProvince: str, area: str, county: str,
   groundElevation: num, casingFlangeElevation: num,
   kbGroundDistance: num, kbCasingFlangeDistance: num,
   ewDistance: num, ewRef: str, nsDistance: num, nsRef: str,

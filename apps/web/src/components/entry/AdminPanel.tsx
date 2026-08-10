@@ -212,7 +212,8 @@ function WellForm({ rigs, well, options, onCancel, onSaved }: {
     // The WellView header band. Every report in that suite prints these, and
     // until now there was nowhere to type them.
     apiUwi: well?.apiUwi ?? "", licenseNo: well?.licenseNo ?? "",
-    stateProvince: well?.stateProvince ?? "", area: well?.area ?? "", county: well?.county ?? "",
+    country: well?.country ?? "", stateProvince: well?.stateProvince ?? "",
+    area: well?.area ?? "", county: well?.county ?? "",
     groundElevation: well?.groundElevation ?? "", casingFlangeElevation: well?.casingFlangeElevation ?? "",
     kbGroundDistance: well?.kbGroundDistance ?? "", kbCasingFlangeDistance: well?.kbCasingFlangeDistance ?? "",
     ewDistance: well?.ewDistance ?? "", ewRef: well?.ewRef ?? "",
@@ -296,6 +297,7 @@ function WellForm({ rigs, well, options, onCancel, onSaved }: {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-2">
         {F("API / UWI", "apiUwi", "text", "100/02-02-050-20W5/00")}
         {F("License #", "licenseNo", "text", "8818838")}
+        {F("Country", "country", "text", "Iran")}
         {F("State / province", "stateProvince", "text", "Bushehr")}
         {F("Area", "area", "text", "South")}
         {F("County", "county", "text")}

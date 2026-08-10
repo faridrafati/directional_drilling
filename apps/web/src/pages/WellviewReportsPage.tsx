@@ -515,6 +515,7 @@ function Inner() {
                           wellSetParam ? { wellIds: wellSetParam } : {})}
                         render={(p) => <Report25Preview payload={p} />}
                         exporter={async (p) => (await import("../export/wellview/completion.js")).exportReport25Pdf(p)}
+                        xlsxExporter={async (p) => (await import("../export/wellview/pivots.js")).exportReport25Xlsx(p)}
                         empty="No well available."
                       />
                     ) : entry.type === "21" ? (
@@ -605,6 +606,7 @@ function Inner() {
                         })}
                         render={(p) => <Report15Preview payload={p} />}
                         exporter={async (p) => (await import("../export/wellview/multiwell.js")).exportReport15Pdf(p)}
+                        xlsxExporter={async (p) => (await import("../export/wellview/pivots.js")).exportReport15Xlsx(p)}
                         empty="No well available."
                       />
                     ) : entry.type === "17" ? (

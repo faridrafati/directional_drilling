@@ -572,6 +572,76 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   is not this box's admin password, and every spec then fails on a 401 that looks like a broken app.
   Run it as `ENTRY_USER=… ENTRY_PASSWORD=… npx playwright test`.
 
+### 2026-08-10 — the audit's remaining defects
+
+Worked through what the six-dimension audit left after reports 22 and 30. Each of
+these was a real defect rather than a missing feature.
+
+- **No spec read a PDF's CONTENT.** Every one of the 30 export assertions was
+  "over 5 KB and starts with %PDF-" — true of a file containing nothing but a
+  title. A whole class of defect lived under it. The specs now shell out to
+  `scripts/pdf_text.mjs`, the repo's own extractor, and assert the strings the
+  page must carry. That is what makes a preview-versus-PDF divergence fail.
+- **Report 21's PDF printed one of its three tracks.** `captureChart` finds a
+  container's FIRST `<svg>` by design — right for a chart panel, silently wrong
+  for the composite row, which holds the schematic and the two band tracks as
+  three siblings. Two thirds of the picture never reached paper. It now captures
+  every svg in the row and lays them side by side in their on-screen proportions,
+  so the tracks stay on the same depth scale as the schematic.
+- **Report 03 drew its last columns past the page edge.** 728 pt of fixed widths
+  plus ~152 pt of pdfmake cell padding, on a letter-landscape body of 748. Moved
+  to legal landscape (964 pt), which reports 10, 13, 16 and 22 already use.
+  Invisible to text extraction, which finds the strings wherever they were laid
+  out — only measuring the page catches it.
+- **"Slow Spd" printed the opposite of the truth.** It was derived as "was an SPM
+  typed?", and the sample's own row is `Strokes 100 | Slow Spd No` — SPM present,
+  answer No. It is a FLAG the user records; `EntryScrRate.slowSpeed` now carries
+  it, with a checkbox on the SCR grid.
+- **NPT was computed two different ways.** Reports 09 and 13 fell back to an
+  interval's whole span when the problem-hours cell was empty; reports 06 and 07
+  counted it as nothing. The same day's NPT therefore came out two different
+  numbers depending on which report you opened — and the specs that cross-check
+  those reports could not catch it, because each compares a report against its
+  own arithmetic. One `problemHoursOf` now, and the fallback wins: `isProblem`
+  says the interval WAS trouble, so absent a partial figure all of it was.
+- **Two `parseInches` implementations disagreed.** The schematic's used
+  `parseFloat`, which reads `17-1/2" H.S.` as 17 — a plausible number that is the
+  wrong diameter, drawn half an inch narrow and believed. One strict
+  implementation now, with a unit test: anything not wholly a diameter returns
+  null, and `3/0` returns null rather than Infinity. (The first version of that
+  test asserted "not finite", which passed while the function still returned
+  Infinity — a test that made a bug look checked.)
+- **`Country` was the literal "Iran" for every well.** True of this operator's
+  wells and of nobody else's; a filter that cannot vary is not a filter.
+  `EntryWell.country` now carries it.
+- **The preview footer claimed "Page 1/1".** The preview is one continuous
+  scroll — not paginated at all — so that was false on every report whose PDF
+  runs past a page, which is most of them. It now says what it is.
+- **The suite could only pass on this machine.** Two specs deselected
+  "Dehloran-099" BY NAME, a well in this box's database and in no fresh clone.
+  They now narrow by naming what to KEEP, which works with zero extra wells or
+  ten.
+- **Report 25 advertised a spreadsheet nothing could produce**, and 15 — the same
+  pivot shape — had none. Both now export one.
+- **`multiwell.ts` held a literal NUL byte**, used as a key separator. A fine
+  separator, but written as a raw byte it made the whole file binary to grep, so
+  reports 15 and 17 were invisible to repo-wide search. Now the `\u0000` escape:
+  identical at runtime, and the file is text.
+- **Total depth is now printed as TVD as well as MD.** The samples' column is
+  "Total Depth All (TVD)", and along a deviated hole the measured depth is always
+  the larger number — printing MD alone understates nothing but answers a
+  different question. Blank where no day recorded a TVD; the MD is not a
+  substitute for it.
+- **Eighteen printed fields gained an input.** All were stored and printed and
+  typeable nowhere, so they survived only because the seed wrote them through
+  Prisma: the drill-string components' Top Thread, Drift, Gauge, Connections,
+  Wt/Len and Grade; the bit run's Length and Item Cost; the string's own weight;
+  the four string-weight and off-bottom-torque parameter columns; and the mud
+  check's filter cake, 30-minute gel, sand, potassium, whole mud added and mud
+  lost at surface. Verified by round-tripping every one of them through the PUT
+  and reading them back.
+
+
 ### 2026-08-10 — reports 22 and 30 brought up to their samples
 
 The two "everything about the well" reports were the largest item the audit

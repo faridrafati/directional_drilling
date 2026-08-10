@@ -141,7 +141,7 @@ async function main() {
     // The WellView well-header block.
     apiUwi: "0987656789",
     licenseNo: "8818838",
-    stateProvince: "Bushehr",
+    country: "Iran", stateProvince: "Bushehr",
     groundElevation: 6.0,
     casingFlangeElevation: 0.0,
     kbGroundDistance: 18.5,
@@ -1054,6 +1054,9 @@ async function seedDay(
         create: pumps.map((p, i) => ({
           order: i, mudPumpId: p.id, pumpNo: p.pumpNo,
           depthMkb: 299.0, strokesSpm: 30, effPct: 95, pPsi: 620, qFlowGpm: 262,
+          // SPM is present AND this is not a slow-rate reading — the exact case
+          // the old derived rule got backwards.
+          slowSpeed: false,
         })),
       },
       bitRuns: {
@@ -1460,7 +1463,7 @@ async function seedOffsetWell(
     rtElevation: 24.5,
     apiUwi: "0987656790",
     licenseNo: "8818839",
-    stateProvince: "Bushehr",
+    country: "Iran", stateProvince: "Bushehr",
     county: "Genaveh",
     area: "South",
     groundElevation: 6.2,

@@ -86,7 +86,8 @@ export interface EntryWell {
   /** Free text; on jack-ups the leg penetration, "Leg Pen.(m): FWD/STBD/PORT". */
   comment: string | null;
   // ── the WellView header band, printed by every report in that suite ──
-  apiUwi: string | null; licenseNo: string | null; stateProvince: string | null;
+  apiUwi: string | null; licenseNo: string | null;
+  country: string | null; stateProvince: string | null;
   /** Coarser than `location`, which is the surface legal location. */
   area: string | null; county: string | null;
   groundElevation: number | null; casingFlangeElevation: number | null;
@@ -122,6 +123,8 @@ export interface BitRun {
   pumpType: string | null; pumpOutput: number | null; pumpPressure: number | null;
   annularVelocity: number | null; hsi: number | null; cmtDrilled: string | null;
   washAndRun: string | null; bitChangeIn: string | null; bitChangeOut: string | null;
+  /** The bit's own length, and what it cost — reports 02, 06 and 07 print both. */
+  lengthM: number | null; itemCost: number | null;
 }
 /**
  * One item in a string's make-up — a.json `drill_strings[].components`.
@@ -135,6 +138,9 @@ export interface DrillStringComponentRow {
   serv: string | null;
   sn: string | null; odIn: number | null; idIn: number | null; jts: number | null;
   lenM: number | null; cumLenM: number | null; com: string | null;
+  /** The five columns report 02 prints down the right of its component table. */
+  topThread: string | null; driftIn: number | null; gaugeIn: number | null;
+  connections: string | null; massPerLenKgM: number | null; grade: string | null;
 }
 /**
  * One drill string — a.json `drill_strings`, one entry PER BHA run in the day.
@@ -149,6 +155,8 @@ export interface DrillStringRow {
   dateIn: string | null; objective: string | null; depthDrilledM: number | null;
   drillingTimeHr: number | null; circulatingTimeHr: number | null;
   rotatingTimeHr: number | null; slidingTimeHr: number | null; note: string | null;
+  /** Hook load of the made-up string — reports 02, 06 and 07 print it. */
+  stringWtKlbf: number | null;
   components: DrillStringComponentRow[];
 }
 export interface DrillPipe { order: number; size: string | null; grade: string | null; lengthM: number | null }
@@ -194,6 +202,9 @@ export interface MudProps {
   /** Calcium hardness in ppm (was calcium — same unit). */
   hardnessCaPpm: number | null;
   mudLostBbl: number | null; activeMudVolBbl: number | null; volMudResBbl: number | null;
+  // Printed by reports 06/07 and stored all along — they simply had no input.
+  filterCake32nds: number | null; sandPct: number | null; gel30min: number | null;
+  potassiumMgL: number | null; wholeMudAddedBbl: number | null; mudLostSurfBbl: number | null;
 }
 export interface SolidControlRow { unit: string; hours: number | null; underFlow: number | null; overFlow: number | null; feed: number | null; cons: number | null; fprs: number | null }
 export interface ChemicalRow { order: number; material: string | null; unit: string | null; used: number | null; received: number | null; stock: number | null; outstanding: number | null; requested: number | null; sent: number | null }
@@ -221,6 +232,7 @@ export interface WellheadRow {
 export interface ScrRateRow {
   order: number; pumpNo: string | null; depthMkb: number | null; strokesSpm: number | null;
   effPct: number | null; pPsi: number | null; qFlowGpm: number | null;
+  slowSpeed: boolean | null;
 }
 /** One support vessel alongside — a.json `support_vessels` (offshore only). */
 export interface SupportVesselRow {
@@ -308,6 +320,11 @@ export interface DrillingParameterRow {
   drillTimeHr: number | null; slideTimeHr: number | null; circTimeHr: number | null;
   intRopMHr: number | null; drillTq: number | null; rpm: number | null;
   qFlowGpm: number | null; sppPsi: number | null; wob1000Lbf: number | null;
+  /** The string-weight and off-bottom-torque columns reports 06/07 print. */
+  drillStrWtKlbf: number | null; puStrWtKlbf: number | null;
+  soStrWtKlbf: number | null; offBottomTorque: number | null;
+  /** Which hole this interval was drilled in — the picker CasingPanel has. */
+  wellboreId: string | null;
 }
 export interface TimeRow { order: number; group: string | null; type: string | null; activity: string | null; hours: number | null }
 export interface OperationRow {

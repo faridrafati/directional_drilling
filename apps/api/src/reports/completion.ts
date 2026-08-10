@@ -81,6 +81,7 @@ function completionHeader(
   wellboreName: string | null,
   pbtd: number | null,
   totalDepth: number | null,
+  totalTvd: number | null,
 ): HeaderRow {
   // The samples print these as "Original Hole - 12,089.9": the depth is stated
   // against the wellbore it is in, because a sidetracked well has more than one.
@@ -93,6 +94,10 @@ function completionHeader(
     cell("Rig Release Date", well.rigReleasedDate),
     cell("PBTD (All) (mKB)", at(pbtd)),
     cell("Total Depth All (mKB)", at(totalDepth)),
+    // The samples' own column, and a DIFFERENT quantity from the one above:
+    // along a deviated hole the measured depth is always the larger number.
+    // Blank where no day recorded a TVD — the MD is not a substitute for it.
+    cell("Total Depth All (TVD) (m)", totalTvd, "decimal"),
   ];
 }
 
@@ -103,6 +108,25 @@ async function totalDepthOf(prisma: PrismaClient, wellId: string): Promise<numbe
   });
   return rows.reduce<number | null>(
     (deep, r) => (r.midnightDepth !== null && (deep === null || r.midnightDepth > deep) ? r.midnightDepth : deep),
+    null,
+  );
+}
+
+/**
+ * The deepest TVD any day reached — a DIFFERENT quantity from `totalDepthOf`.
+ *
+ * The samples label this column "Total Depth All (TVD)". Measured depth along a
+ * deviated hole is always the larger number, so printing MD under a TVD heading
+ * overstates how deep the well actually is by the whole of its horizontal
+ * departure. Where no day recorded a TVD this returns null and the cell prints
+ * blank — substituting the MD would be the very error the label warns about.
+ */
+async function totalTvdOf(prisma: PrismaClient, wellId: string): Promise<number | null> {
+  const rows = await prisma.entryReport.findMany({
+    where: { wellId }, select: { endDepthTvd: true },
+  });
+  return rows.reduce<number | null>(
+    (deep, r) => (r.endDepthTvd !== null && (deep === null || r.endDepthTvd > deep) ? r.endDepthTvd : deep),
     null,
   );
 }
@@ -208,9 +232,10 @@ export async function buildReport24(
   });
   if (!well) return null;
 
-  const [schematic, totalDepth, wellheadRows] = await Promise.all([
+  const [schematic, totalDepth, totalTvd, wellheadRows] = await Promise.all([
     buildSchematic(prisma, wellId),
     totalDepthOf(prisma, wellId),
+    totalTvdOf(prisma, wellId),
     prisma.entryWellheadComponent.findMany({
       where: { report: { wellId } },
       orderBy: { order: "asc" },
@@ -238,7 +263,7 @@ export async function buildReport24(
     headerVariant: "plot",
     header: plotWellHeader(well),
     printedOn: printedOn(),
-    completionHeader: completionHeader(well, well.wellbores[0]?.name ?? null, pbtd, totalDepth),
+    completionHeader: completionHeader(well, well.wellbores[0]?.name ?? null, pbtd, totalDepth, totalTvd),
     caption: [well.profile, well.wellbores[0]?.name ?? null].filter(Boolean).join(" - "),
     schematic,
     wellhead: [...byKey.values()].map((w) => ({
@@ -281,9 +306,10 @@ export async function buildReport26(
   });
   if (!well) return null;
 
-  const [schematic, totalDepth] = await Promise.all([
+  const [schematic, totalDepth, totalTvd] = await Promise.all([
     buildSchematic(prisma, wellId),
     totalDepthOf(prisma, wellId),
+    totalTvdOf(prisma, wellId),
   ]);
   const pbtd = well.plugBacks.reduce<number | null>(
     (deep, p) => (p.depthMkb !== null && (deep === null || p.depthMkb > deep) ? p.depthMkb : deep),
@@ -309,7 +335,7 @@ export async function buildReport26(
     headerVariant: "standard",
     header: standardWellHeader(well),
     printedOn: printedOn(),
-    completionHeader: completionHeader(well, well.wellbores[0]?.name ?? null, pbtd, totalDepth),
+    completionHeader: completionHeader(well, well.wellbores[0]?.name ?? null, pbtd, totalDepth, totalTvd),
     caption: [well.profile, well.wellbores[0]?.name ?? null].filter(Boolean).join(" - "),
     schematic,
     perforations: well.perforations.map(perforationBlock),
@@ -348,9 +374,10 @@ export async function buildReport28(
   });
   if (!well) return null;
 
-  const [schematic, totalDepth] = await Promise.all([
+  const [schematic, totalDepth, totalTvd] = await Promise.all([
     buildSchematic(prisma, wellId),
     totalDepthOf(prisma, wellId),
+    totalTvdOf(prisma, wellId),
   ]);
   const pbtd = well.plugBacks.reduce<number | null>(
     (deep, p) => (p.depthMkb !== null && (deep === null || p.depthMkb > deep) ? p.depthMkb : deep),
@@ -369,7 +396,7 @@ export async function buildReport28(
     headerVariant: "standard",
     header: standardWellHeader(well),
     printedOn: printedOn(),
-    completionHeader: completionHeader(well, well.wellbores[0]?.name ?? null, pbtd, totalDepth),
+    completionHeader: completionHeader(well, well.wellbores[0]?.name ?? null, pbtd, totalDepth, totalTvd),
     caption: [well.profile, well.wellbores[0]?.name ?? null].filter(Boolean).join(" - "),
     mostRecentJob: job
       ? [
@@ -708,9 +735,10 @@ export async function buildReport22(
   // Logs, wellhead components and pressure tests live on the DAYS, because that
   // is when they happen — but they are facts about the WELL, so this report
   // gathers them across every day rather than making the reader open each one.
-  const [schematic, totalDepth, logRuns, wellheads, fits] = await Promise.all([
+  const [schematic, totalDepth, totalTvd, logRuns, wellheads, fits] = await Promise.all([
     buildSchematic(prisma, wellId),
     totalDepthOf(prisma, wellId),
+    totalTvdOf(prisma, wellId),
     prisma.entryLogRun.findMany({
       where: { report: { wellId } },
       orderBy: [{ report: { reportDate: "asc" } }, { order: "asc" }],
@@ -766,6 +794,8 @@ export async function buildReport22(
       cell("KO MD (mKB)", bore?.koMdMkb ?? null, "decimal"),
       cell("VS Dir (°)", bore?.vsAzimuthDeg ?? null, "decimal"),
       cell("Total Depth (mKB)", totalDepth, "decimal"),
+      // A different quantity from the measured depth above, not a restatement.
+      cell("Total Depth (TVD) (m)", totalTvd, "decimal"),
     ],
     holeSections: well.holeSections.map((h) => ({
       sizeIn: h.sizeIn, actTopMkb: h.actTopMkb, actBtmMkb: h.actBtmMkb,
@@ -1041,8 +1071,9 @@ export async function buildReport30(
   });
   if (!well) return null;
 
-  const [totalDepth, wellheadRows, logRuns] = await Promise.all([
+  const [totalDepth, totalTvd, wellheadRows, logRuns] = await Promise.all([
     totalDepthOf(prisma, wellId),
+    totalTvdOf(prisma, wellId),
     prisma.entryWellheadComponent.findMany({
       where: { report: { wellId } },
       orderBy: { order: "asc" },
@@ -1100,6 +1131,7 @@ export async function buildReport30(
         cell("Rig Release Date", well.rigReleasedDate),
         cell("Well Configuration Type", well.profile),
         cell("Total Depth (mKB)", totalDepth, "decimal"),
+        cell("Total Depth (TVD) (m)", totalTvd, "decimal"),
       ],
     ],
     elevations: [

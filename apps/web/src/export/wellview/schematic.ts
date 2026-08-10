@@ -19,6 +19,7 @@ import {
   type ReportColumn,
 } from "../reportChrome.js";
 import { captureChart, legendRow } from "./chartCapture.js";
+import { rasterizeSvgElement } from "../svgRaster.js";
 import type { Report21Payload, SchematicStation } from "../../entry/wellview.js";
 import { PARAM_TRACK_ID } from "../../components/wellview/SchematicPreview.js";
 
@@ -39,19 +40,30 @@ const STATION_COLUMNS: ReportColumn<SchematicStation>[] = [
  * row that holds all three: capturing the schematic's own SVG alone would drop
  * the two tracks beside it, which are half the report.
  */
-async function captureComposite(): Promise<{ dataUrl: string } | null> {
+async function captureComposite(): Promise<{ dataUrl: string; width: number }[]> {
   const anchor = document.getElementById("wellview-schematic-21");
   const row = anchor?.parentElement;
-  if (!row) return null;
-  // `captureChart` finds an <svg> under an id, so the row is given one first.
-  const previous = row.id;
-  row.id = "wellview-21-composite";
-  try {
-    const shot = await captureChart("wellview-21-composite", "wellbore schematic");
-    return { dataUrl: shot.raster.dataUrl };
-  } finally {
-    row.id = previous;
+  if (!row) return [];
+  // EVERY svg under the row, not the first.
+  //
+  // The row holds three sibling drawings — the schematic, the Eval-Litho track
+  // and the Mud track — each its own <svg> in its own div. `captureChart` finds
+  // a container's FIRST svg by design, which is right for a chart panel and
+  // silently wrong here: it returned the schematic alone and the two tracks
+  // never reached the page, which is two thirds of the composite this report
+  // exists to print.
+  const svgs = [...row.querySelectorAll("svg")];
+  const shots: { dataUrl: string; width: number }[] = [];
+  for (const svg of svgs) {
+    try {
+      const raster = await rasterizeSvgElement(svg as SVGSVGElement, { scale: 2, background: "#ffffff" });
+      const width = svg.getBoundingClientRect().width || raster.width;
+      shots.push({ dataUrl: raster.dataUrl, width });
+    } catch {
+      // One unrenderable track must not cost the reader the other two.
+    }
   }
+  return shots;
 }
 
 export async function buildReport21Doc(payload: Report21Payload): Promise<TDocumentDefinitions> {
@@ -70,9 +82,20 @@ export async function buildReport21Doc(payload: Report21Payload): Promise<TDocum
       style: "cellLabel", italics: true, margin: [0, 3, 0, 3],
     });
   } else {
-    const shot = await captureComposite();
-    if (shot) {
-      content.push({ image: shot.dataUrl, fit: [950, 380], alignment: "center", margin: [0, 3, 0, 0] });
+    const shots = await captureComposite();
+    if (shots.length > 0) {
+      // Laid out side by side in their on-screen proportions, so the tracks stay
+      // on the SAME depth scale as the schematic — which is the whole point of a
+      // composite log.
+      const total = shots.reduce((n, s) => n + s.width, 0) || 1;
+      content.push({
+        columns: shots.map((s) => ({
+          image: s.dataUrl,
+          fit: [Math.max(60, (s.width / total) * 940), 380] as [number, number],
+        })),
+        columnGap: 4,
+        margin: [0, 3, 0, 0],
+      });
     }
   }
 

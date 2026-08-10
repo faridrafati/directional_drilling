@@ -39,6 +39,7 @@ import { bitHHP, hsi as hsiOf, jetImpact, nozzlePressureDrop } from "@dd/shared/
 import {
   printedOn, type HeaderCell, type HeaderRow, type ReportEnvelope,
 } from "./chrome.js";
+import { parseInches } from "./schematic.js";
 
 // ── time helpers ────────────────────────────────────────────────────────────
 
@@ -62,6 +63,27 @@ export function durationHr(from: string | null, to: string | null): number | nul
   const a = minutesOf(from), b = minutesOf(to);
   if (a === null || b === null || a === b) return null;
   return Number((((b > a ? b - a : b + 1440 - a)) / 60).toFixed(2));
+}
+
+/**
+ * The NPT hours ONE logged operation contributed.
+ *
+ * The rule, in one place, because it was in three and one of them differed:
+ * reports 09 and 13 fell back to the interval's whole span when the separate
+ * problem-hours cell was empty, and reports 06 and 07 counted it as nothing. So
+ * the same day's NPT came out two different numbers depending on which report
+ * you opened, and the E2E specs that cross-check those very reports could not
+ * have caught it — they compare each report against its own arithmetic.
+ *
+ * The fallback wins: `isProblem` is the statement that the interval WAS trouble,
+ * and in the absence of a partial figure all of it was. Dropping it under-reports
+ * NPT on exactly the days that had the most of it.
+ */
+export function problemHoursOf(
+  op: { isProblem: boolean | null; probHr: number | null; fromTime: string | null; toTime: string | null },
+): number | null {
+  if (!op.isProblem) return null;
+  return op.probHr ?? durationHr(op.fromTime, op.toTime);
 }
 
 const round = (n: number, dp = 2) => Number(n.toFixed(dp));
@@ -299,7 +321,7 @@ export async function buildDailyReport(
     };
   });
   const timeLogTotalHr = cumAny ? round(cum) : null;
-  const problemHr = sumOrNull(r.operations.map((op) => (op.isProblem ? op.probHr : null)));
+  const problemHr = sumOrNull(r.operations.map(problemHoursOf));
 
   // ── mud checks ─────────────────────────────────────────────────────────
   const m = r.mud;
@@ -417,7 +439,7 @@ export async function buildDailyReport(
           [cell("Pump Rating (hp)", p?.ratingHp ?? null), cell("Rod Diameter (in)", p?.rodDiaIn ?? null),
             cell("Stroke (in)", p?.strokeIn ?? null)],
           [cell("Liner Size (in)", p?.linerSizeIn ?? null), cell("Vol/Stk OR (bbl/stk)", p?.volPerStkBbl ?? null)],
-          [cell("P (psi)", s.pPsi), cell("Slow Spd", s.strokesSpm !== null ? "Yes" : "No"),
+          [cell("P (psi)", s.pPsi), cell("Slow Spd", s.slowSpeed === null ? null : s.slowSpeed ? "Yes" : "No"),
             cell("Strokes (spm)", s.strokesSpm), cell("Eff (%)", s.effPct)],
         ]
         : [
@@ -425,7 +447,7 @@ export async function buildDailyReport(
             cell("Rod Dia (in)", p?.rodDiaIn ?? null)],
           [cell("Liner Size (in)", p?.linerSizeIn ?? null), cell("Stroke (in)", p?.strokeIn ?? null),
             cell("Vol/Stk OR (bbl/stk)", p?.volPerStkBbl ?? null)],
-          [cell("P (psi)", s.pPsi), cell("Slow Spd", s.strokesSpm !== null ? "Yes" : "No"),
+          [cell("P (psi)", s.pPsi), cell("Slow Spd", s.slowSpeed === null ? null : s.slowSpeed ? "Yes" : "No"),
             cell("Strokes (spm)", s.strokesSpm), cell("Eff (%)", s.effPct)],
         ],
     };
@@ -676,17 +698,7 @@ function hydraulicsBlock(
   ]];
 }
 
-/** `12 1/4` / `12.25` / `26in` → inches, or null. */
-function parseInches(label: string | null): number | null {
-  if (!label) return null;
-  const t = label.trim().replace(/in\.?$/i, "").trim();
-  const mixed = /^(\d+)\s+(\d+)\s*\/\s*(\d+)$/.exec(t);
-  if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
-  const frac = /^(\d+)\s*\/\s*(\d+)$/.exec(t);
-  if (frac) return Number(frac[1]) / Number(frac[2]);
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
-}
+
 
 // `jalaliInRange` is the half-open phase-window test; the registers above need
 // the inclusive form, which is why `coversDay` exists rather than reusing it.

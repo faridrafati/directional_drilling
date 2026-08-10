@@ -22,7 +22,16 @@ import type {
 
 const LETTER: [number, number] = [612, 792];
 /** Landscape letter, for report 03's wide table. */
-const LETTER_LANDSCAPE: [number, number] = [792, 612];
+/**
+ * Report 03's bit table is 19 columns wide: 728 pt of fixed widths plus a star
+ * column, and pdfmake adds ~8 pt of cell padding per column on top. That is
+ * ~880 pt on a letter-landscape body of 748, so the last three columns were
+ * drawn PAST the page edge — invisible in a viewer, and invisible to the text
+ * extractor too, which finds the strings wherever they were laid out. Legal
+ * landscape gives a 964 pt body, which is what reports 10, 13, 16 and 22
+ * already use for the same reason.
+ */
+const LEGAL_LANDSCAPE: [number, number] = [1008, 612];
 
 const COMPONENT_COLUMNS: ReportColumn<BhaComponentRow>[] = [
   { header: "Jts", width: 20, align: "right", cell: (c) => headerValue(c.jts, "int") },
@@ -156,11 +165,11 @@ const BIT_COLUMNS: ReportColumn<BitSummaryRow>[] = [
 
 export function buildReport03Doc(payload: Report03Payload): TDocumentDefinitions {
   return {
-    pageSize: { width: LETTER_LANDSCAPE[0], height: LETTER_LANDSCAPE[1] },
+    pageSize: { width: LEGAL_LANDSCAPE[0], height: LEGAL_LANDSCAPE[1] },
     pageOrientation: "landscape",
     pageMargins: PAGE_MARGINS,
     info: { title: `${payload.title} — ${payload.wellName}`, subject: `Bit summary for ${payload.wellName}` },
-    background: () => pageFrame(LETTER_LANDSCAPE),
+    background: () => pageFrame(LEGAL_LANDSCAPE),
     header: () => titleBand(payload.title),
     footer: reportFooter(payload.printedOn),
     content: [

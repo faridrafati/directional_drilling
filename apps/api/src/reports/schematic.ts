@@ -76,14 +76,34 @@ export interface SchematicPayload {
  * fraction has to become a number — and a value that will not parse yields null
  * rather than 0, which would draw the string as a hairline at the axis.
  */
+/**
+ * `13 3/8` / `13-3/8` / `3/8` / `10.752` / `26in` -> inches, or null.
+ *
+ * THE ONE implementation. There were two, and they disagreed: this one used
+ * `parseFloat`, which reads `17-1/2" H.S.` as 17 — a plausible number that is
+ * the WRONG diameter, silently drawn half an inch narrow on the schematic. The
+ * other, in daily.ts, used `Number()` on the whole string and correctly returned
+ * null. Two parsers for one notation is one parser too many; the strict reading
+ * wins, because a null falls back to the narrowest band and says "not known",
+ * while 17 says "seventeen" and is believed.
+ */
+/** Infinity is not a diameter — a `3/0` typo must not reach the drawing. */
+const finite = (n: number): number | null => (Number.isFinite(n) ? n : null);
+
 export function parseInches(value: string | null | undefined): number | null {
   if (!value) return null;
-  const text = value.trim();
-  const mixed = /^(\d+)\s+(\d+)\s*\/\s*(\d+)$/.exec(text);
-  if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
+  // A trailing unit is common in typed data: `26in`, `12 1/4 in.`.
+  const text = value.trim().replace(/\s*in\.?$/i, "").trim();
+  if (text === "") return null;
+  // `13 3/8` and `13-3/8` are the same diameter written two ways.
+  const mixed = /^(\d+)\s*[\s-]\s*(\d+)\s*\/\s*(\d+)$/.exec(text);
+  if (mixed) return finite(Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]));
   const fraction = /^(\d+)\s*\/\s*(\d+)$/.exec(text);
-  if (fraction) return Number(fraction[1]) / Number(fraction[2]);
-  const plain = Number.parseFloat(text);
+  if (fraction) return finite(Number(fraction[1]) / Number(fraction[2]));
+  // `Number`, never `parseFloat`: parseFloat stops at the first character it
+  // cannot use and returns what it had, so any trailing junk becomes a
+  // confident wrong answer. Number rejects the whole string.
+  const plain = Number(text);
   return Number.isFinite(plain) ? plain : null;
 }
 
