@@ -677,6 +677,71 @@ export interface TubingBlock {
   }[];
 }
 
+export interface CasingBlock {
+  caption: string;
+  header: HeaderRow;
+  components: {
+    odIn: string | null; itemDes: string | null; btmMkb: number | null; jts: number | null;
+    idIn: number | null; massPerLenKgM: number | null; grade: string | null; topThread: string | null;
+  }[];
+}
+
+export interface CementBlock {
+  caption: string;
+  header: HeaderRow;
+  stages: {
+    stage: HeaderRow;
+    fluids: {
+      fluidType: string | null; cementClass: string | null; amountSacks: number | null;
+      yieldLPerSack: number | null; mixWaterLPerSack: number | null;
+      volumePumpedM3: number | null; fluidDescription: string | null;
+    }[];
+  }[];
+}
+
+export interface BhaBlock {
+  caption: string;
+  header: HeaderRow;
+  figures: HeaderRow;
+  /** The sample prints the make-up as ONE comma-joined line, not a table. */
+  stringComponents: string;
+}
+
+export interface JobBlock {
+  caption: string;
+  header: HeaderRow;
+  money: HeaderRow;
+  summary: string | null;
+  savings: HeaderRow;
+  phases: {
+    phaseType: string | null; plannedCost: number | null;
+    plCumDaysMl: number | null; plannedEndDepthMkb: number | null;
+  }[];
+  contacts: {
+    contactName: string | null; company: string | null; title: string | null;
+    office: string | null; mobile: string | null;
+  }[];
+}
+
+export interface RodBlock {
+  caption: string;
+  header: HeaderRow;
+  components: {
+    itemDes: string | null; odNominalIn: string | null; massPerLenKgM: number | null;
+    grade: string | null; joints: number | null; lenM: number | null;
+    topMkb: number | null; btmMkb: number | null;
+  }[];
+}
+
+export interface StimulationBlock {
+  caption: string;
+  header: HeaderRow;
+  stages: {
+    stageNo: number | null; stageType: string | null;
+    topDepthMkb: number | null; bottomDepthMkb: number | null; cleanVolPumpedM3: number | null;
+  }[];
+}
+
 export interface Report22Payload extends ReportEnvelope {
   identity: HeaderRow[];
   caption: string;
@@ -685,14 +750,40 @@ export interface Report22Payload extends ReportEnvelope {
   holeSections: { sizeIn: string | null; actTopMkb: number | null; actBtmMkb: number | null }[];
   plugBacks: { date: string | null; depthMkb: number | null; method: string | null; com: string | null }[];
   formations: {
-    name: string | null; elementType: string | null; h2sConcPct: number | null;
+    name: string | null; geologicAge: string | null; elementType: string | null; h2sConcPct: number | null;
     finalTopMd: number | null; finalTopTvd: number | null;
   }[];
   deviationSurveys: { date: string | null; des: string | null; proposed: boolean | null; definitive: boolean | null }[];
   reservoirs: { name: string | null; topMkb: number | null; btmMkb: number | null; datumDepthM: number | null }[];
-  casingStrings: {
-    caption: string; runDate: string | null; centralizers: string | null;
-    scratchers: string | null; minDriftIn: number | null;
+  casingStrings: CasingBlock[];
+  cementJobs: CementBlock[];
+  otherInHole: {
+    odIn: string | null; des: string | null; topMkb: number | null; btmMkb: number | null;
+    idIn: number | null; make: string | null; model: string | null;
+  }[];
+  wellheadMaster: HeaderRow | null;
+  wellheadComponents: {
+    make: string | null; model: string | null; section: string | null;
+    topConnType: string | null; topSizeIn: number | null;
+    btmConnType: string | null; btmSizeIn: number | null;
+    des: string | null; wpPsi: number | null;
+  }[];
+  generalNotes: { date: string | null; com: string | null }[];
+  jobs: JobBlock[];
+  bhas: BhaBlock[];
+  logs: { date: string | null; type: string | null; topMkb: number | null; btmMkb: number | null; company: string | null }[];
+  cores: {
+    coreNo: string | null; type: string | null; topMkb: number | null; btmMkb: number | null;
+    recoveredM: number | null; wellbore: string | null;
+  }[];
+  leakOffTests: {
+    testDate: string | null; lastCasingStringRun: string | null; pSurfAppliedPsi: number | null;
+    depthMkb: number | null; fluidDensityPpg: number | null; leakedOff: boolean | null;
+  }[];
+  annotations: { depthMkb: number | null; annotation: string | null }[];
+  productionFailures: {
+    date: string | null; failureDes: string | null; failureType: string | null; cause: string | null;
+    failedItem: string | null; resolvedDate: string | null; cost: number | null;
   }[];
   tubingStrings: TubingBlock[];
   perforations: { date: string | null; zone: string | null; topMkb: number | null; btmMkb: number | null }[];
@@ -795,6 +886,32 @@ export interface Report30Payload extends ReportEnvelope {
     stage: HeaderRow;
     fluids: { description: string | null; type: string | null; amountSacks: number | null; cementClass: string | null }[];
   }[];
+  otherInHole: {
+    des: string | null; topMkb: number | null; btmMkb: number | null;
+    runDate: string | null; pullDate: string | null;
+  }[];
+  zones: {
+    name: string | null; topMkb: number | null; btmMkb: number | null;
+    status: string | null; statusDate: string | null;
+  }[];
+  perforations: {
+    date: string | null; type: string | null; topMkb: number | null; btmMkb: number | null;
+    zone: string | null; shotDensityPerM: number | null; phasingDeg: number | null; status: string | null;
+  }[];
+  stimulations: StimulationBlock[];
+  logs: { date: string | null; topMkb: number | null; btmMkb: number | null; type: string | null; cased: boolean | null }[];
+  tubingStrings: TubingBlock[];
+  rodStrings: RodBlock[];
+  rodPumps: HeaderRow[];
+  swabs: {
+    date: string | null; swabCompany: string | null; zone: string | null;
+    totalVolBbl: number | null; totalOilBbl: number | null; totalBswBbl: number | null;
+  }[];
+  jobs: {
+    startDate: string | null; endDate: string | null;
+    jobType: string | null; jobSubType: string | null; summary: string | null;
+  }[];
+  attachments: { des: string | null; kind: string | null; date: string | null }[];
   totals: HeaderRow;
 }
 

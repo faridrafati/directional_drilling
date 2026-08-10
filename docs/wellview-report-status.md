@@ -572,6 +572,62 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   is not this box's admin password, and every spec then fails on a 401 that looks like a broken app.
   Run it as `ENTRY_USER=… ENTRY_PASSWORD=… npx playwright test`.
 
+### 2026-08-10 — reports 22 and 30 brought up to their samples
+
+The two "everything about the well" reports were the largest item the audit
+found: 22 printed 11 of its sample's ~24 sections and 30 printed 7 of ~19, and
+both were ticked Verified. They now print every section their samples print,
+confirmed by generating each PDF and extracting it.
+
+**Report 22** gained the casing TALLY under each string (the sample prints the
+full 8-column make-up; we printed the string header alone), cement jobs with
+their company, evaluation and per-stage fluids, Other In Hole, the wellhead
+master and its component spool, General Notes, a block per JOB carrying its
+category, AFE money, summary, savings, phases and contacts, a block per BHA with
+its bit and its string make-up, Logs, Bottom Hole Cores, Leak Off / Formation
+Integrity Tests, Schematic Annotations and Production Failures — plus Geologic
+Age on the formation table and VS Dir / Wellbore API-UWI / Btm. Loc. on the
+wellbore row. 11 sections to 24; the PDF runs to five pages.
+
+**Report 30** gained Other In Hole, Zones, Perforations, Stimulations with their
+stages, Logs, Tubing Strings, Rod Strings, Rod Pumps, Swabs, Jobs and
+Attachments, plus the cementing company and the cement return volume. 7 sections
+to 19; three pages.
+
+Ten new models carry what had nowhere to live — `OtherInHole`, `BottomHoleCore`,
+`RodString`/`RodStringComponent`, `RodPump`, `Swab`, `WellAttachment`,
+`SchematicAnnotation`, `WellNote`, `StimulationStage` — and nine columns were
+added to existing ones. All well-scoped rather than day-scoped: these are facts
+about the WELL that outlive the day they were recorded on, and hanging them off a
+daily report would make them vanish from a well whose days somebody else entered.
+
+Decisions worth recording:
+
+- **"Pl Cum Days ML" is DERIVED, not stored.** The sample prints 2.00, 4.00,
+  9.00, 11.00 — a running total of each phase's most-likely duration. Storing it
+  would be a second source of truth that goes wrong the first time a phase
+  duration is edited.
+- **"Leak off?" is derived from whether a leak-off pressure was reached.** A FIT
+  that holds has none; a LOT that breaks down does. A separate flag could
+  disagree with the number beside it.
+- **`parentWellboreId` is a plain column, not a self-relation.** SQLite cannot
+  add a self-referential foreign key with ALTER TABLE, so declaring one made
+  Prisma rebuild `EntryWellbore` — a table redefine, which this schema does not
+  do. The first cut of the migration did exactly that and was thrown away and
+  redone; the parent is resolved by id in the assembler instead. The cost is one
+  lookup; the alternative was rewriting a table to buy a constraint.
+- **A BHA block reads from three places.** The run row carries the number and
+  where it came out, the drill string carries the depths and times, and the BIT
+  carries size, model and dull grade. The sample prints all three together.
+- **The string make-up prints as ONE comma-joined line**, as the sample does. A
+  17-row table for what fits on two lines buries the sequence it exists to show.
+
+The two reports had a smoke check and no assertion on any printed value, which is
+how they sat at a third of their samples with nothing going red. They now have a
+spec each that names every section the sample prints, plus columns that exist
+only inside the newly added tables — so a regression that drops a table's body
+rather than its heading is still caught.
+
 ### 2026-08-10 — the six-dimension audit, and two defects it found
 
 A second, wider audit ran over the whole mission — entry coverage, fidelity to

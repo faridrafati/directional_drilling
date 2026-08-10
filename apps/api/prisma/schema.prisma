@@ -316,6 +316,14 @@ model EntryWell {
   productionPeriods      ProductionPeriod[]
   equipmentFailures      EquipmentFailure[]
   stimulations           Stimulation[]
+  otherInHole            OtherInHole[]
+  bottomHoleCores        BottomHoleCore[]
+  rodStrings             RodString[]
+  rodPumps               RodPump[]
+  swabs                  Swab[]
+  attachments            WellAttachment[]
+  schematicAnnotations   SchematicAnnotation[]
+  notes                  WellNote[]
 
   @@unique([rigId, name])
   @@index([rigId])
@@ -941,6 +949,15 @@ model EntryWellheadComponent {
   model       String?
   sn          String?
   wpPsi       Float? /// wp_psi — working pressure
+  /// Report 22's wellhead-component table prints the SPOOL: which section it is,
+  /// what connects above and below, and at what size. A wellhead is a stack, and
+  /// a row that cannot say what it lands in is not a row anybody can order from.
+  section           String? /// "A" | "B" | "C" | "D"
+  des               String? /// "20-3/4\" Casing Head"
+  topConnectionType String?
+  topSizeIn         Float?
+  btmConnectionType String?
+  btmSizeIn         Float?
   com         String?
   report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
@@ -1488,10 +1505,27 @@ model EntryWellbore {
   /// The azimuth the vertical section is projected onto, degrees. Report 04
   /// prints it; without it a VS figure is a number with no direction attached.
   vsAzimuthDeg Float?
+  /// A sidetrack is drilled OUT OF another wellbore; report 30 prints which.
+  ///
+  /// Deliberately a PLAIN column and not a self-relation: SQLite cannot add a
+  /// self-referential foreign key with ALTER TABLE, so declaring one makes
+  /// Prisma rebuild EntryWellbore — a table redefine, which this schema does not
+  /// do. The parent is resolved by id in the assembler instead; the cost is one
+  /// lookup, and the alternative was rewriting a table to buy a constraint.
+  parentWellboreId String?
+  /// Report 22 prints the wellbore's OWN identifiers beside the well's — a
+  /// sidetrack gets its own UWI and its own bottom-hole location.
+  apiUwi      String?
+  btmLocation String?
   /// Kick-off measured depth, mKB. EntryReport.kop stays the DR.xls per-day
   /// free text and is NOT migrated into this column.
   koMdMkb   Float?
   createdAt DateTime @default(now())
+
+  otherInHole          OtherInHole[]
+  bottomHoleCores      BottomHoleCore[]
+  rodStrings           RodString[]
+  schematicAnnotations SchematicAnnotation[]
 
   well               EntryWell                @relation(fields: [wellId], references: [id], onDelete: Cascade)
   drillingParameters EntryDrillingParameter[]
@@ -1786,6 +1820,9 @@ model WellFormation {
   lithDes     String?
   /// "Marker" | "Reservoir" | "Seal" — the element the formation plays.
   elementType String?
+  /// Report 22 prints the age beside the name; a formation is identified by
+  /// both, and two beds called "Cretaceous" are not the same formation.
+  geologicAge String?
   /// Report 19's "Layer Name", where a formation is subdivided.
   layerName   String?
   // ── prognosis (report 20) ──
@@ -1847,6 +1884,9 @@ model JobContact {
   company     String?
   contactName String?
   title       String?
+  /// Report 22 prints BOTH numbers; a contact with only a mobile is a contact
+  /// you cannot reach at their desk.
+  office      String?
   mobile      String?
   email       String?
   note        String?
@@ -1924,6 +1964,9 @@ model EntryLogRun {
   order          Int     @default(0)
   time           String? /// HH:MM as printed
   runNo          String?
+  /// Whether the hole was cased when it was logged — reports 23 and 30 print it,
+  /// and an open-hole and a cased-hole GR are not the same measurement.
+  cased          Boolean?
   type           String? /// "Triple Combo" | "CBL" | "FMI" | "Sonic"
   topMkb         Float?
   btmMkb         Float?
@@ -1965,12 +2008,16 @@ model WellZone {
   btmMkb     Float?
   /// "Open" | "Squeezed" | "Isolated" | "Abandoned".
   status     String?
+  /// When that status was taken. Report 30 prints "Cur Stat Date" beside it —
+  /// a status with no date cannot be told from a stale one.
+  statusDate String?
 
   well              EntryWell          @relation(fields: [wellId], references: [id], onDelete: Cascade)
   wellbore          EntryWellbore?     @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
   perforations      Perforation[]
   productionPeriods ProductionPeriod[]
   stimulations      Stimulation[]
+  swabs             Swab[]
 
   @@index([wellId, order])
 }
@@ -2147,6 +2194,11 @@ model EquipmentFailure {
   /// stack, printed with "(blank)" where nobody classified it.
   failureType     String?
   componentDes    String?
+  /// Report 22's Production Failures block: what failed, why, and when it was
+  /// put right. `componentDes` is the DESCRIPTION; `failedItem` is the item.
+  failedItem      String?
+  cause           String?
+  resolvedDate    String?
   /// What it cost to put right.
   cost            Float?
   /// Who the cost is charged to, as the interval problems record it.
@@ -2171,6 +2223,8 @@ model Stimulation {
   company      String?
   volumeM3     Float?
   com          String?
+
+  stages StimulationStage[]
 
   well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
   zone WellZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
@@ -2297,6 +2351,8 @@ model CementJob {
   description       String? /// "Surface Casing Cement"
   startDate         String?
   endDate           String?
+  /// Who pumped it. Reports 22 and 30 both print it above the stage table.
+  company           String?
   evaluationMethod  String? /// "Temperature Log", "CBL", "USIT"
   evaluationResults String?
   comment           String?
@@ -2320,6 +2376,8 @@ model CementStage {
   /// "Full Return?" — nullable, because unanswered is not the same as "no".
   fullReturn             Boolean?
   volCementM3            Float?
+  /// Returns to surface, m3 — report 30 prints "Cement Volume Return".
+  volReturnM3            Float?
   topPlug                Boolean?
   bottomPlug             Boolean?
   qPumpInitM3Min         Float?
@@ -2388,4 +2446,238 @@ model CementFluidAdditive {
   cementFluid CementFluid @relation(fields: [cementFluidId], references: [id], onDelete: Cascade)
 
   @@index([cementFluidId, order])
+}
+
+
+/// ══ what reports 22 and 30 print and had nowhere to live ═════════════════════
+///
+/// Everything below is read by the two "everything about the well" reports and
+/// by nothing else yet. Each is well-scoped rather than day-scoped on purpose:
+/// these are facts about the WELL that outlive the day they were recorded on,
+/// and hanging them off a daily report would make them disappear from a well
+/// whose days were entered by somebody else.
+
+/// Anything left in the hole that is not casing, tubing or rod — a bridge plug,
+/// a packer, a fish. Reports 22 and 30 both print it; 30 also prints when it was
+/// run and when it came out, because "still down there" is the whole question.
+model OtherInHole {
+  id         String  @id @default(cuid())
+  wellId     String
+  wellboreId String?
+  order      Int     @default(0)
+  des        String? /// "Bridge Plug - Permanent"
+  odIn       String? /// TEXT: the sheet prints 7, 9 5/8
+  idIn       Float?
+  topMkb     Float?
+  btmMkb     Float?
+  make       String?
+  model      String?
+  runDate    String?
+  pullDate   String? /// null means it is still in the hole
+  com        String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  well     EntryWell      @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+
+  @@index([wellId, order])
+}
+
+/// A core cut at the bottom of the hole. Recovery is stored as a LENGTH, not a
+/// percentage: the sample prints metres recovered, and the percentage is a
+/// division anyone can do but nobody can undo.
+model BottomHoleCore {
+  id          String  @id @default(cuid())
+  wellId      String
+  wellboreId  String?
+  order       Int     @default(0)
+  coreNo      String?
+  type        String? /// "Conventional" | "Oriented" | "Sidewall"
+  topMkb      Float?
+  btmMkb      Float?
+  recoveredM  Float?
+  date        String?
+  com         String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  well     EntryWell      @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+
+  @@index([wellId, order])
+}
+
+/// A sucker-rod string, and its make-up. Shaped like TubingString/TubingComponent
+/// because report 30 prints them the same way — a header line and a tally.
+model RodString {
+  id          String  @id @default(cuid())
+  wellId      String
+  wellboreId  String?
+  order       Int     @default(0)
+  description String?
+  runDate     String?
+  setDepthMkb Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  components RodStringComponent[]
+  well       EntryWell      @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore   EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+
+  @@index([wellId, order])
+}
+
+model RodStringComponent {
+  id            String  @id @default(cuid())
+  rodStringId   String
+  order         Int     @default(0)
+  itemDes       String?
+  odNominalIn   String? /// TEXT: the sheet prints 7/8, 1
+  massPerLenKgM Float?
+  grade         String?
+  joints        Int?
+  lenM          Float?
+  topMkb        Float?
+  btmMkb        Float?
+  createdAt     DateTime @default(now())
+
+  rodString RodString @relation(fields: [rodStringId], references: [id], onDelete: Cascade)
+
+  @@index([rodStringId, order])
+}
+
+/// The downhole pump on a rod string. Wide because the sample's block is wide:
+/// report 30 prints 23 named properties of it, and a pump described by four of
+/// them is not a pump anybody can order a replacement for.
+model RodPump {
+  id                          String  @id @default(cuid())
+  wellId                      String
+  order                       Int     @default(0)
+  make                        String?
+  model                       String?
+  serialNo                    String?
+  pumpBoreIn                  Float?
+  apiPumpType                 String?
+  apiBarrelType               String?
+  apiAnchorType               String?
+  seatAssyType                String?
+  barrelLenM                  Float?
+  nomPlungerLenM              Float?
+  upperExtLenM                Float?
+  lowerExtLenM                Float?
+  plungerOdClearanceIn        Float?
+  seatingAssemblyDes          String?
+  seatAssySizeIn              Float?
+  apiBarrelMaterial           String?
+  apiPlungerMaterial          String?
+  gasAnchorOdIn               Float?
+  gasAnchorLenM               Float?
+  travelingValveBallMaterial  String?
+  travelingValveSeatMaterial  String?
+  standingValveBallMaterial   String?
+  standingValveSeatMaterial   String?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
+/// A swab run and what it recovered, per zone.
+model Swab {
+  id           String  @id @default(cuid())
+  wellId       String
+  zoneId       String?
+  order        Int     @default(0)
+  date         String?
+  swabCompany  String?
+  totalVolBbl  Float?
+  totalOilBbl  Float?
+  totalBswBbl  Float?
+  com          String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  zone WellZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+
+  @@index([wellId, order])
+}
+
+/// A document attached to the well. The report prints the DESCRIPTION only, so
+/// that is what is required; the reference is where it actually lives.
+model WellAttachment {
+  id        String  @id @default(cuid())
+  wellId    String
+  order     Int     @default(0)
+  des       String?
+  kind      String? /// "Drawing" | "Report" | "Photo" | "Certificate"
+  reference String? /// a path, a URL or a file number — wherever it is kept
+  date      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
+/// A note pinned to a DEPTH on the schematic — "Casing set 12' off bottom".
+/// Separate from WellNote because this one has a depth and is drawn on a
+/// picture, and a note without a depth cannot be.
+model SchematicAnnotation {
+  id         String  @id @default(cuid())
+  wellId     String
+  wellboreId String?
+  order      Int     @default(0)
+  depthMkb   Float?
+  annotation String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  well     EntryWell      @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+
+  @@index([wellId, order])
+}
+
+/// Report 22's "General Notes" — a dated remark about the well, belonging to no
+/// day and no job.
+model WellNote {
+  id        String  @id @default(cuid())
+  wellId    String
+  order     Int     @default(0)
+  date      String?
+  com       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
+
+  @@index([wellId, order])
+}
+
+/// One stage of a stimulation. Report 30 prints the stages under the treatment,
+/// the same shape cement uses: a job header, then what was pumped into it.
+model StimulationStage {
+  id               String  @id @default(cuid())
+  stimulationId    String
+  order            Int     @default(0)
+  stageNo          Int?
+  stageType        String? /// "Pre-Wash" | "Pad" | "Proppant" | "Flush"
+  topDepthMkb      Float?
+  bottomDepthMkb   Float?
+  cleanVolPumpedM3 Float?
+  slurryVolM3      Float?
+  proppantKg       Float?
+  avgRateM3Min     Float?
+  avgPressurePsi   Float?
+  com              String?
+  createdAt        DateTime @default(now())
+
+  stimulation Stimulation @relation(fields: [stimulationId], references: [id], onDelete: Cascade)
+
+  @@index([stimulationId, order])
 }

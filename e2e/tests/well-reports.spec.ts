@@ -325,6 +325,60 @@ test.describe("Well Reports", () => {
     });
   }
 
+  // The two "everything about the well" reports carried a smoke check and no
+  // assertion on a single printed value, which is how they sat at a third of
+  // their samples without anything going red. These name the SECTIONS the
+  // samples print — a section that silently stops being assembled now fails.
+  test("report 22 prints every section its sample prints", async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.getByTestId("report-22").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Report Printed:").first()).toBeVisible({ timeout: 30_000 });
+    for (const section of [
+      "Hole Sections", "Plug Back Total Depths", "Formations", "Deviation Surveys",
+      "Reservoirs", "Casing Strings", "Cement", "Other In Hole", "Wellhead",
+      "General Notes", "Logs", "Bottom Hole Cores",
+      "Leak Off and Formation Integrity Tests", "Schematic Annotations",
+      "Production Failures", "Tubing Strings", "Perforations",
+    ]) {
+      await expect(
+        page.getByText(section, { exact: true }).first(),
+        `report 22 is missing the "${section}" section`,
+      ).toBeVisible();
+    }
+    // A job block and a BHA block, each with the sub-tables the sample prints.
+    await expect(page.getByText("Phase Type 1", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("String Components:", { exact: false }).first()).toBeVisible();
+    // The casing TALLY, not just the string header — the column that proves the
+    // block is a block and not a one-line summary.
+    await expect(page.getByText("Top Thread", { exact: true }).first()).toBeVisible();
+    // And a value only the cement fluids table carries.
+    await expect(page.getByText("Yield (L/sack)", { exact: true }).first()).toBeVisible();
+  });
+
+  test("report 30 prints every section its sample prints", async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.getByTestId("report-30").click();
+    await page.getByLabel("Well", { exact: true }).selectOption({ label: DEMO_WELL });
+    await expect(page.getByText("Report Printed:").first()).toBeVisible({ timeout: 30_000 });
+    for (const section of [
+      "Wellheads", "Wellbores", "Casing Strings", "Cement", "Other In Hole",
+      "Zones", "Perforations", "Logs", "Tubing Strings", "Rod Strings",
+      "Rod Pumps", "Swabs", "Jobs", "Attachments",
+    ]) {
+      await expect(
+        page.getByText(section, { exact: true }).first(),
+        `report 30 is missing the "${section}" section`,
+      ).toBeVisible();
+    }
+    // Columns that exist only in the sections added last, so a regression that
+    // drops a table's body rather than its heading is still caught.
+    await expect(page.getByText("Cur Stat Date", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Clean Volume Pumped (m³)", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Cased?", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Total BSW (bbl)", { exact: true }).first()).toBeVisible();
+  });
+
   for (const type of ["22", "23", "24", "26", "28", "29"] as const) {
     test(`report ${type} draws the schematic with the completion string`, async ({ page }) => {
       test.setTimeout(60_000);

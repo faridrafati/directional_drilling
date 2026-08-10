@@ -13,8 +13,9 @@
  */
 import { headerValue, money } from "../../export/reportChrome.js";
 import type {
-  PerforationBlock, Report22Payload, Report23Payload, Report24Payload,
-  Report26Payload, Report28Payload, Report29Payload, Report30Payload, TubingBlock,
+  CasingBlock, CementBlock, PerforationBlock, Report22Payload, Report23Payload,
+  Report24Payload, Report26Payload, Report28Payload, Report29Payload, Report30Payload,
+  RodBlock, StimulationBlock, TubingBlock,
 } from "../../entry/wellview.js";
 import {
   HeaderGrid, IdentityLine, PreviewFooter, PreviewSheet, PreviewTable, PreviewTitle,
@@ -25,6 +26,144 @@ import { SchematicLegend, WellboreSchematic } from "./WellboreSchematic.js";
 const yesNo = (v: boolean | null) => (v === null ? "" : v ? "Yes" : "No");
 
 /** The tubing tally, in the shape reports 22, 24 and 30 all print it. */
+/**
+ * A casing string and the tally underneath it — the shape the samples print and
+ * report 05 already prints on its own. A string header with no tally says what
+ * was run but not what it was made of, which is the question the block exists
+ * to answer.
+ */
+function CasingBlocks({ blocks }: { blocks: CasingBlock[] }) {
+  if (blocks.length === 0) {
+    return (
+      <div className="border border-t-0 border-gray-400 px-2 py-2 text-[11px] text-gray-400">
+        No casing string recorded — enter one under Well data → Casing.
+      </div>
+    );
+  }
+  return (
+    <>
+      {blocks.map((c, i) => (
+        <div key={i}>
+          <SectionBar>{c.caption}</SectionBar>
+          <HeaderGrid rows={[c.header]} />
+          <PreviewTable
+            columns={[
+              { header: "OD (in)", width: "w-24", cell: (k) => k.odIn ?? "" },
+              { header: "Item Des", width: "w-44", cell: (k) => k.itemDes ?? "" },
+              { header: "Btm (mKB)", width: "w-28", align: "right", cell: (k) => headerValue(k.btmMkb) },
+              { header: "Jts", width: "w-16", align: "right", cell: (k) => headerValue(k.jts, "int") },
+              { header: "ID (in)", width: "w-24", align: "right", cell: (k) => headerValue(k.idIn, "in3") },
+              { header: "Wt (kg/m)", width: "w-24", align: "right", cell: (k) => headerValue(k.massPerLenKgM) },
+              { header: "Grade", width: "w-20", cell: (k) => k.grade ?? "" },
+              { header: "Top Thread", cell: (k) => k.topThread ?? "" },
+            ] as PreviewColumn<CasingBlock["components"][number]>[]}
+            rows={c.components} emptyText="No tally entered for this string." />
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** A cement job: who pumped it, then a stage and its fluids for each stage. */
+function CementBlocks({ blocks }: { blocks: CementBlock[] }) {
+  if (blocks.length === 0) {
+    return (
+      <div className="border border-t-0 border-gray-400 px-2 py-2 text-[11px] text-gray-400">
+        No cement job recorded — enter one under Well data → Casing.
+      </div>
+    );
+  }
+  return (
+    <>
+      {blocks.map((c, i) => (
+        <div key={i}>
+          <SectionBar>{c.caption}</SectionBar>
+          <HeaderGrid rows={[c.header]} />
+          {c.stages.map((st, k) => (
+            <div key={k}>
+              <HeaderGrid rows={[st.stage]} />
+              <PreviewTable
+                columns={[
+                  { header: "Fluid", width: "w-24", cell: (f) => f.fluidType ?? "" },
+                  { header: "Class", width: "w-20", cell: (f) => f.cementClass ?? "" },
+                  { header: "Amount (sacks)", width: "w-32", align: "right", cell: (f) => headerValue(f.amountSacks) },
+                  { header: "Yield (L/sack)", width: "w-32", align: "right", cell: (f) => headerValue(f.yieldLPerSack) },
+                  { header: "Mix H2O (L/sack)", width: "w-32", align: "right", cell: (f) => headerValue(f.mixWaterLPerSack) },
+                  { header: "Vol Pumped (m³)", width: "w-32", align: "right", cell: (f) => headerValue(f.volumePumpedM3) },
+                  { header: "Fluid Des", cell: (f) => f.fluidDescription ?? "" },
+                ] as PreviewColumn<CementBlock["stages"][number]["fluids"][number]>[]}
+                rows={st.fluids} emptyText="No fluid recorded for this stage." />
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** A rod string and its make-up — the same shape as a tubing string. */
+function RodBlocks({ blocks }: { blocks: RodBlock[] }) {
+  if (blocks.length === 0) {
+    return (
+      <div className="border border-t-0 border-gray-400 px-2 py-2 text-[11px] text-gray-400">
+        No rod string recorded — a flowing well has none.
+      </div>
+    );
+  }
+  return (
+    <>
+      {blocks.map((r, i) => (
+        <div key={i}>
+          <SectionBar>{r.caption}</SectionBar>
+          <HeaderGrid rows={[r.header]} />
+          <PreviewTable
+            columns={[
+              { header: "Item Description", width: "w-48", cell: (c) => c.itemDes ?? "" },
+              { header: "OD Nominal (in)", width: "w-32", cell: (c) => c.odNominalIn ?? "" },
+              { header: "Weight/Length (kg/m)", width: "w-36", align: "right", cell: (c) => headerValue(c.massPerLenKgM) },
+              { header: "Grade", width: "w-28", cell: (c) => c.grade ?? "" },
+              { header: "Joints", width: "w-20", align: "right", cell: (c) => headerValue(c.joints, "int") },
+              { header: "Length (m)", width: "w-28", align: "right", cell: (c) => headerValue(c.lenM) },
+              { header: "Top Depth (mKB)", width: "w-32", align: "right", cell: (c) => headerValue(c.topMkb) },
+              { header: "Bottom Depth (mKB)", align: "right", cell: (c) => headerValue(c.btmMkb) },
+            ] as PreviewColumn<RodBlock["components"][number]>[]}
+            rows={r.components} emptyText="No rod entered for this string." />
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** A stimulation and the stages pumped into it. */
+function StimulationBlocks({ blocks }: { blocks: StimulationBlock[] }) {
+  if (blocks.length === 0) {
+    return (
+      <div className="border border-t-0 border-gray-400 px-2 py-2 text-[11px] text-gray-400">
+        No stimulation recorded — enter one under Well data → Completion.
+      </div>
+    );
+  }
+  return (
+    <>
+      {blocks.map((st, i) => (
+        <div key={i}>
+          <SectionBar>{st.caption}</SectionBar>
+          <HeaderGrid rows={[st.header]} />
+          <PreviewTable
+            columns={[
+              { header: "Stg #", width: "w-20", align: "right", cell: (g) => headerValue(g.stageNo, "int") },
+              { header: "Stage Type", width: "w-44", cell: (g) => g.stageType ?? "" },
+              { header: "Top Depth (mKB)", width: "w-36", align: "right", cell: (g) => headerValue(g.topDepthMkb) },
+              { header: "Bottom Depth (mKB)", width: "w-36", align: "right", cell: (g) => headerValue(g.bottomDepthMkb) },
+              { header: "Clean Volume Pumped (m³)", align: "right", cell: (g) => headerValue(g.cleanVolPumpedM3) },
+            ] as PreviewColumn<StimulationBlock["stages"][number]>[]}
+            rows={st.stages} emptyText="No stage recorded." />
+        </div>
+      ))}
+    </>
+  );
+}
+
 function TubingBlocks({ blocks }: { blocks: TubingBlock[] }) {
   if (blocks.length === 0) {
     return (
@@ -283,6 +422,7 @@ export function Report22Preview({ payload }: { payload: Report22Payload }) {
       <PreviewTable
         columns={[
           { header: "Formation Name", width: "w-44", cell: (f) => f.name ?? "" },
+          { header: "Geologic Age", width: "w-28", cell: (f) => f.geologicAge ?? "" },
           { header: "Element Type", width: "w-32", cell: (f) => f.elementType ?? "" },
           { header: "H2S Conc (%)", width: "w-28", align: "right", cell: (f) => headerValue(f.h2sConcPct) },
           { header: "Final Top MD (mKB)", width: "w-32", align: "right", cell: (f) => headerValue(f.finalTopMd) },
@@ -311,15 +451,148 @@ export function Report22Preview({ payload }: { payload: Report22Payload }) {
         rows={payload.reservoirs} emptyText="No reservoir recorded." />
 
       <SectionBar>Casing Strings</SectionBar>
+      <CasingBlocks blocks={payload.casingStrings} />
+
+      <SectionBar>Cement</SectionBar>
+      <CementBlocks blocks={payload.cementJobs} />
+
+      <SectionBar>Other In Hole</SectionBar>
       <PreviewTable
         columns={[
-          { header: "String", width: "w-56", cell: (c) => c.caption },
-          { header: "Run Date", width: "w-28", cell: (c) => c.runDate ?? "" },
-          { header: "Centralizers", width: "w-44", cell: (c) => c.centralizers ?? "" },
-          { header: "Scratchers", width: "w-32", cell: (c) => c.scratchers ?? "" },
-          { header: "Drift Min (in)", align: "right", cell: (c) => headerValue(c.minDriftIn, "in3") },
-        ] as PreviewColumn<Report22Payload["casingStrings"][number]>[]}
-        rows={payload.casingStrings} emptyText="No casing string recorded." />
+          { header: "OD (in)", width: "w-24", cell: (o) => o.odIn ?? "" },
+          { header: "Des", width: "w-56", cell: (o) => o.des ?? "" },
+          { header: "Top (mKB)", width: "w-28", align: "right", cell: (o) => headerValue(o.topMkb) },
+          { header: "Btm (mKB)", width: "w-28", align: "right", cell: (o) => headerValue(o.btmMkb) },
+          { header: "ID (in)", width: "w-24", align: "right", cell: (o) => headerValue(o.idIn, "in3") },
+          { header: "Make", width: "w-32", cell: (o) => o.make ?? "" },
+          { header: "Model", cell: (o) => o.model ?? "" },
+        ] as PreviewColumn<Report22Payload["otherInHole"][number]>[]}
+        rows={payload.otherInHole} emptyText="Nothing else in the hole." />
+
+      <SectionBar>Wellhead</SectionBar>
+      {payload.wellheadMaster ? <HeaderGrid rows={[payload.wellheadMaster]} /> : (
+        <div className="bg-white border border-gray-400 border-t-0 px-2 py-3 text-[11px] text-gray-400">
+          No wellhead recorded.
+        </div>
+      )}
+      <PreviewTable
+        columns={[
+          { header: "Make", width: "w-28", cell: (w) => w.make ?? "" },
+          { header: "Model", width: "w-24", cell: (w) => w.model ?? "" },
+          { header: "Section", width: "w-20", cell: (w) => w.section ?? "" },
+          { header: "Top Conn Typ", width: "w-36", cell: (w) => w.topConnType ?? "" },
+          { header: "Top Sz (in)", width: "w-24", align: "right", cell: (w) => headerValue(w.topSizeIn, "in3") },
+          { header: "Btm Conn Typ", width: "w-36", cell: (w) => w.btmConnType ?? "" },
+          { header: "Btm Sz (in)", width: "w-24", align: "right", cell: (w) => headerValue(w.btmSizeIn, "in3") },
+          { header: "Des", width: "w-44", cell: (w) => w.des ?? "" },
+          { header: "WP (psi)", align: "right", cell: (w) => headerValue(w.wpPsi) },
+        ] as PreviewColumn<Report22Payload["wellheadComponents"][number]>[]}
+        rows={payload.wellheadComponents} emptyText="No wellhead component recorded." />
+
+      <SectionBar>General Notes</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Date", width: "w-28", cell: (n) => n.date ?? "" },
+          { header: "Com", cell: (n) => n.com ?? "" },
+        ] as PreviewColumn<Report22Payload["generalNotes"][number]>[]}
+        rows={payload.generalNotes} emptyText="No note recorded." />
+
+      {payload.jobs.map((j, i) => (
+        <div key={`job-${i}`}>
+          <SectionBar>{j.caption}</SectionBar>
+          <HeaderGrid rows={[j.header, j.money]} />
+          {j.summary && (
+            <div className="bg-white border border-gray-400 border-t-0 px-2 py-1 text-[11px] leading-snug">
+              <span className="text-gray-500">Summary: </span>{j.summary}
+            </div>
+          )}
+          <HeaderGrid rows={[j.savings]} />
+          <PreviewTable
+            columns={[
+              { header: "Phase Type 1", width: "w-56", cell: (ph) => ph.phaseType ?? "" },
+              { header: "Planned Likely Phase Cost", width: "w-40", align: "right", cell: (ph) => money(ph.plannedCost) },
+              { header: "Pl Cum Days ML", width: "w-32", align: "right", cell: (ph) => headerValue(ph.plCumDaysMl) },
+              { header: "Planned End Depth (mKB)", align: "right", cell: (ph) => headerValue(ph.plannedEndDepthMkb) },
+            ] as PreviewColumn<Report22Payload["jobs"][number]["phases"][number]>[]}
+            rows={j.phases} emptyText="No phase planned." />
+          <PreviewTable
+            columns={[
+              { header: "Contact Name", width: "w-40", cell: (c) => c.contactName ?? "" },
+              { header: "Company", width: "w-40", cell: (c) => c.company ?? "" },
+              { header: "Title", width: "w-40", cell: (c) => c.title ?? "" },
+              { header: "Office", width: "w-32", cell: (c) => c.office ?? "" },
+              { header: "Mobile", cell: (c) => c.mobile ?? "" },
+            ] as PreviewColumn<Report22Payload["jobs"][number]["contacts"][number]>[]}
+            rows={j.contacts} emptyText="No contact recorded." />
+        </div>
+      ))}
+
+      {payload.bhas.map((b, i) => (
+        <div key={`bha-${i}`}>
+          <SectionBar>{b.caption}</SectionBar>
+          <HeaderGrid rows={[b.header, b.figures]} />
+          <div className="bg-white border border-gray-400 border-t-0 px-2 py-1 text-[11px] leading-snug">
+            <span className="text-gray-500">String Components: </span>
+            {b.stringComponents || <span className="text-gray-400">none recorded</span>}
+          </div>
+        </div>
+      ))}
+
+      <SectionBar>Logs</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Date", width: "w-28", cell: (l) => l.date ?? "" },
+          { header: "Type", width: "w-48", cell: (l) => l.type ?? "" },
+          { header: "Top (mKB)", width: "w-28", align: "right", cell: (l) => headerValue(l.topMkb) },
+          { header: "Btm (mKB)", width: "w-28", align: "right", cell: (l) => headerValue(l.btmMkb) },
+          { header: "Logging Company", cell: (l) => l.company ?? "" },
+        ] as PreviewColumn<Report22Payload["logs"][number]>[]}
+        rows={payload.logs} emptyText="No log run recorded." />
+
+      <SectionBar>Bottom Hole Cores</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Core #", width: "w-20", cell: (c) => c.coreNo ?? "" },
+          { header: "Type", width: "w-36", cell: (c) => c.type ?? "" },
+          { header: "Top (mKB)", width: "w-28", align: "right", cell: (c) => headerValue(c.topMkb) },
+          { header: "Btm (mKB)", width: "w-28", align: "right", cell: (c) => headerValue(c.btmMkb) },
+          { header: "Recov (m)", width: "w-28", align: "right", cell: (c) => headerValue(c.recoveredM) },
+          { header: "Wellbore", cell: (c) => c.wellbore ?? "" },
+        ] as PreviewColumn<Report22Payload["cores"][number]>[]}
+        rows={payload.cores} emptyText="No core cut." />
+
+      <SectionBar>Leak Off and Formation Integrity Tests</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Test Date", width: "w-28", cell: (t) => t.testDate ?? "" },
+          { header: "Last Casing String Run", width: "w-56", cell: (t) => t.lastCasingStringRun ?? "" },
+          { header: "P Surf Applied (psi)", width: "w-32", align: "right", cell: (t) => headerValue(t.pSurfAppliedPsi) },
+          { header: "Depth (mKB)", width: "w-28", align: "right", cell: (t) => headerValue(t.depthMkb) },
+          { header: "Dens Fluid (lb/gal)", width: "w-32", align: "right", cell: (t) => headerValue(t.fluidDensityPpg) },
+          { header: "Leak off?", cell: (t) => yesNo(t.leakedOff) },
+        ] as PreviewColumn<Report22Payload["leakOffTests"][number]>[]}
+        rows={payload.leakOffTests} emptyText="No pressure test recorded." />
+
+      <SectionBar>Schematic Annotations</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Depth (mKB)", width: "w-32", align: "right", cell: (a) => headerValue(a.depthMkb) },
+          { header: "Annotation", cell: (a) => a.annotation ?? "" },
+        ] as PreviewColumn<Report22Payload["annotations"][number]>[]}
+        rows={payload.annotations} emptyText="No annotation." />
+
+      <SectionBar>Production Failures</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Failure Date", width: "w-28", cell: (f) => f.date ?? "" },
+          { header: "Failure Des", width: "w-56", cell: (f) => f.failureDes ?? "" },
+          { header: "Fail Typ", width: "w-28", cell: (f) => f.failureType ?? "" },
+          { header: "Cause", width: "w-44", cell: (f) => f.cause ?? "" },
+          { header: "Failed Item", width: "w-36", cell: (f) => f.failedItem ?? "" },
+          { header: "Resolved Date", width: "w-28", cell: (f) => f.resolvedDate ?? "" },
+          { header: "Est Fail (Cost)", align: "right", cell: (f) => money(f.cost) },
+        ] as PreviewColumn<Report22Payload["productionFailures"][number]>[]}
+        rows={payload.productionFailures} emptyText="No production failure recorded." />
 
       <SectionBar>Tubing Strings</SectionBar>
       <TubingBlocks blocks={payload.tubingStrings} />
@@ -396,6 +669,10 @@ export function Report30Preview({ payload }: { payload: Report30Payload }) {
       ) : payload.cementJobs.map((j, i) => (
         <div key={i}>
           <SectionBar>{j.caption}</SectionBar>
+          <div className="bg-white border border-gray-400 border-t-0 px-2 py-1 text-[11px]">
+            <span className="text-gray-500">Cementing Company: </span>
+            {j.company ?? <span className="text-gray-400">not recorded</span>}
+          </div>
           <HeaderGrid rows={[j.stage]} />
           <PreviewTable
             columns={[
@@ -407,6 +684,101 @@ export function Report30Preview({ payload }: { payload: Report30Payload }) {
             rows={j.fluids} emptyText="No fluid recorded on this stage." />
         </div>
       ))}
+
+      <SectionBar>Other In Hole</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Des", width: "w-56", cell: (o) => o.des ?? "" },
+          { header: "Top (mKB)", width: "w-32", align: "right", cell: (o) => headerValue(o.topMkb) },
+          { header: "Btm (mKB)", width: "w-32", align: "right", cell: (o) => headerValue(o.btmMkb) },
+          { header: "Run Date", width: "w-32", cell: (o) => o.runDate ?? "" },
+          { header: "Pull Date", cell: (o) => o.pullDate ?? "" },
+        ] as PreviewColumn<Report30Payload["otherInHole"][number]>[]}
+        rows={payload.otherInHole} emptyText="Nothing else in the hole." />
+
+      <SectionBar>Zones</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Zone Name", width: "w-48", cell: (z) => z.name ?? "" },
+          { header: "Top (mKB)", width: "w-32", align: "right", cell: (z) => headerValue(z.topMkb) },
+          { header: "Btm (mKB)", width: "w-32", align: "right", cell: (z) => headerValue(z.btmMkb) },
+          { header: "Current Status", width: "w-40", cell: (z) => z.status ?? "" },
+          { header: "Cur Stat Date", cell: (z) => z.statusDate ?? "" },
+        ] as PreviewColumn<Report30Payload["zones"][number]>[]}
+        rows={payload.zones} emptyText="No zone recorded." />
+
+      <SectionBar>Perforations</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Date", width: "w-28", cell: (p) => p.date ?? "" },
+          { header: "Type", width: "w-28", cell: (p) => p.type ?? "" },
+          { header: "Top (mKB)", width: "w-28", align: "right", cell: (p) => headerValue(p.topMkb) },
+          { header: "Btm (mKB)", width: "w-28", align: "right", cell: (p) => headerValue(p.btmMkb) },
+          { header: "Zone", width: "w-40", cell: (p) => p.zone ?? "" },
+          { header: "Shot Dens (shots/m)", width: "w-32", align: "right", cell: (p) => headerValue(p.shotDensityPerM) },
+          { header: "Phasing (°)", width: "w-28", align: "right", cell: (p) => headerValue(p.phasingDeg) },
+          { header: "Current Status", cell: (p) => p.status ?? "" },
+        ] as PreviewColumn<Report30Payload["perforations"][number]>[]}
+        rows={payload.perforations} emptyText="No perforation recorded." />
+
+      <SectionBar>Stimulations &amp; Treatments</SectionBar>
+      <StimulationBlocks blocks={payload.stimulations} />
+
+      <SectionBar>Logs</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Date", width: "w-28", cell: (l) => l.date ?? "" },
+          { header: "Top (mKB)", width: "w-32", align: "right", cell: (l) => headerValue(l.topMkb) },
+          { header: "Btm (mKB)", width: "w-32", align: "right", cell: (l) => headerValue(l.btmMkb) },
+          { header: "Type", width: "w-56", cell: (l) => l.type ?? "" },
+          { header: "Cased?", cell: (l) => yesNo(l.cased) },
+        ] as PreviewColumn<Report30Payload["logs"][number]>[]}
+        rows={payload.logs} emptyText="No log run recorded." />
+
+      <SectionBar>Tubing Strings</SectionBar>
+      <TubingBlocks blocks={payload.tubingStrings} />
+
+      <SectionBar>Rod Strings</SectionBar>
+      <RodBlocks blocks={payload.rodStrings} />
+
+      <SectionBar>Rod Pumps</SectionBar>
+      {payload.rodPumps.length === 0 ? (
+        <div className="border border-t-0 border-gray-400 px-2 py-2 text-[11px] text-gray-400">
+          No rod pump recorded — a flowing well has none.
+        </div>
+      ) : <HeaderGrid rows={payload.rodPumps} />}
+
+      <SectionBar>Swabs</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Date", width: "w-28", cell: (w) => w.date ?? "" },
+          { header: "Swab Comp", width: "w-44", cell: (w) => w.swabCompany ?? "" },
+          { header: "Zone", width: "w-40", cell: (w) => w.zone ?? "" },
+          { header: "Total Vol (bbl)", width: "w-32", align: "right", cell: (w) => headerValue(w.totalVolBbl) },
+          { header: "Total Oil (bbl)", width: "w-32", align: "right", cell: (w) => headerValue(w.totalOilBbl) },
+          { header: "Total BSW (bbl)", align: "right", cell: (w) => headerValue(w.totalBswBbl) },
+        ] as PreviewColumn<Report30Payload["swabs"][number]>[]}
+        rows={payload.swabs} emptyText="No swab run recorded." />
+
+      <SectionBar>Jobs</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Start Date", width: "w-28", cell: (j) => j.startDate ?? "" },
+          { header: "End Date", width: "w-28", cell: (j) => j.endDate ?? "" },
+          { header: "Job Typ", width: "w-44", cell: (j) => j.jobType ?? "" },
+          { header: "Job SubTyp", width: "w-40", cell: (j) => j.jobSubType ?? "" },
+          { header: "Summary", cell: (j) => j.summary ?? "" },
+        ] as PreviewColumn<Report30Payload["jobs"][number]>[]}
+        rows={payload.jobs} emptyText="No job recorded." />
+
+      <SectionBar>Attachments</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Des", width: "w-96", cell: (a) => a.des ?? "" },
+          { header: "Kind", width: "w-32", cell: (a) => a.kind ?? "" },
+          { header: "Date", cell: (a) => a.date ?? "" },
+        ] as PreviewColumn<Report30Payload["attachments"][number]>[]}
+        rows={payload.attachments} emptyText="No attachment recorded." />
 
       <HeaderGrid rows={[payload.totals]} />
       <PreviewFooter printedOn={payload.printedOn} />

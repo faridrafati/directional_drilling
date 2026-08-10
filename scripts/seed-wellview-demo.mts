@@ -229,16 +229,17 @@ async function main() {
   await prisma.jobContact.deleteMany({ where: { jobId: job.id } });
   await prisma.jobContact.createMany({
     data: [
-      ["Geoservices", "Bill Frost", "Mud Logging Manager", "0912 300 4471", "bill.frost@geoservices.example", "Night shift"],
-      ["Schlumberger", "Sam Wind", "Logging Engineer", "0912 992 3226", "sam.wind@slb.example", null],
-      ["NABORS", "Mehdi Sadeghi", "Rig Manager", "0912 100 6677", null, null],
-      ["POGC", "Reza Ahmadi", "Drilling Foreman", "0912 300 1188", "r.ahmadi@pogc.example", null],
-      ["Corelab", "Ali Tabatabai", "Sr Geologist", "0912 445 7712", null, "Coring programme"],
-      ["Halliburton", "Nima Rostami", "Cementing Supervisor", "0912 329 2442", null, null],
-    ].map(([company, contactName, title, mobile, email, note], i) => ({
+      ["Geoservices", "Bill Frost", "Mud Logging Manager", "0912 300 4471", "071 3344 1001", "bill.frost@geoservices.example", "Night shift"],
+      ["Schlumberger", "Sam Wind", "Logging Engineer", "0912 992 3226", "071 3344 2002", "sam.wind@slb.example", null],
+      ["NABORS", "Mehdi Sadeghi", "Rig Manager", "0912 100 6677", "071 3344 3003", null, null],
+      ["POGC", "Reza Ahmadi", "Drilling Foreman", "0912 300 1188", "071 3344 4004", "r.ahmadi@pogc.example", null],
+      ["Corelab", "Ali Tabatabai", "Sr Geologist", "0912 445 7712", null, null, "Coring programme"],
+      ["Halliburton", "Nima Rostami", "Cementing Supervisor", "0912 329 2442", "071 3344 5005", null, null],
+    ].map(([company, contactName, title, mobile, office, email, note], i) => ({
       jobId: job.id, order: i,
       company: company as string, contactName: contactName as string, title: title as string,
-      mobile: mobile as string | null, email: email as string | null, note: note as string | null,
+      mobile: mobile as string | null, office: office as string | null,
+      email: email as string | null, note: note as string | null,
     })),
   });
 
@@ -303,7 +304,8 @@ async function main() {
   // ── the well's holes and the rig's pumps (reports 06 / 07) ──────────────
   // The VS azimuth is the direction the vertical section is projected onto —
   // report 04 prints it, and it matches the directional plan's own 118°.
-  const holes = [{ name: "Original Hole", kind: "Original Hole", koMdMkb: 421.0, vsAzimuthDeg: 118.0 }];
+  const holes = [{ name: "Original Hole", kind: "Original Hole", koMdMkb: 421.0, vsAzimuthDeg: 118.0,
+    apiUwi: "0987656789W0", btmLocation: "Block 6, Pad 2 — 1,240 m @ 118°" }];
   await prisma.entryWellbore.deleteMany({ where: { wellId: well.id } });
   const wellbores = [];
   for (const [i, h] of holes.entries()) {
@@ -347,19 +349,19 @@ async function main() {
   // other, so a formation whose predicted top is overwritten when it is drilled
   // would have nothing to compare.
   await prisma.wellFormation.deleteMany({ where: { wellId: well.id } });
-  const formations: [string, string, string, number, number, number, number, number, number, number, number, number, number, number][] = [
-    // name          lith         element    pTopSs  pTopTvd pBtmSs  pBtmTvd dTopMd  dTopTvd dBtmMd  dBtmTvd rop   pPore pFrac
-    ["Aghajari",     "Marl",      "Seal",      100,    118,    230,    248,    118.4,  118.3,  248.2,  248.0,  42.5,  8.9, 14.2],
-    ["Mishan",       "Limestone", "Marker",    230,    248,    900,    918,    248.2,  248.0,  902.0,  898.5,  28.1,  9.1, 14.8],
-    ["Gachsaran",    "Anhydrite", "Seal",      900,    918,   1600,   1618,    902.0,  898.5, 1598.0, 1571.2,  19.4,  9.6, 15.4],
-    ["Asmari",       "Limestone", "Reservoir",1600,   1618,   2350,   2368,   1598.0, 1571.2, 2344.0, 2231.8,  11.8, 10.2, 15.9],
-    ["Pabdeh",       "Shale",     "Source",   2350,   2368,   2620,   2638,   2344.0, 2231.8, 2612.0, 2438.4,   9.6, 10.6, 16.2],
-    ["Blue Heron Shale", "Shale", "Reservoir",2620,   2638,   2760,   2778,   2612.0, 2438.4, 2752.0, 2544.9,   8.2, 10.9, 16.5],
+  const formations: [string, string, string, string, number, number, number, number, number, number, number, number, number, number, number][] = [
+    // name          lith         element     age            pTopSs  pTopTvd pBtmSs  pBtmTvd dTopMd  dTopTvd dBtmMd  dBtmTvd rop   pPore pFrac
+    ["Aghajari",     "Marl",      "Seal",     "Miocene",       100,    118,    230,    248,    118.4,  118.3,  248.2,  248.0,  42.5,  8.9, 14.2],
+    ["Mishan",       "Limestone", "Marker",   "Miocene",       230,    248,    900,    918,    248.2,  248.0,  902.0,  898.5,  28.1,  9.1, 14.8],
+    ["Gachsaran",    "Anhydrite", "Seal",     "Miocene",       900,    918,   1600,   1618,    902.0,  898.5, 1598.0, 1571.2,  19.4,  9.6, 15.4],
+    ["Asmari",       "Limestone", "Reservoir","Oligocene",    1600,   1618,   2350,   2368,   1598.0, 1571.2, 2344.0, 2231.8,  11.8, 10.2, 15.9],
+    ["Pabdeh",       "Shale",     "Source",   "Paleocene",    2350,   2368,   2620,   2638,   2344.0, 2231.8, 2612.0, 2438.4,   9.6, 10.6, 16.2],
+    ["Blue Heron Shale", "Shale", "Reservoir","Cretaceous",   2620,   2638,   2760,   2778,   2612.0, 2438.4, 2752.0, 2544.9,   8.2, 10.9, 16.5],
   ];
   await prisma.wellFormation.createMany({
-    data: formations.map(([name, lithDes, elementType, progDepthTopSs, progTopTvd, progDepthBtmSs,
+    data: formations.map(([name, lithDes, elementType, geologicAge, progDepthTopSs, progTopTvd, progDepthBtmSs,
       progBtmTvd, drillTopMd, drillTopTvd, drillBtmMd, drillBtmTvd, ropMHr, pPorePpg, pFracPpg], i) => ({
-      wellId: well.id, order: i, name, lithDes, elementType,
+      wellId: well.id, order: i, name, lithDes, elementType, geologicAge,
       progDepthTopSs, progTopTvd, progDepthBtmSs, progBtmTvd,
       drillTopMd, drillTopTvd, drillBtmMd, drillBtmTvd,
       // The log-tied tops, which are not where the driller called them.
@@ -391,11 +393,11 @@ async function main() {
   await prisma.wellZone.deleteMany({ where: { wellId: well.id } });
   const upper = await prisma.wellZone.create({
     data: { wellId: well.id, order: 0, wellboreId: wellbores[0]?.id ?? null,
-      name: "Upper Asmari", topMkb: 2_380, btmMkb: 2_440, status: "Open" },
+      name: "Upper Asmari", topMkb: 2_380, btmMkb: 2_440, status: "Open", statusDate: day(21) },
   });
   const lower = await prisma.wellZone.create({
     data: { wellId: well.id, order: 1, wellboreId: wellbores[0]?.id ?? null,
-      name: "Lower Asmari", topMkb: 2_460, btmMkb: 2_520, status: "Squeezed" },
+      name: "Lower Asmari", topMkb: 2_460, btmMkb: 2_520, status: "Squeezed", statusDate: day(24) },
   });
 
   await prisma.reservoir.deleteMany({ where: { wellId: well.id } });
@@ -496,9 +498,9 @@ async function main() {
   await prisma.equipmentFailure.deleteMany({ where: { wellId: well.id } });
   await prisma.equipmentFailure.createMany({
     data: [
-      { wellId: well.id, order: 0, date: day(150), failureType: "Wear", componentDes: "ESP pump stage", cost: 186_000, accountableParty: "Contractor" },
-      { wellId: well.id, order: 1, date: day(158), failureType: "Parted", componentDes: "Sucker rod", cost: 94_500, accountableParty: "Operator" },
-      { wellId: well.id, order: 2, date: day(206), failureType: "Collapse", componentDes: "Production casing at 2,180 m", cost: 240_000, accountableParty: "Operator" },
+      { wellId: well.id, order: 0, date: day(150), failureType: "Wear", componentDes: "ESP pump stage worn through", failedItem: "ESP pump", cause: "Abrasive sand production", resolvedDate: day(163), cost: 186_000, accountableParty: "Contractor" },
+      { wellId: well.id, order: 1, date: day(158), failureType: "Parted", componentDes: "Sucker rod parted at 1,180 m", failedItem: "Sucker rod", cause: "Fatigue at a corrosion pit", resolvedDate: day(166), cost: 94_500, accountableParty: "Operator" },
+      { wellId: well.id, order: 2, date: day(206), failureType: "Collapse", componentDes: "Production casing at 2,180 m", failedItem: "9 5/8\" casing", cause: "Salt creep", resolvedDate: day(228), cost: 240_000, accountableParty: "Operator" },
       { wellId: well.id, order: 3, date: day(240), failureType: "Wear", componentDes: "TRSSV seal", cost: 38_000, accountableParty: "Contractor" },
       // Deliberately unclassified: report 25 stacks it as "(blank)".
       { wellId: well.id, order: 4, date: day(268), failureType: null, componentDes: "Downhole gauge cable", cost: 42_000, accountableParty: "Operator", com: "Unclassified pending teardown." },
@@ -506,10 +508,127 @@ async function main() {
   });
 
   await prisma.stimulation.deleteMany({ where: { wellId: well.id } });
-  await prisma.stimulation.createMany({
+  // Created one at a time rather than createMany: report 30 prints the STAGES
+  // under each treatment, and createMany cannot write nested children.
+  const stims: [number, string, string, string, string, string, number, string | null,
+                [number, string, number, number, number][]][] = [
+    [0, upper.id, day(22), "11:00", "Acid", "Coiled Tubing", 48, "15% HCl over the upper perfs.",
+      [[1, "Pre-Wash", 2_390, 2_426, 8], [2, "Main Acid", 2_390, 2_426, 30], [3, "Flush", 2_390, 2_426, 10]]],
+    [1, lower.id, day(26), "07:30", "Scale Squeeze", "Bullhead", 22, null,
+      [[1, "Pre-Flush", 2_470, 2_486, 6], [2, "Squeeze", 2_470, 2_486, 16]]],
+  ];
+  for (const [order, zoneId, date, time, type, deliveryMode, volumeM3, com, stages] of stims) {
+    await prisma.stimulation.create({
+      data: {
+        wellId: well.id, order, zoneId, date, time, type, deliveryMode,
+        company: "Halliburton", volumeM3, com,
+        stages: {
+          create: stages.map(([stageNo, stageType, topDepthMkb, bottomDepthMkb, cleanVolPumpedM3], i) => ({
+            order: i, stageNo, stageType, topDepthMkb, bottomDepthMkb, cleanVolPumpedM3,
+            avgRateM3Min: 1.2 + i * 0.3, avgPressurePsi: 2_400 + i * 350,
+          })),
+        },
+      },
+    });
+  }
+
+  // ── what reports 22 and 30 print and nothing else does ──────────────────
+  // These are facts about the WELL rather than about a day: what is still down
+  // the hole, what was cored, the rod lift that replaced the flowing completion,
+  // and the notes and annotations that hang off the schematic.
+  await prisma.otherInHole.deleteMany({ where: { wellId: well.id } });
+  await prisma.otherInHole.createMany({
     data: [
-      { wellId: well.id, order: 0, zoneId: upper.id, date: day(22), time: "11:00", type: "Acid", deliveryMode: "Coiled Tubing", company: "Halliburton", volumeM3: 48, com: "15% HCl over the upper perfs." },
-      { wellId: well.id, order: 1, zoneId: lower.id, date: day(26), time: "07:30", type: "Scale Squeeze", deliveryMode: "Bullhead", company: "Halliburton", volumeM3: 22 },
+      { wellId: well.id, wellboreId: wellbores[0]?.id ?? null, order: 0,
+        des: "Bridge Plug - Permanent", odIn: "7", idIn: null, topMkb: 2_700, btmMkb: 2_701.4,
+        make: "Halliburton", model: "EZ Drill", runDate: day(24), pullDate: null,
+        com: "Set to isolate the Blue Heron below the Asmari completion." },
+      // A fish that WAS recovered, so the pull date is the interesting column:
+      // "still down there" is the question this table exists to answer.
+      { wellId: well.id, wellboreId: wellbores[0]?.id ?? null, order: 1,
+        des: "Retrievable Packer", odIn: "5 1/2", idIn: 2.875, topMkb: 2_340, btmMkb: 2_342.1,
+        make: "Baker", model: "SAB-3", runDate: day(24), pullDate: day(120) },
+    ],
+  });
+
+  await prisma.bottomHoleCore.deleteMany({ where: { wellId: well.id } });
+  await prisma.bottomHoleCore.createMany({
+    data: [
+      { wellId: well.id, wellboreId: wellbores[0]?.id ?? null, order: 0, coreNo: "1",
+        type: "Conventional", topMkb: 2_612, btmMkb: 2_630, recoveredM: 16.4, date: day(11),
+        com: "Blue Heron Shale, 91% recovery." },
+      { wellId: well.id, wellboreId: wellbores[0]?.id ?? null, order: 1, coreNo: "2",
+        type: "Oriented", topMkb: 2_690, btmMkb: 2_708, recoveredM: 18.0, date: day(12) },
+    ],
+  });
+
+  // The well was put on rod lift after the ESP failed — which is what makes
+  // report 30's rod sections non-empty, and it is the same well the production
+  // periods and the equipment failures already describe.
+  await prisma.rodString.deleteMany({ where: { wellId: well.id } });
+  await prisma.rodString.create({
+    data: {
+      wellId: well.id, wellboreId: wellbores[0]?.id ?? null, order: 0,
+      description: "Rod String - 3/4\" x 7/8\" taper", runDate: day(170), setDepthMkb: 2_320,
+      components: {
+        create: [
+          { order: 0, itemDes: "Polished Rod", odNominalIn: "1 1/4", massPerLenKgM: 4.5, grade: "D", joints: 1, lenM: 7.6, topMkb: 0, btmMkb: 7.6 },
+          { order: 1, itemDes: "Sucker Rod", odNominalIn: "7/8", massPerLenKgM: 3.2, grade: "D", joints: 120, lenM: 914.4, topMkb: 7.6, btmMkb: 922.0 },
+          { order: 2, itemDes: "Sucker Rod", odNominalIn: "3/4", massPerLenKgM: 2.4, grade: "D", joints: 180, lenM: 1_371.6, topMkb: 922.0, btmMkb: 2_293.6 },
+          { order: 3, itemDes: "Pony Rod", odNominalIn: "3/4", massPerLenKgM: 2.4, grade: "D", joints: 2, lenM: 3.6, topMkb: 2_293.6, btmMkb: 2_297.2 },
+          { order: 4, itemDes: "Rod Pump Plunger", odNominalIn: "1 1/2", grade: "Spray Metal", joints: 1, lenM: 1.8, topMkb: 2_297.2, btmMkb: 2_299.0 },
+        ],
+      },
+    },
+  });
+
+  await prisma.rodPump.deleteMany({ where: { wellId: well.id } });
+  await prisma.rodPump.create({
+    data: {
+      wellId: well.id, order: 0, make: "Harbison-Fischer", model: "RHAC", serialNo: "HF-772104",
+      pumpBoreIn: 1.5, apiPumpType: "RHAC", apiBarrelType: "Heavy Wall", apiAnchorType: "Cup",
+      seatAssyType: "Cup", barrelLenM: 7.3, nomPlungerLenM: 1.8, upperExtLenM: 0.6, lowerExtLenM: 0.6,
+      plungerOdClearanceIn: 0.005, seatingAssemblyDes: "Mechanical cup, 2 3/8 tubing",
+      seatAssySizeIn: 2.375, apiBarrelMaterial: "Chrome-plated steel", apiPlungerMaterial: "Spray metal",
+      gasAnchorOdIn: 1.9, gasAnchorLenM: 6.1,
+      travelingValveBallMaterial: "Tungsten carbide", travelingValveSeatMaterial: "Tungsten carbide",
+      standingValveBallMaterial: "Tungsten carbide", standingValveSeatMaterial: "Tungsten carbide",
+    },
+  });
+
+  await prisma.swab.deleteMany({ where: { wellId: well.id } });
+  await prisma.swab.createMany({
+    data: [
+      { wellId: well.id, zoneId: upper.id, order: 0, date: day(27), swabCompany: "Swab Services",
+        totalVolBbl: 95.0, totalOilBbl: 87.8, totalBswBbl: 7.2 },
+      { wellId: well.id, zoneId: lower.id, order: 1, date: day(29), swabCompany: "Swab Services",
+        totalVolBbl: 62.0, totalOilBbl: 51.4, totalBswBbl: 10.6, com: "Cut dropped through the run." },
+    ],
+  });
+
+  await prisma.wellAttachment.deleteMany({ where: { wellId: well.id } });
+  await prisma.wellAttachment.createMany({
+    data: [
+      { wellId: well.id, order: 0, des: "Cameron S Wellhead general arrangement", kind: "Drawing", reference: "DWG-4471-B", date: day(0) },
+      { wellId: well.id, order: 1, des: "Final well report", kind: "Report", reference: "WR-SAMPLE11", date: day(30) },
+      { wellId: well.id, order: 2, des: "Cement bond log, production casing", kind: "Report", reference: "CBL-2026-114", date: day(24) },
+    ],
+  });
+
+  await prisma.schematicAnnotation.deleteMany({ where: { wellId: well.id } });
+  await prisma.schematicAnnotation.createMany({
+    data: [
+      { wellId: well.id, wellboreId: wellbores[0]?.id ?? null, order: 0, depthMkb: 298.5, annotation: "Surface casing set 3.7 m off bottom" },
+      { wellId: well.id, wellboreId: wellbores[0]?.id ?? null, order: 1, depthMkb: 2_340, annotation: "Production packer" },
+      { wellId: well.id, wellboreId: wellbores[0]?.id ?? null, order: 2, depthMkb: 2_700, annotation: "Bridge plug — Blue Heron isolated" },
+    ],
+  });
+
+  await prisma.wellNote.deleteMany({ where: { wellId: well.id } });
+  await prisma.wellNote.createMany({
+    data: [
+      { wellId: well.id, order: 0, date: day(7), com: "Tight hole through the Aghar anhydrite; reamed on every connection." },
+      { wellId: well.id, order: 1, date: day(24), com: "Completion run without incident. Packer set and tested to 3,000 psi." },
     ],
   });
 
@@ -575,6 +694,7 @@ async function main() {
       ],
       cement: {
         description: "Surface Casing Cement", startDate: day(1), endDate: day(1),
+        company: "Halliburton",
         evaluationMethod: "Temperature Log", evaluationResults: "Ran temp log to confirm TOC",
         comment: "Job was successful; full returns throughout.",
         stage: {
@@ -758,6 +878,18 @@ async function seedDay(
       remarks: "ROV control signal lost for 30 minutes; switched to the backup system.",
       wellSiteSupt: "Sam White",
       solidControl: { create: ["Clay Jactor", "Mud Cleaner", "Shaker"].map((unit) => ({ unit })) },
+      // The shoe test after the 20" casing. Report 22 prints it under "Leak Off
+      // and Formation Integrity Tests", and whether it LEAKED OFF is derived
+      // from whether a leak-off pressure was reached — a FIT that holds has
+      // none, a LOT that breaks down does.
+      fit: {
+        create: {
+          testType: "FIT", testDate: day(2), lastCasingStringRun: "Conductor Pipe, 98.0 mKB",
+          depthMkb: 100.5, tvdMkb: 100.4, appliedSurfacePressurePsi: 620,
+          fluidDensityPpg: 9.2, volumePumpedBbl: 4.5, leakOffPressurePsi: null,
+          leakOffEqDensityPpg: null,
+        },
+      },
       hseDrills: {
         create: [
           { type: "BOP Test", date: day(0), daysToNextCheck: 14 },
@@ -850,8 +982,12 @@ async function seedDay(
       // to the newest record of each.
       wellheads: {
         create: [
-          { order: 0, installDate: day(0), sizeIn: 20.75, type: "Casing Head", make: "Cameron", model: "SSMC", sn: "92355-233", wpPsi: 10_000 },
-          { order: 1, installDate: day(1), sizeIn: 13.625, type: "Casing Spool", make: "Cameron", model: "SSMC", sn: "33455-352", wpPsi: 10_000 },
+          { order: 0, installDate: day(0), sizeIn: 20.75, type: "Casing Head", make: "Cameron", model: "SSMC", sn: "92355-233", wpPsi: 10_000,
+            section: "A", des: "20-3/4\" Casing Head", topConnectionType: "Snapring Lockdown", topSizeIn: 20.75, btmConnectionType: "Welded", btmSizeIn: 30 },
+          { order: 1, installDate: day(1), sizeIn: 13.625, type: "Casing Spool", make: "Cameron", model: "SSMC", sn: "33455-352", wpPsi: 10_000,
+            section: "B", des: "13-5/8\" Casing Spool", topConnectionType: "Snapring Lockdown", topSizeIn: 13.625, btmConnectionType: "Snapring Lockdown", btmSizeIn: 20.75 },
+          { order: 2, installDate: day(24), sizeIn: 11.0, type: "Tubing Head", make: "Cameron", model: "SSMC", sn: "44821-118", wpPsi: 10_000,
+            section: "C", des: "11\" Tubing Head", topConnectionType: "Flange", topSizeIn: 11.0, btmConnectionType: "Snapring Lockdown", btmSizeIn: 13.625 },
         ],
       },
       formationTops: {
@@ -1276,8 +1412,8 @@ async function seedCompletionDays(
         },
         logRuns: {
           create: offset === 22
-            ? [{ order: 0, time: "09:10", runNo: "3", type: "GR-CCL", topMkb: 2_300, btmMkb: 2_440, loggingCompany: "Schlumberger" }]
-            : [{ order: 0, time: "10:15", runNo: "4", type: "CBL", topMkb: 2_440, btmMkb: 2_530, loggingCompany: "Schlumberger" }],
+            ? [{ order: 0, time: "09:10", runNo: "3", type: "GR-CCL", topMkb: 2_300, btmMkb: 2_440, loggingCompany: "Schlumberger", cased: true }]
+            : [{ order: 0, time: "10:15", runNo: "4", type: "CBL", topMkb: 2_440, btmMkb: 2_530, loggingCompany: "Schlumberger", cased: true }],
         },
         companies: {
           create: [

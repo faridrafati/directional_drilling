@@ -24,10 +24,10 @@ import { captureChart, legendRow } from "./chartCapture.js";
 import { schematicId } from "../../components/wellview/WellboreSchematic.js";
 import { FAILURE_CHART_ID, PRODUCTION_CHART_ID } from "../../components/wellview/ProductionPreview.js";
 import type {
-  FailureCostCell, PerforationBlock, ProductionRow,
+  CasingBlock, CementBlock, FailureCostCell, JobBlock, PerforationBlock, ProductionRow,
   Report22Payload, Report23Payload, Report24Payload, Report25Payload, Report26Payload,
   Report27Payload, Report28Payload, Report29Payload, Report30Payload,
-  SchematicPayload, TubingBlock,
+  RodBlock, SchematicPayload, StimulationBlock, TubingBlock,
 } from "../../entry/wellview.js";
 
 const LETTER: [number, number] = [612, 792];
@@ -68,6 +68,91 @@ const TUBING_COLUMNS: ReportColumn<TubingBlock["components"][number]>[] = [
   { header: "Btm (mKB)", width: 50, align: "right", cell: (c) => headerValue(c.btmMkb) },
   { header: "SN", width: "*", cell: (c) => c.serialNo ?? "" },
 ];
+
+/**
+ * The block helpers below each mirror one preview component exactly, because the
+ * doctrine is that the printed page and the screen are built from the SAME
+ * payload. Where the preview grew a section, the PDF grows the same one here —
+ * that is what stops the two drifting.
+ */
+function casingContent(blocks: CasingBlock[]): Content[] {
+  if (blocks.length === 0) {
+    return [{ text: "No casing string recorded.", style: "cellLabel", italics: true, margin: [0, 2, 0, 3] }];
+  }
+  return blocks.flatMap((c) => [
+    sectionBar(c.caption),
+    labelValueGrid([c.header]),
+    reportTable([
+      { header: "OD (in)", width: 50, cell: (k: CasingBlock["components"][number]) => k.odIn ?? "" },
+      { header: "Item Des", width: "*", cell: (k: CasingBlock["components"][number]) => k.itemDes ?? "" },
+      { header: "Btm (mKB)", width: 66, align: "right", cell: (k: CasingBlock["components"][number]) => headerValue(k.btmMkb) },
+      { header: "Jts", width: 36, align: "right", cell: (k: CasingBlock["components"][number]) => headerValue(k.jts, "int") },
+      { header: "ID (in)", width: 50, align: "right", cell: (k: CasingBlock["components"][number]) => headerValue(k.idIn, "in3") },
+      { header: "Wt (kg/m)", width: 58, align: "right", cell: (k: CasingBlock["components"][number]) => headerValue(k.massPerLenKgM) },
+      { header: "Grade", width: 46, cell: (k: CasingBlock["components"][number]) => k.grade ?? "" },
+      { header: "Top Thread", width: 66, cell: (k: CasingBlock["components"][number]) => k.topThread ?? "" },
+    ], c.components),
+  ]);
+}
+
+function cementContent(blocks: CementBlock[]): Content[] {
+  if (blocks.length === 0) {
+    return [{ text: "No cement job recorded.", style: "cellLabel", italics: true, margin: [0, 2, 0, 3] }];
+  }
+  return blocks.flatMap((c) => [
+    sectionBar(c.caption),
+    labelValueGrid([c.header]),
+    ...c.stages.flatMap((st) => [
+      labelValueGrid([st.stage]),
+      reportTable([
+        { header: "Fluid", width: 50, cell: (f: CementBlock["stages"][number]["fluids"][number]) => f.fluidType ?? "" },
+        { header: "Class", width: 42, cell: (f: CementBlock["stages"][number]["fluids"][number]) => f.cementClass ?? "" },
+        { header: "Amount (sacks)", width: 76, align: "right", cell: (f: CementBlock["stages"][number]["fluids"][number]) => headerValue(f.amountSacks) },
+        { header: "Yield (L/sack)", width: 76, align: "right", cell: (f: CementBlock["stages"][number]["fluids"][number]) => headerValue(f.yieldLPerSack) },
+        { header: "Mix H2O (L/sack)", width: 84, align: "right", cell: (f: CementBlock["stages"][number]["fluids"][number]) => headerValue(f.mixWaterLPerSack) },
+        { header: "Vol Pumped (m³)", width: 80, align: "right", cell: (f: CementBlock["stages"][number]["fluids"][number]) => headerValue(f.volumePumpedM3) },
+        { header: "Fluid Des", width: "*", cell: (f: CementBlock["stages"][number]["fluids"][number]) => f.fluidDescription ?? "" },
+      ], st.fluids),
+    ]),
+  ]);
+}
+
+function rodContent(blocks: RodBlock[]): Content[] {
+  if (blocks.length === 0) {
+    return [{ text: "No rod string recorded — a flowing well has none.", style: "cellLabel", italics: true, margin: [0, 2, 0, 3] }];
+  }
+  return blocks.flatMap((r) => [
+    sectionBar(r.caption),
+    labelValueGrid([r.header]),
+    reportTable([
+      { header: "Item Description", width: "*", cell: (c: RodBlock["components"][number]) => c.itemDes ?? "" },
+      { header: "OD Nominal (in)", width: 76, cell: (c: RodBlock["components"][number]) => c.odNominalIn ?? "" },
+      { header: "Weight/Length (kg/m)", width: 96, align: "right", cell: (c: RodBlock["components"][number]) => headerValue(c.massPerLenKgM) },
+      { header: "Grade", width: 62, cell: (c: RodBlock["components"][number]) => c.grade ?? "" },
+      { header: "Joints", width: 46, align: "right", cell: (c: RodBlock["components"][number]) => headerValue(c.joints, "int") },
+      { header: "Length (m)", width: 66, align: "right", cell: (c: RodBlock["components"][number]) => headerValue(c.lenM) },
+      { header: "Top Depth (mKB)", width: 82, align: "right", cell: (c: RodBlock["components"][number]) => headerValue(c.topMkb) },
+      { header: "Bottom Depth (mKB)", width: 90, align: "right", cell: (c: RodBlock["components"][number]) => headerValue(c.btmMkb) },
+    ], r.components),
+  ]);
+}
+
+function stimulationContent(blocks: StimulationBlock[]): Content[] {
+  if (blocks.length === 0) {
+    return [{ text: "No stimulation recorded.", style: "cellLabel", italics: true, margin: [0, 2, 0, 3] }];
+  }
+  return blocks.flatMap((st) => [
+    sectionBar(st.caption),
+    labelValueGrid([st.header]),
+    reportTable([
+      { header: "Stg #", width: 40, align: "right", cell: (g: StimulationBlock["stages"][number]) => headerValue(g.stageNo, "int") },
+      { header: "Stage Type", width: "*", cell: (g: StimulationBlock["stages"][number]) => g.stageType ?? "" },
+      { header: "Top Depth (mKB)", width: 88, align: "right", cell: (g: StimulationBlock["stages"][number]) => headerValue(g.topDepthMkb) },
+      { header: "Bottom Depth (mKB)", width: 96, align: "right", cell: (g: StimulationBlock["stages"][number]) => headerValue(g.bottomDepthMkb) },
+      { header: "Clean Volume Pumped (m³)", width: 116, align: "right", cell: (g: StimulationBlock["stages"][number]) => headerValue(g.cleanVolPumpedM3) },
+    ], st.stages),
+  ]);
+}
 
 function tubingContent(blocks: TubingBlock[]): Content[] {
   if (blocks.length === 0) {
@@ -143,6 +228,7 @@ export async function buildReport22Doc(p: Report22Payload): Promise<TDocumentDef
     sectionBar("Formations"),
     reportTable([
       { header: "Formation Name", width: "*", cell: (f: Report22Payload["formations"][number]) => f.name ?? "" },
+      { header: "Geologic Age", width: 68, cell: (f: Report22Payload["formations"][number]) => f.geologicAge ?? "" },
       { header: "Element Type", width: 76, cell: (f: Report22Payload["formations"][number]) => f.elementType ?? "" },
       { header: "H2S Conc (%)", width: 62, align: "right", cell: (f: Report22Payload["formations"][number]) => headerValue(f.h2sConcPct) },
       { header: "Final Top MD (mKB)", width: 80, align: "right", cell: (f: Report22Payload["formations"][number]) => headerValue(f.finalTopMd) },
@@ -163,13 +249,105 @@ export async function buildReport22Doc(p: Report22Payload): Promise<TDocumentDef
       { header: "Res Datum Depth (m)", width: 88, align: "right", cell: (r: Report22Payload["reservoirs"][number]) => headerValue(r.datumDepthM) },
     ], p.reservoirs),
     sectionBar("Casing Strings"),
+    ...casingContent(p.casingStrings),
+    sectionBar("Cement"),
+    ...cementContent(p.cementJobs),
+    sectionBar("Other In Hole"),
     reportTable([
-      { header: "String", width: "*", cell: (c: Report22Payload["casingStrings"][number]) => c.caption },
-      { header: "Run Date", width: 66, cell: (c: Report22Payload["casingStrings"][number]) => c.runDate ?? "" },
-      { header: "Centralizers", width: 120, cell: (c: Report22Payload["casingStrings"][number]) => c.centralizers ?? "" },
-      { header: "Scratchers", width: 70, cell: (c: Report22Payload["casingStrings"][number]) => c.scratchers ?? "" },
-      { header: "Drift Min (in)", width: 62, align: "right", cell: (c: Report22Payload["casingStrings"][number]) => headerValue(c.minDriftIn, "in3") },
-    ], p.casingStrings),
+      { header: "OD (in)", width: 50, cell: (o: Report22Payload["otherInHole"][number]) => o.odIn ?? "" },
+      { header: "Des", width: "*", cell: (o: Report22Payload["otherInHole"][number]) => o.des ?? "" },
+      { header: "Top (mKB)", width: 66, align: "right", cell: (o: Report22Payload["otherInHole"][number]) => headerValue(o.topMkb) },
+      { header: "Btm (mKB)", width: 66, align: "right", cell: (o: Report22Payload["otherInHole"][number]) => headerValue(o.btmMkb) },
+      { header: "ID (in)", width: 50, align: "right", cell: (o: Report22Payload["otherInHole"][number]) => headerValue(o.idIn, "in3") },
+      { header: "Make", width: 76, cell: (o: Report22Payload["otherInHole"][number]) => o.make ?? "" },
+      { header: "Model", width: 76, cell: (o: Report22Payload["otherInHole"][number]) => o.model ?? "" },
+    ], p.otherInHole),
+    sectionBar("Wellhead"),
+    ...(p.wellheadMaster ? [labelValueGrid([p.wellheadMaster])] : []),
+    reportTable([
+      { header: "Make", width: 62, cell: (w: Report22Payload["wellheadComponents"][number]) => w.make ?? "" },
+      { header: "Model", width: 54, cell: (w: Report22Payload["wellheadComponents"][number]) => w.model ?? "" },
+      { header: "Section", width: 44, cell: (w: Report22Payload["wellheadComponents"][number]) => w.section ?? "" },
+      { header: "Top Conn Typ", width: 92, cell: (w: Report22Payload["wellheadComponents"][number]) => w.topConnType ?? "" },
+      { header: "Top Sz (in)", width: 54, align: "right", cell: (w: Report22Payload["wellheadComponents"][number]) => headerValue(w.topSizeIn, "in3") },
+      { header: "Btm Conn Typ", width: 92, cell: (w: Report22Payload["wellheadComponents"][number]) => w.btmConnType ?? "" },
+      { header: "Btm Sz (in)", width: 54, align: "right", cell: (w: Report22Payload["wellheadComponents"][number]) => headerValue(w.btmSizeIn, "in3") },
+      { header: "Des", width: "*", cell: (w: Report22Payload["wellheadComponents"][number]) => w.des ?? "" },
+      { header: "WP (psi)", width: 58, align: "right", cell: (w: Report22Payload["wellheadComponents"][number]) => headerValue(w.wpPsi) },
+    ], p.wellheadComponents),
+    sectionBar("General Notes"),
+    reportTable([
+      { header: "Date", width: 66, cell: (n: Report22Payload["generalNotes"][number]) => n.date ?? "" },
+      { header: "Com", width: "*", cell: (n: Report22Payload["generalNotes"][number]) => n.com ?? "" },
+    ], p.generalNotes),
+    ...p.jobs.flatMap((j) => [
+      sectionBar(j.caption),
+      labelValueGrid([j.header, j.money]),
+      ...(j.summary ? [{ text: `Summary: ${j.summary}`, style: "cellValue", margin: [2, 2, 2, 2] } as Content] : []),
+      labelValueGrid([j.savings]),
+      reportTable([
+        { header: "Phase Type 1", width: "*", cell: (ph: JobBlock["phases"][number]) => ph.phaseType ?? "" },
+        { header: "Planned Likely Phase Cost", width: 110, align: "right", cell: (ph: JobBlock["phases"][number]) => money(ph.plannedCost) },
+        { header: "Pl Cum Days ML", width: 76, align: "right", cell: (ph: JobBlock["phases"][number]) => headerValue(ph.plCumDaysMl) },
+        { header: "Planned End Depth (mKB)", width: 100, align: "right", cell: (ph: JobBlock["phases"][number]) => headerValue(ph.plannedEndDepthMkb) },
+      ], j.phases),
+      reportTable([
+        { header: "Contact Name", width: 100, cell: (c: JobBlock["contacts"][number]) => c.contactName ?? "" },
+        { header: "Company", width: 100, cell: (c: JobBlock["contacts"][number]) => c.company ?? "" },
+        { header: "Title", width: "*", cell: (c: JobBlock["contacts"][number]) => c.title ?? "" },
+        { header: "Office", width: 82, cell: (c: JobBlock["contacts"][number]) => c.office ?? "" },
+        { header: "Mobile", width: 82, cell: (c: JobBlock["contacts"][number]) => c.mobile ?? "" },
+      ], j.contacts),
+    ]),
+    ...p.bhas.flatMap((b) => [
+      sectionBar(b.caption),
+      labelValueGrid([b.header, b.figures]),
+      {
+        text: `String Components: ${b.stringComponents || "none recorded"}`,
+        style: "cellValue", margin: [2, 2, 2, 2],
+      } as Content,
+    ]),
+    sectionBar("Logs"),
+    reportTable([
+      { header: "Date", width: 66, cell: (l: Report22Payload["logs"][number]) => l.date ?? "" },
+      { header: "Type", width: 130, cell: (l: Report22Payload["logs"][number]) => l.type ?? "" },
+      { header: "Top (mKB)", width: 66, align: "right", cell: (l: Report22Payload["logs"][number]) => headerValue(l.topMkb) },
+      { header: "Btm (mKB)", width: 66, align: "right", cell: (l: Report22Payload["logs"][number]) => headerValue(l.btmMkb) },
+      { header: "Logging Company", width: "*", cell: (l: Report22Payload["logs"][number]) => l.company ?? "" },
+    ], p.logs),
+    sectionBar("Bottom Hole Cores"),
+    reportTable([
+      { header: "Core #", width: 44, cell: (c: Report22Payload["cores"][number]) => c.coreNo ?? "" },
+      { header: "Type", width: 86, cell: (c: Report22Payload["cores"][number]) => c.type ?? "" },
+      { header: "Top (mKB)", width: 66, align: "right", cell: (c: Report22Payload["cores"][number]) => headerValue(c.topMkb) },
+      { header: "Btm (mKB)", width: 66, align: "right", cell: (c: Report22Payload["cores"][number]) => headerValue(c.btmMkb) },
+      { header: "Recov (m)", width: 66, align: "right", cell: (c: Report22Payload["cores"][number]) => headerValue(c.recoveredM) },
+      { header: "Wellbore", width: "*", cell: (c: Report22Payload["cores"][number]) => c.wellbore ?? "" },
+    ], p.cores),
+    sectionBar("Leak Off and Formation Integrity Tests"),
+    reportTable([
+      { header: "Test Date", width: 66, cell: (t: Report22Payload["leakOffTests"][number]) => t.testDate ?? "" },
+      { header: "Last Casing String Run", width: "*", cell: (t: Report22Payload["leakOffTests"][number]) => t.lastCasingStringRun ?? "" },
+      { header: "P Surf Applied (psi)", width: 92, align: "right", cell: (t: Report22Payload["leakOffTests"][number]) => headerValue(t.pSurfAppliedPsi) },
+      { header: "Depth (mKB)", width: 70, align: "right", cell: (t: Report22Payload["leakOffTests"][number]) => headerValue(t.depthMkb) },
+      { header: "Dens Fluid (lb/gal)", width: 86, align: "right", cell: (t: Report22Payload["leakOffTests"][number]) => headerValue(t.fluidDensityPpg) },
+      { header: "Leak off?", width: 52, cell: (t: Report22Payload["leakOffTests"][number]) => yesNo(t.leakedOff) },
+    ], p.leakOffTests),
+    sectionBar("Schematic Annotations"),
+    reportTable([
+      { header: "Depth (mKB)", width: 80, align: "right", cell: (a: Report22Payload["annotations"][number]) => headerValue(a.depthMkb) },
+      { header: "Annotation", width: "*", cell: (a: Report22Payload["annotations"][number]) => a.annotation ?? "" },
+    ], p.annotations),
+    sectionBar("Production Failures"),
+    reportTable([
+      { header: "Failure Date", width: 66, cell: (f: Report22Payload["productionFailures"][number]) => f.date ?? "" },
+      { header: "Failure Des", width: "*", cell: (f: Report22Payload["productionFailures"][number]) => f.failureDes ?? "" },
+      { header: "Fail Typ", width: 62, cell: (f: Report22Payload["productionFailures"][number]) => f.failureType ?? "" },
+      { header: "Cause", width: 120, cell: (f: Report22Payload["productionFailures"][number]) => f.cause ?? "" },
+      { header: "Failed Item", width: 88, cell: (f: Report22Payload["productionFailures"][number]) => f.failedItem ?? "" },
+      { header: "Resolved Date", width: 70, cell: (f: Report22Payload["productionFailures"][number]) => f.resolvedDate ?? "" },
+      { header: "Est Fail (Cost)", width: 78, align: "right", cell: (f: Report22Payload["productionFailures"][number]) => money(f.cost) },
+    ], p.productionFailures),
     sectionBar("Tubing Strings"),
     ...tubingContent(p.tubingStrings),
     sectionBar("Perforations"),
@@ -476,6 +654,7 @@ export function buildReport30Doc(p: Report30Payload): TDocumentDefinitions {
       ? [{ text: "No cement job recorded.", style: "cellLabel", italics: true, margin: [0, 2, 0, 3] } as Content]
       : p.cementJobs.flatMap((j) => [
         sectionBar(j.caption),
+        { text: `Cementing Company: ${j.company ?? "not recorded"}`, style: "cellValue", margin: [2, 2, 2, 2] } as Content,
         labelValueGrid([j.stage]),
         reportTable([
           { header: "Fluid Description", width: "*", cell: (f: Report30Payload["cementJobs"][number]["fluids"][number]) => f.description ?? "" },
@@ -484,6 +663,74 @@ export function buildReport30Doc(p: Report30Payload): TDocumentDefinitions {
           { header: "Class", width: 50, cell: (f: Report30Payload["cementJobs"][number]["fluids"][number]) => f.cementClass ?? "" },
         ], j.fluids),
       ])),
+    sectionBar("Other In Hole"),
+    reportTable([
+      { header: "Des", width: "*", cell: (o: Report30Payload["otherInHole"][number]) => o.des ?? "" },
+      { header: "Top (mKB)", width: 76, align: "right", cell: (o: Report30Payload["otherInHole"][number]) => headerValue(o.topMkb) },
+      { header: "Btm (mKB)", width: 76, align: "right", cell: (o: Report30Payload["otherInHole"][number]) => headerValue(o.btmMkb) },
+      { header: "Run Date", width: 76, cell: (o: Report30Payload["otherInHole"][number]) => o.runDate ?? "" },
+      { header: "Pull Date", width: 76, cell: (o: Report30Payload["otherInHole"][number]) => o.pullDate ?? "" },
+    ], p.otherInHole),
+    sectionBar("Zones"),
+    reportTable([
+      { header: "Zone Name", width: "*", cell: (z: Report30Payload["zones"][number]) => z.name ?? "" },
+      { header: "Top (mKB)", width: 76, align: "right", cell: (z: Report30Payload["zones"][number]) => headerValue(z.topMkb) },
+      { header: "Btm (mKB)", width: 76, align: "right", cell: (z: Report30Payload["zones"][number]) => headerValue(z.btmMkb) },
+      { header: "Current Status", width: 90, cell: (z: Report30Payload["zones"][number]) => z.status ?? "" },
+      { header: "Cur Stat Date", width: 76, cell: (z: Report30Payload["zones"][number]) => z.statusDate ?? "" },
+    ], p.zones),
+    sectionBar("Perforations"),
+    reportTable([
+      { header: "Date", width: 66, cell: (x: Report30Payload["perforations"][number]) => x.date ?? "" },
+      { header: "Type", width: 56, cell: (x: Report30Payload["perforations"][number]) => x.type ?? "" },
+      { header: "Top (mKB)", width: 66, align: "right", cell: (x: Report30Payload["perforations"][number]) => headerValue(x.topMkb) },
+      { header: "Btm (mKB)", width: 66, align: "right", cell: (x: Report30Payload["perforations"][number]) => headerValue(x.btmMkb) },
+      { header: "Zone", width: "*", cell: (x: Report30Payload["perforations"][number]) => x.zone ?? "" },
+      { header: "Shot Dens (shots/m)", width: 90, align: "right", cell: (x: Report30Payload["perforations"][number]) => headerValue(x.shotDensityPerM) },
+      { header: "Phasing (°)", width: 60, align: "right", cell: (x: Report30Payload["perforations"][number]) => headerValue(x.phasingDeg) },
+      { header: "Current Status", width: 78, cell: (x: Report30Payload["perforations"][number]) => x.status ?? "" },
+    ], p.perforations),
+    sectionBar("Stimulations & Treatments"),
+    ...stimulationContent(p.stimulations),
+    sectionBar("Logs"),
+    reportTable([
+      { header: "Date", width: 66, cell: (l: Report30Payload["logs"][number]) => l.date ?? "" },
+      { header: "Top (mKB)", width: 76, align: "right", cell: (l: Report30Payload["logs"][number]) => headerValue(l.topMkb) },
+      { header: "Btm (mKB)", width: 76, align: "right", cell: (l: Report30Payload["logs"][number]) => headerValue(l.btmMkb) },
+      { header: "Type", width: "*", cell: (l: Report30Payload["logs"][number]) => l.type ?? "" },
+      { header: "Cased?", width: 50, cell: (l: Report30Payload["logs"][number]) => yesNo(l.cased) },
+    ], p.logs),
+    sectionBar("Tubing Strings"),
+    ...tubingContent(p.tubingStrings),
+    sectionBar("Rod Strings"),
+    ...rodContent(p.rodStrings),
+    sectionBar("Rod Pumps"),
+    ...(p.rodPumps.length === 0
+      ? [{ text: "No rod pump recorded — a flowing well has none.", style: "cellLabel", italics: true, margin: [0, 2, 0, 3] } as Content]
+      : [labelValueGrid(p.rodPumps)]),
+    sectionBar("Swabs"),
+    reportTable([
+      { header: "Date", width: 66, cell: (w: Report30Payload["swabs"][number]) => w.date ?? "" },
+      { header: "Swab Comp", width: "*", cell: (w: Report30Payload["swabs"][number]) => w.swabCompany ?? "" },
+      { header: "Zone", width: 110, cell: (w: Report30Payload["swabs"][number]) => w.zone ?? "" },
+      { header: "Total Vol (bbl)", width: 76, align: "right", cell: (w: Report30Payload["swabs"][number]) => headerValue(w.totalVolBbl) },
+      { header: "Total Oil (bbl)", width: 76, align: "right", cell: (w: Report30Payload["swabs"][number]) => headerValue(w.totalOilBbl) },
+      { header: "Total BSW (bbl)", width: 78, align: "right", cell: (w: Report30Payload["swabs"][number]) => headerValue(w.totalBswBbl) },
+    ], p.swabs),
+    sectionBar("Jobs"),
+    reportTable([
+      { header: "Start Date", width: 66, cell: (j: Report30Payload["jobs"][number]) => j.startDate ?? "" },
+      { header: "End Date", width: 66, cell: (j: Report30Payload["jobs"][number]) => j.endDate ?? "" },
+      { header: "Job Typ", width: 110, cell: (j: Report30Payload["jobs"][number]) => j.jobType ?? "" },
+      { header: "Job SubTyp", width: 90, cell: (j: Report30Payload["jobs"][number]) => j.jobSubType ?? "" },
+      { header: "Summary", width: "*", cell: (j: Report30Payload["jobs"][number]) => j.summary ?? "" },
+    ], p.jobs),
+    sectionBar("Attachments"),
+    reportTable([
+      { header: "Des", width: "*", cell: (a: Report30Payload["attachments"][number]) => a.des ?? "" },
+      { header: "Kind", width: 76, cell: (a: Report30Payload["attachments"][number]) => a.kind ?? "" },
+      { header: "Date", width: 76, cell: (a: Report30Payload["attachments"][number]) => a.date ?? "" },
+    ], p.attachments),
     labelValueGrid([p.totals]),
   ]);
 }

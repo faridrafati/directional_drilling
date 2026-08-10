@@ -144,6 +144,10 @@ const casingSchema = z.object({
 const wellheadSchema = z.object({
   order: int0, installDate: str, sizeIn: num, type: str, make: str,
   model: str, sn: str, wpPsi: num, com: str,
+  // Report 22 prints the SPOOL: which section, and what connects above and
+  // below at what size. A wellhead is a stack, not a list of parts.
+  section: str, des: str,
+  topConnectionType: str, topSizeIn: num, btmConnectionType: str, btmSizeIn: num,
 });
 /** a.json `well_control_scr` — slow circulation rates, one row per pump / rate. */
 const scrRateSchema = z.object({
@@ -253,6 +257,9 @@ const showSchema = z.object({
 const logRunSchema = z.object({
   order: int0, time: str, runNo: str, type: str,
   topMkb: num, btmMkb: num, loggingCompany: str,
+  // Reports 23 and 30 print it: an open-hole GR and a cased-hole GR are not the
+  // same measurement.
+  cased: boolOrNull,
 });
 
 /** Report 07 page 2's "Interval Problems"; the time log references these by ordinal. */
