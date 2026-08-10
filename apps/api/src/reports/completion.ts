@@ -180,7 +180,7 @@ function perforationBlock(p: {
   };
 }
 
-function tubingBlocks(strings: {
+export function tubingBlocks(strings: {
   description: string | null; runDate: string | null;
   stringLengthM: number | null; setDepthMkb: number | null;
   components: TubingBlock["components"];

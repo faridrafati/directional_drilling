@@ -1441,10 +1441,11 @@ function EventsAndHse({ draft, set, disabled }: SubformProps) {
             options: ["Safety Meeting", "BOP Drill", "Choke Drill", "H2S Drill", "Fire Drill", "Abandon Drill"]
               .map((v) => ({ value: v, label: v })) },
           { key: "des", label: "Description" },
+          { key: "com", label: "Com", width: "w-56" },
         ] as Col<ReportBody["safetyChecks"][number]>[]}
         rows={draft.safetyChecks} onChange={(v) => set("safetyChecks", v)}
         disabled={disabled} minRows={2} addLabel="check" testId="check"
-        blank={() => ({ order: 0, time: null, type: null, des: null })}
+        blank={() => ({ order: 0, time: null, type: null, des: null, com: null })}
       />
       <p className="px-2 py-1.5 text-xs sm:text-[10px] text-gray-400 leading-snug">
         These are the checks that happened TODAY. The recurring drill schedule — BOP test, H2S, fire,

@@ -15,7 +15,7 @@ import { headerValue, money } from "../../export/reportChrome.js";
 import type {
   CasingBlock, CementBlock, PerforationBlock, Report22Payload, Report23Payload,
   Report24Payload, Report26Payload, Report28Payload, Report29Payload, Report30Payload,
-  RodBlock, StimulationBlock, TubingBlock,
+  RodBlock, StimulationBlock, TubingBlock, TubingDayRow,
 } from "../../entry/wellview.js";
 import {
   HeaderGrid, IdentityLine, PreviewFooter, PreviewSheet, PreviewTable, PreviewTitle,
@@ -788,6 +788,16 @@ export function Report30Preview({ payload }: { payload: Report30Payload }) {
 
 /* ══ 23 — Daily Completion and Workover ══════════════════════════════════════ */
 
+/** The two tubing tables differ only in the name of their time column. */
+const TUBING_DAY_COLUMNS = (timeHeader: string): PreviewColumn<TubingDayRow>[] => [
+  { header: timeHeader, width: "w-28", cell: (t) => t.time ?? "" },
+  { header: "Tubing Description", width: "w-56", cell: (t) => t.description ?? "" },
+  { header: "Set Depth (mKB)", width: "w-32", align: "right", cell: (t) => headerValue(t.setDepthMkb) },
+  { header: "String Max Nominal OD (in)", width: "w-36", cell: (t) => t.maxNominalOdIn ?? "" },
+  { header: "Weight/Length (kg/m)", width: "w-36", align: "right", cell: (t) => headerValue(t.massPerLenKgM) },
+  { header: "String Grade", cell: (t) => t.grade ?? "" },
+];
+
 export function Report23Preview({ payload }: { payload: Report23Payload }) {
   return (
     <PreviewSheet wide>
@@ -853,9 +863,53 @@ export function Report23Preview({ payload }: { payload: Report23Payload }) {
           { header: "Time", width: "w-20", cell: (l) => l.time ?? "" },
           { header: "Type", width: "w-40", cell: (l) => l.type ?? "" },
           { header: "Top (mKB)", width: "w-28", align: "right", cell: (l) => headerValue(l.topMkb) },
-          { header: "Btm (mKB)", align: "right", cell: (l) => headerValue(l.btmMkb) },
+          { header: "Btm (mKB)", width: "w-28", align: "right", cell: (l) => headerValue(l.btmMkb) },
+          { header: "Cased?", cell: (l) => yesNo(l.cased) },
         ] as PreviewColumn<Report23Payload["logs"][number]>[]}
         rows={payload.logs} emptyText="No log run on this day." />
+
+      {/* What went IN and what came OUT today. Each is the register filtered to
+          this day — the same rows read against another day are another report. */}
+      <SectionBar>Tubing Run</SectionBar>
+      <PreviewTable columns={TUBING_DAY_COLUMNS("Run Time")} rows={payload.tubingRun}
+        emptyText="No tubing run on this day." />
+
+      <SectionBar>Tubing Pulled</SectionBar>
+      <PreviewTable columns={TUBING_DAY_COLUMNS("Pull Time")} rows={payload.tubingPulled}
+        emptyText="No tubing pulled on this day." />
+
+      <SectionBar>Other in Hole Run (Bridge Plugs, etc)</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Run Time", width: "w-28", cell: (o) => o.time ?? "" },
+          { header: "Des", width: "w-64", cell: (o) => o.des ?? "" },
+          { header: "OD (in)", width: "w-24", cell: (o) => o.odIn ?? "" },
+          { header: "Top (mKB)", width: "w-28", align: "right", cell: (o) => headerValue(o.topMkb) },
+          { header: "Btm (mKB)", align: "right", cell: (o) => headerValue(o.btmMkb) },
+        ] as PreviewColumn<Report23Payload["otherInHoleRun"][number]>[]}
+        rows={payload.otherInHoleRun} emptyText="Nothing run in the hole on this day." />
+
+      <SectionBar>Other in Hole Pulled (Bridge Plugs, etc)</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Pull Time", width: "w-28", cell: (o) => o.time ?? "" },
+          { header: "Des", width: "w-64", cell: (o) => o.des ?? "" },
+          { header: "Top (mKB)", width: "w-28", align: "right", cell: (o) => headerValue(o.topMkb) },
+          { header: "Btm (mKB)", width: "w-28", align: "right", cell: (o) => headerValue(o.btmMkb) },
+          { header: "OD (in)", cell: (o) => o.odIn ?? "" },
+        ] as PreviewColumn<Report23Payload["otherInHolePulled"][number]>[]}
+        rows={payload.otherInHolePulled} emptyText="Nothing pulled from the hole on this day." />
+
+      <SectionBar>Cement</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Start Time", width: "w-28", cell: (c) => c.startTime ?? "" },
+          { header: "Des", width: "w-56", cell: (c) => c.des ?? "" },
+          { header: "Type", width: "w-28", cell: (c) => c.type ?? "" },
+          { header: "String", width: "w-44", cell: (c) => c.string ?? "" },
+          { header: "Cement Comp", cell: (c) => c.company ?? "" },
+        ] as PreviewColumn<Report23Payload["cementOnDay"][number]>[]}
+        rows={payload.cementOnDay} emptyText="No cement pumped on this day." />
 
       <SectionBar>Perforations</SectionBar>
       <PreviewTable

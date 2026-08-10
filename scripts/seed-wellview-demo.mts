@@ -787,7 +787,30 @@ async function main() {
   const admin = await prisma.entryUser.findFirst({ where: { role: "admin" }, orderBy: { createdAt: "asc" } });
   if (admin) await seedDay(well.id, admin.id, job.id, wellbores[0]?.id ?? null, pumps, bhaRun.id);
   if (admin) await seedProgressDays(well.id, admin.id, job.id, wellbores[0]?.id ?? null);
-  if (admin) await seedCompletionDays(well.id, admin.id, job.id);
+  // The completion work is its OWN job, and the completion days belong to it.
+  // Booking them to the drilling job made report 27's Completion/Workover Job
+  // History empty on a well that was plainly completed, and made report 09 —
+  // which is job-scoped — report 14 days against a job that drilled 12.
+  //
+  // Deliberately without phases or cost lines: report 16 pivots PHASES and
+  // report 01 sums this well's AFE to figures the sample prints, and a second
+  // job carrying either would move both away from what the sample says.
+  const completionJob = await prisma.job.upsert({
+    where: { id: `${well.id}-completion` },
+    create: {
+      id: `${well.id}-completion`, wellId: well.id, order: 1,
+      name: "Completion", category: "Completion/Workover",
+      primaryJobType: "Completion", secondaryJobType: "Initial Completion",
+      status1: "Job Complete",
+      plannedStartDate: day(21), startDate: day(21), endDate: day(27),
+      targetFormation: "Asmari",
+      summary:
+        "Perforated and acidised the upper Asmari, squeezed the lower, and ran "
+        + "the 4-1/2\" completion string. Packer set and tested to 3,000 psi.",
+    },
+    update: {},
+  });
+  if (admin) await seedCompletionDays(well.id, admin.id, completionJob.id);
   if (admin) await seedOffsetWell(rig.id, admin.id, codeIds);
 
   // Attach any daily reports already filed on this well, so the day-scoped
@@ -1409,8 +1432,8 @@ async function seedCompletionDays(
                 { order: 1, time: "13:45", type: "Pre-job", des: "Acid handling — PPE and eyewash stations checked" },
               ]
             : [
-                { order: 0, time: "05:45", type: "Pre-job", des: "Pressure testing exclusion zone briefed" },
-                { order: 1, time: "17:30", type: "Drill", des: "H2S drill — muster and headcount" },
+                { order: 0, time: "05:45", type: "Pre-job", des: "Pressure testing exclusion zone briefed", com: "Red zone marked to 15 m." },
+                { order: 1, time: "17:30", type: "Drill", des: "H2S drill — muster and headcount", com: "All hands mustered in 4 min 20 s." },
               ],
         },
         logRuns: {

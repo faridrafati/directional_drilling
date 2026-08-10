@@ -233,7 +233,11 @@ const operationSchema = z.object({
 /** Report 07's "Drilling Mud Volumes" — what MOVED, not the pit state. */
 const mudVolumeSchema = z.object({ order: int0, action: str, toWellBbl: num, fromWellBbl: num });
 /** Report 06's "Safety Checks" sidebar — one row per check on the day. */
-const safetyCheckSchema = z.object({ order: int0, time: str, type: str, des: str });
+const safetyCheckSchema = z.object({
+  order: int0, time: str, type: str, des: str,
+  // Reports 06, 07 and 23 all print a Com beside the check.
+  com: str,
+});
 /** Report 07 page 2's "Safety Incidents". */
 const safetyIncidentSchema = z.object({
   order: int0, time: str, category: str, type: str, subType: str, cause: str,

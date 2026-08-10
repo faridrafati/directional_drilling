@@ -28,6 +28,9 @@ import { WellSetBlock } from "./MultiWellPreview.js";
 /** The exporters find these charts by these ids. */
 export const FAILURE_CHART_ID = "wellview-failure-cost";
 export const PRODUCTION_CHART_ID = "wellview-production-curve";
+/** The sample plots three panels, not one — cumulative volume and downtime too. */
+export const PRODUCTION_CUMVOL_ID = "wellview-production-cumvol";
+export const PRODUCTION_DOWNTIME_ID = "wellview-production-downtime";
 
 /** One colour per failure type, stable across the stack. */
 const STACK_COLOURS = [
@@ -165,6 +168,83 @@ export function Report27Preview({ payload }: { payload: Report27Payload }) {
           </ResponsiveContainer>
         </div>
       )}
+
+      {payload.curve.length > 0 && (
+        <>
+          <SectionBar>Cumulative volume against time</SectionBar>
+          <div id={PRODUCTION_CUMVOL_ID} className="bg-white border border-gray-400 border-t-0 p-2">
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={payload.curve} margin={{ top: 4, right: 12, bottom: 18, left: 0 }}>
+                <CartesianGrid stroke="#e5e7eb" />
+                <XAxis dataKey="endDate" tick={{ fontSize: 9 }} interval="preserveStartEnd"
+                  label={{ value: "Period end date", position: "insideBottom", offset: -2, fontSize: 10 }} />
+                <YAxis yAxisId="liquid" tick={{ fontSize: 10 }} width={78}
+                  label={{ value: "Cum vol oil / water (bbl)", angle: -90, position: "insideLeft", fontSize: 10 }} />
+                <YAxis yAxisId="gas" orientation="right" tick={{ fontSize: 10 }} width={78}
+                  label={{ value: "Cum res gas (MCF)", angle: 90, position: "insideRight", fontSize: 10 }} />
+                <Tooltip formatter={(v: number | string) => headerValue(Number(v))} />
+                <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 10 }} />
+                <Line yAxisId="liquid" type="linear" dataKey="cumOilBbl" name="Cum oil" stroke="#047857" dot={false} isAnimationActive={false} />
+                <Line yAxisId="liquid" type="linear" dataKey="cumWaterBbl" name="Cum water" stroke="#0891b2" dot={false} isAnimationActive={false} />
+                <Line yAxisId="gas" type="linear" dataKey="cumResGasMcf" name="Cum reservoir gas" stroke="#b45309" dot={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <SectionBar>Cumulative % downtime</SectionBar>
+          <div id={PRODUCTION_DOWNTIME_ID} className="bg-white border border-gray-400 border-t-0 p-2">
+            <ResponsiveContainer width="100%" height={220}>
+              {/* A well can hold its RATE while its downtime climbs — which is
+                  the whole reason the sample plots this beside the other two. */}
+              <LineChart data={payload.curve} margin={{ top: 4, right: 12, bottom: 18, left: 0 }}>
+                <CartesianGrid stroke="#e5e7eb" />
+                <XAxis dataKey="endDate" tick={{ fontSize: 9 }} interval="preserveStartEnd"
+                  label={{ value: "Period end date", position: "insideBottom", offset: -2, fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} width={64} domain={[0, "auto"]}
+                  label={{ value: "Cumulative % downtime", angle: -90, position: "insideLeft", fontSize: 10 }} />
+                <Tooltip formatter={(v: number | string) => headerValue(Number(v))} />
+                <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 10 }} />
+                <Line type="linear" dataKey="cumDownTimePct" name="Cumulative % downtime" stroke="#be123c" dot={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+
+      <SectionBar>Completion/Workover Job History</SectionBar>
+      <PreviewTable
+        columns={[
+          { header: "Job Typ", width: "w-48", cell: (j) => j.jobType ?? "" },
+          { header: "Start Date", width: "w-32", cell: (j) => j.startDate ?? "" },
+          { header: "End Date", width: "w-32", cell: (j) => j.endDate ?? "" },
+          { header: "Summary", cell: (j) => j.summary ?? "" },
+        ] as PreviewColumn<Report27Payload["jobHistory"][number]>[]}
+        rows={payload.jobHistory}
+        emptyText="No completion or workover job on this well." />
+
+      <SectionBar>Tubing/Components</SectionBar>
+      {payload.tubingStrings.length === 0 ? (
+        <div className="border border-t-0 border-gray-400 px-2 py-2 text-[11px] text-gray-400">
+          No tubing string recorded.
+        </div>
+      ) : payload.tubingStrings.map((t, i) => (
+        <div key={i}>
+          <SectionBar>{t.caption}</SectionBar>
+          <HeaderGrid rows={[t.header]} />
+          <PreviewTable
+            columns={[
+              { header: "Item Des", width: "w-48", cell: (c) => c.itemDes ?? "" },
+              { header: "OD (in)", width: "w-24", cell: (c) => c.odIn ?? "" },
+              { header: "ID (in)", width: "w-24", align: "right", cell: (c) => headerValue(c.idIn, "in3") },
+              { header: "Grade", width: "w-24", cell: (c) => c.grade ?? "" },
+              { header: "Jts", width: "w-16", align: "right", cell: (c) => headerValue(c.jts, "int") },
+              { header: "Len (m)", width: "w-24", align: "right", cell: (c) => headerValue(c.lenM) },
+              { header: "Top (mKB)", width: "w-28", align: "right", cell: (c) => headerValue(c.topMkb) },
+              { header: "Btm (mKB)", align: "right", cell: (c) => headerValue(c.btmMkb) },
+            ] as PreviewColumn<Report27Payload["tubingStrings"][number]["components"][number]>[]}
+            rows={t.components} emptyText="No component entered." />
+        </div>
+      ))}
 
       <SectionBar>Summarized Production Data (Most Recent at Top)</SectionBar>
       <PreviewTable

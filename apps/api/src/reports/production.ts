@@ -17,6 +17,8 @@ import {
 import { buildSchematic, type SchematicPayload } from "./schematic.js";
 import { durationHr } from "./daily.js";
 import type { ResolvedWells, WellRef } from "./multiwell.js";
+import { tubingBlocks, type TubingBlock } from "./completion.js";
+import { parseInches } from "./schematic.js";
 
 const round = (v: number, dp = 2) => Number(v.toFixed(dp));
 const cell = (label: string, value: string | number | null, kind?: HeaderCell["kind"]): HeaderCell =>
@@ -33,6 +35,44 @@ function sumOrNull(values: (number | null | undefined)[], dp = 2): number | null
 
 /* ══ report 23 — Daily Completion and Workover ═══════════════════════════════ */
 
+/** A tubing string as report 23 prints it — run or pulled on the day. */
+export interface TubingDayRow {
+  time: string | null;
+  description: string | null;
+  setDepthMkb: number | null;
+  maxNominalOdIn: string | null;
+  massPerLenKgM: number | null;
+  grade: string | null;
+}
+
+/** The widest nominal OD in a string, and its heaviest joint — as the sample prints. */
+function tubingDayRow(
+  t: {
+    description: string | null; setDepthMkb: number | null;
+    components: { odIn: string | null; massPerLenKgM: number | null; grade: string | null }[];
+  },
+  time: string | null,
+): TubingDayRow {
+  // "String Max Nominal OD" is the WIDEST component, not the first: a completion
+  // is a taper, and the number that matters for what it will pass through is the
+  // largest one in it.
+  let widest: string | null = null;
+  let widestVal = -1;
+  for (const c of t.components) {
+    const v = parseInches(c.odIn);
+    if (v !== null && v > widestVal) { widestVal = v; widest = c.odIn; }
+  }
+  const body = t.components.find((c) => c.massPerLenKgM !== null) ?? t.components[0] ?? null;
+  return {
+    time,
+    description: t.description,
+    setDepthMkb: t.setDepthMkb,
+    maxNominalOdIn: widest,
+    massPerLenKgM: body?.massPerLenKgM ?? null,
+    grade: body?.grade ?? null,
+  };
+}
+
 export interface Report23Payload extends ReportEnvelope {
   identityRight: string | null;
   completionHeader: HeaderRow;
@@ -47,9 +87,15 @@ export interface Report23Payload extends ReportEnvelope {
   }[];
   fluids: { fluid: string | null; toWellBbl: number | null; fromWellBbl: number | null }[];
   safetyChecks: { time: string | null; des: string | null; type: string | null; com: string | null }[];
-  logs: { time: string | null; type: string | null; topMkb: number | null; btmMkb: number | null }[];
+  logs: { time: string | null; type: string | null; topMkb: number | null; btmMkb: number | null; cased: boolean | null }[];
   /** The perforations and treatments done on or before this day. */
   perforations: { date: string | null; zone: string | null; topMkb: number | null; btmMkb: number | null; status: string | null }[];
+  /** What went in and what came out ON THIS DAY — five tables the sample prints. */
+  tubingRun: TubingDayRow[];
+  tubingPulled: TubingDayRow[];
+  otherInHoleRun: { time: string | null; des: string | null; odIn: string | null; topMkb: number | null; btmMkb: number | null }[];
+  otherInHolePulled: { time: string | null; des: string | null; topMkb: number | null; btmMkb: number | null; odIn: string | null }[];
+  cementOnDay: { startTime: string | null; des: string | null; type: string | null; string: string | null; company: string | null }[];
   stimulations: { date: string | null; time: string | null; zone: string | null; type: string | null; deliveryMode: string | null; company: string | null }[];
 }
 
@@ -77,11 +123,20 @@ export async function buildReport23(
             orderBy: { order: "asc" },
             include: { zone: { select: { name: true } } },
           },
+          tubingStrings: {
+            orderBy: { order: "asc" },
+            include: { components: { orderBy: { order: "asc" } } },
+          },
+          otherInHole: { orderBy: { order: "asc" } },
+          casingStrings: {
+            orderBy: { order: "asc" },
+            include: { cementJobs: { orderBy: { order: "asc" } } },
+          },
         },
       },
       job: {
         select: {
-          category: true, primaryJobType: true, secondaryJobType: true,
+          category: true, primaryJobType: true, secondaryJobType: true, targetFormation: true,
           afes: { orderBy: { order: "asc" }, select: { afeNumber: true, amount: true, supplements: { select: { amount: true } } } },
           costItems: { select: { costDate: true, fieldEstimate: true } },
         },
@@ -151,6 +206,7 @@ export async function buildReport23(
       [
         cell("Primary Job Type", r.job?.primaryJobType ?? null),
         cell("Secondary Job Type", r.job?.secondaryJobType ?? null),
+        cell("Objective", r.job?.targetFormation ?? null),
       ],
       [
         cell("Contractor", well.rig.contractor ?? null),
@@ -185,10 +241,10 @@ export async function buildReport23(
       fluid: v.action, toWellBbl: v.toWellBbl, fromWellBbl: v.fromWellBbl,
     })),
     safetyChecks: r.safetyChecks.map((c) => ({
-      time: c.time, des: c.des, type: c.type, com: null,
+      time: c.time, des: c.des, type: c.type, com: c.com,
     })),
     logs: r.logRuns.map((l) => ({
-      time: l.time, type: l.type, topMkb: l.topMkb, btmMkb: l.btmMkb,
+      time: l.time, type: l.type, topMkb: l.topMkb, btmMkb: l.btmMkb, cased: l.cased,
     })),
     perforations: well.perforations.filter((p) => upTo(p.date)).map((p) => {
       const newest = p.statuses.slice().sort((a, b) => compareJalali(b.date, a.date))[0] ?? null;
@@ -198,6 +254,28 @@ export async function buildReport23(
         status: newest?.status ?? null,
       };
     }),
+    // The five day-scoped tables. Each is the register FILTERED to this day —
+    // a completion sheet says what happened today, not what the well contains,
+    // and the same rows read against a different day are a different report.
+    tubingRun: well.tubingStrings
+      .filter((t) => t.runDate !== null && jalaliKey(t.runDate) === dayKey)
+      .map((t) => tubingDayRow(t, t.runDate)),
+    tubingPulled: well.tubingStrings
+      .filter((t) => t.pullDate !== null && jalaliKey(t.pullDate) === dayKey)
+      .map((t) => tubingDayRow(t, t.pullDate)),
+    otherInHoleRun: well.otherInHole
+      .filter((o) => o.runDate !== null && jalaliKey(o.runDate) === dayKey)
+      .map((o) => ({ time: o.runDate, des: o.des, odIn: o.odIn, topMkb: o.topMkb, btmMkb: o.btmMkb })),
+    otherInHolePulled: well.otherInHole
+      .filter((o) => o.pullDate !== null && jalaliKey(o.pullDate) === dayKey)
+      .map((o) => ({ time: o.pullDate, des: o.des, topMkb: o.topMkb, btmMkb: o.btmMkb, odIn: o.odIn })),
+    cementOnDay: well.casingStrings.flatMap((c) =>
+      c.cementJobs
+        .filter((j) => j.startDate !== null && jalaliKey(j.startDate) === dayKey)
+        .map((j) => ({
+          startTime: j.startDate, des: j.description, type: "Casing",
+          string: c.description, company: j.company,
+        }))),
     stimulations: well.stimulations.filter((st) => upTo(st.date)).map((st) => ({
       date: st.date, time: st.time, zone: st.zone?.name ?? null,
       type: st.type, deliveryMode: st.deliveryMode, company: st.company,
@@ -310,13 +388,30 @@ export interface Report27Payload extends ReportEnvelope {
   filterLine: string | null;
   /** Most recent FIRST, as the sample's own caption says. */
   rows: ProductionRow[];
-  /** The rate curves, oldest first so the decline reads left to right. */
+  /**
+   * The three curves the sample plots, oldest first so the decline reads left to
+   * right. Rate, cumulative VOLUME and cumulative % downtime are three different
+   * questions about the same periods — a well can hold its rate while its
+   * downtime climbs, and only the third panel shows it.
+   */
   curve: {
     endDate: string;
     qOilBblD: number | null;
     qWaterBblD: number | null;
     qResGasMcfD: number | null;
+    /** Running totals to this period — derived, never stored. */
+    cumOilBbl: number | null;
+    cumWaterBbl: number | null;
+    cumResGasMcf: number | null;
+    /** Downtime as a share of all elapsed time so far, in percent. */
+    cumDownTimePct: number | null;
   }[];
+  /** The sample's "Completion/Workover Job History" table. */
+  jobHistory: {
+    jobType: string | null; startDate: string | null; endDate: string | null; summary: string | null;
+  }[];
+  /** The sample's "Tubing/Components" block, beside the history. */
+  tubingStrings: TubingBlock[];
   totals: HeaderRow;
 }
 
@@ -334,6 +429,11 @@ export async function buildReport27(
         orderBy: { order: "asc" },
         include: { zone: { select: { name: true } } },
       },
+      tubingStrings: {
+        orderBy: { order: "asc" },
+        include: { components: { orderBy: { order: "asc" } } },
+      },
+      jobs: { orderBy: { order: "asc" } },
     },
   });
   if (!well) return null;
@@ -365,12 +465,42 @@ export async function buildReport27(
       qResGasMcfD: p.qResGasMcfD, qOilBblD: p.qOilBblD, qWaterBblD: p.qWaterBblD,
       waterGasRatioPct: p.waterGasRatioPct,
     })),
-    curve: byDate
-      .filter((p) => p.endDate !== null)
-      .map((p) => ({
-        endDate: p.endDate as string,
-        qOilBblD: p.qOilBblD, qWaterBblD: p.qWaterBblD, qResGasMcfD: p.qResGasMcfD,
+    curve: (() => {
+      // Running totals, accumulated in date order. Cumulative production is
+      // DERIVED for the same reason "Pl Cum Days ML" is on report 22: a stored
+      // running total is a second source of truth that goes wrong the first time
+      // a period is corrected.
+      let oil = 0, water = 0, gas = 0, up = 0, down = 0;
+      let anyOil = false, anyWater = false, anyGas = false, anyTime = false;
+      return byDate
+        .filter((p) => p.endDate !== null)
+        .map((p) => {
+          if (p.volOilBbl !== null) { oil += p.volOilBbl; anyOil = true; }
+          if (p.volWaterBbl !== null) { water += p.volWaterBbl; anyWater = true; }
+          if (p.volResGasMcf !== null) { gas += p.volResGasMcf; anyGas = true; }
+          if (p.prodTimeDays !== null) { up += p.prodTimeDays; anyTime = true; }
+          if (p.downTimeDays !== null) { down += p.downTimeDays; anyTime = true; }
+          const elapsed = up + down;
+          return {
+            endDate: p.endDate as string,
+            qOilBblD: p.qOilBblD, qWaterBblD: p.qWaterBblD, qResGasMcfD: p.qResGasMcfD,
+            cumOilBbl: anyOil ? round(oil) : null,
+            cumWaterBbl: anyWater ? round(water) : null,
+            cumResGasMcf: anyGas ? round(gas) : null,
+            cumDownTimePct: anyTime && elapsed > 0 ? round((down / elapsed) * 100) : null,
+          };
+        });
+    })(),
+    // Only the jobs this report is ABOUT. A drilling job is not completion or
+    // workover history, and listing it would make the table answer a question
+    // nobody asked of it.
+    jobHistory: well.jobs
+      .filter((j) => /completion|workover/i.test(`${j.category ?? ""} ${j.primaryJobType ?? ""}`))
+      .map((j) => ({
+        jobType: j.secondaryJobType ?? j.primaryJobType,
+        startDate: j.startDate, endDate: j.endDate, summary: j.summary,
       })),
+    tubingStrings: tubingBlocks(well.tubingStrings),
     totals: [
       cell("Periods", periods.length, "int"),
       cell("Prod Time (days)", sumOrNull(periods.map((p) => p.prodTimeDays)), "decimal"),

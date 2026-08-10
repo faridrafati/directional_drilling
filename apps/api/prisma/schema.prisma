@@ -1607,6 +1607,8 @@ model EntrySafetyCheck {
   /// "Safety Meeting" | "BOP Drill" | "Choke Drill" | "H2S Drill" | "Fire Drill"
   type     String?
   des      String? /// what the check covered
+  /// Reports 06, 07 and 23 all print a Com column beside the check.
+  com      String?
   report   EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
@@ -2090,6 +2092,10 @@ model TubingString {
   order          Int     @default(0)
   description    String?
   runDate        String?
+  /// When it came OUT. Report 23 prints "Tubing Run" and "Tubing Pulled" as two
+  /// tables against the day, and a string with only a run date can never appear
+  /// in the second one.
+  pullDate       String?
   stringLengthM  Float?
   setDepthMkb    Float?
   createdAt      DateTime @default(now())

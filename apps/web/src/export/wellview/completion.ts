@@ -22,12 +22,14 @@ import {
 } from "../reportChrome.js";
 import { captureChart, legendRow } from "./chartCapture.js";
 import { schematicId } from "../../components/wellview/WellboreSchematic.js";
-import { FAILURE_CHART_ID, PRODUCTION_CHART_ID } from "../../components/wellview/ProductionPreview.js";
+import {
+  FAILURE_CHART_ID, PRODUCTION_CHART_ID, PRODUCTION_CUMVOL_ID, PRODUCTION_DOWNTIME_ID,
+} from "../../components/wellview/ProductionPreview.js";
 import type {
   CasingBlock, CementBlock, FailureCostCell, JobBlock, PerforationBlock, ProductionRow,
   Report22Payload, Report23Payload, Report24Payload, Report25Payload, Report26Payload,
   Report27Payload, Report28Payload, Report29Payload, Report30Payload,
-  RodBlock, SchematicPayload, StimulationBlock, TubingBlock,
+  RodBlock, SchematicPayload, StimulationBlock, TubingBlock, TubingDayRow,
 } from "../../entry/wellview.js";
 
 const LETTER: [number, number] = [612, 792];
@@ -75,6 +77,16 @@ const TUBING_COLUMNS: ReportColumn<TubingBlock["components"][number]>[] = [
  * payload. Where the preview grew a section, the PDF grows the same one here —
  * that is what stops the two drifting.
  */
+/** The two tubing tables differ only in the name of their time column. */
+const tubingDayColumns = (timeHeader: string) => [
+  { header: timeHeader, width: 66, cell: (t: TubingDayRow) => t.time ?? "" },
+  { header: "Tubing Description", width: "*" as const, cell: (t: TubingDayRow) => t.description ?? "" },
+  { header: "Set Depth (mKB)", width: 78, align: "right" as const, cell: (t: TubingDayRow) => headerValue(t.setDepthMkb) },
+  { header: "String Max Nominal OD (in)", width: 96, cell: (t: TubingDayRow) => t.maxNominalOdIn ?? "" },
+  { header: "Weight/Length (kg/m)", width: 96, align: "right" as const, cell: (t: TubingDayRow) => headerValue(t.massPerLenKgM) },
+  { header: "String Grade", width: 70, cell: (t: TubingDayRow) => t.grade ?? "" },
+];
+
 function casingContent(blocks: CasingBlock[]): Content[] {
   if (blocks.length === 0) {
     return [{ text: "No casing string recorded.", style: "cellLabel", italics: true, margin: [0, 2, 0, 3] }];
@@ -410,7 +422,37 @@ export async function buildReport23Doc(p: Report23Payload): Promise<TDocumentDef
       { header: "Type", width: "*", cell: (l: Report23Payload["logs"][number]) => l.type ?? "" },
       { header: "Top (mKB)", width: 62, align: "right", cell: (l: Report23Payload["logs"][number]) => headerValue(l.topMkb) },
       { header: "Btm (mKB)", width: 62, align: "right", cell: (l: Report23Payload["logs"][number]) => headerValue(l.btmMkb) },
+  { header: "Cased?", width: 50, cell: (l: Report23Payload["logs"][number]) => yesNo(l.cased) },
     ], p.logs),
+    // The five day-scoped tables the sample prints, in its own order.
+    sectionBar("Tubing Run"),
+    reportTable(tubingDayColumns("Run Time"), p.tubingRun),
+    sectionBar("Tubing Pulled"),
+    reportTable(tubingDayColumns("Pull Time"), p.tubingPulled),
+    sectionBar("Other in Hole Run (Bridge Plugs, etc)"),
+    reportTable([
+      { header: "Run Time", width: 66, cell: (o: Report23Payload["otherInHoleRun"][number]) => o.time ?? "" },
+      { header: "Des", width: "*", cell: (o: Report23Payload["otherInHoleRun"][number]) => o.des ?? "" },
+      { header: "OD (in)", width: 50, cell: (o: Report23Payload["otherInHoleRun"][number]) => o.odIn ?? "" },
+      { header: "Top (mKB)", width: 66, align: "right", cell: (o: Report23Payload["otherInHoleRun"][number]) => headerValue(o.topMkb) },
+      { header: "Btm (mKB)", width: 66, align: "right", cell: (o: Report23Payload["otherInHoleRun"][number]) => headerValue(o.btmMkb) },
+    ], p.otherInHoleRun),
+    sectionBar("Other in Hole Pulled (Bridge Plugs, etc)"),
+    reportTable([
+      { header: "Pull Time", width: 66, cell: (o: Report23Payload["otherInHolePulled"][number]) => o.time ?? "" },
+      { header: "Des", width: "*", cell: (o: Report23Payload["otherInHolePulled"][number]) => o.des ?? "" },
+      { header: "Top (mKB)", width: 66, align: "right", cell: (o: Report23Payload["otherInHolePulled"][number]) => headerValue(o.topMkb) },
+      { header: "Btm (mKB)", width: 66, align: "right", cell: (o: Report23Payload["otherInHolePulled"][number]) => headerValue(o.btmMkb) },
+      { header: "OD (in)", width: 50, cell: (o: Report23Payload["otherInHolePulled"][number]) => o.odIn ?? "" },
+    ], p.otherInHolePulled),
+    sectionBar("Cement"),
+    reportTable([
+      { header: "Start Time", width: 66, cell: (c: Report23Payload["cementOnDay"][number]) => c.startTime ?? "" },
+      { header: "Des", width: "*", cell: (c: Report23Payload["cementOnDay"][number]) => c.des ?? "" },
+      { header: "Type", width: 60, cell: (c: Report23Payload["cementOnDay"][number]) => c.type ?? "" },
+      { header: "String", width: 110, cell: (c: Report23Payload["cementOnDay"][number]) => c.string ?? "" },
+      { header: "Cement Comp", width: 90, cell: (c: Report23Payload["cementOnDay"][number]) => c.company ?? "" },
+    ], p.cementOnDay),
     sectionBar("Perforations"),
     reportTable([
       { header: "Date", width: 62, cell: (x: Report23Payload["perforations"][number]) => x.date ?? "" },
@@ -562,7 +604,32 @@ export async function buildReport27Doc(p: Report27Payload): Promise<TDocumentDef
       text: "No production period recorded.", style: "cellLabel", italics: true, margin: [0, 3, 0, 3],
     });
   }
+  // The sample prints THREE panels. Rate, cumulative volume and cumulative
+  // downtime answer three different questions about the same periods, and a
+  // well can hold its rate while its downtime climbs — printing only the first
+  // hides exactly the case the other two exist to show.
+  if (p.curve.length > 0) {
+    for (const [id, title, label] of [
+      [PRODUCTION_CUMVOL_ID, "Cumulative volume against time", "cumulative-volume curve"],
+      [PRODUCTION_DOWNTIME_ID, "Cumulative % downtime", "downtime curve"],
+    ] as const) {
+      content.push(sectionBar(title));
+      const shot = await captureChart(id, label);
+      content.push({ image: shot.raster.dataUrl, fit: [740, 250], alignment: "center", margin: [0, 3, 0, 0] });
+      const k = legendRow(shot.legend);
+      if (k) content.push(k);
+    }
+  }
   content.push(
+    sectionBar("Completion/Workover Job History"),
+    reportTable([
+      { header: "Job Typ", width: 120, cell: (j: Report27Payload["jobHistory"][number]) => j.jobType ?? "" },
+      { header: "Start Date", width: 76, cell: (j: Report27Payload["jobHistory"][number]) => j.startDate ?? "" },
+      { header: "End Date", width: 76, cell: (j: Report27Payload["jobHistory"][number]) => j.endDate ?? "" },
+      { header: "Summary", width: "*", cell: (j: Report27Payload["jobHistory"][number]) => j.summary ?? "" },
+    ], p.jobHistory),
+    sectionBar("Tubing/Components"),
+    ...tubingContent(p.tubingStrings),
     sectionBar("Summarized Production Data (Most Recent at Top)"),
     reportTable(PRODUCTION_COLUMNS, p.rows),
     labelValueGrid([p.totals]),

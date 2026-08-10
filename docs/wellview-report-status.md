@@ -572,6 +572,40 @@ the sample disagree; where both are ambiguous, the closest existing `a.json` / D
   is not this box's admin password, and every spec then fails on a 401 that looks like a broken app.
   Run it as `ENTRY_USER=… ENTRY_PASSWORD=… npx playwright test`.
 
+### 2026-08-10 — reports 23 and 27, and a job the fixture was missing
+
+- **Report 23 gained the five day-scoped tables its sample prints**: Tubing Run,
+  Tubing Pulled, Other in Hole Run, Other in Hole Pulled and Cement. Each is a
+  register FILTERED to the day — a completion sheet says what happened today, not
+  what the well contains, and the same rows read against another day are another
+  report. Plus the job block's Objective, the Logs table's "Cased?" and the
+  safety check's Com, all of which were blank or absent.
+  `TubingString.pullDate` and `EntrySafetyCheck.com` are new: a string with only
+  a run date can never appear in the "pulled" table.
+- **"String Max Nominal OD" is the WIDEST component, not the first.** A
+  completion is a taper, and the number that decides what it will pass through is
+  the largest one in it.
+- **Report 27 gained its other two plot panels and both its tables.** The sample
+  prints rate, cumulative VOLUME and cumulative % downtime — three questions
+  about the same periods, and a well can hold its rate while its downtime climbs,
+  which is the case only the third panel shows. Cumulative figures are derived
+  from the periods for the same reason report 22's "Pl Cum Days ML" is: a stored
+  running total goes wrong the first time a period is corrected. It also gained
+  the "Completion/Workover Job History" and "Tubing/Components" tables.
+- **The fixture was missing a completion JOB.** The two completion days were
+  booked to the drilling job, which made report 27's job history empty on a well
+  that was plainly completed, and made report 09 — which is job-scoped — report
+  14 days against a job that drilled 12. There are two jobs now, and the days sit
+  on the right one. The completion job deliberately carries no phases and no cost
+  lines: report 16 pivots phases and report 01 sums this well's AFE to figures
+  the sample prints, and a second job carrying either would move both.
+  Reports 09 and 13 now legitimately DISAGREE — 288 h against 336 — because one
+  is job-scoped and the other well-scoped. Both are asserted, which is what pins
+  the scoping down.
+- The schema-parity guard caught this work twice more (`com` on the safety check,
+  and earlier `cased` and the wellhead spool). That is three times it has stopped
+  a column reaching Prisma without reaching the zod.
+
 ### 2026-08-10 — the audit's remaining defects
 
 Worked through what the six-dimension audit left after reports 22 and 30. Each of

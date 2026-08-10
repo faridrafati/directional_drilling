@@ -342,6 +342,8 @@ export interface MudVolumeRow {
 /** Report 06's "Safety Checks" sidebar — one row per check on the day. */
 export interface SafetyCheckRow {
   order: number; time: string | null; type: string | null; des: string | null;
+  /** Reports 06, 07 and 23 all print it beside the check. */
+  com: string | null;
 }
 /** Report 07 page 2's "Safety Incidents". */
 export interface SafetyIncidentRow {

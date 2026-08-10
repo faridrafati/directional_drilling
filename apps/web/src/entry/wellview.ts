@@ -790,6 +790,15 @@ export interface Report22Payload extends ReportEnvelope {
   totals: HeaderRow;
 }
 
+export interface TubingDayRow {
+  time: string | null;
+  description: string | null;
+  setDepthMkb: number | null;
+  maxNominalOdIn: string | null;
+  massPerLenKgM: number | null;
+  grade: string | null;
+}
+
 export interface Report23Payload extends ReportEnvelope {
   identityRight: string | null;
   completionHeader: HeaderRow;
@@ -804,8 +813,15 @@ export interface Report23Payload extends ReportEnvelope {
   }[];
   fluids: { fluid: string | null; toWellBbl: number | null; fromWellBbl: number | null }[];
   safetyChecks: { time: string | null; des: string | null; type: string | null; com: string | null }[];
-  logs: { time: string | null; type: string | null; topMkb: number | null; btmMkb: number | null }[];
+  logs: { time: string | null; type: string | null; topMkb: number | null; btmMkb: number | null; cased: boolean | null }[];
+  /** The perforations and treatments done on or before this day. */
   perforations: { date: string | null; zone: string | null; topMkb: number | null; btmMkb: number | null; status: string | null }[];
+  /** What went in and what came out ON THIS DAY — five tables the sample prints. */
+  tubingRun: TubingDayRow[];
+  tubingPulled: TubingDayRow[];
+  otherInHoleRun: { time: string | null; des: string | null; odIn: string | null; topMkb: number | null; btmMkb: number | null }[];
+  otherInHolePulled: { time: string | null; des: string | null; topMkb: number | null; btmMkb: number | null; odIn: string | null }[];
+  cementOnDay: { startTime: string | null; des: string | null; type: string | null; string: string | null; company: string | null }[];
   stimulations: { date: string | null; time: string | null; zone: string | null; type: string | null; deliveryMode: string | null; company: string | null }[];
 }
 
@@ -849,9 +865,34 @@ export interface ProductionRow {
   waterGasRatioPct: number | null;
 }
 export interface Report27Payload extends ReportEnvelope {
+  /** The sample prints the zone and activity it is filtered to, top right. */
   filterLine: string | null;
+  /** Most recent FIRST, as the sample's own caption says. */
   rows: ProductionRow[];
-  curve: { endDate: string; qOilBblD: number | null; qWaterBblD: number | null; qResGasMcfD: number | null }[];
+  /**
+   * The three curves the sample plots, oldest first so the decline reads left to
+   * right. Rate, cumulative VOLUME and cumulative % downtime are three different
+   * questions about the same periods — a well can hold its rate while its
+   * downtime climbs, and only the third panel shows it.
+   */
+  curve: {
+    endDate: string;
+    qOilBblD: number | null;
+    qWaterBblD: number | null;
+    qResGasMcfD: number | null;
+    /** Running totals to this period — derived, never stored. */
+    cumOilBbl: number | null;
+    cumWaterBbl: number | null;
+    cumResGasMcf: number | null;
+    /** Downtime as a share of all elapsed time so far, in percent. */
+    cumDownTimePct: number | null;
+  }[];
+  /** The sample's "Completion/Workover Job History" table. */
+  jobHistory: {
+    jobType: string | null; startDate: string | null; endDate: string | null; summary: string | null;
+  }[];
+  /** The sample's "Tubing/Components" block, beside the history. */
+  tubingStrings: TubingBlock[];
   totals: HeaderRow;
 }
 
