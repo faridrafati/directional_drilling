@@ -50,6 +50,7 @@ import {
 } from "../components/wellview/CompletionPreview.js";
 import { Report25Preview, Report27Preview } from "../components/wellview/ProductionPreview.js";
 import { TemplateBrowser } from "../components/wellview/TemplateBrowser.js";
+import { IconBrowser } from "../components/wellview/IconBrowser.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -84,7 +85,7 @@ function Inner() {
    * They answer different questions — what we produce, and what WellView
    * produced — so they are two views rather than one merged list.
    */
-  const [view, setView] = useState<"reports" | "templates">("reports");
+  const [view, setView] = useState<"reports" | "templates" | "icons">("reports");
 
   const catalogQ = useQuery({
     queryKey: ["wellview", "catalog"],
@@ -179,7 +180,11 @@ function Inner() {
 
         {user && (
           <div className="flex gap-1 border-b border-gray-200 mb-3 shrink-0">
-            {([["reports", "Generated reports"], ["templates", "WellView templates"]] as const).map(
+            {([
+              ["reports", "Generated reports"],
+              ["templates", "WellView templates"],
+              ["icons", "Component icons"],
+            ] as const).map(
               ([id, label]) => (
                 <button
                   key={id}
@@ -200,6 +205,8 @@ function Inner() {
         )}
 
         {user && view === "templates" && <TemplateBrowser />}
+
+        {user && view === "icons" && <IconBrowser />}
 
         {user && view === "reports" && (
           <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4">

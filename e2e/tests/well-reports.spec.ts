@@ -519,6 +519,38 @@ test.describe("Well Reports", () => {
     expect(await frame.locator("section").count()).toBeGreaterThan(1);
   });
 
+  // ── the component-icon library ─────────────────────────────────────────────
+  // WellView's schematic symbols, converted out of .emf — a Windows vector
+  // format no browser can display — and rasterised. The count is read from the
+  // manifest at runtime rather than hard-coded, so re-importing from a different
+  // WellView install cannot turn this red for the wrong reason.
+  test("the component icons tab lists and filters the library", async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.getByRole("button", { name: "Component icons" }).click();
+    await page.getByPlaceholder("Search icons").waitFor({ timeout: 30_000 });
+
+    const manifest = await (await page.request.get("/wellview-icons/manifest.json")).json();
+    expect(manifest.count).toBeGreaterThan(0);
+    // Blank renders are hidden by default, so the grid shows the rest.
+    const visible = manifest.count - manifest.blank_renders.length;
+    await expect(page.getByText(`${visible} shown`)).toBeVisible();
+
+    // An icon actually loads — not just an <img> tag with a broken src.
+    const first = page.locator("figure img").first();
+    await expect(first).toBeVisible();
+    expect(await first.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(0);
+
+    // Search narrows, and the blank toggle reveals the ones marked blank.
+    await page.getByPlaceholder("Search icons").fill("packer");
+    const narrowed = await page.locator("figure img").count();
+    expect(narrowed).toBeGreaterThan(0);
+    expect(narrowed).toBeLessThan(visible);
+
+    await page.getByPlaceholder("Search icons").fill("");
+    await page.getByLabel("Show blank renders").check();
+    await expect(page.getByText(`${manifest.count} shown`)).toBeVisible();
+  });
+
   test("report 29 draws the designed completion beside the one that was run", async ({ page }) => {
     test.setTimeout(60_000);
     await page.getByTestId("report-29").click();
