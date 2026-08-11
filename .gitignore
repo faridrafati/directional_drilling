@@ -8,6 +8,11 @@ build
 # well past GitHub's 100 MB file limit. Each machine keeps its own copy here and
 # run.sh / run.bat point DDR_DB_DIR at whichever folder holds them.
 sqlite_DB/
+
+# The Peloton WellView vendor install — 296 MB of binaries, EMF art and XSDs,
+# with an .exe and a licence key in it. Same policy as sqlite_DB/ and old/:
+# the tracked tree is the app, not the software it was reverse-engineered from.
+WellView_files/
 .env.local
 .env.*.local
 *.log
