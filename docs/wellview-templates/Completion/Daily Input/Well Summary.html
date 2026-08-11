@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Well Summary</title>
+<style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:16px; background:#f4f4f4; font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; }
+    .sheet { background:#fff; margin:0 auto; padding:0.25in 0.25in 0.25in 0.25in;
+              width:8.5in; min-height:11in;
+              box-shadow:0 1px 6px rgba(0,0,0,.18); }
+    .entity { font-family:Arial,Helvetica,sans-serif;font-size:12.0pt;font-weight:bold;font-style:normal;color:#008000; margin:0 0 6px; }
+    .meta { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin:0 0 10px;
+             border-bottom:1px solid #bbb; padding-bottom:6px; }
+    .caption { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; margin:0 0 8px; }
+    .hotspot { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#ff0000; }
+    section { margin:0 0 14px; page-break-inside:avoid; }
+    .blockbar { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#000000; background:#dfdfdf;
+                 border:1px solid #9a9a9a; padding:3px 6px; }
+    .tablehead { background:#dfdfdf; }
+    table { border-collapse:collapse; width:100%; table-layout:fixed; }
+    th { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; background:#dfdfdf;
+          border:1px solid #9a9a9a; padding:2px 4px; text-align:left;
+          overflow:hidden; text-overflow:ellipsis; }
+    td { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; border:1px solid #c4c4c4; padding:2px 4px;
+          overflow:hidden; text-overflow:ellipsis; }
+    tr.shaded td { background:#e0e0e0; }
+    .fieldname { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#777; font-style:italic; }
+    .interp { border-bottom:1px dotted #999; }
+    .empty { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#888; padding:4px 6px;
+              border:1px solid #c4c4c4; border-top:0; }
+    .legend { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin-top:18px;
+               border-top:1px solid #bbb; padding-top:6px; }
+    @page { size:8.5in 11in; margin:0.25in 0.25in 0.25in 0.25in; }
+    @media print {
+      body { background:#fff; padding:0; }
+      .sheet { box-shadow:none; width:auto; min-height:0; padding:0; }
+      .legend { page-break-before:avoid; }
+    }
+    </style>
+</head><body>
+<!--
+  Generated from: reports single/Completion/Daily Input/Well Summary.afr
+  Structure (blocks, fields, widths, filters, captions) is EXTRACTED from
+  the .afr bytes. Field CAPTIONS are interpreted from WellView naming —
+  they are not stored in the file. Data values are fictional samples.
+-->
+<div class="sheet">
+<h1 class="entity">Well Summary</h1>
+<p class="meta">Source: <strong>reports single/Completion/Daily Input/Well Summary.afr</strong> &nbsp;|&nbsp; paper: letter &nbsp;|&nbsp; master template: template portrait.afr &nbsp;|&nbsp; root table: wvotherinhole &nbsp;|&nbsp; filter: none &nbsp;|&nbsp; 2 link condition(s), listed below</p>
+
+<!-- block 1: WellView table `wvwellheader` (17 field(s), declared 17) -->
+<section>
+<div class="blockbar">Well Header <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvwellheader</span></div>
+<table><colgroup>
+<col style="width:4.84%">
+<col style="width:4.84%">
+<col style="width:4.84%">
+<col style="width:4.84%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:5.38%">
+<col style="width:16.13%">
+</colgroup><thead><tr>
+<th title="wvwellheader.dttmspud (width 9)"><span class="interp">Spud Date/Time</span><br><span class="fieldname">wvwellheader.dttmspud</span></th>
+<th title="wvwellheader.dttmrr (width 9)"><span class="interp">Date/Time Rr</span><br><span class="fieldname">wvwellheader.dttmrr</span></th>
+<th title="wvwellheader.wellconfig (width 9)"><span class="interp">Wellconfig</span><br><span class="fieldname">wvwellheader.wellconfig</span></th>
+<th title="wvwellheader.tdcalc (width 9)"><span class="interp">Td (computed)</span><br><span class="fieldname">wvwellheader.tdcalc</span></th>
+<th title="wvwellheader.elvorigkb (width 10)"><span class="interp">Elvorigkb</span><br><span class="fieldname">wvwellheader.elvorigkb</span></th>
+<th title="wvwellheader.elvground (width 10)"><span class="interp">Elvground</span><br><span class="fieldname">wvwellheader.elvground</span></th>
+<th title="wvwellheader.elvcasflange (width 10)"><span class="interp">Elvcasflange</span><br><span class="fieldname">wvwellheader.elvcasflange</span></th>
+<th title="wvwellheader.elvtubhead (width 10)"><span class="interp">Elvtubhead</span><br><span class="fieldname">wvwellheader.elvtubhead</span></th>
+<th title="wvelevationhistory.elvother (width 10)"><span class="interp">Elvother</span><br><span class="fieldname">wvelevationhistory.elvother</span></th>
+<th title="wvwellheader.kbtogrdcalc (width 10)"><span class="interp">Kbtogrd (computed)</span><br><span class="fieldname">wvwellheader.kbtogrdcalc</span></th>
+<th title="wvwellheader.kbtocascalc (width 10)"><span class="interp">Kbtocas (computed)</span><br><span class="fieldname">wvwellheader.kbtocascalc</span></th>
+<th title="wvwellheader.kbtotubcalc (width 10)"><span class="interp">Kbtotub (computed)</span><br><span class="fieldname">wvwellheader.kbtotubcalc</span></th>
+<th title="wvresponsibleteam.contactname (width 10)"><span class="interp">Contactname</span><br><span class="fieldname">wvresponsibleteam.contactname</span></th>
+<th title="wvresponsibleteam.contactname (width 10)"><span class="interp">Contactname</span><br><span class="fieldname">wvresponsibleteam.contactname</span></th>
+<th title="wvresponsibleteam.contactname (width 10)"><span class="interp">Contactname</span><br><span class="fieldname">wvresponsibleteam.contactname</span></th>
+<th title="wvresponsibleteam.contactname (width 10)"><span class="interp">Contactname</span><br><span class="fieldname">wvresponsibleteam.contactname</span></th>
+<th title="wvwellheader.directionstowell (width 30)"><span class="interp">Directionstowell</span><br><span class="fieldname">wvwellheader.directionstowell</span></th>
+</tr></thead><tbody>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>A. SAMPLE</td>
+<td>A. SAMPLE</td>
+<td>A. SAMPLE</td>
+<td>A. SAMPLE</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>A. SAMPLE</td>
+<td>A. SAMPLE</td>
+<td>A. SAMPLE</td>
+<td>A. SAMPLE</td>
+<td>—</td>
+</tr>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>A. SAMPLE</td>
+<td>A. SAMPLE</td>
+<td>A. SAMPLE</td>
+<td>A. SAMPLE</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 2: WellView table `wvwellhead` (4 field(s), declared 4) -->
+<section>
+<div class="blockbar">Wellhead <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvwellhead</span></div>
+<table><colgroup>
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+</colgroup><thead><tr>
+<th title="wvwellhead.typ (width 8)"><span class="interp">Type</span><br><span class="fieldname">wvwellhead.typ</span></th>
+<th title="wvwellhead.make (width 8)"><span class="interp">Make</span><br><span class="fieldname">wvwellhead.make</span></th>
+<th title="wvwellhead.workpres (width 8)"><span class="interp">Workpres</span><br><span class="fieldname">wvwellhead.workpres</span></th>
+<th title="wvwellhead.service (width 8)"><span class="interp">Service</span><br><span class="fieldname">wvwellhead.service</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>Sample</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Sample</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 3: WellView table `wvwellbore` (4 field(s), declared 4) -->
+<section>
+<div class="blockbar">Wellbore <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvwellbore</span></div>
+<table><colgroup>
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+</colgroup><thead><tr>
+<th title="wvwellbore.des (width 10)"><span class="interp">Description</span><br><span class="fieldname">wvwellbore.des</span></th>
+<th title="wvwellbore.idrecparent (width 10)"><span class="interp">Idrecparent</span><br><span class="fieldname">wvwellbore.idrecparent</span></th>
+<th title="wvwellbore.profiletyp (width 10)"><span class="interp">Profiletyp</span><br><span class="fieldname">wvwellbore.profiletyp</span></th>
+<th title="wvwellbore.kickoffdepth (width 10)"><span class="interp">Kickoffdepth</span><br><span class="fieldname">wvwellbore.kickoffdepth</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>Sample</td>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>Sample</td>
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>Sample</td>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 4: WellView table `wvcas` (7 field(s), declared 7) -->
+<section>
+<div class="blockbar">Cas <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvcas</span></div>
+<table><colgroup>
+<col style="width:34.25%">
+<col style="width:13.70%">
+<col style="width:9.59%">
+<col style="width:9.59%">
+<col style="width:10.96%">
+<col style="width:9.59%">
+<col style="width:12.33%">
+</colgroup><thead><tr>
+<th title="wvcas.des (width 25)"><span class="interp">Description</span><br><span class="fieldname">wvcas.des</span></th>
+<th title="wvcas.dttmrun (width 10)"><span class="interp">Date/Time Run</span><br><span class="fieldname">wvcas.dttmrun</span></th>
+<th title="wvcas.szodnommaxcalc (width 7)"><span class="interp">Szodnommax (computed)</span><br><span class="fieldname">wvcas.szodnommaxcalc</span></th>
+<th title="wvcas.szidnommincalc (width 7)"><span class="interp">Szidnommin (computed)</span><br><span class="fieldname">wvcas.szidnommincalc</span></th>
+<th title="wvcas.wtperlengthcalc (width 8)"><span class="interp">Wtperlength (computed)</span><br><span class="fieldname">wvcas.wtperlengthcalc</span></th>
+<th title="wvcas.gradecalc (width 7)"><span class="interp">Grade (computed)</span><br><span class="fieldname">wvcas.gradecalc</span></th>
+<th title="wvcas.depthbtm (width 9)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvcas.depthbtm</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 5: WellView table `wvcement` (1 field(s), declared 1) -->
+<section>
+<div class="blockbar">Cement <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvcement</span></div>
+<table><colgroup>
+<col style="width:100.00%">
+</colgroup><thead><tr>
+<th title="wvcement.contractor (width 15)"><span class="interp">Contractor</span><br><span class="fieldname">wvcement.contractor</span></th>
+</tr></thead><tbody>
+<tr>
+<td>DEMO RIG 432</td>
+</tr>
+<tr class="shaded">
+<td>DEMO RIG 432</td>
+</tr>
+<tr>
+<td>DEMO RIG 432</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 6: WellView table `wvcementstage` (4 field(s), declared 4) -->
+<section>
+<div class="blockbar">Cementstage <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvcementstage</span></div>
+<table><colgroup>
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+</colgroup><thead><tr>
+<th title="wvcementstage.depthtop (width 9)"><span class="interp">Top Depth</span><br><span class="fieldname">wvcementstage.depthtop</span></th>
+<th title="wvcementstage.depthbtm (width 9)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvcementstage.depthbtm</span></th>
+<th title="wvcementstage.fullreturn (width 9)"><span class="interp">Fullreturn</span><br><span class="fieldname">wvcementstage.fullreturn</span></th>
+<th title="wvcementstage.volreturncmnt (width 9)"><span class="interp">Volreturncmnt</span><br><span class="fieldname">wvcementstage.volreturncmnt</span></th>
+</tr></thead><tbody>
+<tr>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 7: WellView table `wvcementstagefluid` (4 field(s), declared 4) -->
+<section>
+<div class="blockbar">Cementstagefluid <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvcementstagefluid</span></div>
+<table><colgroup>
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+</colgroup><thead><tr>
+<th title="wvcementstagefluid.desfluid (width 9)"><span class="interp">Description Fluid</span><br><span class="fieldname">wvcementstagefluid.desfluid</span></th>
+<th title="wvcementstagefluid.typ (width 9)"><span class="interp">Type</span><br><span class="fieldname">wvcementstagefluid.typ</span></th>
+<th title="wvcementstagefluid.amtcement (width 9)"><span class="interp">Amtcement</span><br><span class="fieldname">wvcementstagefluid.amtcement</span></th>
+<th title="wvcementstagefluid.cmtclass (width 9)"><span class="interp">Cmtclass</span><br><span class="fieldname">wvcementstagefluid.cmtclass</span></th>
+</tr></thead><tbody>
+<tr>
+<td>—</td>
+<td>Sample</td>
+<td>123,456.00</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>—</td>
+<td>Sample</td>
+<td>123,456.00</td>
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+<td>Sample</td>
+<td>123,456.00</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 8: WellView table `wvotherinhole` (5 field(s), declared 5) -->
+<section>
+<div class="blockbar">Otherinhole <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvotherinhole</span></div>
+<table><colgroup>
+<col style="width:39.68%">
+<col style="width:14.29%">
+<col style="width:14.29%">
+<col style="width:15.87%">
+<col style="width:15.87%">
+</colgroup><thead><tr>
+<th title="wvotherinhole.des (width 25)"><span class="interp">Description</span><br><span class="fieldname">wvotherinhole.des</span></th>
+<th title="wvotherinhole.depthtop (width 9)"><span class="interp">Top Depth</span><br><span class="fieldname">wvotherinhole.depthtop</span></th>
+<th title="wvotherinhole.depthbtm (width 9)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvotherinhole.depthbtm</span></th>
+<th title="wvotherinhole.dttmrun (width 10)"><span class="interp">Date/Time Run</span><br><span class="fieldname">wvotherinhole.dttmrun</span></th>
+<th title="wvotherinhole.dttmpull (width 10)"><span class="interp">Date/Time Pull</span><br><span class="fieldname">wvotherinhole.dttmpull</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 9: WellView table `wvzone` (5 field(s), declared 5) -->
+<section>
+<div class="blockbar">Zone <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvzone</span></div>
+<table><colgroup>
+<col style="width:25.86%">
+<col style="width:15.52%">
+<col style="width:15.52%">
+<col style="width:25.86%">
+<col style="width:17.24%">
+</colgroup><thead><tr>
+<th title="wvzone.zonename (width 15)"><span class="interp">Zonename</span><br><span class="fieldname">wvzone.zonename</span></th>
+<th title="wvzone.depthtop (width 9)"><span class="interp">Top Depth</span><br><span class="fieldname">wvzone.depthtop</span></th>
+<th title="wvzone.depthbtm (width 9)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvzone.depthbtm</span></th>
+<th title="wvzone.currentstatuscalc (width 15)"><span class="interp">Currentstatus (computed)</span><br><span class="fieldname">wvzone.currentstatuscalc</span></th>
+<th title="wvzone.dttmstatuscalc (width 10)"><span class="interp">Date/Time Status (computed)</span><br><span class="fieldname">wvzone.dttmstatuscalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>A. SAMPLE</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+</tr>
+<tr class="shaded">
+<td>A. SAMPLE</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+</tr>
+<tr>
+<td>A. SAMPLE</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 10: WellView table `wvperforation` (8 field(s), declared 8) -->
+<section>
+<div class="blockbar">Perforation <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvperforation</span></div>
+<table><colgroup>
+<col style="width:14.93%">
+<col style="width:13.43%">
+<col style="width:13.43%">
+<col style="width:13.43%">
+<col style="width:22.39%">
+<col style="width:5.97%">
+<col style="width:8.96%">
+<col style="width:7.46%">
+</colgroup><thead><tr>
+<th title="wvperforation.dttm (width 10)"><span class="interp">Dttm</span><br><span class="fieldname">wvperforation.dttm</span></th>
+<th title="wvperforation.typ (width 9)"><span class="interp">Type</span><br><span class="fieldname">wvperforation.typ</span></th>
+<th title="wvperforation.depthtop (width 9)"><span class="interp">Top Depth</span><br><span class="fieldname">wvperforation.depthtop</span></th>
+<th title="wvperforation.depthbtm (width 9)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvperforation.depthbtm</span></th>
+<th title="wvperforation.idreczone (width 15)"><span class="interp">Idreczone</span><br><span class="fieldname">wvperforation.idreczone</span></th>
+<th title="wvperforation.shotdensity (width 4)"><span class="interp">Shotdensity</span><br><span class="fieldname">wvperforation.shotdensity</span></th>
+<th title="wvperforation.phasing (width 6)"><span class="interp">Phasing</span><br><span class="fieldname">wvperforation.phasing</span></th>
+<th title="wvperforation.currentstatuscalc (width 5)"><span class="interp">Currentstatus (computed)</span><br><span class="fieldname">wvperforation.currentstatuscalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>10.4</td>
+<td>—</td>
+<td>Sample</td>
+</tr>
+<tr class="shaded">
+<td>1405/02/11 06:00</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>10.4</td>
+<td>—</td>
+<td>Sample</td>
+</tr>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>10.4</td>
+<td>—</td>
+<td>Sample</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 11: WellView table `wvstimtreat` (3 field(s), declared 3) -->
+<section>
+<div class="blockbar">Stimtreat <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvstimtreat</span></div>
+<table><colgroup>
+<col style="width:25.00%">
+<col style="width:37.50%">
+<col style="width:37.50%">
+</colgroup><thead><tr>
+<th title="wvstimtreat.dttm (width 10)"><span class="interp">Dttm</span><br><span class="fieldname">wvstimtreat.dttm</span></th>
+<th title="wvstimtreat.idreczone (width 15)"><span class="interp">Idreczone</span><br><span class="fieldname">wvstimtreat.idreczone</span></th>
+<th title="wvstimtreat.typ (width 15)"><span class="interp">Type</span><br><span class="fieldname">wvstimtreat.typ</span></th>
+</tr></thead><tbody>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>Sample</td>
+</tr>
+<tr class="shaded">
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>Sample</td>
+</tr>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>Sample</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 12: WellView table `wvstimtreatstg` (5 field(s), declared 5) -->
+<section>
+<div class="blockbar">Stimtreatstg <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvstimtreatstg</span></div>
+<table><colgroup>
+<col style="width:5.26%">
+<col style="width:23.68%">
+<col style="width:23.68%">
+<col style="width:23.68%">
+<col style="width:23.68%">
+</colgroup><thead><tr>
+<th title="wvstimtreatstg.stagenum (width 2)"><span class="interp">Stagenum</span><br><span class="fieldname">wvstimtreatstg.stagenum</span></th>
+<th title="wvstimtreatstg.stagetyp (width 9)"><span class="interp">Stagetyp</span><br><span class="fieldname">wvstimtreatstg.stagetyp</span></th>
+<th title="wvstimtreatstg.depthtop (width 9)"><span class="interp">Top Depth</span><br><span class="fieldname">wvstimtreatstg.depthtop</span></th>
+<th title="wvstimtreatstg.depthbtm (width 9)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvstimtreatstg.depthbtm</span></th>
+<th title="wvstimtreatstg.volpumped (width 9)"><span class="interp">Volpumped</span><br><span class="fieldname">wvstimtreatstg.volpumped</span></th>
+</tr></thead><tbody>
+<tr>
+<td>—</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>—</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 13: WellView table `wvlog` (5 field(s), declared 5) -->
+<section>
+<div class="blockbar">Log <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvlog</span></div>
+<table><colgroup>
+<col style="width:16.39%">
+<col style="width:14.75%">
+<col style="width:14.75%">
+<col style="width:49.18%">
+<col style="width:4.92%">
+</colgroup><thead><tr>
+<th title="wvlog.dttm (width 10)"><span class="interp">Dttm</span><br><span class="fieldname">wvlog.dttm</span></th>
+<th title="wvlog.depthtop (width 9)"><span class="interp">Top Depth</span><br><span class="fieldname">wvlog.depthtop</span></th>
+<th title="wvlog.depthbtm (width 9)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvlog.depthbtm</span></th>
+<th title="wvlog.typ (width 30)"><span class="interp">Type</span><br><span class="fieldname">wvlog.typ</span></th>
+<th title="wvlog.casedhole (width 3)"><span class="interp">Casedhole</span><br><span class="fieldname">wvlog.casedhole</span></th>
+</tr></thead><tbody>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample</td>
+<td>—</td>
+</tr>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 14: WellView table `wvtub` (3 field(s), declared 3) -->
+<section>
+<div class="blockbar">Tub <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvtub</span></div>
+<table><colgroup>
+<col style="width:56.82%">
+<col style="width:22.73%">
+<col style="width:20.45%">
+</colgroup><thead><tr>
+<th title="wvtub.des (width 25)"><span class="interp">Description</span><br><span class="fieldname">wvtub.des</span></th>
+<th title="wvtub.dttmrun (width 10)"><span class="interp">Date/Time Run</span><br><span class="fieldname">wvtub.dttmrun</span></th>
+<th title="wvtub.depthbtm (width 9)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvtub.depthbtm</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 15: WellView table `wvtubcomp` (9 field(s), declared 9) -->
+<section>
+<div class="blockbar">Tubcomp <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvtubcomp</span></div>
+<table><colgroup>
+<col style="width:32.05%">
+<col style="width:8.97%">
+<col style="width:8.97%">
+<col style="width:10.26%">
+<col style="width:8.97%">
+<col style="width:3.85%">
+<col style="width:8.97%">
+<col style="width:8.97%">
+<col style="width:8.97%">
+</colgroup><thead><tr>
+<th title="wvtubcomp.des (width 25)"><span class="interp">Description</span><br><span class="fieldname">wvtubcomp.des</span></th>
+<th title="wvtubcomp.szodnom (width 7)"><span class="interp">Szodnom</span><br><span class="fieldname">wvtubcomp.szodnom</span></th>
+<th title="wvtubcomp.szidnom (width 7)"><span class="interp">Szidnom</span><br><span class="fieldname">wvtubcomp.szidnom</span></th>
+<th title="wvtubcomp.wtperlength (width 8)"><span class="interp">Wtperlength</span><br><span class="fieldname">wvtubcomp.wtperlength</span></th>
+<th title="wvtubcomp.grade (width 7)"><span class="interp">Grade</span><br><span class="fieldname">wvtubcomp.grade</span></th>
+<th title="wvtubcomp.joints (width 3)"><span class="interp">Joints</span><br><span class="fieldname">wvtubcomp.joints</span></th>
+<th title="wvtubcomp.length (width 7)"><span class="interp">Length</span><br><span class="fieldname">wvtubcomp.length</span></th>
+<th title="wvtubcomp.depthtopcalc (width 7)"><span class="interp">Top Depth (computed)</span><br><span class="fieldname">wvtubcomp.depthtopcalc</span></th>
+<th title="wvtubcomp.depthbtmcalc (width 7)"><span class="interp">Bottom Depth (computed)</span><br><span class="fieldname">wvtubcomp.depthbtmcalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+<td>—</td>
+<td>12.2</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+<td>—</td>
+<td>12.2</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+<td>—</td>
+<td>12.2</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 16: WellView table `wvrod` (3 field(s), declared 3) -->
+<section>
+<div class="blockbar">Rod String <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvrod</span></div>
+<table><colgroup>
+<col style="width:56.82%">
+<col style="width:22.73%">
+<col style="width:20.45%">
+</colgroup><thead><tr>
+<th title="wvrod.des (width 25)"><span class="interp">Description</span><br><span class="fieldname">wvrod.des</span></th>
+<th title="wvrod.dttmrun (width 10)"><span class="interp">Date/Time Run</span><br><span class="fieldname">wvrod.dttmrun</span></th>
+<th title="wvrod.depthbtm (width 9)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvrod.depthbtm</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 17: WellView table `wvrodcomp` (8 field(s), declared 8) -->
+<section>
+<div class="blockbar">Rodcomp <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvrodcomp</span></div>
+<table><colgroup>
+<col style="width:35.21%">
+<col style="width:9.86%">
+<col style="width:11.27%">
+<col style="width:9.86%">
+<col style="width:4.23%">
+<col style="width:9.86%">
+<col style="width:9.86%">
+<col style="width:9.86%">
+</colgroup><thead><tr>
+<th title="wvrodcomp.des (width 25)"><span class="interp">Description</span><br><span class="fieldname">wvrodcomp.des</span></th>
+<th title="wvrodcomp.szodnom (width 7)"><span class="interp">Szodnom</span><br><span class="fieldname">wvrodcomp.szodnom</span></th>
+<th title="wvrodcomp.wtperlength (width 8)"><span class="interp">Wtperlength</span><br><span class="fieldname">wvrodcomp.wtperlength</span></th>
+<th title="wvrodcomp.grade (width 7)"><span class="interp">Grade</span><br><span class="fieldname">wvrodcomp.grade</span></th>
+<th title="wvrodcomp.joints (width 3)"><span class="interp">Joints</span><br><span class="fieldname">wvrodcomp.joints</span></th>
+<th title="wvrodcomp.length (width 7)"><span class="interp">Length</span><br><span class="fieldname">wvrodcomp.length</span></th>
+<th title="wvrodcomp.depthtopcalc (width 7)"><span class="interp">Top Depth (computed)</span><br><span class="fieldname">wvrodcomp.depthtopcalc</span></th>
+<th title="wvrodcomp.depthbtmcalc (width 7)"><span class="interp">Bottom Depth (computed)</span><br><span class="fieldname">wvrodcomp.depthbtmcalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+<td>—</td>
+<td>12.2</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+<td>—</td>
+<td>12.2</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+<td>—</td>
+<td>12.2</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 18: WellView table `wvrodcomppump` (23 field(s), declared 23) -->
+<section>
+<div class="blockbar">Rodcomppump <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvrodcomppump</span></div>
+<table><colgroup>
+<col style="width:6.70%">
+<col style="width:6.70%">
+<col style="width:6.70%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:6.25%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:3.12%">
+<col style="width:6.70%">
+<col style="width:6.70%">
+<col style="width:6.70%">
+<col style="width:6.70%">
+</colgroup><thead><tr>
+<th title="wvrodcomp.make (width 15)"><span class="interp">Make</span><br><span class="fieldname">wvrodcomp.make</span></th>
+<th title="wvrodcomp.model (width 15)"><span class="interp">Model</span><br><span class="fieldname">wvrodcomp.model</span></th>
+<th title="wvrodcomp.sn (width 15)"><span class="interp">Serial Number</span><br><span class="fieldname">wvrodcomp.sn</span></th>
+<th title="wvrodcomppump.szidbore (width 7)"><span class="interp">Szidbore</span><br><span class="fieldname">wvrodcomppump.szidbore</span></th>
+<th title="wvrodcomppump.pumptyp (width 7)"><span class="interp">Pumptyp</span><br><span class="fieldname">wvrodcomppump.pumptyp</span></th>
+<th title="wvrodcomppump.barreltyp (width 7)"><span class="interp">Barreltyp</span><br><span class="fieldname">wvrodcomppump.barreltyp</span></th>
+<th title="wvrodcomppump.anchortyp (width 7)"><span class="interp">Anchortyp</span><br><span class="fieldname">wvrodcomppump.anchortyp</span></th>
+<th title="wvrodcomppump.seatassytyp (width 7)"><span class="interp">Seatassytyp</span><br><span class="fieldname">wvrodcomppump.seatassytyp</span></th>
+<th title="wvrodcomppump.barrellength (width 7)"><span class="interp">Barrellength</span><br><span class="fieldname">wvrodcomppump.barrellength</span></th>
+<th title="wvrodcomppump.plungerlengthnom (width 7)"><span class="interp">Plungerlengthnom</span><br><span class="fieldname">wvrodcomppump.plungerlengthnom</span></th>
+<th title="wvrodcomppump.lengthupperext (width 7)"><span class="interp">Lengthupperext</span><br><span class="fieldname">wvrodcomppump.lengthupperext</span></th>
+<th title="wvrodcomppump.lengthlowerext (width 7)"><span class="interp">Lengthlowerext</span><br><span class="fieldname">wvrodcomppump.lengthlowerext</span></th>
+<th title="wvrodcomppump.plungerodclear (width 7)"><span class="interp">Plungerodclear</span><br><span class="fieldname">wvrodcomppump.plungerodclear</span></th>
+<th title="wvrodcomppump.seatassydes (width 14)"><span class="interp">Seatassydes</span><br><span class="fieldname">wvrodcomppump.seatassydes</span></th>
+<th title="wvrodcomppump.seatassysz (width 7)"><span class="interp">Seatassysz</span><br><span class="fieldname">wvrodcomppump.seatassysz</span></th>
+<th title="wvrodcomppump.barrelmaterial (width 7)"><span class="interp">Barrelmaterial</span><br><span class="fieldname">wvrodcomppump.barrelmaterial</span></th>
+<th title="wvrodcomppump.plungermaterial (width 7)"><span class="interp">Plungermaterial</span><br><span class="fieldname">wvrodcomppump.plungermaterial</span></th>
+<th title="wvrodcomppump.gasanchorszod (width 7)"><span class="interp">Gasanchorszod</span><br><span class="fieldname">wvrodcomppump.gasanchorszod</span></th>
+<th title="wvrodcomppump.gasanchorlength (width 7)"><span class="interp">Gasanchorlength</span><br><span class="fieldname">wvrodcomppump.gasanchorlength</span></th>
+<th title="wvrodcomppump.travvalvballmtl (width 15)"><span class="interp">Travvalvballmtl</span><br><span class="fieldname">wvrodcomppump.travvalvballmtl</span></th>
+<th title="wvrodcomppump.travvalvseatmtl (width 15)"><span class="interp">Travvalvseatmtl</span><br><span class="fieldname">wvrodcomppump.travvalvseatmtl</span></th>
+<th title="wvrodcomppump.standvalveballmtl (width 15)"><span class="interp">Standvalveballmtl</span><br><span class="fieldname">wvrodcomppump.standvalveballmtl</span></th>
+<th title="wvrodcomppump.standvalveseatmtl (width 15)"><span class="interp">Standvalveseatmtl</span><br><span class="fieldname">wvrodcomppump.standvalveseatmtl</span></th>
+</tr></thead><tbody>
+<tr>
+<td>—</td>
+<td>—</td>
+<td>SN-0001</td>
+<td>—</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>12.2</td>
+<td>12.2</td>
+<td>12.2</td>
+<td>12.2</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>—</td>
+<td>—</td>
+<td>SN-0001</td>
+<td>—</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>12.2</td>
+<td>12.2</td>
+<td>12.2</td>
+<td>12.2</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+<td>—</td>
+<td>SN-0001</td>
+<td>—</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>12.2</td>
+<td>12.2</td>
+<td>12.2</td>
+<td>12.2</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 19: WellView table `wvswab` (6 field(s), declared 6) -->
+<section>
+<div class="blockbar">Swab <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvswab</span></div>
+<table><colgroup>
+<col style="width:17.24%">
+<col style="width:25.86%">
+<col style="width:25.86%">
+<col style="width:10.34%">
+<col style="width:10.34%">
+<col style="width:10.34%">
+</colgroup><thead><tr>
+<th title="wvswab.dttm (width 10)"><span class="interp">Dttm</span><br><span class="fieldname">wvswab.dttm</span></th>
+<th title="wvswab.contractor (width 15)"><span class="interp">Contractor</span><br><span class="fieldname">wvswab.contractor</span></th>
+<th title="wvswab.idreczone (width 15)"><span class="interp">Idreczone</span><br><span class="fieldname">wvswab.idreczone</span></th>
+<th title="wvswab.voltotalcalc (width 6)"><span class="interp">Voltotal (computed)</span><br><span class="fieldname">wvswab.voltotalcalc</span></th>
+<th title="wvswab.voltotaloilcalc (width 6)"><span class="interp">Voltotaloil (computed)</span><br><span class="fieldname">wvswab.voltotaloilcalc</span></th>
+<th title="wvswab.voltotalbswcalc (width 6)"><span class="interp">Voltotalbsw (computed)</span><br><span class="fieldname">wvswab.voltotalbswcalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>1405/02/11 06:00</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 20: WellView table `wvjob` (5 field(s), declared 5) -->
+<section>
+<div class="blockbar">Job <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjob</span></div>
+<table><colgroup>
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:15.00%">
+<col style="width:15.00%">
+<col style="width:50.00%">
+</colgroup><thead><tr>
+<th title="wvjob.dttmstart (width 6)"><span class="interp">Start Date/Time</span><br><span class="fieldname">wvjob.dttmstart</span></th>
+<th title="wvjob.dttmend (width 6)"><span class="interp">End Date/Time</span><br><span class="fieldname">wvjob.dttmend</span></th>
+<th title="wvjob.jobtyp (width 9)"><span class="interp">Jobtyp</span><br><span class="fieldname">wvjob.jobtyp</span></th>
+<th title="wvjob.jobsubtyp (width 9)"><span class="interp">Jobsubtyp</span><br><span class="fieldname">wvjob.jobsubtyp</span></th>
+<th title="wvjob.summary (width 30)"><span class="interp">Summary</span><br><span class="fieldname">wvjob.summary</span></th>
+</tr></thead><tbody>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>—</td>
+</tr>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>Sample</td>
+<td>Sample</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 21: WellView table `wvattachment` (1 field(s), declared 1) -->
+<section>
+<div class="blockbar">Attachment <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvattachment</span></div>
+<table><colgroup>
+<col style="width:100.00%">
+</colgroup><thead><tr>
+<th title="wvattachment.des (width 25)"><span class="interp">Description</span><br><span class="fieldname">wvattachment.des</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- link/filter conditions joining each block to its parent --><section><div class="blockbar">Link conditions</div><table><thead><tr><th>Table</th><th>Column</th></tr></thead><tbody>
+<tr><td>wvtub</td><td>dttmpull</td></tr>
+<tr class="shaded"><td>wvrod</td><td>dttmpull</td></tr>
+</tbody></table></section>
+<p class="legend">Structure extracted from the binary template. <span class='interp'>Dotted labels</span> are interpreted from WellView naming conventions and are not stored in the .afr. All data values are fictional samples.</p>
+</div></body></html>

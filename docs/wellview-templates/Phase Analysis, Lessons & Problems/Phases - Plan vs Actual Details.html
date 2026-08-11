@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Phases - Plan vs Actual Details</title>
+<style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:16px; background:#f4f4f4; font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; }
+    .sheet { background:#fff; margin:0 auto; padding:0.25in 0.25in 0.25in 0.25in;
+              width:8.5in; min-height:11in;
+              box-shadow:0 1px 6px rgba(0,0,0,.18); }
+    .entity { font-family:Arial,Helvetica,sans-serif;font-size:12.0pt;font-weight:bold;font-style:normal;color:#008000; margin:0 0 6px; }
+    .meta { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin:0 0 10px;
+             border-bottom:1px solid #bbb; padding-bottom:6px; }
+    .caption { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; margin:0 0 8px; }
+    .hotspot { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#ff0000; }
+    section { margin:0 0 14px; page-break-inside:avoid; }
+    .blockbar { font-family:Arial,Helvetica,sans-serif;font-size:12.0pt;font-weight:bold;font-style:normal;color:#000000; background:#ffffff;
+                 border:1px solid #9a9a9a; padding:3px 6px; }
+    .tablehead { background:#c0c0c0; }
+    table { border-collapse:collapse; width:100%; table-layout:fixed; }
+    th { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; background:#d3d3d3;
+          border:1px solid #9a9a9a; padding:2px 4px; text-align:left;
+          overflow:hidden; text-overflow:ellipsis; }
+    td { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; border:1px solid #c4c4c4; padding:2px 4px;
+          overflow:hidden; text-overflow:ellipsis; }
+    tr.shaded td { background:#d3d3d3; }
+    .fieldname { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#777; font-style:italic; }
+    .interp { border-bottom:1px dotted #999; }
+    .empty { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#888; padding:4px 6px;
+              border:1px solid #c4c4c4; border-top:0; }
+    .legend { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin-top:18px;
+               border-top:1px solid #bbb; padding-top:6px; }
+    @page { size:8.5in 11in; margin:0.25in 0.25in 0.25in 0.25in; }
+    @media print {
+      body { background:#fff; padding:0; }
+      .sheet { box-shadow:none; width:auto; min-height:0; padding:0; }
+      .legend { page-break-before:avoid; }
+    }
+    </style>
+</head><body>
+<!--
+  Generated from: reports single/Phase Analysis, Lessons &amp; Problems/Phases - Plan vs Actual Details.afr
+  Structure (blocks, fields, widths, filters, captions) is EXTRACTED from
+  the .afr bytes. Field CAPTIONS are interpreted from WellView naming —
+  they are not stored in the file. Data values are fictional samples.
+-->
+<div class="sheet">
+<h1 class="entity">Phases - Plan vs Actual Details</h1>
+<p class="meta">Source: <strong>reports single/Phase Analysis, Lessons &amp; Problems/Phases - Plan vs Actual Details.afr</strong> &nbsp;|&nbsp; paper: letter &nbsp;|&nbsp; master template: template landscape.afr &nbsp;|&nbsp; root table: wvjobprogramphase &nbsp;|&nbsp; filter: wvjob / wvtyp / drill</p>
+
+<!-- block 1: WellView table `wvjobprogramphase` (13 field(s), declared 13) -->
+<section>
+<div class="blockbar">Jobprogramphase <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobprogramphase</span></div>
+<table><colgroup>
+<col style="width:5.71%">
+<col style="width:5.71%">
+<col style="width:5.71%">
+<col style="width:5.71%">
+<col style="width:5.71%">
+<col style="width:28.57%">
+<col style="width:8.57%">
+<col style="width:5.71%">
+<col style="width:5.71%">
+<col style="width:5.71%">
+<col style="width:5.71%">
+<col style="width:5.71%">
+<col style="width:5.71%">
+</colgroup><thead><tr>
+<th title="wvjobprogramphase.code1 (width 10)"><span class="interp">Code 1</span><br><span class="fieldname">wvjobprogramphase.code1</span></th>
+<th title="wvjobprogramphase.code2 (width 10)"><span class="interp">Code 2</span><br><span class="fieldname">wvjobprogramphase.code2</span></th>
+<th title="wvjobprogramphase.code3 (width 10)"><span class="interp">Code3</span><br><span class="fieldname">wvjobprogramphase.code3</span></th>
+<th title="wvjobprogramphase.code4 (width 10)"><span class="interp">Code4</span><br><span class="fieldname">wvjobprogramphase.code4</span></th>
+<th title="wvjobprogramphase.idrecwellbore (width 10)"><span class="interp">Idrecwellbore</span><br><span class="fieldname">wvjobprogramphase.idrecwellbore</span></th>
+<th title="wvjobprogramphase.planphase (width 50)"><span class="interp">Planphase</span><br><span class="fieldname">wvjobprogramphase.planphase</span></th>
+<th title="wvjobprogramphase.hazards (width 15)"><span class="interp">Hazards</span><br><span class="fieldname">wvjobprogramphase.hazards</span></th>
+<th title="wvjobprogramphase.dttmstartactual (width 10)"><span class="interp">Date/Time Startactual</span><br><span class="fieldname">wvjobprogramphase.dttmstartactual</span></th>
+<th title="wvjobprogramphase.dttmendactual (width 10)"><span class="interp">Date/Time Endactual</span><br><span class="fieldname">wvjobprogramphase.dttmendactual</span></th>
+<th title="wvjobprogramphase.wellboreszcalc (width 10)"><span class="interp">Wellboresz (computed)</span><br><span class="fieldname">wvjobprogramphase.wellboreszcalc</span></th>
+<th title="wvjobprogramphase.incltopcalc (width 10)"><span class="interp">Incltop (computed)</span><br><span class="fieldname">wvjobprogramphase.incltopcalc</span></th>
+<th title="wvjobprogramphase.inclbtmcalc (width 10)"><span class="interp">Inclbtm (computed)</span><br><span class="fieldname">wvjobprogramphase.inclbtmcalc</span></th>
+<th title="wvjobprogramphase.inclmaxcalc (width 10)"><span class="interp">Inclmax (computed)</span><br><span class="fieldname">wvjobprogramphase.inclmaxcalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>—</td>
+<td>Sample</td>
+<td>—</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>DRLG</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>—</td>
+<td>Sample</td>
+<td>—</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>—</td>
+<td>Sample</td>
+<td>—</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 2: WellView table `wvjobprogramphase` (10 field(s), declared 10) -->
+<section>
+<div class="blockbar">Jobprogramphase <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobprogramphase</span></div>
+<table><colgroup>
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+</colgroup><thead><tr>
+<th title="wvjobprogramphase.durationml (width 10)"><span class="interp">Duration Ml</span><br><span class="fieldname">wvjobprogramphase.durationml</span></th>
+<th title="wvjobprogramphase.dayjobmlplancalc (width 10)"><span class="interp">Dayjobmlplan (computed)</span><br><span class="fieldname">wvjobprogramphase.dayjobmlplancalc</span></th>
+<th title="wvjobprogramphase.costml (width 10)"><span class="interp">Costml</span><br><span class="fieldname">wvjobprogramphase.costml</span></th>
+<th title="wvjobprogramphase.costmlcumcalc (width 10)"><span class="interp">Costml (cumulative) (computed)</span><br><span class="fieldname">wvjobprogramphase.costmlcumcalc</span></th>
+<th title="wvjobprogramphase.depthstartplan (width 10)"><span class="interp">Depth Startplan</span><br><span class="fieldname">wvjobprogramphase.depthstartplan</span></th>
+<th title="wvjobprogramphase.depthtvdstartplancalc (width 10)"><span class="interp">Depth TVD Startplan (computed)</span><br><span class="fieldname">wvjobprogramphase.depthtvdstartplancalc</span></th>
+<th title="wvjobprogramphase.depthendplan (width 10)"><span class="interp">Depth Endplan</span><br><span class="fieldname">wvjobprogramphase.depthendplan</span></th>
+<th title="wvjobprogramphase.depthtvdendplancalc (width 10)"><span class="interp">Depth TVD Endplan (computed)</span><br><span class="fieldname">wvjobprogramphase.depthtvdendplancalc</span></th>
+<th title="wvjobprogramphase.depthprogressplancalc (width 10)"><span class="interp">Depth Progressplan (computed)</span><br><span class="fieldname">wvjobprogramphase.depthprogressplancalc</span></th>
+<th title="wvjobprogramphase.costperdepthplancalc (width 10)"><span class="interp">Costperdepthplan (computed)</span><br><span class="fieldname">wvjobprogramphase.costperdepthplancalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>24.00</td>
+<td>—</td>
+<td>123,456.00</td>
+<td>123,456.00</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>123,456.00</td>
+</tr>
+<tr class="shaded">
+<td>24.00</td>
+<td>—</td>
+<td>123,456.00</td>
+<td>123,456.00</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>123,456.00</td>
+</tr>
+<tr>
+<td>24.00</td>
+<td>—</td>
+<td>123,456.00</td>
+<td>123,456.00</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>123,456.00</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 3: WellView table `wvjobprogramphase` (10 field(s), declared 10) -->
+<section>
+<div class="blockbar">Jobprogramphase <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobprogramphase</span></div>
+<table><colgroup>
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+<col style="width:10.00%">
+</colgroup><thead><tr>
+<th title="wvjobprogramphase.durationactualcalc (width 10)"><span class="interp">Duration Actual Ual (computed)</span><br><span class="fieldname">wvjobprogramphase.durationactualcalc</span></th>
+<th title="wvjobprogramphase.durcumactualcalc (width 10)"><span class="interp">Duration Cumulative Actual Ual (computed)</span><br><span class="fieldname">wvjobprogramphase.durcumactualcalc</span></th>
+<th title="wvjobprogramphase.costactualcalc (width 10)"><span class="interp">Costactual (computed)</span><br><span class="fieldname">wvjobprogramphase.costactualcalc</span></th>
+<th title="wvjobprogramphase.costactualcumcalc (width 10)"><span class="interp">Costactual (cumulative) (computed)</span><br><span class="fieldname">wvjobprogramphase.costactualcumcalc</span></th>
+<th title="wvjobprogramphase.depthstartactualcalc (width 10)"><span class="interp">Depth Startactual (computed)</span><br><span class="fieldname">wvjobprogramphase.depthstartactualcalc</span></th>
+<th title="wvjobprogramphase.depthtvdstartactualcalc (width 10)"><span class="interp">Depth TVD Startactual (computed)</span><br><span class="fieldname">wvjobprogramphase.depthtvdstartactualcalc</span></th>
+<th title="wvjobprogramphase.depthendactualcalc (width 10)"><span class="interp">Depth Endactual (computed)</span><br><span class="fieldname">wvjobprogramphase.depthendactualcalc</span></th>
+<th title="wvjobprogramphase.depthtvdendactualcalc (width 10)"><span class="interp">Depth TVD Endactual (computed)</span><br><span class="fieldname">wvjobprogramphase.depthtvdendactualcalc</span></th>
+<th title="wvjobprogramphase.depthprogressactualcalc (width 10)"><span class="interp">Depth Progressactual (computed)</span><br><span class="fieldname">wvjobprogramphase.depthprogressactualcalc</span></th>
+<th title="wvjobprogramphase.costperdepthcalc (width 10)"><span class="interp">Costperdepth (computed)</span><br><span class="fieldname">wvjobprogramphase.costperdepthcalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>24.00</td>
+<td>24.00</td>
+<td>123,456.00</td>
+<td>123,456.00</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>123,456.00</td>
+</tr>
+<tr class="shaded">
+<td>24.00</td>
+<td>24.00</td>
+<td>123,456.00</td>
+<td>123,456.00</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>123,456.00</td>
+</tr>
+<tr>
+<td>24.00</td>
+<td>24.00</td>
+<td>123,456.00</td>
+<td>123,456.00</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>123,456.00</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 4: WellView table `wvjobprogramphase` (20 field(s), declared 20) -->
+<section>
+<div class="blockbar">Plan vs Actual <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobprogramphase</span></div>
+<table><colgroup>
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+<col style="width:5.00%">
+</colgroup><thead><tr>
+<th title="wvjobprogramphase.costvariancecalc (width 10)"><span class="interp">Costvariance (computed)</span><br><span class="fieldname">wvjobprogramphase.costvariancecalc</span></th>
+<th title="wvjobprogramphase.durationvariancecalc (width 10)"><span class="interp">Duration Variance (computed)</span><br><span class="fieldname">wvjobprogramphase.durationvariancecalc</span></th>
+<th title="wvjobprogramphase.durationvariancecumcalc (width 10)"><span class="interp">Duration Variance (cumulative) (computed)</span><br><span class="fieldname">wvjobprogramphase.durationvariancecumcalc</span></th>
+<th title="wvjobprogramphase.durationtimelogtotalcalc (width 10)"><span class="interp">Time Log Total (hr)</span><br><span class="fieldname">wvjobprogramphase.durationtimelogtotalcalc</span></th>
+<th title="wvjobprogramphase.durationtimelogtotcumcalc (width 10)"><span class="interp">Duration Timelogtot (cumulative) (computed)</span><br><span class="fieldname">wvjobprogramphase.durationtimelogtotcumcalc</span></th>
+<th title="wvjobprogramphase.durationproblemtimecalc (width 10)"><span class="interp">Problem Time (hr)</span><br><span class="fieldname">wvjobprogramphase.durationproblemtimecalc</span></th>
+<th title="wvjobprogramphase.durationproblemtimecumcalc (width 10)"><span class="interp">Duration Problemtime (cumulative) (computed)</span><br><span class="fieldname">wvjobprogramphase.durationproblemtimecumcalc</span></th>
+<th title="wvjobprogramphase.pctproblemtimecalc (width 10)"><span class="interp">Problem Time (%)</span><br><span class="fieldname">wvjobprogramphase.pctproblemtimecalc</span></th>
+<th title="wvjobprogramphase.durationnoprobtimecalc (width 10)"><span class="interp">Duration Number Probtime (computed)</span><br><span class="fieldname">wvjobprogramphase.durationnoprobtimecalc</span></th>
+<th title="wvjobprogramphase.durationnoprobtimecumcalc (width 10)"><span class="interp">Duration Number Probtime (cumulative) (computed)</span><br><span class="fieldname">wvjobprogramphase.durationnoprobtimecumcalc</span></th>
+<th title="wvjobprogramphase.tmdrillcalc (width 10)"><span class="interp">Tmdrill (computed)</span><br><span class="fieldname">wvjobprogramphase.tmdrillcalc</span></th>
+<th title="wvjobprogramphase.tmcirccalc (width 10)"><span class="interp">Tmcirc (computed)</span><br><span class="fieldname">wvjobprogramphase.tmcirccalc</span></th>
+<th title="wvjobprogramphase.ropcalc (width 10)"><span class="interp">ROP</span><br><span class="fieldname">wvjobprogramphase.ropcalc</span></th>
+<th title="wvjobprogramphase.tmrotatingcalc (width 10)"><span class="interp">Tmrotating (computed)</span><br><span class="fieldname">wvjobprogramphase.tmrotatingcalc</span></th>
+<th title="wvjobprogramphase.roprotatingcalc (width 10)"><span class="interp">Roprotating (computed)</span><br><span class="fieldname">wvjobprogramphase.roprotatingcalc</span></th>
+<th title="wvjobprogramphase.percenttmrotatingcalc (width 10)"><span class="interp">Percenttmrotating (computed)</span><br><span class="fieldname">wvjobprogramphase.percenttmrotatingcalc</span></th>
+<th title="wvjobprogramphase.tmslidingcalc (width 10)"><span class="interp">Tmsliding (computed)</span><br><span class="fieldname">wvjobprogramphase.tmslidingcalc</span></th>
+<th title="wvjobprogramphase.ropslidingcalc (width 10)"><span class="interp">Ropsliding (computed)</span><br><span class="fieldname">wvjobprogramphase.ropslidingcalc</span></th>
+<th title="wvjobprogramphase.percenttmslidingcalc (width 10)"><span class="interp">Percenttmsliding (computed)</span><br><span class="fieldname">wvjobprogramphase.percenttmslidingcalc</span></th>
+<th title="wvjobprogramphase.bitrevscalc (width 10)"><span class="interp">Bitrevs (computed)</span><br><span class="fieldname">wvjobprogramphase.bitrevscalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>123,456.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>2.4</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>—</td>
+<td>—</td>
+<td>12.4</td>
+<td>—</td>
+<td>12.4</td>
+<td>2.4</td>
+<td>—</td>
+<td>12.4</td>
+<td>2.4</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>123,456.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>2.4</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>—</td>
+<td>—</td>
+<td>12.4</td>
+<td>—</td>
+<td>12.4</td>
+<td>2.4</td>
+<td>—</td>
+<td>12.4</td>
+<td>2.4</td>
+<td>—</td>
+</tr>
+<tr>
+<td>123,456.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>2.4</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>—</td>
+<td>—</td>
+<td>12.4</td>
+<td>—</td>
+<td>12.4</td>
+<td>2.4</td>
+<td>—</td>
+<td>12.4</td>
+<td>2.4</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+<p class="legend">Structure extracted from the binary template. <span class='interp'>Dotted labels</span> are interpreted from WellView naming conventions and are not stored in the .afr. All data values are fictional samples.</p>
+</div></body></html>

@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Daily Drilling</title>
+<style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:16px; background:#f4f4f4; font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; }
+    .sheet { background:#fff; margin:0 auto; padding:0.25in 0.25in 0.25in 0.25in;
+              width:8.5in; min-height:11in;
+              box-shadow:0 1px 6px rgba(0,0,0,.18); }
+    .entity { font-family:Arial,Helvetica,sans-serif;font-size:12.0pt;font-weight:bold;font-style:normal;color:#008000; margin:0 0 6px; }
+    .meta { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin:0 0 10px;
+             border-bottom:1px solid #bbb; padding-bottom:6px; }
+    .caption { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; margin:0 0 8px; }
+    .hotspot { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#ff0000; }
+    section { margin:0 0 14px; page-break-inside:avoid; }
+    .blockbar { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#000000; background:#dfdfdf;
+                 border:1px solid #9a9a9a; padding:3px 6px; }
+    .tablehead { background:#dfdfdf; }
+    table { border-collapse:collapse; width:100%; table-layout:fixed; }
+    th { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; background:#dfdfdf;
+          border:1px solid #9a9a9a; padding:2px 4px; text-align:left;
+          overflow:hidden; text-overflow:ellipsis; }
+    td { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; border:1px solid #c4c4c4; padding:2px 4px;
+          overflow:hidden; text-overflow:ellipsis; }
+    tr.shaded td { background:#e0e0e0; }
+    .fieldname { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#777; font-style:italic; }
+    .interp { border-bottom:1px dotted #999; }
+    .empty { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#888; padding:4px 6px;
+              border:1px solid #c4c4c4; border-top:0; }
+    .legend { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin-top:18px;
+               border-top:1px solid #bbb; padding-top:6px; }
+    @page { size:8.5in 11in; margin:0.25in 0.25in 0.25in 0.25in; }
+    @media print {
+      body { background:#fff; padding:0; }
+      .sheet { box-shadow:none; width:auto; min-height:0; padding:0; }
+      .legend { page-break-before:avoid; }
+    }
+    </style>
+</head><body>
+<!--
+  Generated from: reports single/Drilling/Daily Input/Daily Drilling.afr
+  Structure (blocks, fields, widths, filters, captions) is EXTRACTED from
+  the .afr bytes. Field CAPTIONS are interpreted from WellView naming —
+  they are not stored in the file. Data values are fictional samples.
+-->
+<div class="sheet">
+<h1 class="entity">Daily Drilling</h1>
+<p class="meta">Source: <strong>reports single/Drilling/Daily Input/Daily Drilling.afr</strong> &nbsp;|&nbsp; paper: letter &nbsp;|&nbsp; master template: template portrait.afr &nbsp;|&nbsp; root table: wvjobreport &nbsp;|&nbsp; filter: wvjob / wvtyp / drill &nbsp;|&nbsp; 31 link condition(s), listed below</p>
+<p class="caption">Report #: <span class='hotspot'>[Report #]</span>, DFS: <span class='hotspot'>[Days From Spud]</span></p>
+<p class="caption">Depth Progress: <span class='hotspot'>[Depth Progressdp (computed)]</span></p>
+<p class="caption">Report for: <span class='hotspot'>[Start Date/Time]</span></p>
+
+<!-- block 1: WellView table `wvjob` (2 field(s), declared 2) -->
+<section>
+<div class="blockbar">Job <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjob</span></div>
+<table><colgroup>
+<col style="width:50.00%">
+<col style="width:50.00%">
+</colgroup><thead><tr>
+<th title="wvjob.afenumbercalc (width 10)"><span class="interp">AFE Number</span><br><span class="fieldname">wvjob.afenumbercalc</span></th>
+<th title="wvjob.afetotalcalc (width 10)"><span class="interp">AFE Total</span><br><span class="fieldname">wvjob.afetotalcalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>AFE-SAMPLE-0001</td>
+<td>123,456.00</td>
+</tr>
+<tr class="shaded">
+<td>AFE-SAMPLE-0001</td>
+<td>123,456.00</td>
+</tr>
+<tr>
+<td>AFE-SAMPLE-0001</td>
+<td>123,456.00</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 2: WellView table `wvjobreport` (9 field(s), declared 9) -->
+<section>
+<div class="blockbar">Daily Report <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobreport</span></div>
+<table><colgroup>
+<col style="width:9.28%">
+<col style="width:9.28%">
+<col style="width:9.28%">
+<col style="width:9.28%">
+<col style="width:9.28%">
+<col style="width:9.28%">
+<col style="width:9.28%">
+<col style="width:9.28%">
+<col style="width:25.77%">
+</colgroup><thead><tr>
+<th title="wvjobreport.costtotalcalc (width 9)"><span class="interp">Daily Cost Total</span><br><span class="fieldname">wvjobreport.costtotalcalc</span></th>
+<th title="wvjobreport.costtodatecalc (width 9)"><span class="interp">Cost To Date</span><br><span class="fieldname">wvjobreport.costtodatecalc</span></th>
+<th title="wvjobreport.costmudaddcalc (width 9)"><span class="interp">Mud Cost (daily)</span><br><span class="fieldname">wvjobreport.costmudaddcalc</span></th>
+<th title="wvjobreport.costmudaddtodatecalc (width 9)"><span class="interp">Mud Cost To Date</span><br><span class="fieldname">wvjobreport.costmudaddtodatecalc</span></th>
+<th title="wvjobreport.depthstartdpcalc (width 9)"><span class="interp">Depth Start (MD)</span><br><span class="fieldname">wvjobreport.depthstartdpcalc</span></th>
+<th title="wvjobreport.depthenddpcalc (width 9)"><span class="interp">Depth End (MD)</span><br><span class="fieldname">wvjobreport.depthenddpcalc</span></th>
+<th title="wvjob.targetform (width 9)"><span class="interp">Target Formation</span><br><span class="fieldname">wvjob.targetform</span></th>
+<th title="wvjob.targetdepth (width 9)"><span class="interp">Target Depth</span><br><span class="fieldname">wvjob.targetdepth</span></th>
+<th title="wvjobreport.idreclastcascalc (width 25)"><span class="interp">Idreclastcas (computed)</span><br><span class="fieldname">wvjobreport.idreclastcascalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>123,456.00</td>
+<td>1405/02/11 06:00</td>
+<td>123,456.00</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>123,456.00</td>
+<td>1405/02/11 06:00</td>
+<td>123,456.00</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+<tr>
+<td>123,456.00</td>
+<td>1405/02/11 06:00</td>
+<td>123,456.00</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 3: WellView table `wvjobreportcontacts` (2 field(s), declared 2) -->
+<section>
+<div class="blockbar">Report Contacts <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobreportcontacts</span></div>
+<table><colgroup>
+<col style="width:60.00%">
+<col style="width:40.00%">
+</colgroup><thead><tr>
+<th title="wvjobreportcontacts.idrecjobcontact (width 30)"><span class="interp">Contact Record</span><br><span class="fieldname">wvjobreportcontacts.idrecjobcontact</span></th>
+<th title="wvjobcontact.phonemobile (width 20)"><span class="interp">Phonemobile</span><br><span class="fieldname">wvjobcontact.phonemobile</span></th>
+</tr></thead><tbody>
+<tr>
+<td>A. SAMPLE</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>A. SAMPLE</td>
+<td>—</td>
+</tr>
+<tr>
+<td>A. SAMPLE</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 4: WellView table `wvjobrig` (4 field(s), declared 4) -->
+<section>
+<div class="blockbar">Rig <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobrig</span></div>
+<table><colgroup>
+<col style="width:30.00%">
+<col style="width:20.00%">
+<col style="width:30.00%">
+<col style="width:20.00%">
+</colgroup><thead><tr>
+<th title="wvjobrig.contractor (width 30)"><span class="interp">Contractor</span><br><span class="fieldname">wvjobrig.contractor</span></th>
+<th title="wvjobrig.rigno (width 20)"><span class="interp">Rigno</span><br><span class="fieldname">wvjobrig.rigno</span></th>
+<th title="wvjobrig.idrecjobcontactcontractor (width 30)"><span class="interp">Idrecjobcontactcontractor</span><br><span class="fieldname">wvjobrig.idrecjobcontactcontractor</span></th>
+<th title="wvjobcontact.phonemobile (width 20)"><span class="interp">Phonemobile</span><br><span class="fieldname">wvjobcontact.phonemobile</span></th>
+</tr></thead><tbody>
+<tr>
+<td>DEMO RIG 432</td>
+<td>DEMO RIG 432</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>DEMO RIG 432</td>
+<td>DEMO RIG 432</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+</tr>
+<tr>
+<td>DEMO RIG 432</td>
+<td>DEMO RIG 432</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 5: WellView table `wvjobrigpump` (3 field(s), declared 3) -->
+<section>
+<div class="blockbar">Jobrigpump <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobrigpump</span></div>
+<table><colgroup>
+<col style="width:33.33%">
+<col style="width:33.33%">
+<col style="width:33.33%">
+</colgroup><thead><tr>
+<th title="wvjobrigpump.des (width 5)"><span class="interp">Description</span><br><span class="fieldname">wvjobrigpump.des</span></th>
+<th title="wvjobrigpump.powerrating (width 5)"><span class="interp">Powerrating</span><br><span class="fieldname">wvjobrigpump.powerrating</span></th>
+<th title="wvjobrigpump.szodrod (width 5)"><span class="interp">Szodrod</span><br><span class="fieldname">wvjobrigpump.szodrod</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 6: WellView table `wvjobrigpumpop` (3 field(s), declared 3) -->
+<section>
+<div class="blockbar">Jobrigpumpop <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobrigpumpop</span></div>
+<table><colgroup>
+<col style="width:33.33%">
+<col style="width:33.33%">
+<col style="width:33.33%">
+</colgroup><thead><tr>
+<th title="wvjobrigpumpop.szliner (width 6)"><span class="interp">Szliner</span><br><span class="fieldname">wvjobrigpumpop.szliner</span></th>
+<th title="wvjobrigpump.strokelength (width 6)"><span class="interp">Strokelength</span><br><span class="fieldname">wvjobrigpump.strokelength</span></th>
+<th title="wvjobrigpumpop.volperstroke (width 6)"><span class="interp">Volperstroke</span><br><span class="fieldname">wvjobrigpumpop.volperstroke</span></th>
+</tr></thead><tbody>
+<tr>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 7: WellView table `wvjobrigpumpchk` (4 field(s), declared 4) -->
+<section>
+<div class="blockbar">Jobrigpumpchk <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobrigpumpchk</span></div>
+<table><colgroup>
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+</colgroup><thead><tr>
+<th title="wvjobrigpumpchk.pres (width 5)"><span class="interp">Pres</span><br><span class="fieldname">wvjobrigpumpchk.pres</span></th>
+<th title="wvjobrigpumpchk.slowspeed (width 5)"><span class="interp">Slowspeed</span><br><span class="fieldname">wvjobrigpumpchk.slowspeed</span></th>
+<th title="wvjobrigpumpchk.spm (width 5)"><span class="interp">Spm</span><br><span class="fieldname">wvjobrigpumpchk.spm</span></th>
+<th title="wvjobrigpumpchk.volefficiency (width 5)"><span class="interp">Volefficiency</span><br><span class="fieldname">wvjobrigpumpchk.volefficiency</span></th>
+</tr></thead><tbody>
+<tr>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 8: WellView table `wvjobmudaddamt` (3 field(s), declared 3) -->
+<section>
+<div class="blockbar">Jobmudaddamt <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobmudaddamt</span></div>
+<table><colgroup>
+<col style="width:53.57%">
+<col style="width:25.00%">
+<col style="width:21.43%">
+</colgroup><thead><tr>
+<th title="wvjobmudadd.des (width 15)"><span class="interp">Description</span><br><span class="fieldname">wvjobmudadd.des</span></th>
+<th title="wvjobmudadd.cost (width 7)"><span class="interp">Cost</span><br><span class="fieldname">wvjobmudadd.cost</span></th>
+<th title="wvjobmudaddamt.consumed (width 6)"><span class="interp">Consumed</span><br><span class="fieldname">wvjobmudaddamt.consumed</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>123,456.00</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>123,456.00</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>123,456.00</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 9: WellView table `wvjobsafetychk` (3 field(s), declared 3) -->
+<section>
+<div class="blockbar">Jobsafetychk <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobsafetychk</span></div>
+<table><colgroup>
+<col style="width:16.67%">
+<col style="width:41.67%">
+<col style="width:41.67%">
+</colgroup><thead><tr>
+<th title="wvjobsafetychk.dttm (width 10)"><span class="interp">Dttm</span><br><span class="fieldname">wvjobsafetychk.dttm</span></th>
+<th title="wvjobsafetychk.typ (width 25)"><span class="interp">Type</span><br><span class="fieldname">wvjobsafetychk.typ</span></th>
+<th title="wvjobsafetychk.des (width 25)"><span class="interp">Description</span><br><span class="fieldname">wvjobsafetychk.des</span></th>
+</tr></thead><tbody>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>Sample</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr class="shaded">
+<td>1405/02/11 06:00</td>
+<td>Sample</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>Sample</td>
+<td>Sample text — not real well data</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 10: WellView table `wvwellbore` (2 field(s), declared 2) -->
+<section>
+<div class="blockbar">Wellbore <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvwellbore</span></div>
+<table><colgroup>
+<col style="width:50.00%">
+<col style="width:50.00%">
+</colgroup><thead><tr>
+<th title="wvwellbore.des (width 9)"><span class="interp">Description</span><br><span class="fieldname">wvwellbore.des</span></th>
+<th title="wvwellbore.kickoffdepth (width 9)"><span class="interp">Kickoffdepth</span><br><span class="fieldname">wvwellbore.kickoffdepth</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 11: WellView table `wvwellheader` (8 field(s), declared 8) -->
+<section>
+<div class="blockbar">Daily Summary <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvwellheader</span></div>
+<table><colgroup>
+<col style="width:12.50%">
+<col style="width:12.50%">
+<col style="width:12.50%">
+<col style="width:12.50%">
+<col style="width:12.50%">
+<col style="width:12.50%">
+<col style="width:12.50%">
+<col style="width:12.50%">
+</colgroup><thead><tr>
+<th title="wvwellheader.wellida (width 10)"><span class="interp">Well ID</span><br><span class="fieldname">wvwellheader.wellida</span></th>
+<th title="wvwellheader.legalsurveyloc (width 10)"><span class="interp">Legalsurveyloc</span><br><span class="fieldname">wvwellheader.legalsurveyloc</span></th>
+<th title="wvwellheader.welllicenseno (width 10)"><span class="interp">Welllicenseno</span><br><span class="fieldname">wvwellheader.welllicenseno</span></th>
+<th title="wvwellheader.stateprov (width 10)"><span class="interp">Stateprov</span><br><span class="fieldname">wvwellheader.stateprov</span></th>
+<th title="wvwellheader.dttmspud (width 10)"><span class="interp">Spud Date/Time</span><br><span class="fieldname">wvwellheader.dttmspud</span></th>
+<th title="wvwellheader.dttmrr (width 10)"><span class="interp">Date/Time Rr</span><br><span class="fieldname">wvwellheader.dttmrr</span></th>
+<th title="wvwellheader.elvground (width 10)"><span class="interp">Elvground</span><br><span class="fieldname">wvwellheader.elvground</span></th>
+<th title="wvwellheader.kbtogrdcalc (width 10)"><span class="interp">Kbtogrd (computed)</span><br><span class="fieldname">wvwellheader.kbtogrdcalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>SAMPLE-0987656789</td>
+<td>—</td>
+<td>SN-0001</td>
+<td>—</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>SAMPLE-0987656789</td>
+<td>—</td>
+<td>SN-0001</td>
+<td>—</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>SAMPLE-0987656789</td>
+<td>—</td>
+<td>SN-0001</td>
+<td>—</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 12: WellView table `wvjobreport` (7 field(s), declared 7) -->
+<section>
+<div class="blockbar">Daily Report <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobreport</span></div>
+<table><colgroup>
+<col style="width:11.11%">
+<col style="width:11.11%">
+<col style="width:11.11%">
+<col style="width:11.11%">
+<col style="width:11.11%">
+<col style="width:11.11%">
+<col style="width:33.33%">
+</colgroup><thead><tr>
+<th title="wvjobreport.condweather (width 10)"><span class="interp">Condweather</span><br><span class="fieldname">wvjobreport.condweather</span></th>
+<th title="wvjobreport.condtemp (width 10)"><span class="interp">Condtemp</span><br><span class="fieldname">wvjobreport.condtemp</span></th>
+<th title="wvjobreport.condroad (width 10)"><span class="interp">Condroad</span><br><span class="fieldname">wvjobreport.condroad</span></th>
+<th title="wvjobreport.condhole (width 10)"><span class="interp">Condhole</span><br><span class="fieldname">wvjobreport.condhole</span></th>
+<th title="wvjobreport.rpttmactops (width 10)"><span class="interp">Rpttmactops</span><br><span class="fieldname">wvjobreport.rpttmactops</span></th>
+<th title="wvjobreport.plannextrptops (width 10)"><span class="interp">Plannextrptops</span><br><span class="fieldname">wvjobreport.plannextrptops</span></th>
+<th title="wvjobreport.summaryops (width 30)"><span class="interp">Summaryops</span><br><span class="fieldname">wvjobreport.summaryops</span></th>
+</tr></thead><tbody>
+<tr>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 13: WellView table `wvjobreporttimelog` (7 field(s), declared 7) -->
+<section>
+<div class="blockbar">Time Log <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobreporttimelog</span></div>
+<table><colgroup>
+<col style="width:6.52%">
+<col style="width:6.52%">
+<col style="width:6.52%">
+<col style="width:6.52%">
+<col style="width:6.52%">
+<col style="width:13.04%">
+<col style="width:54.35%">
+</colgroup><thead><tr>
+<th title="wvjobreporttimelog.dttmstartcalc (width 6)"><span class="interp">Start Date/Time (computed)</span><br><span class="fieldname">wvjobreporttimelog.dttmstartcalc</span></th>
+<th title="wvjobreporttimelog.dttmendcalc (width 6)"><span class="interp">End Date/Time (computed)</span><br><span class="fieldname">wvjobreporttimelog.dttmendcalc</span></th>
+<th title="wvjobreporttimelog.duration (width 6)"><span class="interp">Duration Ation</span><br><span class="fieldname">wvjobreporttimelog.duration</span></th>
+<th title="wvjobreporttimelog.sumofdurationcalc (width 6)"><span class="interp">Sumofduration (computed)</span><br><span class="fieldname">wvjobreporttimelog.sumofdurationcalc</span></th>
+<th title="wvjobreporttimelog.code1 (width 6)"><span class="interp">Code 1</span><br><span class="fieldname">wvjobreporttimelog.code1</span></th>
+<th title="wvjobreporttimelog.code2 (width 12)"><span class="interp">Code 2</span><br><span class="fieldname">wvjobreporttimelog.code2</span></th>
+<th title="wvjobreporttimelog.com (width 50)"><span class="interp">Comment</span><br><span class="fieldname">wvjobreporttimelog.com</span></th>
+</tr></thead><tbody>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr class="shaded">
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>24.00</td>
+<td>24.00</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>Sample text — not real well data</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 14: WellView table `wvjobreportmudchk` (26 field(s), declared 26) -->
+<section>
+<div class="blockbar">Mud Check <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobreportmudchk</span></div>
+<table><colgroup>
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:4.29%">
+<col style="width:4.29%">
+<col style="width:4.29%">
+<col style="width:4.29%">
+<col style="width:4.29%">
+<col style="width:4.29%">
+<col style="width:4.29%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+<col style="width:3.68%">
+</colgroup><thead><tr>
+<th title="wvjobreportmudchk.mudtyp (width 6)"><span class="interp">Mudtyp</span><br><span class="fieldname">wvjobreportmudchk.mudtyp</span></th>
+<th title="wvjobreportmudchk.dttm (width 6)"><span class="interp">Dttm</span><br><span class="fieldname">wvjobreportmudchk.dttm</span></th>
+<th title="wvjobreportmudchk.depth (width 6)"><span class="interp">Depth</span><br><span class="fieldname">wvjobreportmudchk.depth</span></th>
+<th title="wvjobreportmudchk.density (width 6)"><span class="interp">Density</span><br><span class="fieldname">wvjobreportmudchk.density</span></th>
+<th title="wvjobreportmudchk.funnelviscosity (width 6)"><span class="interp">Funnelviscosity</span><br><span class="fieldname">wvjobreportmudchk.funnelviscosity</span></th>
+<th title="wvjobreportmudchk.plasticvis (width 6)"><span class="interp">Plasticvis</span><br><span class="fieldname">wvjobreportmudchk.plasticvis</span></th>
+<th title="wvjobreportmudchk.yieldpt (width 6)"><span class="interp">Yieldpt</span><br><span class="fieldname">wvjobreportmudchk.yieldpt</span></th>
+<th title="wvjobreportmudchk.gel10sec (width 7)"><span class="interp">Gel10Sec</span><br><span class="fieldname">wvjobreportmudchk.gel10sec</span></th>
+<th title="wvjobreportmudchk.gel10min (width 7)"><span class="interp">Gel10Min</span><br><span class="fieldname">wvjobreportmudchk.gel10min</span></th>
+<th title="wvjobreportmudchk.filtrate (width 7)"><span class="interp">Filtrate</span><br><span class="fieldname">wvjobreportmudchk.filtrate</span></th>
+<th title="wvjobreportmudchk.filtercake (width 7)"><span class="interp">Filtercake</span><br><span class="fieldname">wvjobreportmudchk.filtercake</span></th>
+<th title="wvjobreportmudchk.ph (width 7)"><span class="interp">pH</span><br><span class="fieldname">wvjobreportmudchk.ph</span></th>
+<th title="wvjobreportmudchk.sands (width 7)"><span class="interp">Sands</span><br><span class="fieldname">wvjobreportmudchk.sands</span></th>
+<th title="wvjobreportmudchk.solids (width 7)"><span class="interp">Solids</span><br><span class="fieldname">wvjobreportmudchk.solids</span></th>
+<th title="wvjobreportmudchk.mbt (width 6)"><span class="interp">Mbt</span><br><span class="fieldname">wvjobreportmudchk.mbt</span></th>
+<th title="wvjobreportmudchk.alkalinity (width 6)"><span class="interp">Alkalinity</span><br><span class="fieldname">wvjobreportmudchk.alkalinity</span></th>
+<th title="wvjobreportmudchk.chlorides (width 6)"><span class="interp">Chlorides</span><br><span class="fieldname">wvjobreportmudchk.chlorides</span></th>
+<th title="wvjobreportmudchk.calcium (width 6)"><span class="interp">Calcium</span><br><span class="fieldname">wvjobreportmudchk.calcium</span></th>
+<th title="wvjobreportmudchk.pf (width 6)"><span class="interp">Pf</span><br><span class="fieldname">wvjobreportmudchk.pf</span></th>
+<th title="wvjobreportmudchk.pm (width 6)"><span class="interp">Pm</span><br><span class="fieldname">wvjobreportmudchk.pm</span></th>
+<th title="wvjobreportmudchk.gel30min (width 6)"><span class="interp">Gel30Min</span><br><span class="fieldname">wvjobreportmudchk.gel30min</span></th>
+<th title="wvjobreportmudchk.mudadded (width 6)"><span class="interp">Mudadded</span><br><span class="fieldname">wvjobreportmudchk.mudadded</span></th>
+<th title="wvjobreportmudchk.mudlosthole (width 6)"><span class="interp">Mudlosthole</span><br><span class="fieldname">wvjobreportmudchk.mudlosthole</span></th>
+<th title="wvjobreportmudchk.mudlostsurface (width 6)"><span class="interp">Mudlostsurface</span><br><span class="fieldname">wvjobreportmudchk.mudlostsurface</span></th>
+<th title="wvjobreportmudchk.mudvolreserve (width 6)"><span class="interp">Mudvolreserve</span><br><span class="fieldname">wvjobreportmudchk.mudvolreserve</span></th>
+<th title="wvjobreportmudchk.mudvolactive (width 6)"><span class="interp">Mudvolactive</span><br><span class="fieldname">wvjobreportmudchk.mudvolactive</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+<td>10.4</td>
+<td>48</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>9.5</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+<td>10.4</td>
+<td>48</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>9.5</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>2,752.0</td>
+<td>10.4</td>
+<td>48</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>9.5</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 15: WellView table `wvjobdrillstring` (11 field(s), declared 11) -->
+<section>
+<div class="blockbar">Drill String / BHA <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobdrillstring</span></div>
+<table><colgroup>
+<col style="width:2.92%">
+<col style="width:18.25%">
+<col style="width:5.11%">
+<col style="width:14.60%">
+<col style="width:8.03%">
+<col style="width:4.38%">
+<col style="width:7.30%">
+<col style="width:4.38%">
+<col style="width:4.38%">
+<col style="width:8.76%">
+<col style="width:21.90%">
+</colgroup><thead><tr>
+<th title="wvjobdrillstring.bitno (width 4)"><span class="interp">Bitno</span><br><span class="fieldname">wvjobdrillstring.bitno</span></th>
+<th title="wvjobdrillstring.idrecbit (width 25)"><span class="interp">Idrecbit</span><br><span class="fieldname">wvjobdrillstring.idrecbit</span></th>
+<th title="wvjobdrillbit.length (width 7)"><span class="interp">Length</span><br><span class="fieldname">wvjobdrillbit.length</span></th>
+<th title="wvjobdrillstring.bitwearcalc (width 20)"><span class="interp">Bitwear (computed)</span><br><span class="fieldname">wvjobdrillstring.bitwearcalc</span></th>
+<th title="wvjobdrillstring.bittfacalc (width 11)"><span class="interp">Bittfa (computed)</span><br><span class="fieldname">wvjobdrillstring.bittfacalc</span></th>
+<th title="wvjobdrillstring.ropcalc (width 6)"><span class="interp">ROP</span><br><span class="fieldname">wvjobdrillstring.ropcalc</span></th>
+<th title="wvjobdrillstring.bitnozzlecalc (width 10)"><span class="interp">Bitnozzle (computed)</span><br><span class="fieldname">wvjobdrillstring.bitnozzlecalc</span></th>
+<th title="wvjobdrillstring.lengthcalc (width 6)"><span class="interp">Length (computed)</span><br><span class="fieldname">wvjobdrillstring.lengthcalc</span></th>
+<th title="wvjobdrillstring.szodmaxcalc (width 6)"><span class="interp">Szodmax (computed)</span><br><span class="fieldname">wvjobdrillstring.szodmaxcalc</span></th>
+<th title="wvjobdrillstring.componentscalc (width 12)"><span class="interp">Components (computed)</span><br><span class="fieldname">wvjobdrillstring.componentscalc</span></th>
+<th title="wvjobdrillstring.com (width 30)"><span class="interp">Comment</span><br><span class="fieldname">wvjobdrillstring.com</span></th>
+</tr></thead><tbody>
+<tr>
+<td>SN-0001</td>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+<td>—</td>
+<td>12.4</td>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr class="shaded">
+<td>SN-0001</td>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+<td>—</td>
+<td>12.4</td>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr>
+<td>SN-0001</td>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+<td>—</td>
+<td>12.4</td>
+<td>—</td>
+<td>12.2</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 16: WellView table `wvjobdrillstringdrillparam` (13 field(s), declared 13) -->
+<section>
+<div class="blockbar">Drilling Parameters <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobdrillstringdrillparam</span></div>
+<table><colgroup>
+<col style="width:12.37%">
+<col style="width:9.28%">
+<col style="width:9.28%">
+<col style="width:8.25%">
+<col style="width:6.19%">
+<col style="width:6.19%">
+<col style="width:6.19%">
+<col style="width:6.19%">
+<col style="width:5.15%">
+<col style="width:8.25%">
+<col style="width:8.25%">
+<col style="width:8.25%">
+<col style="width:6.19%">
+</colgroup><thead><tr>
+<th title="wvjobdrillstringdrillparam.idrecwellbore (width 12)"><span class="interp">Idrecwellbore</span><br><span class="fieldname">wvjobdrillstringdrillparam.idrecwellbore</span></th>
+<th title="wvjobdrillstringdrillparam.depthstart (width 9)"><span class="interp">Depth Start</span><br><span class="fieldname">wvjobdrillstringdrillparam.depthstart</span></th>
+<th title="wvjobdrillstringdrillparam.depthend (width 9)"><span class="interp">Depth End</span><br><span class="fieldname">wvjobdrillstringdrillparam.depthend</span></th>
+<th title="wvjobdrillstringdrillparam.depthdrilledcumcalc (width 8)"><span class="interp">Depth Drilled (cumulative) (computed)</span><br><span class="fieldname">wvjobdrillstringdrillparam.depthdrilledcumcalc</span></th>
+<th title="wvjobdrillstringdrillparam.tmdrillcumcalc (width 6)"><span class="interp">Tmdrill (cumulative) (computed)</span><br><span class="fieldname">wvjobdrillstringdrillparam.tmdrillcumcalc</span></th>
+<th title="wvjobdrillstringdrillparam.ropcalc (width 6)"><span class="interp">ROP</span><br><span class="fieldname">wvjobdrillstringdrillparam.ropcalc</span></th>
+<th title="wvjobdrillstringdrillparam.liquidinjrate (width 6)"><span class="interp">Liquidinjrate</span><br><span class="fieldname">wvjobdrillstringdrillparam.liquidinjrate</span></th>
+<th title="wvjobdrillstringdrillparam.wob (width 6)"><span class="interp">Weight On Bit</span><br><span class="fieldname">wvjobdrillstringdrillparam.wob</span></th>
+<th title="wvjobdrillstringdrillparam.rpmstring (width 5)"><span class="interp">String RPM</span><br><span class="fieldname">wvjobdrillstringdrillparam.rpmstring</span></th>
+<th title="wvjobdrillstringdrillparam.sppdrill (width 8)"><span class="interp">Sppdrill</span><br><span class="fieldname">wvjobdrillstringdrillparam.sppdrill</span></th>
+<th title="wvjobdrillstringdrillparam.hookloadrotating (width 8)"><span class="interp">Hookloadrotating</span><br><span class="fieldname">wvjobdrillstringdrillparam.hookloadrotating</span></th>
+<th title="wvjobdrillstringdrillparam.hookloadpickup (width 8)"><span class="interp">Hookloadpickup</span><br><span class="fieldname">wvjobdrillstringdrillparam.hookloadpickup</span></th>
+<th title="wvjobdrillstringdrillparam.torquedrill (width 6)"><span class="interp">Torquedrill</span><br><span class="fieldname">wvjobdrillstringdrillparam.torquedrill</span></th>
+</tr></thead><tbody>
+<tr>
+<td>—</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>12.4</td>
+<td>—</td>
+<td>18.0</td>
+<td>110</td>
+<td>2,050</td>
+<td>—</td>
+<td>—</td>
+<td>8.2</td>
+</tr>
+<tr class="shaded">
+<td>—</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>12.4</td>
+<td>—</td>
+<td>18.0</td>
+<td>110</td>
+<td>2,050</td>
+<td>—</td>
+<td>—</td>
+<td>8.2</td>
+</tr>
+<tr>
+<td>—</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>12.4</td>
+<td>—</td>
+<td>18.0</td>
+<td>110</td>
+<td>2,050</td>
+<td>—</td>
+<td>—</td>
+<td>8.2</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- link/filter conditions joining each block to its parent --><section><div class="blockbar">Link conditions</div><table><thead><tr><th>Table</th><th>Column</th></tr></thead><tbody>
+<tr><td>wvjobrigpumpop</td><td>dttmstart</td></tr>
+<tr class="shaded"><td>wvjobreport</td><td>dttmend</td></tr>
+<tr><td>wvjobrigpumpop</td><td>dttmend</td></tr>
+<tr class="shaded"><td>wvjobreport</td><td>dttmstart</td></tr>
+<tr><td>wvjobrigpumpchk</td><td>dttm</td></tr>
+<tr class="shaded"><td>wvjobreport</td><td>dttmstart</td></tr>
+<tr><td>wvjobrigpumpchk</td><td>dttm</td></tr>
+<tr class="shaded"><td>wvjobreport</td><td>dttmend</td></tr>
+<tr><td>wvjobmudaddamt</td><td>dttm</td></tr>
+<tr class="shaded"><td>wvjobreport</td><td>dttmstart</td></tr>
+<tr><td>wvjobmudaddamt</td><td>dttm</td></tr>
+<tr class="shaded"><td>wvjobreport</td><td>dttmend</td></tr>
+<tr><td>wvjobmudaddamt</td><td>consumed</td></tr>
+<tr class="shaded"><td>wvjobsafetychk</td><td>idrecparent</td></tr>
+<tr><td>wvjobreport</td><td>idrecparent</td></tr>
+<tr class="shaded"><td>wvjobsafetychk</td><td>dttm</td></tr>
+<tr><td>wvjobreport</td><td>dttmend</td></tr>
+<tr class="shaded"><td>wvjobsafetychk</td><td>dttm</td></tr>
+<tr><td>wvjobreport</td><td>dttmstart</td></tr>
+<tr class="shaded"><td>wvjob</td><td>idrec</td></tr>
+<tr><td>wvjobreport</td><td>idrecparent</td></tr>
+<tr class="shaded"><td>wvjobdrillstringdrillparam</td><td>dttmstart</td></tr>
+<tr><td>wvjobreport</td><td>dttmend</td></tr>
+<tr class="shaded"><td>wvjobdrillstringdrillparam</td><td>dttmend</td></tr>
+<tr><td>wvjobreport</td><td>dttmstart</td></tr>
+<tr class="shaded"><td>wvjobdrillstring</td><td>idrecparent</td></tr>
+<tr><td>wvjobreport</td><td>idrecparent</td></tr>
+<tr class="shaded"><td>wvjobdrillstring</td><td>dttmincalc</td></tr>
+<tr><td>wvjobreport</td><td>dttmend</td></tr>
+<tr class="shaded"><td>wvjobdrillstring</td><td>dttmoutcalc</td></tr>
+<tr><td>wvjobreport</td><td>dttmstart</td></tr>
+</tbody></table></section>
+<p class="legend">Structure extracted from the binary template. <span class='interp'>Dotted labels</span> are interpreted from WellView naming conventions and are not stored in the .afr. All data values are fictional samples.</p>
+</div></body></html>

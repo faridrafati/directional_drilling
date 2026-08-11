@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Cost by Vendor</title>
+<style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:16px; background:#f4f4f4; font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; }
+    .sheet { background:#fff; margin:0 auto; padding:0.25in 0.25in 0.25in 0.25in;
+              width:8.5in; min-height:11in;
+              box-shadow:0 1px 6px rgba(0,0,0,.18); }
+    .entity { font-family:Arial,Helvetica,sans-serif;font-size:12.0pt;font-weight:bold;font-style:normal;color:#008000; margin:0 0 6px; }
+    .meta { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin:0 0 10px;
+             border-bottom:1px solid #bbb; padding-bottom:6px; }
+    .caption { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; margin:0 0 8px; }
+    .hotspot { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#ff0000; }
+    section { margin:0 0 14px; page-break-inside:avoid; }
+    .blockbar { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#000000; background:#dfdfdf;
+                 border:1px solid #9a9a9a; padding:3px 6px; }
+    .tablehead { background:#dfdfdf; }
+    table { border-collapse:collapse; width:100%; table-layout:fixed; }
+    th { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; background:#dfdfdf;
+          border:1px solid #9a9a9a; padding:2px 4px; text-align:left;
+          overflow:hidden; text-overflow:ellipsis; }
+    td { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; border:1px solid #c4c4c4; padding:2px 4px;
+          overflow:hidden; text-overflow:ellipsis; }
+    tr.shaded td { background:#e0e0e0; }
+    .fieldname { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#777; font-style:italic; }
+    .interp { border-bottom:1px dotted #999; }
+    .empty { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#888; padding:4px 6px;
+              border:1px solid #c4c4c4; border-top:0; }
+    .legend { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin-top:18px;
+               border-top:1px solid #bbb; padding-top:6px; }
+    @page { size:8.5in 11in; margin:0.25in 0.25in 0.25in 0.25in; }
+    @media print {
+      body { background:#fff; padding:0; }
+      .sheet { box-shadow:none; width:auto; min-height:0; padding:0; }
+      .legend { page-break-before:avoid; }
+    }
+    </style>
+</head><body>
+<!--
+  Generated from: reports single/Drilling/Drilling Summary/Cost by Vendor.afr
+  Structure (blocks, fields, widths, filters, captions) is EXTRACTED from
+  the .afr bytes. Field CAPTIONS are interpreted from WellView naming —
+  they are not stored in the file. Data values are fictional samples.
+-->
+<div class="sheet">
+<h1 class="entity">Cost by Vendor</h1>
+<p class="meta">Source: <strong>reports single/Drilling/Drilling Summary/Cost by Vendor.afr</strong> &nbsp;|&nbsp; paper: letter &nbsp;|&nbsp; master template: template portrait header.afr &nbsp;|&nbsp; root table: wvjobreport &nbsp;|&nbsp; filter: wvjvendorcalc / wvjvendorcalc / vendor; wvjob / wvtyp / drill &nbsp;|&nbsp; 10 link condition(s), listed below</p>
+<p class="caption"><span class='hotspot'>[Vendor]</span></p>
+<p class="caption"><span class='hotspot'>[Vendor]</span></p>
+<p class="caption">AFE#:  <span class='hotspot'>[AFE Number]</span></p>
+
+<!-- block 1: WellView table `wvjob` (4 field(s), declared 4) -->
+<section>
+<div class="blockbar">Job <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjob</span></div>
+<table><colgroup>
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+</colgroup><thead><tr>
+<th title="wvjob.wvtyp (width 10)"><span class="interp">Wvtyp</span><br><span class="fieldname">wvjob.wvtyp</span></th>
+<th title="wvjob.jobtyp (width 10)"><span class="interp">Jobtyp</span><br><span class="fieldname">wvjob.jobtyp</span></th>
+<th title="wvjob.dttmstart (width 10)"><span class="interp">Start Date/Time</span><br><span class="fieldname">wvjob.dttmstart</span></th>
+<th title="wvjob.dttmend (width 10)"><span class="interp">End Date/Time</span><br><span class="fieldname">wvjob.dttmend</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample</td>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+</tr>
+<tr class="shaded">
+<td>Sample</td>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+</tr>
+<tr>
+<td>Sample</td>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 2: WellView table `wvjvendorcalc` (2 field(s), declared 2) -->
+<section>
+<div class="blockbar">Jvendorcalc <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjvendorcalc</span></div>
+<table><colgroup>
+<col style="width:50.00%">
+<col style="width:50.00%">
+</colgroup><thead><tr>
+<th title="wvjvendorcalc.vendor (width 10)"><span class="interp">Vendor</span><br><span class="fieldname">wvjvendorcalc.vendor</span></th>
+<th title="wvjvendorcalc.cost (width 10)"><span class="interp">Cost</span><br><span class="fieldname">wvjvendorcalc.cost</span></th>
+</tr></thead><tbody>
+<tr>
+<td>SAMPLE OPERATOR</td>
+<td>123,456.00</td>
+</tr>
+<tr class="shaded">
+<td>SAMPLE OPERATOR</td>
+<td>123,456.00</td>
+</tr>
+<tr>
+<td>SAMPLE OPERATOR</td>
+<td>123,456.00</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 3: WellView table `wvjobreportcostgen` (8 field(s), declared 8) -->
+<section>
+<div class="blockbar">Daily Cost — General <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobreportcostgen</span></div>
+<table><colgroup>
+<col style="width:5.62%">
+<col style="width:11.24%">
+<col style="width:5.62%">
+<col style="width:5.62%">
+<col style="width:28.09%">
+<col style="width:10.11%">
+<col style="width:22.47%">
+<col style="width:11.24%">
+</colgroup><thead><tr>
+<th title="wvjobreport.reportnocalc (width 5)"><span class="interp">Report #</span><br><span class="fieldname">wvjobreport.reportnocalc</span></th>
+<th title="wvjobreport.dttmstart (width 10)"><span class="interp">Start Date/Time</span><br><span class="fieldname">wvjobreport.dttmstart</span></th>
+<th title="wvjobreportcostgen.code1 (width 5)"><span class="interp">Code 1</span><br><span class="fieldname">wvjobreportcostgen.code1</span></th>
+<th title="wvjobreportcostgen.code2 (width 5)"><span class="interp">Code 2</span><br><span class="fieldname">wvjobreportcostgen.code2</span></th>
+<th title="wvjobreportcostgen.des (width 25)"><span class="interp">Description</span><br><span class="fieldname">wvjobreportcostgen.des</span></th>
+<th title="wvjobreportcostgen.cost (width 9)"><span class="interp">Cost</span><br><span class="fieldname">wvjobreportcostgen.cost</span></th>
+<th title="wvjobreportcostgen.note (width 20)"><span class="interp">Note</span><br><span class="fieldname">wvjobreportcostgen.note</span></th>
+<th title="wvjobreportcostgen.ticketno (width 10)"><span class="interp">Ticket Number</span><br><span class="fieldname">wvjobreportcostgen.ticketno</span></th>
+</tr></thead><tbody>
+<tr>
+<td>12</td>
+<td>1405/02/11 06:00</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>Sample text — not real well data</td>
+<td>123,456.00</td>
+<td>Sample text — not real well data</td>
+<td>SN-0001</td>
+</tr>
+<tr class="shaded">
+<td>12</td>
+<td>1405/02/11 06:00</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>Sample text — not real well data</td>
+<td>123,456.00</td>
+<td>Sample text — not real well data</td>
+<td>SN-0001</td>
+</tr>
+<tr>
+<td>12</td>
+<td>1405/02/11 06:00</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>Sample text — not real well data</td>
+<td>123,456.00</td>
+<td>Sample text — not real well data</td>
+<td>SN-0001</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 4: WellView table `wvjobreportcostrental` (8 field(s), declared 8) -->
+<section>
+<div class="blockbar">Jobreportcostrental <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobreportcostrental</span></div>
+<table><colgroup>
+<col style="width:5.62%">
+<col style="width:11.24%">
+<col style="width:5.62%">
+<col style="width:5.62%">
+<col style="width:28.09%">
+<col style="width:10.11%">
+<col style="width:22.47%">
+<col style="width:11.24%">
+</colgroup><thead><tr>
+<th title="wvjobreport.reportnocalc (width 5)"><span class="interp">Report #</span><br><span class="fieldname">wvjobreport.reportnocalc</span></th>
+<th title="wvjobreport.dttmstart (width 10)"><span class="interp">Start Date/Time</span><br><span class="fieldname">wvjobreport.dttmstart</span></th>
+<th title="wvjobreportcostrental.code1calc (width 5)"><span class="interp">Code 1 (computed)</span><br><span class="fieldname">wvjobreportcostrental.code1calc</span></th>
+<th title="wvjobreportcostrental.code2calc (width 5)"><span class="interp">Code 2 (computed)</span><br><span class="fieldname">wvjobreportcostrental.code2calc</span></th>
+<th title="wvjobreportcostrental.descalc (width 25)"><span class="interp">Description (computed)</span><br><span class="fieldname">wvjobreportcostrental.descalc</span></th>
+<th title="wvjobreportcostrental.costrentalcalc (width 9)"><span class="interp">Costrental (computed)</span><br><span class="fieldname">wvjobreportcostrental.costrentalcalc</span></th>
+<th title="wvjobreportcostrental.note (width 20)"><span class="interp">Note</span><br><span class="fieldname">wvjobreportcostrental.note</span></th>
+<th title="wvjobreportcostrental.ticketno (width 10)"><span class="interp">Ticket Number</span><br><span class="fieldname">wvjobreportcostrental.ticketno</span></th>
+</tr></thead><tbody>
+<tr>
+<td>12</td>
+<td>1405/02/11 06:00</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>—</td>
+<td>123,456.00</td>
+<td>Sample text — not real well data</td>
+<td>SN-0001</td>
+</tr>
+<tr class="shaded">
+<td>12</td>
+<td>1405/02/11 06:00</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>—</td>
+<td>123,456.00</td>
+<td>Sample text — not real well data</td>
+<td>SN-0001</td>
+</tr>
+<tr>
+<td>12</td>
+<td>1405/02/11 06:00</td>
+<td>DRLG</td>
+<td>DRLG</td>
+<td>—</td>
+<td>123,456.00</td>
+<td>Sample text — not real well data</td>
+<td>SN-0001</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- link/filter conditions joining each block to its parent --><section><div class="blockbar">Link conditions</div><table><thead><tr><th>Table</th><th>Column</th></tr></thead><tbody>
+<tr><td>wvjobreportcostgen</td><td>vendor</td></tr>
+<tr class="shaded"><td>wvjvendorcalc</td><td>vendor</td></tr>
+<tr><td>wvjob</td><td>idrec</td></tr>
+<tr class="shaded"><td>wvjob</td><td>idrec</td></tr>
+<tr><td>wvjobreport</td><td>reportnocalc</td></tr>
+<tr class="shaded"><td>wvjobreportcostrental</td><td>vendorcalc</td></tr>
+<tr><td>wvjvendorcalc</td><td>vendor</td></tr>
+<tr class="shaded"><td>wvjob</td><td>idrec</td></tr>
+<tr><td>wvjob</td><td>idrec</td></tr>
+<tr class="shaded"><td>wvjobreport</td><td>reportnocalc</td></tr>
+</tbody></table></section>
+<p class="legend">Structure extracted from the binary template. <span class='interp'>Dotted labels</span> are interpreted from WellView naming conventions and are not stored in the .afr. All data values are fictional samples.</p>
+</div></body></html>

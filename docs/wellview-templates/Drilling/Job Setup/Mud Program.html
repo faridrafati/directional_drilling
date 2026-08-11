@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Mud Program</title>
+<style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:16px; background:#f4f4f4; font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; }
+    .sheet { background:#fff; margin:0 auto; padding:0.31in 0.12in 0.25in 0.12in;
+              width:8.5in; min-height:11in;
+              box-shadow:0 1px 6px rgba(0,0,0,.18); }
+    .entity { font-family:Arial,Helvetica,sans-serif;font-size:12.0pt;font-weight:bold;font-style:normal;color:#008000; margin:0 0 6px; }
+    .meta { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin:0 0 10px;
+             border-bottom:1px solid #bbb; padding-bottom:6px; }
+    .caption { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; margin:0 0 8px; }
+    .hotspot { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#ff0000; }
+    section { margin:0 0 14px; page-break-inside:avoid; }
+    .blockbar { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#000000; background:#cfcfcf;
+                 border:1px solid #9a9a9a; padding:3px 6px; }
+    .tablehead { background:#cfcfcf; }
+    table { border-collapse:collapse; width:100%; table-layout:fixed; }
+    th { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; background:#dfdfdf;
+          border:1px solid #9a9a9a; padding:2px 4px; text-align:left;
+          overflow:hidden; text-overflow:ellipsis; }
+    td { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; border:1px solid #c4c4c4; padding:2px 4px;
+          overflow:hidden; text-overflow:ellipsis; }
+    tr.shaded td { background:#e0e0e0; }
+    .fieldname { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#777; font-style:italic; }
+    .interp { border-bottom:1px dotted #999; }
+    .empty { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#888; padding:4px 6px;
+              border:1px solid #c4c4c4; border-top:0; }
+    .legend { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin-top:18px;
+               border-top:1px solid #bbb; padding-top:6px; }
+    @page { size:8.5in 11in; margin:0.31in 0.12in 0.25in 0.12in; }
+    @media print {
+      body { background:#fff; padding:0; }
+      .sheet { box-shadow:none; width:auto; min-height:0; padding:0; }
+      .legend { page-break-before:avoid; }
+    }
+    </style>
+</head><body>
+<!--
+  Generated from: reports single/Drilling/Job Setup/Mud Program.afr
+  Structure (blocks, fields, widths, filters, captions) is EXTRACTED from
+  the .afr bytes. Field CAPTIONS are interpreted from WellView naming —
+  they are not stored in the file. Data values are fictional samples.
+-->
+<div class="sheet">
+<h1 class="entity">Mud Program</h1>
+<p class="meta">Source: <strong>reports single/Drilling/Job Setup/Mud Program.afr</strong> &nbsp;|&nbsp; paper: letter &nbsp;|&nbsp; master template: template landscape.afr &nbsp;|&nbsp; root table: wvjob &nbsp;|&nbsp; filter: wvjob / wvtyp / drill</p>
+
+<!-- block 1: WellView table `wvjob` (5 field(s), declared 5) -->
+<section>
+<div class="blockbar">Job <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjob</span></div>
+<table><colgroup>
+<col style="width:20.00%">
+<col style="width:20.00%">
+<col style="width:20.00%">
+<col style="width:20.00%">
+<col style="width:20.00%">
+</colgroup><thead><tr>
+<th title="wvjob.wvtyp (width 10)"><span class="interp">Wvtyp</span><br><span class="fieldname">wvjob.wvtyp</span></th>
+<th title="wvjob.jobtyp (width 10)"><span class="interp">Jobtyp</span><br><span class="fieldname">wvjob.jobtyp</span></th>
+<th title="wvjob.afenumbercalc (width 10)"><span class="interp">AFE Number</span><br><span class="fieldname">wvjob.afenumbercalc</span></th>
+<th title="wvjob.targetdepth (width 10)"><span class="interp">Target Depth</span><br><span class="fieldname">wvjob.targetdepth</span></th>
+<th title="wvjob.targetform (width 10)"><span class="interp">Target Formation</span><br><span class="fieldname">wvjob.targetform</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample</td>
+<td>Sample</td>
+<td>AFE-SAMPLE-0001</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>Sample</td>
+<td>Sample</td>
+<td>AFE-SAMPLE-0001</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Sample</td>
+<td>Sample</td>
+<td>AFE-SAMPLE-0001</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 2: WellView table `wvjobprogrammud` (15 field(s), declared 15) -->
+<section>
+<div class="blockbar">Jobprogrammud <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobprogrammud</span></div>
+<table><colgroup>
+<col style="width:9.35%">
+<col style="width:9.35%">
+<col style="width:8.41%">
+<col style="width:8.41%">
+<col style="width:8.41%">
+<col style="width:5.61%">
+<col style="width:5.61%">
+<col style="width:5.61%">
+<col style="width:5.61%">
+<col style="width:5.61%">
+<col style="width:5.61%">
+<col style="width:5.61%">
+<col style="width:5.61%">
+<col style="width:5.61%">
+<col style="width:5.61%">
+</colgroup><thead><tr>
+<th title="wvjobprogrammud.depthstart (width 10)"><span class="interp">Depth Start</span><br><span class="fieldname">wvjobprogrammud.depthstart</span></th>
+<th title="wvjobprogrammud.depthend (width 10)"><span class="interp">Depth End</span><br><span class="fieldname">wvjobprogrammud.depthend</span></th>
+<th title="wvjobprogrammud.des (width 9)"><span class="interp">Description</span><br><span class="fieldname">wvjobprogrammud.des</span></th>
+<th title="wvjobprogrammud.idrecwellbore (width 9)"><span class="interp">Idrecwellbore</span><br><span class="fieldname">wvjobprogrammud.idrecwellbore</span></th>
+<th title="wvjobprogrammud.mudtyp (width 9)"><span class="interp">Mudtyp</span><br><span class="fieldname">wvjobprogrammud.mudtyp</span></th>
+<th title="wvjobprogrammud.densitymin (width 6)"><span class="interp">Densitymin</span><br><span class="fieldname">wvjobprogrammud.densitymin</span></th>
+<th title="wvjobprogrammud.densitymax (width 6)"><span class="interp">Densitymax</span><br><span class="fieldname">wvjobprogrammud.densitymax</span></th>
+<th title="wvjobprogrammud.phmin (width 6)"><span class="interp">Phmin</span><br><span class="fieldname">wvjobprogrammud.phmin</span></th>
+<th title="wvjobprogrammud.phmax (width 6)"><span class="interp">Phmax</span><br><span class="fieldname">wvjobprogrammud.phmax</span></th>
+<th title="wvjobprogrammud.filtratemin (width 6)"><span class="interp">Filtratemin</span><br><span class="fieldname">wvjobprogrammud.filtratemin</span></th>
+<th title="wvjobprogrammud.filtratemax (width 6)"><span class="interp">Filtratemax</span><br><span class="fieldname">wvjobprogrammud.filtratemax</span></th>
+<th title="wvjobprogrammud.plasticvismin (width 6)"><span class="interp">Plasticvismin</span><br><span class="fieldname">wvjobprogrammud.plasticvismin</span></th>
+<th title="wvjobprogrammud.plasticvismax (width 6)"><span class="interp">Plasticvismax</span><br><span class="fieldname">wvjobprogrammud.plasticvismax</span></th>
+<th title="wvjobprogrammud.yieldptmin (width 6)"><span class="interp">Yieldptmin</span><br><span class="fieldname">wvjobprogrammud.yieldptmin</span></th>
+<th title="wvjobprogrammud.yieldptmax (width 6)"><span class="interp">Yieldptmax</span><br><span class="fieldname">wvjobprogrammud.yieldptmax</span></th>
+</tr></thead><tbody>
+<tr>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>Sample</td>
+<td>10.4</td>
+<td>10.4</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>Sample</td>
+<td>10.4</td>
+<td>10.4</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>Sample</td>
+<td>10.4</td>
+<td>10.4</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 3: WellView table `wvjobreportmudchk` (1 field(s), declared 1) -->
+<section>
+<div class="blockbar">Mud Check <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobreportmudchk</span></div>
+<table><colgroup>
+<col style="width:100.00%">
+</colgroup><thead><tr>
+<th title="wvjobreportmudchk.depth (width 0)"><span class="interp">Depth</span><br><span class="fieldname">wvjobreportmudchk.depth</span></th>
+</tr></thead><tbody>
+<tr>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 4: WellView table `wvjobprogrammud` (1 field(s), declared 1) -->
+<section>
+<div class="blockbar">Jobprogrammud <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobprogrammud</span></div>
+<table><colgroup>
+<col style="width:100.00%">
+</colgroup><thead><tr>
+<th title="wvjobprogrammud.depthend (width 0)"><span class="interp">Depth End</span><br><span class="fieldname">wvjobprogrammud.depthend</span></th>
+</tr></thead><tbody>
+<tr>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 5: WellView table `wvjobprogrammud` (1 field(s), declared 1) -->
+<section>
+<div class="blockbar">Jobprogrammud <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobprogrammud</span></div>
+<table><colgroup>
+<col style="width:100.00%">
+</colgroup><thead><tr>
+<th title="wvjobprogrammud.depthend (width 0)"><span class="interp">Depth End</span><br><span class="fieldname">wvjobprogrammud.depthend</span></th>
+</tr></thead><tbody>
+<tr>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- embedded control column list (not a printed block) --><section><div class="blockbar">Embedded schematic control — column list</div><div class="empty">wvjobreportmudchk.density, wvjobprogrammud.densitymax, wvjobprogrammud.densitymin</div></section>
+<p class="legend">Structure extracted from the binary template. <span class='interp'>Dotted labels</span> are interpreted from WellView naming conventions and are not stored in the .afr. All data values are fictional samples.</p>
+</div></body></html>

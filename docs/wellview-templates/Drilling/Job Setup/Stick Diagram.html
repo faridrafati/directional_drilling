@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Stick Diagram</title>
+<style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:16px; background:#f4f4f4; font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; }
+    .sheet { background:#fff; margin:0 auto; padding:0.25in 0.25in 0.25in 0.25in;
+              width:8.5in; min-height:11in;
+              box-shadow:0 1px 6px rgba(0,0,0,.18); }
+    .entity { font-family:Arial,Helvetica,sans-serif;font-size:12.0pt;font-weight:bold;font-style:normal;color:#008000; margin:0 0 6px; }
+    .meta { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin:0 0 10px;
+             border-bottom:1px solid #bbb; padding-bottom:6px; }
+    .caption { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; margin:0 0 8px; }
+    .hotspot { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#ff0000; }
+    section { margin:0 0 14px; page-break-inside:avoid; }
+    .blockbar { font-family:Arial,Helvetica,sans-serif;font-size:12.0pt;font-weight:bold;font-style:normal;color:#000000; background:#ffffff;
+                 border:1px solid #9a9a9a; padding:3px 6px; }
+    .tablehead { background:#c0c0c0; }
+    table { border-collapse:collapse; width:100%; table-layout:fixed; }
+    th { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; background:#d3d3d3;
+          border:1px solid #9a9a9a; padding:2px 4px; text-align:left;
+          overflow:hidden; text-overflow:ellipsis; }
+    td { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; border:1px solid #c4c4c4; padding:2px 4px;
+          overflow:hidden; text-overflow:ellipsis; }
+    tr.shaded td { background:#d3d3d3; }
+    .fieldname { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#777; font-style:italic; }
+    .interp { border-bottom:1px dotted #999; }
+    .empty { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#888; padding:4px 6px;
+              border:1px solid #c4c4c4; border-top:0; }
+    .legend { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin-top:18px;
+               border-top:1px solid #bbb; padding-top:6px; }
+    @page { size:8.5in 11in; margin:0.25in 0.25in 0.25in 0.25in; }
+    @media print {
+      body { background:#fff; padding:0; }
+      .sheet { box-shadow:none; width:auto; min-height:0; padding:0; }
+      .legend { page-break-before:avoid; }
+    }
+    </style>
+</head><body>
+<!--
+  Generated from: reports single/Drilling/Job Setup/Stick Diagram.afr
+  Structure (blocks, fields, widths, filters, captions) is EXTRACTED from
+  the .afr bytes. Field CAPTIONS are interpreted from WellView naming —
+  they are not stored in the file. Data values are fictional samples.
+-->
+<div class="sheet">
+<h1 class="entity">Stick Diagram</h1>
+<p class="meta">Source: <strong>reports single/Drilling/Job Setup/Stick Diagram.afr</strong> &nbsp;|&nbsp; paper: letter &nbsp;|&nbsp; master template: template landscape.afr &nbsp;|&nbsp; root table: wvcas &nbsp;|&nbsp; filter: wvjob / wvtyp / drill</p>
+<p class="caption">Wellbore:   <span class='hotspot'>[Description]</span></p>
+
+<!-- block 1: WellView table `wvwellbore` (1 field(s), declared 1) -->
+<section>
+<div class="blockbar">&amp; Geology\Casing &amp; Formations Pr <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvwellbore</span></div>
+<table><colgroup>
+<col style="width:100.00%">
+</colgroup><thead><tr>
+<th title="wvwellbore.idrec (width 0)"><span class="interp">Record ID</span><br><span class="fieldname">wvwellbore.idrec</span></th>
+</tr></thead><tbody>
+<tr>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 2: WellView table `wvwellheader` (8 field(s), declared 8) -->
+<section>
+<div class="blockbar">Well Header <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvwellheader</span></div>
+<table><colgroup>
+<col style="width:16.67%">
+<col style="width:16.67%">
+<col style="width:16.67%">
+<col style="width:16.67%">
+<col style="width:8.33%">
+<col style="width:8.33%">
+<col style="width:8.33%">
+<col style="width:8.33%">
+</colgroup><thead><tr>
+<th title="wvwellheader.welltyp1 (width 10)"><span class="interp">Welltyp1</span><br><span class="fieldname">wvwellheader.welltyp1</span></th>
+<th title="wvwellheader.wellconfig (width 10)"><span class="interp">Wellconfig</span><br><span class="fieldname">wvwellheader.wellconfig</span></th>
+<th title="wvwellheader.wellclass (width 10)"><span class="interp">Wellclass</span><br><span class="fieldname">wvwellheader.wellclass</span></th>
+<th title="wvwellheader.riskclass (width 10)"><span class="interp">Riskclass</span><br><span class="fieldname">wvwellheader.riskclass</span></th>
+<th title="wvwellheader.locationsensitive (width 5)"><span class="interp">Locationsensitive</span><br><span class="fieldname">wvwellheader.locationsensitive</span></th>
+<th title="wvwellheader.elvorigkb (width 5)"><span class="interp">Elvorigkb</span><br><span class="fieldname">wvwellheader.elvorigkb</span></th>
+<th title="wvwellheader.elvground (width 5)"><span class="interp">Elvground</span><br><span class="fieldname">wvwellheader.elvground</span></th>
+<th title="wvwellheader.waterdepth (width 5)"><span class="interp">Waterdepth</span><br><span class="fieldname">wvwellheader.waterdepth</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>Sample</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>Sample</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>DEMO RIG 432</td>
+<td>—</td>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 3: WellView table `wvwellbore` (4 field(s), declared 4) -->
+<section>
+<div class="blockbar">Wellbore <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvwellbore</span></div>
+<table><colgroup>
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+</colgroup><thead><tr>
+<th title="wvwellbore.des (width 10)"><span class="interp">Description</span><br><span class="fieldname">wvwellbore.des</span></th>
+<th title="wvwellbore.profiletyp (width 10)"><span class="interp">Profiletyp</span><br><span class="fieldname">wvwellbore.profiletyp</span></th>
+<th title="wvwellbore.kickoffdepth (width 10)"><span class="interp">Kickoffdepth</span><br><span class="fieldname">wvwellbore.kickoffdepth</span></th>
+<th title="wvwellbore.kickoffmethod (width 10)"><span class="interp">Kickoffmethod</span><br><span class="fieldname">wvwellbore.kickoffmethod</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 4: WellView table `wvwellboresize` (4 field(s), declared 4) -->
+<section>
+<div class="blockbar">Proposed Wellbore Sections <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvwellboresize</span></div>
+<table><colgroup>
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+</colgroup><thead><tr>
+<th title="wvwellboresize.des (width 10)"><span class="interp">Description</span><br><span class="fieldname">wvwellboresize.des</span></th>
+<th title="wvwellboresize.sz (width 10)"><span class="interp">Sz</span><br><span class="fieldname">wvwellboresize.sz</span></th>
+<th title="wvwellboresize.depthtopprop (width 10)"><span class="interp">Depth Topprop</span><br><span class="fieldname">wvwellboresize.depthtopprop</span></th>
+<th title="wvwellboresize.depthbtmprop (width 10)"><span class="interp">Depth Btmprop</span><br><span class="fieldname">wvwellboresize.depthbtmprop</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 5: WellView table `wvwellboreformation` (13 field(s), declared 13) -->
+<section>
+<div class="blockbar">Wellboreformation <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvwellboreformation</span></div>
+<table><colgroup>
+<col style="width:13.42%">
+<col style="width:10.07%">
+<col style="width:6.71%">
+<col style="width:6.04%">
+<col style="width:6.04%">
+<col style="width:6.04%">
+<col style="width:6.04%">
+<col style="width:6.04%">
+<col style="width:6.04%">
+<col style="width:3.36%">
+<col style="width:3.36%">
+<col style="width:3.36%">
+<col style="width:23.49%">
+</colgroup><thead><tr>
+<th title="wvwellboreformation.formname (width 20)"><span class="interp">Formname</span><br><span class="fieldname">wvwellboreformation.formname</span></th>
+<th title="wvwellboreformation.deslithology (width 15)"><span class="interp">Description Lithology</span><br><span class="fieldname">wvwellboreformation.deslithology</span></th>
+<th title="wvwellboreformation.elementtyp (width 10)"><span class="interp">Elementtyp</span><br><span class="fieldname">wvwellboreformation.elementtyp</span></th>
+<th title="wvwellboreformation.depthssprogtop (width 9)"><span class="interp">Depth Ssprogtop</span><br><span class="fieldname">wvwellboreformation.depthssprogtop</span></th>
+<th title="wvwellboreformation.depthtvdprogtopcalc (width 9)"><span class="interp">Depth TVD Progtop (computed)</span><br><span class="fieldname">wvwellboreformation.depthtvdprogtopcalc</span></th>
+<th title="wvwellboreformation.depthssprogbtm (width 9)"><span class="interp">Depth Ssprogbtm</span><br><span class="fieldname">wvwellboreformation.depthssprogbtm</span></th>
+<th title="wvwellboreformation.depthtvdprogbtmcalc (width 9)"><span class="interp">Depth TVD Progbtm (computed)</span><br><span class="fieldname">wvwellboreformation.depthtvdprogbtmcalc</span></th>
+<th title="wvwellboreformation.depthmdprogtop (width 9)"><span class="interp">Depth MD Progtop</span><br><span class="fieldname">wvwellboreformation.depthmdprogtop</span></th>
+<th title="wvwellboreformation.depthmdprogbtm (width 9)"><span class="interp">Depth MD Progbtm</span><br><span class="fieldname">wvwellboreformation.depthmdprogbtm</span></th>
+<th title="wvwellboreformation.porepres (width 5)"><span class="interp">Porepres</span><br><span class="fieldname">wvwellboreformation.porepres</span></th>
+<th title="wvwellboreformation.fracpres (width 5)"><span class="interp">Fracpres</span><br><span class="fieldname">wvwellboreformation.fracpres</span></th>
+<th title="wvwellboreformation.h2sconc (width 5)"><span class="interp">H2Sconc</span><br><span class="fieldname">wvwellboreformation.h2sconc</span></th>
+<th title="wvwellboreformation.mudconsid (width 35)"><span class="interp">Mudconsid</span><br><span class="fieldname">wvwellboreformation.mudconsid</span></th>
+</tr></thead><tbody>
+<tr>
+<td>A. SAMPLE</td>
+<td>—</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>A. SAMPLE</td>
+<td>—</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>A. SAMPLE</td>
+<td>—</td>
+<td>Sample</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,231.8</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 6: WellView table `wvjob` (4 field(s), declared 4) -->
+<section>
+<div class="blockbar">Job <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjob</span></div>
+<table><colgroup>
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+<col style="width:25.00%">
+</colgroup><thead><tr>
+<th title="wvjob.wvtyp (width 10)"><span class="interp">Wvtyp</span><br><span class="fieldname">wvjob.wvtyp</span></th>
+<th title="wvjob.jobtyp (width 10)"><span class="interp">Jobtyp</span><br><span class="fieldname">wvjob.jobtyp</span></th>
+<th title="wvjob.dttmstartplan (width 10)"><span class="interp">Date/Time Startplan</span><br><span class="fieldname">wvjob.dttmstartplan</span></th>
+<th title="wvjob.afenumbercalc (width 10)"><span class="interp">AFE Number</span><br><span class="fieldname">wvjob.afenumbercalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample</td>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>AFE-SAMPLE-0001</td>
+</tr>
+<tr class="shaded">
+<td>Sample</td>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>AFE-SAMPLE-0001</td>
+</tr>
+<tr>
+<td>Sample</td>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>AFE-SAMPLE-0001</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 7: WellView table `wvjobprogramgeosample` (5 field(s), declared 5) -->
+<section>
+<div class="blockbar">Jobprogramgeosample <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobprogramgeosample</span></div>
+<table><colgroup>
+<col style="width:20.00%">
+<col style="width:20.00%">
+<col style="width:20.00%">
+<col style="width:20.00%">
+<col style="width:20.00%">
+</colgroup><thead><tr>
+<th title="wvjobprogramgeosample.idrecwellbore (width 10)"><span class="interp">Idrecwellbore</span><br><span class="fieldname">wvjobprogramgeosample.idrecwellbore</span></th>
+<th title="wvjobprogramgeosample.noteintervaltop (width 10)"><span class="interp">Number Teintervaltop</span><br><span class="fieldname">wvjobprogramgeosample.noteintervaltop</span></th>
+<th title="wvjobprogramgeosample.depthtop (width 10)"><span class="interp">Top Depth</span><br><span class="fieldname">wvjobprogramgeosample.depthtop</span></th>
+<th title="wvjobprogramgeosample.requiredby (width 10)"><span class="interp">Requiredby</span><br><span class="fieldname">wvjobprogramgeosample.requiredby</span></th>
+<th title="wvjobprogramgeosample.sampledby (width 10)"><span class="interp">Sampledby</span><br><span class="fieldname">wvjobprogramgeosample.sampledby</span></th>
+</tr></thead><tbody>
+<tr>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="shaded">
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 8: WellView table `wvjobprogrammud` (6 field(s), declared 6) -->
+<section>
+<div class="blockbar">Jobprogrammud <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvjobprogrammud</span></div>
+<table><colgroup>
+<col style="width:14.29%">
+<col style="width:14.29%">
+<col style="width:14.29%">
+<col style="width:14.29%">
+<col style="width:14.29%">
+<col style="width:28.57%">
+</colgroup><thead><tr>
+<th title="wvjobprogrammud.des (width 10)"><span class="interp">Description</span><br><span class="fieldname">wvjobprogrammud.des</span></th>
+<th title="wvjobprogrammud.depthstart (width 10)"><span class="interp">Depth Start</span><br><span class="fieldname">wvjobprogrammud.depthstart</span></th>
+<th title="wvjobprogrammud.depthend (width 10)"><span class="interp">Depth End</span><br><span class="fieldname">wvjobprogrammud.depthend</span></th>
+<th title="wvjobprogrammud.densitymin (width 10)"><span class="interp">Densitymin</span><br><span class="fieldname">wvjobprogrammud.densitymin</span></th>
+<th title="wvjobprogrammud.densitymax (width 10)"><span class="interp">Densitymax</span><br><span class="fieldname">wvjobprogrammud.densitymax</span></th>
+<th title="wvjobprogrammud.com (width 20)"><span class="interp">Comment</span><br><span class="fieldname">wvjobprogrammud.com</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>10.4</td>
+<td>10.4</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>10.4</td>
+<td>10.4</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>10.4</td>
+<td>10.4</td>
+<td>Sample text — not real well data</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 9: WellView table `wvcas` (6 field(s), declared 6) -->
+<section>
+<div class="blockbar">Proposed Casing Strings <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvcas</span></div>
+<table><colgroup>
+<col style="width:18.18%">
+<col style="width:9.09%">
+<col style="width:18.18%">
+<col style="width:18.18%">
+<col style="width:18.18%">
+<col style="width:18.18%">
+</colgroup><thead><tr>
+<th title="wvcas.des (width 10)"><span class="interp">Description</span><br><span class="fieldname">wvcas.des</span></th>
+<th title="wvcas.proposedrun (width 5)"><span class="interp">Proposedrun</span><br><span class="fieldname">wvcas.proposedrun</span></th>
+<th title="wvcas.depthbtm (width 10)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvcas.depthbtm</span></th>
+<th title="wvcas.szodnommaxcalc (width 10)"><span class="interp">Szodnommax (computed)</span><br><span class="fieldname">wvcas.szodnommaxcalc</span></th>
+<th title="wvcas.wtperlengthcalc (width 10)"><span class="interp">Wtperlength (computed)</span><br><span class="fieldname">wvcas.wtperlengthcalc</span></th>
+<th title="wvcas.gradecalc (width 10)"><span class="interp">Grade (computed)</span><br><span class="fieldname">wvcas.gradecalc</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample text — not real well data</td>
+<td>12.4</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+</tr>
+<tr class="shaded">
+<td>Sample text — not real well data</td>
+<td>12.4</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+</tr>
+<tr>
+<td>Sample text — not real well data</td>
+<td>12.4</td>
+<td>2,752.0</td>
+<td>—</td>
+<td>12.2</td>
+<td>L-80</td>
+</tr>
+</tbody></table>
+</section>
+<p class="legend">Structure extracted from the binary template. <span class='interp'>Dotted labels</span> are interpreted from WellView naming conventions and are not stored in the .afr. All data values are fictional samples.</p>
+</div></body></html>

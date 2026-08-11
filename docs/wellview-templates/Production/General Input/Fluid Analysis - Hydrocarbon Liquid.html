@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Fluid Analysis - Hydrocarbon Liquid</title>
+<style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:16px; background:#f4f4f4; font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; }
+    .sheet { background:#fff; margin:0 auto; padding:0.25in 0.25in 0.25in 0.25in;
+              width:8.5in; min-height:11in;
+              box-shadow:0 1px 6px rgba(0,0,0,.18); }
+    .entity { font-family:Arial,Helvetica,sans-serif;font-size:12.0pt;font-weight:bold;font-style:normal;color:#008000; margin:0 0 6px; }
+    .meta { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin:0 0 10px;
+             border-bottom:1px solid #bbb; padding-bottom:6px; }
+    .caption { font-family:Arial,Helvetica,sans-serif;font-size:6.0pt;font-weight:normal;font-style:normal;color:#000000; margin:0 0 8px; }
+    .hotspot { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:bold;font-style:normal;color:#ff0000; }
+    section { margin:0 0 14px; page-break-inside:avoid; }
+    .blockbar { font-family:Arial,Helvetica,sans-serif;font-size:12.0pt;font-weight:bold;font-style:normal;color:#000000; background:#ffffff;
+                 border:1px solid #9a9a9a; padding:3px 6px; }
+    .tablehead { background:#c0c0c0; }
+    table { border-collapse:collapse; width:100%; table-layout:fixed; }
+    th { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; background:#d3d3d3;
+          border:1px solid #9a9a9a; padding:2px 4px; text-align:left;
+          overflow:hidden; text-overflow:ellipsis; }
+    td { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; border:1px solid #c4c4c4; padding:2px 4px;
+          overflow:hidden; text-overflow:ellipsis; }
+    tr.shaded td { background:#d3d3d3; }
+    .fieldname { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#777; font-style:italic; }
+    .interp { border-bottom:1px dotted #999; }
+    .empty { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#888; padding:4px 6px;
+              border:1px solid #c4c4c4; border-top:0; }
+    .legend { font-family:Arial,Helvetica,sans-serif;font-size:8.0pt;font-weight:normal;font-style:normal;color:#000000; color:#555; margin-top:18px;
+               border-top:1px solid #bbb; padding-top:6px; }
+    @page { size:8.5in 11in; margin:0.25in 0.25in 0.25in 0.25in; }
+    @media print {
+      body { background:#fff; padding:0; }
+      .sheet { box-shadow:none; width:auto; min-height:0; padding:0; }
+      .legend { page-break-before:avoid; }
+    }
+    </style>
+</head><body>
+<!--
+  Generated from: reports single/Production/General Input/Fluid Analysis - Hydrocarbon Liquid.afr
+  Structure (blocks, fields, widths, filters, captions) is EXTRACTED from
+  the .afr bytes. Field CAPTIONS are interpreted from WellView naming —
+  they are not stored in the file. Data values are fictional samples.
+-->
+<div class="sheet">
+<h1 class="entity">Fluid Analysis - Hydrocarbon Liquid</h1>
+<p class="meta">Source: <strong>reports single/Production/General Input/Fluid Analysis - Hydrocarbon Liquid.afr</strong> &nbsp;|&nbsp; paper: letter &nbsp;|&nbsp; master template: template portrait.afr &nbsp;|&nbsp; root table: wvwellheader &nbsp;|&nbsp; filter: wvfluidanalysis / wvfluidanalysis / analysistyp</p>
+
+<!-- block 1: WellView table `wvfluidanalysis` (25 field(s), declared 25) -->
+<section>
+<div class="blockbar">Fluidanalysis <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvfluidanalysis</span></div>
+<table><colgroup>
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:6.67%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:16.67%">
+</colgroup><thead><tr>
+<th title="wvfluidanalysis.analysistyp (width 10)"><span class="interp">Analysistyp</span><br><span class="fieldname">wvfluidanalysis.analysistyp</span></th>
+<th title="wvfluidanalysis.dttmreport (width 10)"><span class="interp">Date/Time Report</span><br><span class="fieldname">wvfluidanalysis.dttmreport</span></th>
+<th title="wvfluidanalysis.idreczone (width 10)"><span class="interp">Idreczone</span><br><span class="fieldname">wvfluidanalysis.idreczone</span></th>
+<th title="wvfluidanalysis.depthtop (width 10)"><span class="interp">Top Depth</span><br><span class="fieldname">wvfluidanalysis.depthtop</span></th>
+<th title="wvfluidanalysis.depthbtm (width 10)"><span class="interp">Bottom Depth</span><br><span class="fieldname">wvfluidanalysis.depthbtm</span></th>
+<th title="wvfluidanalysis.des (width 10)"><span class="interp">Description</span><br><span class="fieldname">wvfluidanalysis.des</span></th>
+<th title="wvfluidanalysis.testedby (width 10)"><span class="interp">Testedby</span><br><span class="fieldname">wvfluidanalysis.testedby</span></th>
+<th title="wvfluidanalysis.dttmsample (width 10)"><span class="interp">Date/Time Sample</span><br><span class="fieldname">wvfluidanalysis.dttmsample</span></th>
+<th title="wvfluidanalysis.dttmreceived (width 10)"><span class="interp">Date/Time Received</span><br><span class="fieldname">wvfluidanalysis.dttmreceived</span></th>
+<th title="wvfluidanalysis.locsample (width 10)"><span class="interp">Locsample</span><br><span class="fieldname">wvfluidanalysis.locsample</span></th>
+<th title="wvfluidanalysis.refnolaboratory (width 10)"><span class="interp">Refnolaboratory</span><br><span class="fieldname">wvfluidanalysis.refnolaboratory</span></th>
+<th title="wvfluidanalysis.analyst (width 20)"><span class="interp">Analyst</span><br><span class="fieldname">wvfluidanalysis.analyst</span></th>
+<th title="wvfluidanalysis.refnotest (width 10)"><span class="interp">Refnotest</span><br><span class="fieldname">wvfluidanalysis.refnotest</span></th>
+<th title="wvfluidanalysis.refnosample (width 10)"><span class="interp">Refnosample</span><br><span class="fieldname">wvfluidanalysis.refnosample</span></th>
+<th title="wvfluidanalysis.presseparator (width 10)"><span class="interp">Presseparator</span><br><span class="fieldname">wvfluidanalysis.presseparator</span></th>
+<th title="wvfluidanalysis.presreservoir (width 10)"><span class="interp">Presreservoir</span><br><span class="fieldname">wvfluidanalysis.presreservoir</span></th>
+<th title="wvfluidanalysis.presgaugesource (width 10)"><span class="interp">Presgaugesource</span><br><span class="fieldname">wvfluidanalysis.presgaugesource</span></th>
+<th title="wvfluidanalysis.pressample (width 10)"><span class="interp">Pressample</span><br><span class="fieldname">wvfluidanalysis.pressample</span></th>
+<th title="wvfluidanalysis.pressamplerec (width 10)"><span class="interp">Pressamplerec</span><br><span class="fieldname">wvfluidanalysis.pressamplerec</span></th>
+<th title="wvfluidanalysis.tempseparator (width 10)"><span class="interp">Tempseparator</span><br><span class="fieldname">wvfluidanalysis.tempseparator</span></th>
+<th title="wvfluidanalysis.tempreservoir (width 10)"><span class="interp">Tempreservoir</span><br><span class="fieldname">wvfluidanalysis.tempreservoir</span></th>
+<th title="wvfluidanalysis.tempgaugesource (width 10)"><span class="interp">Tempgaugesource</span><br><span class="fieldname">wvfluidanalysis.tempgaugesource</span></th>
+<th title="wvfluidanalysis.tempsample (width 10)"><span class="interp">Tempsample</span><br><span class="fieldname">wvfluidanalysis.tempsample</span></th>
+<th title="wvfluidanalysis.tempsamplerec (width 10)"><span class="interp">Tempsamplerec</span><br><span class="fieldname">wvfluidanalysis.tempsamplerec</span></th>
+<th title="wvfluidanalysis.com (width 50)"><span class="interp">Comment</span><br><span class="fieldname">wvfluidanalysis.com</span></th>
+</tr></thead><tbody>
+<tr>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr class="shaded">
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr>
+<td>Sample</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>2,752.0</td>
+<td>2,752.0</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>1405/02/11 06:00</td>
+<td>1405/02/11 06:00</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 2: WellView table `wvfluidanalysisliquid` (14 field(s), declared 14) -->
+<section>
+<div class="blockbar">Fluidanalysisliquid <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvfluidanalysisliquid</span></div>
+<table><colgroup>
+<col style="width:6.67%">
+<col style="width:6.67%">
+<col style="width:6.67%">
+<col style="width:3.33%">
+<col style="width:6.67%">
+<col style="width:3.33%">
+<col style="width:6.67%">
+<col style="width:6.67%">
+<col style="width:6.67%">
+<col style="width:3.33%">
+<col style="width:6.67%">
+<col style="width:3.33%">
+<col style="width:3.33%">
+<col style="width:30.00%">
+</colgroup><thead><tr>
+<th title="wvfluidanalysisliquid.densityc7 (width 10)"><span class="interp">Densityc7</span><br><span class="fieldname">wvfluidanalysisliquid.densityc7</span></th>
+<th title="wvfluidanalysisliquid.densityrelc7 (width 10)"><span class="interp">Densityrelc7</span><br><span class="fieldname">wvfluidanalysisliquid.densityrelc7</span></th>
+<th title="wvfluidanalysisliquid.molecularmassrel (width 10)"><span class="interp">Molecularmassrel</span><br><span class="fieldname">wvfluidanalysisliquid.molecularmassrel</span></th>
+<th title="wvfluidanalysisliquid.temprefc7 (width 5)"><span class="interp">Temprefc7</span><br><span class="fieldname">wvfluidanalysisliquid.temprefc7</span></th>
+<th title="wvfluidanalysisliquid.apic7 (width 10)"><span class="interp">Apic7</span><br><span class="fieldname">wvfluidanalysisliquid.apic7</span></th>
+<th title="wvfluidanalysisliquid.temprefapic7 (width 5)"><span class="interp">Temprefapic7</span><br><span class="fieldname">wvfluidanalysisliquid.temprefapic7</span></th>
+<th title="wvfluidanalysisliquid.densitysample (width 10)"><span class="interp">Densitysample</span><br><span class="fieldname">wvfluidanalysisliquid.densitysample</span></th>
+<th title="wvfluidanalysisliquid.densityrelsample (width 10)"><span class="interp">Densityrelsample</span><br><span class="fieldname">wvfluidanalysisliquid.densityrelsample</span></th>
+<th title="wvfluidanalysisliquid.molecularmasssample (width 10)"><span class="interp">Molecularmasssample</span><br><span class="fieldname">wvfluidanalysisliquid.molecularmasssample</span></th>
+<th title="wvfluidanalysisliquid.temprefsample (width 5)"><span class="interp">Temprefsample</span><br><span class="fieldname">wvfluidanalysisliquid.temprefsample</span></th>
+<th title="wvfluidanalysisliquid.apisample (width 10)"><span class="interp">Apisample</span><br><span class="fieldname">wvfluidanalysisliquid.apisample</span></th>
+<th title="wvfluidanalysisliquid.temprefapisample (width 5)"><span class="interp">Temprefapisample</span><br><span class="fieldname">wvfluidanalysisliquid.temprefapisample</span></th>
+<th title="wvfluidanalysisliquid.factorgasequiv (width 5)"><span class="interp">Factorgasequiv</span><br><span class="fieldname">wvfluidanalysisliquid.factorgasequiv</span></th>
+<th title="wvfluidanalysisliquid.com (width 45)"><span class="interp">Comment</span><br><span class="fieldname">wvfluidanalysisliquid.com</span></th>
+</tr></thead><tbody>
+<tr>
+<td>10.4</td>
+<td>10.4</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>10.4</td>
+<td>10.4</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr class="shaded">
+<td>10.4</td>
+<td>10.4</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>10.4</td>
+<td>10.4</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr>
+<td>10.4</td>
+<td>10.4</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>10.4</td>
+<td>10.4</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+</tbody></table>
+</section>
+
+<!-- block 3: WellView table `wvfluidanalysisliquidcomp` (5 field(s), declared 5) -->
+<section>
+<div class="blockbar">Total Sample Properties <span style="font-weight:normal;opacity:.65">&nbsp;·&nbsp;wvfluidanalysisliquidcomp</span></div>
+<table><colgroup>
+<col style="width:16.67%">
+<col style="width:16.67%">
+<col style="width:16.67%">
+<col style="width:16.67%">
+<col style="width:33.33%">
+</colgroup><thead><tr>
+<th title="wvfluidanalysisliquidcomp.component (width 10)"><span class="interp">Component</span><br><span class="fieldname">wvfluidanalysisliquidcomp.component</span></th>
+<th title="wvfluidanalysisliquidcomp.molefrac (width 10)"><span class="interp">Molefrac</span><br><span class="fieldname">wvfluidanalysisliquidcomp.molefrac</span></th>
+<th title="wvfluidanalysisliquidcomp.massfrac (width 10)"><span class="interp">Massfrac</span><br><span class="fieldname">wvfluidanalysisliquidcomp.massfrac</span></th>
+<th title="wvfluidanalysisliquidcomp.volumefrac (width 10)"><span class="interp">Volumefrac</span><br><span class="fieldname">wvfluidanalysisliquidcomp.volumefrac</span></th>
+<th title="wvfluidanalysisliquidcomp.note (width 20)"><span class="interp">Note</span><br><span class="fieldname">wvfluidanalysisliquidcomp.note</span></th>
+</tr></thead><tbody>
+<tr>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr class="shaded">
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+<tr>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Sample text — not real well data</td>
+</tr>
+</tbody></table>
+</section>
+<p class="legend">Structure extracted from the binary template. <span class='interp'>Dotted labels</span> are interpreted from WellView naming conventions and are not stored in the .afr. All data values are fictional samples.</p>
+</div></body></html>
