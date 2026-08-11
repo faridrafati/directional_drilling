@@ -488,6 +488,37 @@ test.describe("Well Reports", () => {
     await expect(page.getByText("Unclassified", { exact: true })).toBeVisible();
   });
 
+  // ── the WellView templates tab ────────────────────────────────────────────
+  // The 181 ORIGINAL layouts, read out of their binary .afr files and served
+  // from public/wellview-templates. A different question from the 30 reports
+  // beside them: what WellView printed, not what this application produces.
+  test("the WellView templates tab lists and renders the originals", async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.getByRole("button", { name: "WellView templates" }).click();
+    await page.getByPlaceholder("Search name, category or table…").waitFor({ timeout: 25_000 });
+
+    // Every parsed template is listed. The count is asserted against the index
+    // the exporter wrote, not hard-coded, so regenerating from a different
+    // WellView install does not turn this red for the wrong reason.
+    const index = await (await page.request.get("/wellview-templates/reports.json")).json();
+    await expect(page.getByText(`${index.report_count} of ${index.report_count} shown`)).toBeVisible();
+
+    // Search narrows by WellView TABLE name, not just by report name — which is
+    // the lookup somebody doing this work actually needs.
+    await page.getByPlaceholder("Search name, category or table…").fill("wvjobreportmudchk");
+    await expect(page.getByText(/ of \d+ shown/)).toBeVisible();
+    const narrowed = await page.locator("aside button").count();
+    expect(narrowed).toBeGreaterThan(0);
+    expect(narrowed).toBeLessThan(index.report_count);
+
+    // And the selected template actually renders, inside its own document.
+    await page.getByPlaceholder("Search name, category or table…").fill("Daily Drilling");
+    await page.getByRole("button", { name: /Daily Drilling/ }).first().click();
+    const frame = page.frameLocator("iframe");
+    await expect(frame.locator("section").first()).toBeVisible({ timeout: 25_000 });
+    expect(await frame.locator("section").count()).toBeGreaterThan(1);
+  });
+
   test("report 29 draws the designed completion beside the one that was run", async ({ page }) => {
     test.setTimeout(60_000);
     await page.getByTestId("report-29").click();

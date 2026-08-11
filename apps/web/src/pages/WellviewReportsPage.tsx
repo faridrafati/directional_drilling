@@ -49,6 +49,7 @@ import {
   Report26Preview, Report28Preview, Report29Preview, Report30Preview,
 } from "../components/wellview/CompletionPreview.js";
 import { Report25Preview, Report27Preview } from "../components/wellview/ProductionPreview.js";
+import { TemplateBrowser } from "../components/wellview/TemplateBrowser.js";
 
 const CATEGORIES = ["Daily", "Engineering", "Cost & Multi-well", "Geology", "Completion"] as const;
 
@@ -77,6 +78,13 @@ function Inner() {
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
   const [selected, setSelected] = useState<string>("01");
+  /**
+   * "reports" builds the 30 from this application's own data; "templates"
+   * browses the 181 ORIGINAL WellView layouts read out of their .afr files.
+   * They answer different questions — what we produce, and what WellView
+   * produced — so they are two views rather than one merged list.
+   */
+  const [view, setView] = useState<"reports" | "templates">("reports");
 
   const catalogQ = useQuery({
     queryKey: ["wellview", "catalog"],
@@ -170,6 +178,30 @@ function Inner() {
         {!loading && !user && <SignInCard />}
 
         {user && (
+          <div className="flex gap-1 border-b border-gray-200 mb-3 shrink-0">
+            {([["reports", "Generated reports"], ["templates", "WellView templates"]] as const).map(
+              ([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setView(id)}
+                  aria-current={view === id ? "page" : undefined}
+                  className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors duration-150 ${
+                    view === id
+                      ? "border-blue-600 text-blue-700 font-medium"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  {label}
+                </button>
+              ),
+            )}
+          </div>
+        )}
+
+        {user && view === "templates" && <TemplateBrowser />}
+
+        {user && view === "reports" && (
           <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4">
             {/* ── catalog ── */}
             <aside className="lg:w-[300px] shrink-0 overflow-y-auto lg:max-h-full">

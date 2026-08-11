@@ -9,9 +9,9 @@ the `.afr` files are opened `"rb"` and nothing is ever written back to them.
 ```bash
 python3 scripts/wellview-afr/afr_export.py \
   "WellView_files/custom/reports single" \
-  docs/wellview-templates
+  apps/web/public/wellview-templates
 
-python3 scripts/wellview-afr/afr_verify.py docs/wellview-templates
+python3 scripts/wellview-afr/afr_verify.py apps/web/public/wellview-templates
 ```
 
 The exporter writes `reports.json`, `INDEX.md` and one HTML per template,
