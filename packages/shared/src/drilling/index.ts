@@ -42,5 +42,7 @@ export {
   UCS_BANDS, MSE_CCS_RATIO, CCS_UCS_RATIO,
 } from "./strength.js";
 export type { ApparentStrength, BinghamResult, UcsBand } from "./strength.js";
+export { bestComposite, ropBands, MIN_BAND_RUNS } from "./benchmark.js";
+export type { WellTrack, CompositePoint, RopBand } from "./benchmark.js";
 export { parseBitSizeInches, bitClass } from "./bit.js";
 export type { BitClass } from "./bit.js";

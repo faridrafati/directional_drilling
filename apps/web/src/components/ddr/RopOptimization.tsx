@@ -30,6 +30,7 @@ import {
   wearAvg, wearPer100m, quantile as quantileOf,
   apparentCcsFromMse, binghamFit, dExponent, dcExponent, familiesForUcs,
   aggressiveness, depthOfCutIn, drillingStrength, efficiencyRatio,
+  bestComposite, ropBands, MIN_BAND_RUNS,
   mhrToFthr,
 } from "@dd/shared/drilling";
 import { api } from "../../api/client.js";
@@ -1726,6 +1727,133 @@ function BySizeView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+      <BenchmarkPanel points={points} />
+    </div>
+  );
+}
+
+// ── Benchmark: per-formation ROP percentile bands ────────────────────────────
+// The offset-benchmarking question a mean cannot answer — is this well drilling
+// this formation at P20 or P80? The SPREAD is the answer, so the bands are the
+// chart and the selected well's runs sit on top of them as dots.
+
+function BenchmarkPanel({ points }: { points: RopPoint[] }) {
+  const [wellName, setWellName] = useState<string>("");
+
+  // Grouped by NAME, not well code: the archive carries a separate code per
+  // sidetrack and window (DH-013, DH-013ST1, DH-013WIN2 …), which as a picker
+  // list is a dozen identical-looking rows. An engineer picking "Dehloran-013"
+  // means the well, so the overlay covers all of its wellbores.
+  const wells = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of points) {
+      const n = p.name || p.wellCode;
+      m.set(n, (m.get(n) ?? 0) + 1);
+    }
+    return [...m.entries()].map(([name, n]) => ({ name, n })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [points]);
+
+  const bands = useMemo(
+    () => ropBands(points.map((p) => ({ formation: p.topFormation, ropMHr: p.rop }))),
+    [points],
+  );
+
+  // The selected well's own runs, grouped by the same folded formation key.
+  const overlay = useMemo(() => {
+    const m = new Map<string, number[]>();
+    if (!wellName) return m;
+    for (const p of points) {
+      if ((p.name || p.wellCode) !== wellName || !(p.rop > 0)) continue;
+      const k = p.topFormation?.trim() ? p.topFormation.trim().toLowerCase() : "\u0000none";
+      const a = m.get(k); if (a) a.push(p.rop); else m.set(k, [p.rop]);
+    }
+    return m;
+  }, [points, wellName]);
+
+  // The no-formation bucket always stays visible past the row cap: it is often
+  // the biggest single group, and dropping it would overstate how much of the
+  // selection is actually formation-attributed.
+  const shown = useMemo(() => {
+    const named = bands.filter((b) => b.formation != null).slice(0, 18);
+    const unknown = bands.find((b) => b.formation == null);
+    return unknown ? [...named, unknown] : named;
+  }, [bands]);
+  const axisHi = useMemo(() => {
+    let hi = 0;
+    for (const b of shown) hi = Math.max(hi, b.p90);
+    for (const vs of overlay.values()) for (const v of vs) hi = Math.max(hi, v);
+    return hi > 0 ? hi * 1.05 : 1;
+  }, [shown, overlay]);
+
+  if (!shown.length) return null;
+  const thin = shown.filter((b) => b.insufficient).length;
+  const overlaid = [...overlay.values()].reduce((n, vs) => n + vs.length, 0);
+  const unattributed = overlay.get("\u0000none")?.length ?? 0;
+
+  return (
+    <div className="space-y-2 pt-4 border-t border-gray-200">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="text-sm font-medium text-gray-700">ROP percentile bands by formation</div>
+        <select value={wellName} onChange={(e) => setWellName(e.target.value)}
+          className="h-7 px-2 text-xs border border-gray-300 rounded bg-white text-gray-700">
+          <option value="">Overlay a well…</option>
+          {wells.map((w) => <option key={w.name} value={w.name}>{w.name} ({w.n})</option>)}
+        </select>
+        <span className="text-[11px] text-gray-400">
+          P10–P90 across every displayed run; the tick is P50. Bands need {MIN_BAND_RUNS}+ runs — thinner rows are greyed.
+        </span>
+        {wellName && (
+          <span className="text-[11px] text-amber-700">
+            {overlaid === 0
+              ? `${wellName} has no runs with a usable ROP in this selection.`
+              : unattributed === overlaid
+                ? `All ${overlaid} of ${wellName}'s runs land in the no-formation row — none of its bit records name a top formation.`
+                : `${overlaid} run${overlaid === 1 ? "" : "s"} overlaid${unattributed ? `, ${unattributed} of them unattributed` : ""}.`}
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-1">
+        {shown.map((b) => {
+          const key = b.formation == null ? "\u0000none" : b.formation.trim().toLowerCase();
+          const dots = overlay.get(key) ?? [];
+          const pct = (v: number) => Math.min(100, Math.max(0, (v / axisHi) * 100));
+          const unknown = b.formation == null;
+          return (
+            <div key={key} className="flex items-center gap-2 text-[11px]">
+              <div className={`w-40 truncate ${b.insufficient || unknown ? "text-gray-400" : "text-gray-700"}`}
+                title={unknown ? "These bit records carry no top formation" : b.formation!}>
+                {unknown ? <i>no formation recorded</i> : b.formation}
+              </div>
+              <div className="relative flex-1 h-5 bg-gray-50 rounded border border-gray-100">
+                <div className={`absolute top-1 h-3 rounded ${b.insufficient ? "bg-gray-200 border border-gray-300" : "bg-blue-100 border border-blue-300"}`}
+                  style={{ left: `${pct(b.p10)}%`, width: `${Math.max(0.6, pct(b.p90) - pct(b.p10))}%` }}
+                  title={`P10 ${fmt1(b.p10)} · P50 ${fmt1(b.p50)} · P90 ${fmt1(b.p90)} m/hr`} />
+                <div className={`absolute top-0.5 w-0.5 h-4 ${b.insufficient ? "bg-gray-400" : "bg-blue-700"}`}
+                  style={{ left: `${pct(b.p50)}%` }} />
+                {dots.map((v, i) => (
+                  <div key={i} className="absolute top-1.5 w-2 h-2 rounded-full bg-amber-500 border border-white"
+                    style={{ left: `calc(${pct(v)}% - 4px)` }} title={`This well: ${fmt1(v)} m/hr`} />
+                ))}
+              </div>
+              <div className={`w-40 tabular-nums whitespace-nowrap ${b.insufficient ? "text-gray-400" : "text-gray-600"}`}>
+                {b.insufficient
+                  ? <span title="Too few runs for a percentile band">insufficient runs (n = {b.n})</span>
+                  : <>{fmt1(b.p10)}–{fmt1(b.p90)} <span className="text-gray-400">n = {b.n}</span></>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-[11px] text-gray-500 leading-relaxed">
+        Estimated from per-run averages, so a band describes how a formation drilled across whole bit runs, not what
+        happened within one. Read position, not the number: a run at P80 of its own field is doing well whatever the
+        absolute ROP. Prefer this to ratio KPIs — a ratio like NPT% <i>rises</i> when you drill faster with the same
+        downtime, which is why SPE/IADC 2016 (“True Lies”) argues for reference frameworks instead.
+        {thin ? ` ${thin} of ${shown.length} formations shown have fewer than ${MIN_BAND_RUNS} runs.` : ""}
+        {bands.length > shown.length ? ` Showing the ${shown.length} busiest of ${bands.length} formations.` : ""}
+      </p>
     </div>
   );
 }
@@ -1837,23 +1965,77 @@ function DepthDaysChart({ wells, colorOf }: { wells: WellRuns[]; colorOf: (i: nu
     return { ...w, data };
   }).filter((w) => w.data.length >= 1), [wells]);
 
+  // The technical-limit reference: each depth band drilled at the best rate any
+  // displayed well achieved there. No single well drilled it — that is the point.
+  // Two references, because one of them is honest and the other is useful.
+  // The absolute best chains each band's single fastest interval, which is true
+  // but so extreme it hugs the axis; the P10 asks what a top-decile band looks
+  // like everywhere, which is a target a crew can actually aim at.
+  const { composite, attainable } = useMemo(() => {
+    if (series.length < 1) return { composite: [], attainable: [] };
+    const tracks = series.map((s) => ({ key: s.code, points: s.data.map((d) => ({ day: d.day, depth: d.depth })) }));
+    const shape = (c: { day: number; depth: number }[]) =>
+      c.map((p) => ({ day: Number(p.day.toFixed(2)), depth: Math.round(p.depth), date: null, bitSize: "" }));
+    return {
+      composite: shape(bestComposite(tracks)),
+      attainable: shape(bestComposite(tracks, { percentile: 0.1 })),
+    };
+  }, [series]);
+
+  // What the fastest real well took to its own deepest point — the honest
+  // yardstick for how much of a stretch the composite is.
+  const fastestDays = useMemo(() => {
+    let best = Infinity;
+    for (const s of series) {
+      const deepest = s.data.reduce((a, b) => (b.depth > a.depth ? b : a), s.data[0]);
+      if (deepest && deepest.day > 0 && deepest.day < best) best = deepest.day;
+    }
+    return Number.isFinite(best) ? best : null;
+  }, [series]);
+
   if (!series.some((s) => s.data.length >= 2)) return <Empty>Not enough dated bit runs to draw a learning curve.</Empty>;
   return (
-    <ResponsiveContainer width="100%" height={460}>
-      <LineChart margin={CHART_MARGIN}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-        <XAxis type="number" dataKey="day" tick={{ fontSize: 11 }} allowDuplicatedCategory={false} domain={niceDomain()} allowDataOverflow
-          label={{ value: "Days from first bit run", position: "insideBottom", offset: -18, fontSize: 11 }} />
-        <YAxis type="number" reversed dataKey="depth" tick={{ fontSize: 11 }} domain={niceDomain()} allowDataOverflow
-          label={{ value: "Bit depth (m)", angle: -90, position: "insideLeft", fontSize: 11 }} />
-        <Tooltip content={<ProgressTip kind="depthDays" />} />
-        <Legend {...LEGEND_TOP} />
-        {series.map((s, i) => (
-          <Line key={s.code} type="monotone" dataKey="depth" data={s.data} name={s.name} stroke={colorOf(i)}
-            strokeWidth={1.8} dot={{ r: 2 }} activeDot={{ r: 4 }} isAnimationActive={false} connectNulls />
-        ))}
-      </LineChart>
-    </ResponsiveContainer>
+    <div className="space-y-1.5">
+      <ResponsiveContainer width="100%" height={460}>
+        <LineChart margin={CHART_MARGIN}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+          <XAxis type="number" dataKey="day" tick={{ fontSize: 11 }} allowDuplicatedCategory={false} domain={niceDomain()} allowDataOverflow
+            label={{ value: "Days from first bit run", position: "insideBottom", offset: -18, fontSize: 11 }} />
+          <YAxis type="number" reversed dataKey="depth" tick={{ fontSize: 11 }} domain={niceDomain()} allowDataOverflow
+            label={{ value: "Bit depth (m)", angle: -90, position: "insideLeft", fontSize: 11 }} />
+          <Tooltip content={<ProgressTip kind="depthDays" />} />
+          <Legend {...LEGEND_TOP} />
+          {series.map((s, i) => (
+            <Line key={s.code} type="monotone" dataKey="depth" data={s.data} name={s.name} stroke={colorOf(i)}
+              strokeWidth={1.8} dot={{ r: 2 }} activeDot={{ r: 4 }} isAnimationActive={false} connectNulls />
+          ))}
+          {attainable.length >= 2 && (
+            <Line key="__attainable" type="monotone" dataKey="depth" data={attainable} name="P10 composite (attainable target)"
+              stroke="#111827" strokeWidth={2} strokeDasharray="7 4" dot={false} activeDot={false} isAnimationActive={false} />
+          )}
+          {composite.length >= 2 && (
+            <Line key="__composite" type="monotone" dataKey="depth" data={composite} name="Best composite (technical limit)"
+              stroke="#9ca3af" strokeWidth={1.5} strokeDasharray="2 4" dot={false} activeDot={false} isAnimationActive={false} />
+          )}
+        </LineChart>
+      </ResponsiveContainer>
+      {composite.length >= 2 && (
+        <p className="text-[11px] text-gray-500 leading-relaxed">
+          Both references assemble a depth-time track band by band from the {series.length} wells shown, then clip to the
+          earliest any well was actually at that depth. The grey <b>best composite</b> takes each band's single fastest
+          interval — {Math.round(composite[composite.length - 1].depth)} m in{" "}
+          {Math.round(composite[composite.length - 1].day)} days
+          {fastestDays != null ? `, against the fastest well's ${Math.round(fastestDays)}` : ""} — which is a true lower
+          bound and too far away to steer by, since it chains two dozen separate one-off best runs. The black{" "}
+          <b>P10 composite</b> ({Math.round(attainable[attainable.length - 1]?.day ?? 0)} days) asks the useful question
+          instead: what if every band went as well as this selection's own top-decile intervals? Aim at that one; the gap
+          to it is opportunity, not failure. Judge against a curve rather than a ratio — NPT% and its relatives are
+          perverse, since drilling faster with the same downtime <i>raises</i> them (SPE/IADC 2016, “True Lies”). Days come
+          from bit-run dates only, so anything between two records — casing, logging, waiting — sits inside the interval
+          it spans.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -2836,7 +3018,7 @@ function MseDiagnostics({ points }: { points: RopPoint[] }) {
   const ccsByFormation = useMemo(() => {
     const byF = new Map<string, { msePsi: number | null; measuredTorque?: boolean }[]>();
     for (const p of points) {
-      const k = (p.topFormation ?? "—").trim().toLowerCase();
+      const k = p.topFormation?.trim() ? p.topFormation.trim().toLowerCase() : "\u0000none";
       const a = byF.get(k);
       const v = { msePsi: p.mse, measuredTorque: p.torqueMeasured };
       if (a) a.push(v); else byF.set(k, [v]);
