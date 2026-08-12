@@ -26,6 +26,7 @@ import {
   tripHours, costPerMeter, tripAdjustedRop, rigUsdPerHr, psiToMPa,
   iqrFence, klbToTonnes, type IqrFence,
   buildRoadmap, cautionCutoffs, type RoadmapRun, type RoadmapRow, type Band,
+  wearAvg, wearPer100m, quantile as quantileOf,
 } from "@dd/shared/drilling";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
@@ -55,6 +56,13 @@ interface RopPoint {
   tfa: number | null; nozzles: number[] | null; flow: number | null; spp: number | null; mudWeight: number | null;
   dullInner: number | null; dullOuter: number | null; bitHour: number | null;
   dullGrade: string | null; dullTitle: string | null;
+  // The discrete IADC dull positions, for the wear view's damage-mode Pareto.
+  // `dullCharLabel` is decoded server-side, where the IADC map lives.
+  dullChar: string | null; dullCharLabel: string | null;
+  dullLocation: string | null; dullBearing: string | null; dullGauge: string | null;
+  // The torque MSE was computed from, and whether it was MEASURED. The
+  // aggressiveness metric excludes estimated torque — see the wear/MSE views.
+  torqueFtLbf: number | null; torqueMeasured: boolean;
   reasonCode: string | null; reasonLabel: string | null;
   // Where the operating point came from: the legacy bit archive (default) or a
   // drilling-parameter row typed on the rig in the entry module.
@@ -68,12 +76,13 @@ interface RopData {
  *  carried no bit evidence (RopPoint.bitClass === null). */
 type ClassSel = "" | "PDC" | "roller" | "none";
 
-type View = "summary" | "contour" | "voxel" | "roadmap" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
+type View = "summary" | "contour" | "voxel" | "roadmap" | "wear" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
 const VIEWS: { key: View; label: string }[] = [
   { key: "summary", label: "Summary" },
   { key: "contour", label: "Contour" },
   { key: "voxel", label: "3D ROP" },
   { key: "roadmap", label: "Roadmap" },
+  { key: "wear", label: "Bit wear" },
   { key: "mse", label: "MSE" },
   { key: "hydraulics", label: "Hydraulics" },
   { key: "economics", label: "Economics" },
@@ -358,6 +367,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
             : view === "contour" ? <ContourView points={points} bitSizes={bitSizes} />
             : view === "voxel" ? <Voxel3DView points={points} bitSizes={bitSizes} />
             : view === "roadmap" ? <RoadmapView points={points} bitSizes={bitSizes} />
+            : view === "wear" ? <WearView points={points} bitSizes={bitSizes} />
             : view === "mse" ? <MseView points={points} bitSizes={bitSizes} />
             : view === "hydraulics" ? <HydraulicsView points={points} bitSizes={bitSizes} />
             : view === "economics" ? <EconomicsView points={points} bitSizes={bitSizes} />
@@ -368,6 +378,266 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
             : <TableView points={points} onOpenReport={onOpenReport} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ══ BIT WEAR — quantitative dull forensics ════════════════════════════════════
+ *
+ * The tab stored IADC dull grades and only ever printed them as text. They carry
+ * a rate: the 8-point cutting-structure scale is LINEAR in remaining cutter
+ * height (SPE/IADC 23939), so grade ÷ metres is a comparable number and
+ * "which bit survives which formation" becomes a chart rather than an anecdote.
+ *
+ * The SPE/IADC 2022 "IADC Code Upgrade" forensics paper is the workflow this
+ * serves: damage -> dysfunction -> practice change, from routine drilling data.
+ */
+type BitFamily = "PDC" | "roller" | "unclassified";
+const famOf = (p: RopPoint): BitFamily => p.bitClass ?? "unclassified";
+const FAMILIES: BitFamily[] = ["PDC", "roller", "unclassified"];
+const FAM_COLOR: Record<BitFamily, string> = {
+  PDC: "#1e40af", roller: "#b45309", unclassified: "#6b7280",
+};
+
+interface WearRow { formation: string; depth: number | null; cells: Map<BitFamily, { mean: number; n: number; hours: number; meters: number }> }
+
+function WearView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
+  const [sizeFilter, setSizeFilter] = useState("");
+  const pts = useMemo(
+    () => (sizeFilter ? points.filter((p) => p.bitSize === sizeFilter) : points),
+    [points, sizeFilter],
+  );
+
+  /** Every run that can produce a wear rate at all. */
+  const graded = useMemo(() => pts.flatMap((p) => {
+    const avg = wearAvg(p.dullInner, p.dullOuter);
+    const per100 = wearPer100m(avg, p.meters);
+    return avg == null || per100 == null ? [] : [{ p, avg, per100 }];
+  }), [pts]);
+
+  const heat = useMemo((): { rows: WearRow[]; max: number } => {
+    const byF = new Map<string, { label: string; depth: number | null; runs: typeof graded }>();
+    for (const g of graded) {
+      const shown = g.p.topFormation ?? "—";
+      const k = shown.trim().toLowerCase();
+      const e = byF.get(k);
+      if (e) e.runs.push(g);
+      else byF.set(k, { label: shown, depth: midDepth(g.p), runs: [g] });
+    }
+    const cellMeans: number[] = [];
+    const rows: WearRow[] = [...byF.values()].map((e) => {
+      const cells = new Map<BitFamily, { mean: number; n: number; hours: number; meters: number }>();
+      for (const fam of FAMILIES) {
+        const rs = e.runs.filter((g) => famOf(g.p) === fam);
+        if (!rs.length) continue;
+        const m = mean(rs.map((g) => g.per100));
+        if (m == null) continue;
+        cellMeans.push(m);
+        cells.set(fam, {
+          mean: m, n: rs.length,
+          hours: mean(rs.map((g) => g.p.bitHour ?? 0)) ?? 0,
+          meters: mean(rs.map((g) => g.p.meters ?? 0)) ?? 0,
+        });
+      }
+      return { formation: e.label, depth: e.depth, cells };
+    }).filter((r) => r.cells.size > 0);
+    rows.sort((a, b) => (a.depth ?? Infinity) - (b.depth ?? Infinity));
+    // Scale to the 90th percentile, not the maximum.
+    //
+    // One formation in the real archive comes back at 31 grade points per 100 m
+    // against a fleet median near 0.3. Scaling to that single cell pushed every
+    // other value to the same end of the ramp: 0.00 and 1.78 rendered as the
+    // identical colour, so the heatmap coloured nothing. Cells above the cap are
+    // clamped and marked, which keeps the outlier visible without letting it
+    // flatten the other forty rows.
+    const cap = quantileOf(cellMeans, 0.9) ?? Math.max(...cellMeans, 1);
+    return { rows, max: cap > 0 ? cap : 1 };
+  }, [graded]);
+
+  /** Damage-mode Pareto: which dull characteristic dominates, split by family. */
+  const pareto = useMemo(() => {
+    const m = new Map<string, { label: string; PDC: number; roller: number; unclassified: number; total: number }>();
+    for (const p of pts) {
+      if (!p.dullChar) continue;
+      const label = p.dullCharLabel ?? p.dullChar;
+      const e = m.get(label) ?? { label, PDC: 0, roller: 0, unclassified: 0, total: 0 };
+      e[famOf(p)] += 1; e.total += 1;
+      m.set(label, e);
+    }
+    return [...m.values()].sort((a, b) => b.total - a.total).slice(0, 12);
+  }, [pts]);
+
+  /** Wear vs ROP — the Dupriest sliding-distance hypothesis, tested. */
+  const wearRop = useMemo(() => {
+    const byFam = new Map<BitFamily, { rop: number; wear: number }[]>();
+    for (const g of graded) {
+      const fam = famOf(g.p);
+      const a = byFam.get(fam);
+      const pt = { rop: g.p.rop, wear: g.per100 };
+      if (a) a.push(pt); else byFam.set(fam, [pt]);
+    }
+    const rho = spearman(graded.map((g) => g.p.rop), graded.map((g) => g.per100));
+    return { byFam, rho, n: graded.length };
+  }, [graded]);
+
+  const gradedShare = pts.length ? graded.length / pts.length : 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-3 text-xs">
+        <label className="flex flex-col gap-1">
+          <span className="text-gray-500">Hole size</span>
+          <select value={sizeFilter} onChange={(e) => setSizeFilter(e.target.value)}
+            className="h-7 px-2 border border-gray-300 rounded bg-white">
+            <option value="">All</option>
+            {bitSizes.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </label>
+        <span className="text-gray-400 ml-auto">
+          <CoverageNote have={graded.length} total={pts.length}
+            extra="a wear rate needs BOTH dull rows graded and positive footage" />
+        </span>
+      </div>
+
+      {graded.length === 0 ? (
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          No run in this selection carries both cutting-structure rows and footage, so no wear rate
+          can be computed. In this archive most bit records are graded 0/0 — the fields are present
+          but unfilled, which is a data-capture gap rather than a fleet of unworn bits.
+        </div>
+      ) : (
+        <>
+          {gradedShare < 0.25 && (
+            <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Only {Math.round(gradedShare * 100)}% of runs here carry a usable dull grade. Read the
+              panels below as indicative of that subset, not of the fleet.
+            </div>
+          )}
+
+          {/* 1 ── wear-rate heatmap: formation × bit family. */}
+          <div className="border border-gray-200 rounded-lg bg-white p-3 overflow-x-auto">
+            <div className="text-[11px] font-semibold text-gray-700 mb-2">
+              Wear rate by formation and bit family
+              <span className="font-normal text-gray-400"> · mean grade points per 100 m — lower survives longer</span>
+            </div>
+            <table className="text-[11px]" style={{ minWidth: 460 }}>
+              <thead>
+                <tr className="text-gray-500 text-left">
+                  <th className="py-1 pr-3 font-medium">Formation</th>
+                  <th className="py-1 pr-3 font-medium">Depth</th>
+                  {FAMILIES.map((f) => <th key={f} className="py-1 px-2 font-medium text-center">{f}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {heat.rows.map((r) => (
+                  <tr key={r.formation} className="border-t border-gray-100">
+                    <td className="py-1 pr-3 text-gray-800 whitespace-nowrap">{r.formation}</td>
+                    <td className="py-1 pr-3 tabular-nums text-gray-500">{intc(r.depth)}</td>
+                    {FAMILIES.map((f) => {
+                      const c = r.cells.get(f);
+                      if (!c) return <td key={f} className="py-1 px-2 text-center text-gray-300">—</td>;
+                      // Low wear is GOOD, so it takes the cool end of the ramp —
+                      // the opposite of ROP, where high is good and takes the hot
+                      // end. Reading `1 - t` here painted unworn bits red.
+                      const raw = heat.max > 0 ? c.mean / heat.max : 0;
+                      const t = Math.min(1, raw);
+                      const over = raw > 1;
+                      return (
+                        <td key={f} className="py-1 px-1 text-center"
+                          title={`${c.n} run(s) · mean ${c.hours.toFixed(1)} hr · ${c.meters.toFixed(0)} m`
+                            + (over ? " · above the 90th-percentile colour cap" : "")}>
+                          <span className="inline-block px-2 py-0.5 rounded tabular-nums"
+                            style={{
+                              background: ropColor(t),
+                              color: t > 0.55 ? "#fff" : "#111",
+                              outline: over ? "2px solid #b91c1c" : undefined,
+                            }}>
+                            {c.mean.toFixed(2)}{over ? "▲" : ""}
+                          </span>
+                          <span className="block text-[9px] text-gray-400">n={c.n}</span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 2 ── damage-mode Pareto. */}
+          {pareto.length > 0 && (
+            <div className="border border-gray-200 rounded-lg bg-white p-3">
+              <div className="text-[11px] font-semibold text-gray-700 mb-1">
+                Dominant damage mode
+                <span className="font-normal text-gray-400"> · runs per IADC dull characteristic</span>
+              </div>
+              <ResponsiveContainer width="100%" height={Math.max(180, pareto.length * 26 + 40)}>
+                <BarChart data={pareto} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+                  <CartesianGrid stroke="#eee" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+                  <YAxis type="category" dataKey="label" width={168} tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  {FAMILIES.map((f) => (
+                    <Bar key={f} dataKey={f} name={f} stackId="d" fill={FAM_COLOR[f]} maxBarSize={18} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 3 ── wear vs ROP: the sliding-distance hypothesis, tested. */}
+          <div className="border border-gray-200 rounded-lg bg-white p-3">
+            <div className="text-[11px] font-semibold text-gray-700 mb-1">
+              Wear rate against ROP
+              <span className="font-normal text-gray-400">
+                {" "}· Spearman ρ = {wearRop.rho == null ? "—" : wearRop.rho.toFixed(2)} over n = {wearRop.n}
+              </span>
+            </div>
+            <ResponsiveContainer width="100%" height={280}>
+              <ScatterChart margin={{ top: 6, right: 16, bottom: 24, left: 4 }}>
+                <CartesianGrid stroke="#eee" />
+                <XAxis type="number" dataKey="rop" name="ROP" unit=" m/hr" tick={{ fontSize: 10 }}
+                  label={{ value: "ROP (m/hr)", position: "insideBottom", offset: -12, fontSize: 10 }} />
+                <YAxis type="number" dataKey="wear" name="Wear" tick={{ fontSize: 10 }} width={62}
+                  label={{ value: "grade / 100 m", angle: -90, position: "insideLeft", fontSize: 10 }} />
+                <Tooltip cursor={{ strokeDasharray: "3 3" }} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                {FAMILIES.map((f) => {
+                  const d = wearRop.byFam.get(f);
+                  return d && d.length
+                    ? <Scatter key={f} name={f} data={d} fill={FAM_COLOR[f]} fillOpacity={0.65} />
+                    : null;
+                })}
+              </ScatterChart>
+            </ResponsiveContainer>
+            <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
+              Dupriest's sliding-distance argument predicts a <b>negative</b> correlation absent
+              dysfunction: a deeper cut per revolution means fewer revolutions, and so less sliding
+              distance, per metre drilled — so a faster run should wear the bit <i>less per metre</i>
+              even while wearing it more per hour.{" "}
+              {wearRop.rho == null
+                ? "Too few graded runs here to say."
+                : wearRop.rho < -0.15
+                  ? `ρ = ${wearRop.rho.toFixed(2)} here — consistent with it.`
+                  : wearRop.rho > 0.15
+                    ? `ρ = ${wearRop.rho.toFixed(2)} here — the opposite, which is what dysfunction looks like.`
+                    : `ρ = ${wearRop.rho.toFixed(2)} here — no clear relationship either way.`}
+            </p>
+          </div>
+        </>
+      )}
+
+      <Interp>
+        Wear rates divide the IADC cutting-structure grade by hole made, which is meaningful only
+        because that scale is <b>linear in remaining cutter height</b> (SPE/IADC 23939). A rate needs
+        both dull rows graded — a run graded on the inner row alone is half-reported, not half-worn,
+        so it is excluded rather than averaged. The heatmap answers "which family survives which
+        formation"; the Pareto names the dominant damage mode to attack first, following the
+        forensic pipeline damage → dysfunction → practice change. These are whole-run averages: they
+        say how hard a run was on the bit, never <i>when</i> in the run the damage happened. Source:
+        SPE/IADC 23939; SPE/IADC 2022 IADC Code Upgrade bit-forensics paper; Dupriest Fast Drill deck.
+      </Interp>
     </div>
   );
 }
@@ -2518,8 +2788,14 @@ function AdvisorView({ points, bitSizes }: { points: RopPoint[]; bitSizes: strin
   const [tripSpeed, setTripSpeed] = useState(300);
   const [prices, setPrices] = useState<BitPrices>(PRICE_DEFAULTS);
   const [sectionLen, setSectionLen] = useState(1000);
-  // composite weights (percent) — cost/m, trip-adj ROP, ROP, meterage, MSE efficiency
-  const [w, setW] = useState({ cost: 40, trip: 25, rop: 15, meter: 15, mse: 5 });
+  // composite weights (percent) — cost/m, trip-adj ROP, ROP, meterage, MSE
+  // efficiency, and bit-wear rate.
+  //
+  // `wear` defaults to ZERO on purpose: adding a criterion that silently
+  // reshuffles a ranking somebody already trusts is worse than not adding it.
+  // Turn it up to let survivability count. Lower wear is better, so it is
+  // normalised the same direction as cost.
+  const [w, setW] = useState({ cost: 40, trip: 25, rop: 15, meter: 15, mse: 5, wear: 0 });
 
   const pts = useMemo(() => (sizeFilter ? points.filter((p) => p.bitSize === sizeFilter) : points), [points, sizeFilter]);
 
@@ -2533,7 +2809,11 @@ function AdvisorView({ points, bitSizes }: { points: RopPoint[]; bitSizes: strin
         const costM = costPerMeter({ bitUsd, rigUsdPerHr: rigHr, drillHr: g.avgHours, tripHr, meterageM: g.avgMeters }) ?? Infinity;
         const tripRop = tripAdjustedRop({ meterageM: g.avgMeters, drillHr: g.avgHours, tripHr }) ?? 0;
         const grid = buildGrid(g.pts); const win = grid ? bestCell(grid) : null;
-        return { ...g, bitUsd, tripHr, costM, tripRop, win };
+        // Median wear rate over the group's runs that carry BOTH dull rows.
+        const wearRates = g.pts
+          .map((p) => wearPer100m(wearAvg(p.dullInner, p.dullOuter), p.meters))
+          .filter((v): v is number => v != null);
+        return { ...g, bitUsd, tripHr, costM, tripRop, win, medWear: median(wearRates), wearN: wearRates.length };
       })
       .filter((r) => Number.isFinite(r.costM));
     if (!cand.length) return [];
@@ -2543,12 +2823,18 @@ function AdvisorView({ points, bitSizes }: { points: RopPoint[]; bitSizes: strin
     const nRop = normalize(cand.map((c) => c.avgRop), true);
     const nMeter = normalize(cand.map((c) => c.avgMeters), true);
     const nMse = normalize(cand.map((c) => c.medMse ?? maxMse), false);
-    const wsum = w.cost + w.trip + w.rop + w.meter + w.mse || 1;
+    // A group with no graded dull sits at the WORST observed rate rather than at
+    // zero: "never graded" must not read as "never wore out" and win the ranking
+    // by default.
+    const maxWear = Math.max(...cand.map((c) => c.medWear ?? 0), 0);
+    const nWear = normalize(cand.map((c) => c.medWear ?? maxWear), false);
+    const wsum = w.cost + w.trip + w.rop + w.meter + w.mse + w.wear || 1;
     return cand.map((c, i) => {
       const bits = Math.max(1, Math.ceil(sectionLen / c.avgMeters));
       return {
         ...c,
-        score: (w.cost * nCost[i] + w.trip * nTrip[i] + w.rop * nRop[i] + w.meter * nMeter[i] + w.mse * nMse[i]) / wsum,
+        score: (w.cost * nCost[i] + w.trip * nTrip[i] + w.rop * nRop[i]
+          + w.meter * nMeter[i] + w.mse * nMse[i] + w.wear * nWear[i]) / wsum,
         bits,
         // Expected section time: each bit drills its average hours then trips.
         days: (bits * (c.avgHours + c.tripHr)) / 24,
@@ -2582,7 +2868,7 @@ function AdvisorView({ points, bitSizes }: { points: RopPoint[]; bitSizes: strin
       <div className="flex items-center gap-4 flex-wrap text-xs bg-gray-50 border border-gray-200 rounded px-3 py-2">
         <span className="font-semibold text-gray-600">Weights</span>
         <Weight k="cost" label="Cost/m" /><Weight k="trip" label="Trip-adj ROP" /><Weight k="rop" label="ROP" />
-        <Weight k="meter" label="Meterage" /><Weight k="mse" label="MSE eff." />
+        <Weight k="meter" label="Meterage" /><Weight k="mse" label="MSE eff." /><Weight k="wear" label="Wear rate" />
       </div>
 
       <div className="border border-gray-200 rounded overflow-auto">

@@ -2195,7 +2195,11 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
         dullInner: dull(r.ICutterWearCode), dullOuter: dull(r.OCutterWearCode),
         // The discrete dull positions, for the wear view's damage-mode Pareto and
         // its formation × bit-family wear heatmap.
-        dullChar: dg.dullChar, dullLocation: dg.location,
+        dullChar: dg.dullChar,
+        // Decoded here rather than on the client: IADC_DULL_CHAR lives in this
+        // file, and a Pareto of damage modes wants "Broken cutters", not "BT".
+        dullCharLabel: dg.dullChar ? (IADC_DULL_CHAR[dg.dullChar] ?? dg.dullChar) : null,
+        dullLocation: dg.location,
         dullBearing: dg.bearing, dullGauge: dg.gauge,
         // The torque MSE was computed from, and whether it was measured. The
         // aggressiveness metric mu = 36T/(dW) inverts estimateTorque exactly, so
