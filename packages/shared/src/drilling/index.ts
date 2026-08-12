@@ -36,5 +36,10 @@ export {
 } from "./wear.js";
 export { buildRoadmap, wearCautionCutoff, cautionCutoffs, MIN_RUNS, MIN_BEST, MSE_CV_FLOOR } from "./roadmap.js";
 export type { RoadmapRun, RoadmapRow, Band, ZoneFlag } from "./roadmap.js";
+export {
+  apparentCcsFromMse, binghamFit, dExponent, dcExponent, familiesForUcs,
+  UCS_BANDS, MSE_CCS_RATIO, CCS_UCS_RATIO,
+} from "./strength.js";
+export type { ApparentStrength, BinghamResult, UcsBand } from "./strength.js";
 export { parseBitSizeInches, bitClass } from "./bit.js";
 export type { BitClass } from "./bit.js";

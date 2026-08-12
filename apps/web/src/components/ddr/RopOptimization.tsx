@@ -28,6 +28,8 @@ import {
   iqrFence, klbToTonnes, type IqrFence,
   buildRoadmap, cautionCutoffs, type RoadmapRun, type RoadmapRow, type Band,
   wearAvg, wearPer100m, quantile as quantileOf,
+  apparentCcsFromMse, binghamFit, dExponent, dcExponent, familiesForUcs,
+  mhrToFthr,
 } from "@dd/shared/drilling";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
@@ -77,13 +79,14 @@ interface RopData {
  *  carried no bit evidence (RopPoint.bitClass === null). */
 type ClassSel = "" | "PDC" | "roller" | "none";
 
-type View = "summary" | "contour" | "voxel" | "roadmap" | "wear" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
+type View = "summary" | "contour" | "voxel" | "roadmap" | "wear" | "strength" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
 const VIEWS: { key: View; label: string }[] = [
   { key: "summary", label: "Summary" },
   { key: "contour", label: "Contour" },
   { key: "voxel", label: "3D ROP" },
   { key: "roadmap", label: "Roadmap" },
   { key: "wear", label: "Bit wear" },
+  { key: "strength", label: "Strength" },
   { key: "mse", label: "MSE" },
   { key: "hydraulics", label: "Hydraulics" },
   { key: "economics", label: "Economics" },
@@ -369,6 +372,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
             : view === "voxel" ? <Voxel3DView points={points} bitSizes={bitSizes} />
             : view === "roadmap" ? <RoadmapView points={points} bitSizes={bitSizes} />
             : view === "wear" ? <WearView points={points} bitSizes={bitSizes} />
+            : view === "strength" ? <StrengthView points={points} bitSizes={bitSizes} />
             : view === "mse" ? <MseView points={points} bitSizes={bitSizes} />
             : view === "hydraulics" ? <HydraulicsView points={points} bitSizes={bitSizes} />
             : view === "economics" ? <EconomicsView points={points} bitSizes={bitSizes} />
@@ -379,6 +383,252 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
             : <TableView points={points} onOpenReport={onOpenReport} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ══ STRENGTH — apparent rock strength and bit-type match ══════════════════════
+ *
+ * The tab's missing physical axis. Everything here is APPARENT: inferred from
+ * what the bit felt, never measured on core, and every label says so. A CCS
+ * derived from surface-torque MSE in a deviated well carries the drillstring's
+ * friction as well as the rock's strength — trends are robust, absolute levels
+ * are not (research §1 cross-cutting caveat d).
+ */
+function StrengthView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
+  const [sizeFilter, setSizeFilter] = useState("");
+  const [selForm, setSelForm] = useState("");
+
+  const pts = useMemo(
+    () => (sizeFilter ? points.filter((p) => p.bitSize === sizeFilter) : points),
+    [points, sizeFilter],
+  );
+
+  /** Per-formation apparent strength + Bingham fit, ordered by depth. */
+  const rows = useMemo(() => {
+    const byF = new Map<string, { label: string; ps: RopPoint[] }>();
+    for (const p of pts) {
+      const shown = p.topFormation ?? "—";
+      const k = shown.trim().toLowerCase();
+      const e = byF.get(k);
+      if (e) e.ps.push(p); else byF.set(k, { label: shown, ps: [p] });
+    }
+    return [...byF.values()].map(({ label, ps }) => {
+      const strength = apparentCcsFromMse(
+        ps.map((p) => ({ msePsi: p.mse, measuredTorque: p.torqueMeasured })),
+      );
+      const bingham = binghamFit(ps.map((p) => ({
+        ropFtHr: mhrToFthr(p.rop), rpm: p.rpm, wobKlb: p.wob, diaIn: p.diaIn,
+      })));
+      const ran = [...new Set(ps.map((p) => p.bitClass).filter((c): c is "PDC" | "roller" => c != null))];
+      return {
+        formation: label, n: ps.length,
+        depth: median(ps.map(midDepth).filter((d): d is number => d != null)),
+        strength, bingham, ran, ps,
+      };
+    }).sort((a, b) => (a.depth ?? Infinity) - (b.depth ?? Infinity));
+  }, [pts]);
+
+  const withStrength = rows.filter((r) => r.strength != null);
+  const maxUcs = Math.max(...withStrength.map((r) => r.strength!.ucsBand[1]), 1);
+
+  /** dc-exponent against depth, coloured per well. */
+  const dcSeries = useMemo(() => {
+    const byWell = new Map<string, { d: number; dc: number }[]>();
+    for (const p of pts) {
+      const depth = midDepth(p);
+      const d = dExponent({
+        ropFtHr: mhrToFthr(p.rop), rpm: p.rpm,
+        wobLbf: p.wob * 1000, dIn: p.diaIn,
+      });
+      const dc = dcExponent(d, { mudPpg: p.mudWeight });
+      if (depth == null || dc == null || !Number.isFinite(dc)) continue;
+      const a = byWell.get(p.name);
+      if (a) a.push({ d: depth, dc }); else byWell.set(p.name, [{ d: depth, dc }]);
+    }
+    return [...byWell.entries()].slice(0, 10);
+  }, [pts]);
+
+  const sel = rows.find((r) => r.formation === selForm) ?? withStrength[0] ?? rows[0];
+  const binghamPts = useMemo(() => (sel?.ps ?? []).flatMap((p) => {
+    if (p.diaIn == null || !(p.rpm > 0) || !(p.diaIn > 0) || !(p.wob > 0)) return [];
+    return [{ wd: p.wob / p.diaIn, rn: mhrToFthr(p.rop) / p.rpm }];
+  }), [sel]);
+
+  if (!rows.length) return <Empty>No runs carry a formation for this selection.</Empty>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-3 text-xs">
+        <label className="flex flex-col gap-1">
+          <span className="text-gray-500">Hole size</span>
+          <select value={sizeFilter} onChange={(e) => setSizeFilter(e.target.value)}
+            className="h-7 px-2 border border-gray-300 rounded bg-white">
+            <option value="">All</option>
+            {bitSizes.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </label>
+        <span className="text-gray-400 ml-auto">
+          {withStrength.length} of {rows.length} formation{rows.length === 1 ? "" : "s"} carry enough
+          run-level MSE for a strength estimate.
+        </span>
+      </div>
+
+      {/* 1 ── strength ladder with bit-family suitability. */}
+      <div className="border border-gray-200 rounded-lg bg-white p-3 overflow-x-auto">
+        <div className="text-[11px] font-semibold text-gray-700 mb-2">
+          Apparent strength ladder
+          <span className="font-normal text-gray-400">
+            {" "}· UCS band implied by MSE ÷ 3 and the published CCS:UCS range
+          </span>
+        </div>
+        <table className="w-full text-[11px]" style={{ minWidth: 760 }}>
+          <thead>
+            <tr className="text-gray-500 text-left">
+              <th className="py-1 pr-2 font-medium">Formation</th>
+              <th className="py-1 pr-2 font-medium w-16">Depth</th>
+              <th className="py-1 pr-2 font-medium" style={{ width: "34%" }}>Apparent UCS (psi)</th>
+              <th className="py-1 pr-2 font-medium">Families the band admits</th>
+              <th className="py-1 pr-2 font-medium">Actually run</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const st = r.strength;
+              const mid = st ? (st.ucsBand[0] + st.ucsBand[1]) / 2 : null;
+              const admits = mid != null ? familiesForUcs(mid) : [];
+              const admitNames = admits.map((b) => b.family);
+              const mismatch = r.ran.filter((c) =>
+                c === "PDC" ? !admitNames.includes("PDC")
+                  : !admitNames.some((f) => f.startsWith("Roller") || f === "TCI" || f === "Milled tooth"));
+              return (
+                <tr key={r.formation} className="border-t border-gray-100">
+                  <td className="py-1 pr-2 text-gray-800 whitespace-nowrap">{r.formation}</td>
+                  <td className="py-1 pr-2 tabular-nums text-gray-500">{intc(r.depth)}</td>
+                  <td className="py-1 pr-2">
+                    {st == null ? <span className="text-gray-300">insufficient MSE</span> : (
+                      <div className="flex items-center gap-2">
+                        <div className="relative h-3 flex-1 bg-gray-100 rounded">
+                          <div className="absolute h-3 rounded bg-indigo-200 border border-indigo-400"
+                            style={{
+                              left: `${(st.ucsBand[0] / maxUcs) * 100}%`,
+                              width: `${Math.max(1.5, ((st.ucsBand[1] - st.ucsBand[0]) / maxUcs) * 100)}%`,
+                            }} />
+                        </div>
+                        <span className="tabular-nums text-gray-600 whitespace-nowrap"
+                          title={`apparent CCS ${Math.round(st.ccsPsi).toLocaleString()} psi · ${psiToMPa(st.ccsPsi).toFixed(0)} MPa · n=${st.n}${st.fromMeasuredTorque ? " · measured torque" : " · estimated torque"}`}>
+                          {Math.round(st.ucsBand[0]).toLocaleString()}–{Math.round(st.ucsBand[1]).toLocaleString()}
+                          <span className="text-gray-400"> ({psiToMPa(st.ucsBand[1]).toFixed(0)} MPa)</span>
+                        </span>
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-1 pr-2 text-gray-600">
+                    {admitNames.length ? admitNames.join(", ") : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="py-1 pr-2">
+                    {r.ran.length === 0 ? <span className="text-gray-300">—</span> : r.ran.map((c) => (
+                      <span key={c}
+                        className={`inline-block mr-1 px-1.5 py-0.5 rounded text-[10px] ${
+                          mismatch.includes(c)
+                            ? "bg-amber-100 text-amber-800 border border-amber-300"
+                            : "bg-gray-100 text-gray-600"}`}
+                        title={mismatch.includes(c) ? "outside the published band for this apparent strength" : ""}>
+                        {c}{mismatch.includes(c) ? " ⚠" : ""}
+                      </span>
+                    ))}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 2 ── Bingham panel. */}
+      <div className="border border-gray-200 rounded-lg bg-white p-3">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-[11px] font-semibold text-gray-700">Bingham drillability</span>
+          <select value={sel?.formation ?? ""} onChange={(e) => setSelForm(e.target.value)}
+            className="h-6 px-1 text-[11px] border border-gray-300 rounded bg-white">
+            {rows.map((r) => <option key={r.formation} value={r.formation}>{r.formation}</option>)}
+          </select>
+          <span className="text-[10px] text-gray-400">
+            {sel?.bingham
+              ? `slope ${sel.bingham.slope.toFixed(4)} · threshold W/D ${sel.bingham.thresholdWD?.toFixed(2) ?? "—"} klb/in · R² ${sel.bingham.r2.toFixed(2)} · n ${sel.bingham.n}`
+              : "insufficient WOB/RPM spread for a fit"}
+          </span>
+        </div>
+        <ResponsiveContainer width="100%" height={240}>
+          <ScatterChart margin={{ top: 6, right: 16, bottom: 24, left: 4 }}>
+            <CartesianGrid stroke="#eee" />
+            <XAxis type="number" dataKey="wd" name="W/D" tick={{ fontSize: 10 }}
+              label={{ value: "WOB / diameter (klb/in)", position: "insideBottom", offset: -12, fontSize: 10 }} />
+            <YAxis type="number" dataKey="rn" name="R/N" tick={{ fontSize: 10 }} width={64}
+              label={{ value: "ROP / RPM (ft per rev-hr)", angle: -90, position: "insideLeft", fontSize: 10 }} />
+            <Tooltip cursor={{ strokeDasharray: "3 3" }} />
+            <Scatter data={binghamPts} fill="#4338ca" fillOpacity={0.55} />
+            {sel?.bingham && (
+              <ReferenceLine
+                segment={[
+                  { x: 0, y: sel.bingham.intercept },
+                  { x: Math.max(...binghamPts.map((p) => p.wd), 1),
+                    y: sel.bingham.intercept + sel.bingham.slope * Math.max(...binghamPts.map((p) => p.wd), 1) },
+                ]}
+                stroke="#4338ca" strokeDasharray="4 3" />
+            )}
+          </ScatterChart>
+        </ResponsiveContainer>
+        <div className="text-[10px] text-gray-500 mt-1">
+          Slope is a <b>relative</b> drillability index — it falls as rock strengthens — never an
+          absolute strength in psi. Ranking across formations:{" "}
+          {rows.filter((r) => r.bingham).sort((a, b) => b.bingham!.slope - a.bingham!.slope)
+            .slice(0, 6).map((r) => `${r.formation} ${r.bingham!.slope.toFixed(3)}`).join(" · ") || "—"}
+        </div>
+      </div>
+
+      {/* 3 ── dc-exponent against depth. */}
+      {dcSeries.length > 0 && (
+        <div className="border border-gray-200 rounded-lg bg-white p-3">
+          <div className="text-[11px] font-semibold text-gray-700 mb-1">
+            Corrected d-exponent against depth
+            <span className="font-normal text-gray-400"> · the compaction / strength trend</span>
+          </div>
+          <ResponsiveContainer width="100%" height={280}>
+            <ScatterChart margin={{ top: 6, right: 16, bottom: 24, left: 4 }}>
+              <CartesianGrid stroke="#eee" />
+              <XAxis type="number" dataKey="dc" name="dc" tick={{ fontSize: 10 }}
+                label={{ value: "dc-exponent", position: "insideBottom", offset: -12, fontSize: 10 }} />
+              <YAxis type="number" dataKey="d" name="Depth" reversed tick={{ fontSize: 10 }} width={62}
+                label={{ value: "Depth (m)", angle: -90, position: "insideLeft", fontSize: 10 }} />
+              <Tooltip cursor={{ strokeDasharray: "3 3" }} />
+              <Legend wrapperStyle={{ fontSize: 10 }} />
+              {dcSeries.map(([well, data], i) => (
+                <Scatter key={well} name={well} data={data}
+                  fill={SIZE_COLORS[i % SIZE_COLORS.length]} fillOpacity={0.6} />
+              ))}
+            </ScatterChart>
+          </ResponsiveContainer>
+          <div className="text-[10px] text-gray-500 mt-1">
+            The correction properly uses equivalent circulating density; ECD is not recorded in these
+            reports, so <b>mud weight stands in for it</b> — which understates the correction wherever
+            annular losses are significant.
+          </div>
+        </div>
+      )}
+
+      <Interp>
+        Apparent CCS is the <b>low quartile</b> of a formation's run-level MSE divided by three — the
+        efficient-drilling anchor MSE ≈ 3 × CCS at mechanical efficiency 0.30–0.35. The low quartile
+        rather than the mean because a formation's MSE distribution is inflated by every run that met
+        dysfunction, and the mean would report the rock <i>plus</i> the trouble. The UCS band follows
+        from the published CCS ≈ 1.8–2.3 × UCS range, and the family columns apply the OGJ suitability
+        table — milled tooth below 9,000 psi, TCI from 9,000, PDC to about 22,000 and possibly beyond,
+        impregnated above 15,000. An amber chip means a family was run outside its published band,
+        which is a question rather than a verdict. Every figure here is <b>apparent</b>: surface-torque
+        MSE carries drillstring friction as well as rock in a deviated well, so trends are robust and
+        absolute levels are not. Source: OGJ 1994 dull-grading & CCS articles; SPE 2017 MSE/DS paper.
+      </Interp>
     </div>
   );
 }
