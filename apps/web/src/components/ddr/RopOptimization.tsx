@@ -24,6 +24,7 @@ import * as THREE from "three";
 import {
   powerLawFit, linearFit, spearman, mean, median, founderAtConstantRpm,
   tripHours, costPerMeter, tripAdjustedRop, rigUsdPerHr, psiToMPa,
+  breakEvenRopMHr, breakEvenMeters,
   iqrFence, klbToTonnes, type IqrFence,
   buildRoadmap, cautionCutoffs, type RoadmapRun, type RoadmapRow, type Band,
   wearAvg, wearPer100m, quantile as quantileOf,
@@ -2762,6 +2763,8 @@ function EconomicsView({ points, bitSizes }: { points: RopPoint[]; bitSizes: str
         </table>
       </div>
 
+      <BreakEvenPanel rows={rows} rigUsdPerHr={rigUsdPerHr(rigDay)} />
+
       <Interp>
         Cost/m = (bit price + rig rate × (drilling + trip hours)) ÷ metres drilled. A bit with a high instantaneous ROP but low footage forces more round trips, which can make it more expensive per metre than a slower bit that drills the whole section — toggle “include trip time” to see the effect. Lowest cost/m here: <b>IADC {rows[0].iadc}</b> at {rows[0].costM.toFixed(0)} USD/m. Bit prices (size-tiered at {LARGE_BIT_IN}″ — reference defaults: 17½″ roller $11,200 / PDC $70,000, smaller $8,000 / $50,000) and rig rate are your inputs; no bit cost is stored in the database.
       </Interp>
@@ -2781,6 +2784,184 @@ function EconTip({ active, payload }: any) {
 }
 
 // ── Bit advisor: transparent weighted ranking of IADC types ──────────────────
+
+/* ── break-even against the best offset (WP3) ──────────────────────────────────
+ *
+ * PetroWiki/SPE calls break-even "the most important aspect" of bit economic
+ * evaluation. The reference is the cheapest IADC group on screen; every other
+ * group is asked the two planning questions:
+ *
+ *   how fast must it drill, over its own meterage, to match that cost per metre?
+ *   how far must it drill, at its own ROP, to match it?
+ *
+ * Both invert the identity the table above computes forward, so nothing new is
+ * modelled here — it is the same arithmetic solved for a different unknown.
+ */
+interface EconRow {
+  iadc: string; bitClass: "PDC" | "roller"; bitSize: string; n: number;
+  avgRop: number; avgMeters: number; avgHours: number; bitUsd: number;
+  tripHr: number; costM: number;
+}
+
+function BreakEvenPanel({ rows, rigUsdPerHr: rigHr }: { rows: EconRow[]; rigUsdPerHr: number }) {
+  const [refMode, setRefMode] = useState<"best" | "manual">("best");
+  const [manualCost, setManualCost] = useState(0);
+
+  const best = rows[0];   // rows arrive sorted by cost/m ascending
+  const refCost = refMode === "manual" && manualCost > 0 ? manualCost : best?.costM ?? 0;
+
+  const MAX_ROWS = 12;
+  const table = useMemo(() => rows.map((r) => {
+    const beRop = breakEvenRopMHr({
+      refCostPerM: refCost, bitUsd: r.bitUsd, rigUsdPerHr: rigHr,
+      tripHr: r.tripHr, meters: r.avgMeters,
+    });
+    const beMeters = breakEvenMeters({
+      refCostPerM: refCost, bitUsd: r.bitUsd, rigUsdPerHr: rigHr,
+      tripHr: r.tripHr, ropMHr: r.avgRop,
+    });
+    return { r, beRop, beMeters, beats: r.costM <= refCost + 1e-9 };
+  }), [rows, refCost, rigHr]);
+
+  // Most groups genuinely cannot reach the reference: on four real fields the
+  // cost/m spread runs 258 to 36,323 $/m, a factor of 140, because a bit that
+  // drilled five metres has an astronomic cost per metre however fast it went.
+  // Listing all forty-five rows filled the panel with the word "unreachable"
+  // sixty-eight times and buried the dozen that CAN be compared — so the table
+  // shows the contenders and the rest is stated as the one-line fact it is.
+  const shown = table.slice(0, MAX_ROWS);
+  const hidden = table.slice(MAX_ROWS);
+  const hiddenUnreachable = hidden.filter((t) => t.beRop == null && t.beMeters == null).length;
+
+  /** Cost/m as a function of footage, at each group's own average ROP. */
+  const curves = useMemo(() => {
+    if (!rows.length) return { data: [] as Record<string, number>[], keys: [] as string[] };
+    const maxM = Math.max(...rows.map((r) => r.avgMeters)) * 2 || 1000;
+    const keys = rows.slice(0, 6).map((r) => r.iadc);
+    const data: Record<string, number>[] = [];
+    for (let k = 1; k <= 40; k += 1) {
+      const meters = (maxM * k) / 40;
+      const row: Record<string, number> = { meters: Math.round(meters) };
+      for (const r of rows.slice(0, 6)) {
+        const c = costPerMeter({
+          bitUsd: r.bitUsd, rigUsdPerHr: rigHr,
+          drillHr: r.avgRop > 0 ? meters / r.avgRop : 0,
+          tripHr: r.tripHr, meterageM: meters,
+        });
+        if (c != null && Number.isFinite(c)) row[r.iadc] = Number(c.toFixed(1));
+      }
+      data.push(row);
+    }
+    return { data, keys };
+  }, [rows, rigHr]);
+
+  if (!rows.length) return null;
+
+  return (
+    <div className="border border-gray-200 rounded-lg bg-white p-3 space-y-3">
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        <span className="text-[11px] font-semibold text-gray-700">Break-even vs best offset</span>
+        <label className="flex items-center gap-1.5 text-gray-600">
+          <input type="radio" checked={refMode === "best"} onChange={() => setRefMode("best")} />
+          best on screen ({best?.iadc} · {best?.costM.toFixed(0)} $/m)
+        </label>
+        <label className="flex items-center gap-1.5 text-gray-600">
+          <input type="radio" checked={refMode === "manual"} onChange={() => setRefMode("manual")} />
+          target
+          <input type="number" value={manualCost} min={0} step={10}
+            onChange={(e) => { setManualCost(Math.max(0, Number(e.target.value) || 0)); setRefMode("manual"); }}
+            className="h-6 w-24 px-1 border border-gray-300 rounded tabular-nums" />
+          $/m
+        </label>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="text-[11px] border-collapse">
+          <thead className="text-gray-600">
+            <tr>
+              <th className="border border-gray-300 px-2 py-0.5 text-left">IADC</th>
+              <th className="border border-gray-300 px-2 py-0.5 text-right">Cost/m</th>
+              <th className="border border-gray-300 px-2 py-0.5 text-right">Break-even ROP<br /><span className="font-normal text-gray-400">at {`its own metres`}</span></th>
+              <th className="border border-gray-300 px-2 py-0.5 text-right">Break-even metres<br /><span className="font-normal text-gray-400">at its own ROP</span></th>
+              <th className="border border-gray-300 px-2 py-0.5 text-right">Actual ROP</th>
+              <th className="border border-gray-300 px-2 py-0.5 text-right">Actual metres</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map(({ r, beRop, beMeters, beats }) => (
+              <tr key={r.iadc} className={beats ? "bg-emerald-50" : ""}>
+                <td className="border border-gray-300 px-2 py-0.5">
+                  {r.iadc} <span className="text-gray-400">{r.bitClass}</span>
+                  {beats && <span className="ml-1 text-emerald-700">already beats it</span>}
+                </td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right tabular-nums">{r.costM.toFixed(0)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right tabular-nums">
+                  {beRop == null
+                    ? <span className="text-gray-400" title="the bit price and trip alone exceed what the reference pays for this footage">unreachable</span>
+                    : `${beRop.toFixed(1)} m/hr`}
+                </td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right tabular-nums">
+                  {beMeters == null
+                    ? <span className="text-gray-400" title="at this ROP the rig outruns the reference — no footage breaks even">unreachable</span>
+                    : `${Math.round(beMeters).toLocaleString()} m`}
+                </td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right tabular-nums text-gray-500">{r.avgRop.toFixed(1)}</td>
+                <td className="border border-gray-300 px-2 py-0.5 text-right tabular-nums text-gray-500">{r.avgMeters.toFixed(0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {hidden.length > 0 && (
+        <p className="text-[10px] text-gray-500">
+          {hidden.length} further group{hidden.length === 1 ? "" : "s"} cost{hidden.length === 1 ? "s" : ""}{" "}
+          {hidden[0].r.costM.toFixed(0)}–{hidden[hidden.length - 1].r.costM.toFixed(0)} $/m and{" "}
+          {hiddenUnreachable === hidden.length ? "none" : `${hidden.length - hiddenUnreachable} of them`}{" "}
+          can reach the reference at any rate. A cost per metre in the thousands almost always means
+          a run that made very little hole, not a slow bit — check its meterage in the table above
+          before reading it as a bit-selection result.
+        </p>
+      )}
+
+      {curves.data.length > 0 && (
+        <div>
+          <div className="text-[10px] text-gray-500 mb-1">
+            Cost per metre against footage, each group at its own average ROP. Where a curve crosses
+            the dashed reference IS its break-even footage.
+          </div>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={curves.data} margin={{ top: 4, right: 16, bottom: 20, left: 4 }}>
+              <CartesianGrid stroke="#eee" />
+              <XAxis dataKey="meters" type="number" tick={{ fontSize: 10 }}
+                label={{ value: "Footage (m)", position: "insideBottom", offset: -10, fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} width={62}
+                label={{ value: "$/m", angle: -90, position: "insideLeft", fontSize: 10 }} />
+              <Tooltip />
+              <Legend wrapperStyle={{ fontSize: 10 }} />
+              <ReferenceLine y={refCost} stroke="#111" strokeDasharray="5 4"
+                label={{ value: `reference ${refCost.toFixed(0)} $/m`, fontSize: 9, position: "insideTopRight" }} />
+              {curves.keys.map((k, i) => (
+                <Line key={k} type="monotone" dataKey={k} name={k} dot={false}
+                  stroke={SIZE_COLORS[i % SIZE_COLORS.length]} strokeWidth={1.5} isAnimationActive={false} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <p className="text-[10px] text-gray-500 leading-relaxed">
+        Break-even inverts the cost identity: <b>required ROP</b> asks how fast a bit must drill over
+        its own meterage to match the reference, <b>required metres</b> how far it must drill at its
+        own ROP. "Unreachable" is a real answer — the bit price and trip alone already cost more than
+        the reference pays for that footage. The known blind spot: ranking offsets by cost per metre
+        cannot surface a bit type <i>never run</i> in the offsets, which is why the strength-based
+        screen in the Strength view is the complement rather than a rival. Source: PetroWiki
+        <i> Drill bit economics</i>; OGJ 1994 on the offset-record failure mode.
+      </p>
+    </div>
+  );
+}
 
 function AdvisorView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
   const [sizeFilter, setSizeFilter] = useState("");

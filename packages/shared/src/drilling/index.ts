@@ -27,6 +27,7 @@ export {
 
 export {
   rigUsdPerHr, tripHours, costPerMeter, tripAdjustedRop, HANDLING_HR_DEFAULT,
+  breakEvenRopMHr, breakEvenMeters,
 } from "./cost.js";
 
 export {
