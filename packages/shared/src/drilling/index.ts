@@ -42,6 +42,11 @@ export {
   UCS_BANDS, MSE_CCS_RATIO, CCS_UCS_RATIO,
 } from "./strength.js";
 export type { ApparentStrength, BinghamResult, UcsBand } from "./strength.js";
+export {
+  bymPredict, bymFit, bymSurface, gridOver,
+  BYM_BOUNDS, BYM_MIN_RUNS, BYM_MIN_SPREAD, bymReliability,
+} from "./bym.js";
+export type { BymRun, BymCoeffs, BymFit, BymRefusal, SurfaceCell } from "./bym.js";
 export { bestComposite, ropBands, MIN_BAND_RUNS } from "./benchmark.js";
 export type { WellTrack, CompositePoint, RopBand } from "./benchmark.js";
 export { parseBitSizeInches, bitClass } from "./bit.js";

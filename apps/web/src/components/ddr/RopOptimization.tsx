@@ -31,6 +31,8 @@ import {
   apparentCcsFromMse, binghamFit, dExponent, dcExponent, familiesForUcs,
   aggressiveness, depthOfCutIn, drillingStrength, efficiencyRatio,
   bestComposite, ropBands, MIN_BAND_RUNS,
+  bymFit, bymSurface, gridOver, nozzlePressureDrop, jetImpact,
+  BYM_MIN_RUNS, BYM_MIN_SPREAD, type BymFit as BymFitResult,
   mhrToFthr,
 } from "@dd/shared/drilling";
 import { api } from "../../api/client.js";
@@ -81,7 +83,7 @@ interface RopData {
  *  carried no bit evidence (RopPoint.bitClass === null). */
 type ClassSel = "" | "PDC" | "roller" | "none";
 
-type View = "summary" | "contour" | "voxel" | "roadmap" | "wear" | "strength" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
+type View = "summary" | "contour" | "voxel" | "roadmap" | "wear" | "strength" | "mse" | "hydraulics" | "economics" | "advisor" | "model" | "scatter" | "size" | "progress" | "table";
 const VIEWS: { key: View; label: string }[] = [
   { key: "summary", label: "Summary" },
   { key: "contour", label: "Contour" },
@@ -93,6 +95,7 @@ const VIEWS: { key: View; label: string }[] = [
   { key: "hydraulics", label: "Hydraulics" },
   { key: "economics", label: "Economics" },
   { key: "advisor", label: "Bit advisor" },
+  { key: "model", label: "Model" },
   { key: "scatter", label: "Scatters" },
   { key: "size", label: "By bit size" },
   { key: "progress", label: "Progress" },
@@ -379,6 +382,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
             : view === "hydraulics" ? <HydraulicsView points={points} bitSizes={bitSizes} />
             : view === "economics" ? <EconomicsView points={points} bitSizes={bitSizes} />
             : view === "advisor" ? <AdvisorView points={points} bitSizes={bitSizes} />
+            : view === "model" ? <ModelView points={points} bitSizes={bitSizes} />
             : view === "scatter" ? <ScatterView points={points} bitSizes={bitSizes} />
             : view === "size" ? <BySizeView points={points} bitSizes={bitSizes} />
             : view === "progress" ? <ProgressView points={points} />
@@ -3745,6 +3749,340 @@ function AdvisorView({ points, bitSizes }: { points: RopPoint[]; bitSizes: strin
           <li>ROP–MSE power-law exponents by section: 0.493 (17½″), 0.917 (12¼″), 0.476 (8½″) — b near 1 ⇒ energy efficiently converted to rock destruction.</li>
         </ul>
       </details>
+    </div>
+  );
+}
+
+/* ══ MODEL — constrained Bourgoyne & Young fit ═══════════════════════════════
+ *
+ * EXPERIMENTAL, and labelled so on screen. Every other view in this tab reports
+ * what happened. This one is the only one that answers "what would happen if I
+ * changed something" — which is exactly why it is the one that can be
+ * confidently wrong.
+ *
+ * The model is fitted per formation from ordinary run averages, with f3
+ * (undercompaction) and f4 (overbalance) pruned because the archive has neither
+ * pore pressure nor ECD. It refuses outright below 15 runs or without real
+ * spread in BOTH weight and speed, because a coefficient nobody varied is not
+ * estimated, it is invented.
+ *
+ * On this archive it usually comes back clamped — a5 pinned at its lower bound
+ * says run-average ROP barely responds to weight once bits, wells and crews are
+ * mixed together. The view says that in plain words rather than drawing a
+ * confident surface over it.
+ */
+
+const FT_PER_M_UI = 3.28084;
+
+/** One archive point reduced to the model's variables, or null if it can't be. */
+function toBymRun(p: RopPoint) {
+  if (!(p.rop > 0) || !(p.wob > 0) || !(p.rpm > 0)) return null;
+  if (p.diaIn == null || !(p.diaIn > 0)) return null;
+  const depthM = midDepth(p);
+  if (depthM == null) return null;
+  // Jet impact is OPTIONAL, not required. Only about half the archive records
+  // nozzles, and dropping every run without them would cost 57% of the data and
+  // half the fittable formations. A null here tells the fit to decide whether f8
+  // is worth keeping for this selection at all.
+  let jetLbf: number | null = null;
+  if (p.tfa != null && p.flow != null && p.mudWeight != null) {
+    const dPb = nozzlePressureDrop({ tfaIn2: p.tfa, qGpm: p.flow, rhoPpg: p.mudWeight });
+    const j = dPb == null ? null : jetImpact({ qGpm: p.flow, rhoPpg: p.mudWeight, dPbPsi: dPb });
+    if (j != null && j > 0) jetLbf = j;
+  }
+  // The IADC inner-row grade is measured at PULL, so it is the wear at the end
+  // of the run, not during it. Halving it approximates the run average under
+  // linear wear — the same linearity assumption the IADC scale itself rests on.
+  // Runs with no dull grade get 0 rather than being dropped: absent wear
+  // evidence is not evidence of a worn bit.
+  const wear = p.dullInner != null ? Math.min(1, p.dullInner / 8) / 2 : 0;
+  return {
+    depthFt: depthM * FT_PER_M_UI,
+    wPerDb: p.wob / p.diaIn,          // the archive records WOB in klb
+    rpm: p.rpm,
+    wear,
+    jetLbf,
+    ropFtHr: mhrToFthr(p.rop),
+  };
+}
+
+function ModelView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
+  const [sizeFilter, setSizeFilter] = useState("");
+  const [selForm, setSelForm] = useState("");
+  const [rigDay, setRigDay] = useState(45_000);
+
+  const pts = useMemo(
+    () => (sizeFilter ? points.filter((p) => p.bitSize === sizeFilter) : points),
+    [points, sizeFilter],
+  );
+
+  /** Per-formation model inputs, plus what had to be dropped to build them. */
+  const groups = useMemo(() => {
+    const byF = new Map<string, { label: string; runs: ReturnType<typeof toBymRun>[]; total: number }>();
+    for (const p of pts) {
+      if (!p.topFormation?.trim()) continue;      // a fit needs a named formation
+      const label = p.topFormation.trim();
+      const k = label.toLowerCase();
+      const e = byF.get(k) ?? { label, runs: [], total: 0 };
+      e.total += 1;
+      const r = toBymRun(p);
+      if (r) e.runs.push(r);
+      byF.set(k, e);
+    }
+    return [...byF.values()]
+      .map((g) => ({ ...g, runs: g.runs.filter((r): r is NonNullable<typeof r> => r != null) }))
+      .sort((a, b) => b.runs.length - a.runs.length);
+  }, [pts]);
+
+  const chosen = useMemo(
+    () => groups.find((g) => g.label.toLowerCase() === selForm.toLowerCase()) ?? groups[0] ?? null,
+    [groups, selForm],
+  );
+
+  const fit = useMemo(() => (chosen ? bymFit(chosen.runs) : null), [chosen]);
+  const ok = fit != null && !("ok" in fit) ? (fit as BymFitResult) : null;
+
+  // The response surface at this formation's own median depth, wear and
+  // hydraulics — changing WOB and RPM only, which is what a driller can change.
+  const surface = useMemo(() => {
+    if (!ok || !chosen) return null;
+    const med = (get: (r: (typeof chosen.runs)[number]) => number) =>
+      median(chosen.runs.map(get)) ?? 0;
+    const jets = chosen.runs.map((r) => r.jetLbf).filter((v): v is number => v != null);
+    const at = {
+      depthFt: med((r) => r.depthFt), wear: med((r) => r.wear),
+      jetLbf: ok.usedJet ? median(jets) : null,
+    };
+    const wob = gridOver(chosen.runs.map((r) => r.wPerDb), 12);
+    const rpm = gridOver(chosen.runs.map((r) => r.rpm), 12);
+    // Cost per foot at a fixed rig rate, ignoring the bit: the model has no
+    // opinion about how a parameter change wears the bit, so pretending it does
+    // would be inventing the one number that decides the answer.
+    const costOf = (ropFtHr: number) => (ropFtHr > 0 ? rigUsdPerHr(rigDay) / ropFtHr : null);
+    const cells = bymSurface(ok.coeffs, at, { wob, rpm }, costOf);
+    const usable = cells.filter((c) => c.ropFtHr != null);
+    const bestRop = usable.reduce<typeof usable[number] | null>((a, c) => (a == null || c.ropFtHr! > a.ropFtHr! ? c : a), null);
+    const bestCost = usable.reduce<typeof usable[number] | null>(
+      (a, c) => (c.costPerFt == null ? a : a == null || c.costPerFt < a.costPerFt! ? c : a), null);
+    return { at, wob, rpm, cells, bestRop, bestCost };
+  }, [ok, chosen, rigDay]);
+
+  const scatter = useMemo(() => {
+    if (!ok) return { data: [], lim: 1 };
+    const data = ok.points.map((p) => ({
+      actual: p.actual / FT_PER_M_UI, predicted: p.predicted / FT_PER_M_UI,
+    }));
+    const lim = Math.max(...data.flatMap((d) => [d.actual, d.predicted]), 1);
+    return { data, lim };
+  }, [ok]);
+
+  const dropped = chosen ? chosen.total - chosen.runs.length : 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold tracking-wide uppercase">
+          Experimental
+        </span>
+        <SizeFilter value={sizeFilter} onChange={setSizeFilter} bitSizes={bitSizes} total={points.length} />
+        <select value={chosen?.label ?? ""} onChange={(e) => setSelForm(e.target.value)}
+          className="h-7 px-2 text-xs border border-gray-300 rounded bg-white text-gray-700">
+          {groups.map((g) => (
+            <option key={g.label} value={g.label}>{g.label} ({g.runs.length})</option>
+          ))}
+        </select>
+        <NumInput label="Rig rate" value={rigDay} onChange={setRigDay} step={1000} suffix="USD/day" />
+      </div>
+
+      {!chosen ? (
+        <Empty>No named formation in this selection carries the weight, speed, depth and hydraulics the model needs.</Empty>
+      ) : fit != null && "ok" in fit ? (
+        <Refusal fit={fit} formation={chosen.label} total={chosen.total} usable={chosen.runs.length} />
+      ) : ok == null ? (
+        <Empty>The fit did not converge on {chosen.label}.</Empty>
+      ) : (
+        <>
+          <div className={`rounded border px-3 py-2 text-[11px] leading-relaxed ${
+            ok.reliability === "unreliable" ? "border-red-200 bg-red-50 text-red-900"
+              : ok.reliability === "weak" ? "border-amber-200 bg-amber-50 text-amber-900"
+              : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+            <b>{ok.reliability === "unreliable" ? "Unreliable fit" : ok.reliability === "weak" ? "Weak fit" : "Usable fit"}</b>
+            {" — "}median error {Math.round(100 * ok.medianAre)}% on {ok.n} runs
+            {ok.atBounds.length > 0 && <>, with <b>{ok.atBounds.join(", ")}</b> resting on a published bound</>}.
+            {ok.atBounds.length > 0 && (
+              <> A coefficient on a bound is a wall, not an estimate: the data wanted to go where the physics envelope
+                forbids, and the number shown is where it was stopped.
+                {ok.atBounds.includes("a5") && <> Here <b>a5</b> — the weight-on-bit exponent — pinned at its floor,
+                  which says run-average ROP in {chosen.label} barely responds to weight once bits, wells and crews are
+                  mixed together.</>}
+              </>
+            )}
+            {ok.reliability !== "usable" && <> Read the surface below as a ranking of operating points, never as a
+              prediction or a setpoint.</>}
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <div className="text-sm font-medium text-gray-700">Fitted vs actual ROP</div>
+              <ResponsiveContainer width="100%" height={330}>
+                <ScatterChart margin={CHART_MARGIN}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+                  <XAxis type="number" dataKey="actual" domain={[0, Math.ceil(scatter.lim)]} tick={{ fontSize: 11 }}
+                    label={{ value: "Actual ROP (m/hr)", position: "insideBottom", offset: -18, fontSize: 11 }} />
+                  <YAxis type="number" dataKey="predicted" domain={[0, Math.ceil(scatter.lim)]} tick={{ fontSize: 11 }}
+                    label={{ value: "Fitted ROP (m/hr)", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                  <Tooltip content={<FitTip />} />
+                  <Scatter data={scatter.data} fill="#1e40af" fillOpacity={0.5} isAnimationActive={false} />
+                  <Scatter data={[{ actual: 0, predicted: 0 }, { actual: scatter.lim, predicted: scatter.lim }]}
+                    line={{ stroke: "#9ca3af", strokeDasharray: "4 3" }} shape={() => <g />} isAnimationActive={false} legendType="none" />
+                </ScatterChart>
+              </ResponsiveContainer>
+              <p className="text-[11px] text-gray-500">
+                Points on the dashed line are perfectly fitted. Spread above it is the model over-predicting — the runs
+                where something the model cannot see (a trip, a bit change, hole trouble) cost time the coefficients
+                cannot explain. n = {ok.n}.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="text-sm font-medium text-gray-700">WOB × RPM response surface</div>
+              {surface && <SurfaceGrid surface={surface} />}
+              <p className="text-[11px] text-gray-500 leading-relaxed">
+                Evaluated at {chosen.label}'s own median depth ({intc(surface ? surface.at.depthFt / FT_PER_M_UI : null)} m),
+                wear and jet impact, so only weight and speed move — the two a driller can actually turn. The grid spans
+                the parameters this formation was actually drilled at; there is no extrapolation beyond them. Hover any
+                cell for its predicted ROP and rig-time cost per metre at {intc(rigDay)} USD/day.
+                {ok.usedJet ? "" : " Jet impact is not in this fit, so hydraulics do not move the surface at all."}
+            {" "}◆ marks the fastest cell and ★ the cheapest, and on rig time alone they are always the same cell —
+                cost is rate ÷ ROP, so it can only be monotone in ROP. Separating them would need a bit-wear response to
+                weight and speed, which this model does not have and this view will not invent: whether the fastest
+                setpoint is also the cheapest depends entirely on what it does to the bit.
+              </p>
+            </div>
+          </div>
+
+          <details className="text-[11px] text-gray-600">
+            <summary className="cursor-pointer text-gray-500 hover:text-gray-700">Fitted coefficients & what was dropped</summary>
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 tabular-nums">
+              {([["a1", "formation strength"], ["a2", "compaction"], ["a5", "weight on bit"],
+                 ["a6", "rotary speed"], ["a7", "tooth wear"], ["a8", "jet impact"]] as const).map(([k, what]) => (
+                <div key={k} className={ok.atBounds.includes(k) ? "text-red-700 font-medium" : ""}>
+                  <b>{k}</b> {ok.coeffs[k].toPrecision(3)}
+                  <span className="text-gray-400"> · {what}{ok.atBounds.includes(k) ? " · at bound" : ""}</span>
+                </div>
+              ))}
+            </div>
+            <ul className="mt-2 space-y-0.5 list-disc list-inside">
+              <li>f3 (undercompaction) and f4 (overbalance) are always pruned: the archive carries neither pore pressure nor ECD.</li>
+              <li>
+                f8 (jet impact) {ok.usedJet
+                  ? <>is fitted — {Math.round(100 * ok.jetCoverage)}% of these runs carry nozzle, flow and mud-weight records.</>
+                  : <>is pruned too: only {Math.round(100 * ok.jetCoverage)}% of these runs record nozzles, and fitting a jet
+                    term on that minority would not add information, it would fit the same model to a biased subset. a8 is
+                    held at zero and its effect is absorbed into a1.</>}
+              </li>
+              <li>WOB spread P90/P10 = {ok.spread.wob?.toFixed(1)}×, RPM = {ok.spread.rpm?.toFixed(1)}× (both must clear {BYM_MIN_SPREAD}×).</li>
+              <li>{dropped} of {chosen.total} {chosen.label} runs dropped for missing nozzle/flow/mud-weight hydraulics or depth.</li>
+              <li>Fitted by bounded multi-start pattern search on mean absolute <i>relative</i> error, not R² — R² on ROP is
+                dominated by the fast runs, and the slow ones are where the money is.</li>
+            </ul>
+          </details>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Why the model declined to fit — always specific, never a shrug. */
+function Refusal({ fit, formation, total, usable }: {
+  fit: { reason: string; n?: number; spread?: number | null };
+  formation: string; total: number; usable: number;
+}) {
+  return (
+    <div className="rounded border border-gray-200 bg-gray-50 px-3 py-3 text-[12px] text-gray-700 leading-relaxed">
+      <b>No fit for {formation}.</b>{" "}
+      {fit.reason === "too-few-runs" ? (
+        <>Only {usable} of its {total} runs carry every variable the model needs — it takes {BYM_MIN_RUNS}.
+          Below that, six coefficients would be fitted through too few points to constrain them.</>
+      ) : (
+        <>Weight and speed need a P90/P10 spread of {BYM_MIN_SPREAD}× before the model can tell them apart; this
+          selection has {fit.spread?.toFixed(2) ?? "—"}× on {fit.reason === "no-wob-spread" ? "weight" : "speed"}.
+          The search would still return a coefficient — whichever bound it drifted to — with a respectable-looking
+          error, and the surface would then recommend changing a parameter nobody here ever varied.</>
+      )}
+    </div>
+  );
+}
+
+function FitTip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload as { actual: number; predicted: number };
+  const err = p.actual > 0 ? (100 * (p.predicted - p.actual)) / p.actual : null;
+  return (
+    <div className="px-2 py-1 rounded bg-gray-900 text-white text-[11px] leading-tight shadow-lg">
+      <div>Actual: {fmt1(p.actual)} m/hr</div>
+      <div>Fitted: {fmt1(p.predicted)} m/hr</div>
+      {err != null && <div className="text-gray-300">{err > 0 ? "+" : ""}{err.toFixed(0)}%</div>}
+    </div>
+  );
+}
+
+/** The WOB × RPM grid, coloured by ROP, with the fastest and cheapest cells marked. */
+function SurfaceGrid({ surface }: {
+  surface: {
+    wob: number[]; rpm: number[];
+    cells: { wPerDb: number; rpm: number; ropFtHr: number | null; costPerFt: number | null }[];
+    bestRop: { wPerDb: number; rpm: number } | null;
+    bestCost: { wPerDb: number; rpm: number } | null;
+  };
+}) {
+  const rops = surface.cells.map((c) => c.ropFtHr).filter((v): v is number => v != null);
+  if (!rops.length) return <Empty>Nothing in the observed parameter range is predictable.</Empty>;
+  const lo = Math.min(...rops), hi = Math.max(...rops);
+  const at = (w: number, r: number) => surface.cells.find((c) => c.wPerDb === w && c.rpm === r);
+  const same = (a: { wPerDb: number; rpm: number } | null, w: number, r: number) =>
+    a != null && a.wPerDb === w && a.rpm === r;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="text-[10px] border-separate" style={{ borderSpacing: 1 }}>
+        <thead>
+          <tr>
+            <th className="text-right pr-1 font-normal text-gray-400">klb/in ↓ rpm →</th>
+            {surface.rpm.map((r) => (
+              <th key={r} className="font-normal text-gray-500 px-0.5">{Math.round(r)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {[...surface.wob].reverse().map((w) => (
+            <tr key={w}>
+              <td className="text-right pr-1 text-gray-500 tabular-nums">{w.toFixed(2)}</td>
+              {surface.rpm.map((r) => {
+                const c = at(w, r);
+                const rop = c?.ropFtHr ?? null;
+                const t = rop == null ? 0 : (rop - lo) / (hi - lo || 1);
+                // When rig time is the only cost, the cheapest cell IS the
+                // fastest one — cost is rate ÷ ROP, monotone in ROP. Drawing two
+                // separate markers would dress one finding up as two, so the
+                // coincidence is shown as one glyph and named in the caption.
+                const isRop = same(surface.bestRop, w, r);
+                const isCost = same(surface.bestCost, w, r);
+                const mark = isRop && isCost ? "◆★" : isCost ? "★" : isRop ? "◆" : "";
+                return (
+                  <td key={r} className="w-6 h-5 text-center align-middle"
+                    style={{ background: rop == null ? "#f3f4f6" : ropColor(t), color: t > 0.6 ? "#fff" : "#111827" }}
+                    title={rop == null ? "outside the model's domain"
+                      : `${(rop / FT_PER_M_UI).toFixed(1)} m/hr at ${w.toFixed(2)} klb/in, ${Math.round(r)} rpm${
+                          c?.costPerFt != null ? ` · ${Math.round(c.costPerFt * FT_PER_M_UI)} USD/m rig time` : ""}`}>
+                    {mark}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
