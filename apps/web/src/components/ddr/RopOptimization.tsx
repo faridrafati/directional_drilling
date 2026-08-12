@@ -25,6 +25,7 @@ import {
   powerLawFit, linearFit, spearman, mean, median, founderAtConstantRpm,
   tripHours, costPerMeter, tripAdjustedRop, rigUsdPerHr, psiToMPa,
   iqrFence, klbToTonnes, type IqrFence,
+  buildRoadmap, cautionCutoffs, type RoadmapRun, type RoadmapRow, type Band,
 } from "@dd/shared/drilling";
 import { api } from "../../api/client.js";
 import { MultiSelect, type Item } from "./DdrRemarksSearch.js";
@@ -67,11 +68,12 @@ interface RopData {
  *  carried no bit evidence (RopPoint.bitClass === null). */
 type ClassSel = "" | "PDC" | "roller" | "none";
 
-type View = "summary" | "contour" | "voxel" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
+type View = "summary" | "contour" | "voxel" | "roadmap" | "mse" | "hydraulics" | "economics" | "advisor" | "scatter" | "size" | "progress" | "table";
 const VIEWS: { key: View; label: string }[] = [
   { key: "summary", label: "Summary" },
   { key: "contour", label: "Contour" },
   { key: "voxel", label: "3D ROP" },
+  { key: "roadmap", label: "Roadmap" },
   { key: "mse", label: "MSE" },
   { key: "hydraulics", label: "Hydraulics" },
   { key: "economics", label: "Economics" },
@@ -355,6 +357,7 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
             : view === "summary" ? <SummaryView points={points} bitSizes={bitSizes} onOpenReport={onOpenReport} onView={setView} />
             : view === "contour" ? <ContourView points={points} bitSizes={bitSizes} />
             : view === "voxel" ? <Voxel3DView points={points} bitSizes={bitSizes} />
+            : view === "roadmap" ? <RoadmapView points={points} bitSizes={bitSizes} />
             : view === "mse" ? <MseView points={points} bitSizes={bitSizes} />
             : view === "hydraulics" ? <HydraulicsView points={points} bitSizes={bitSizes} />
             : view === "economics" ? <EconomicsView points={points} bitSizes={bitSizes} />
@@ -368,6 +371,262 @@ export function RopOptimization({ onOpenReport }: { onOpenReport?: (wellCode: st
     </div>
   );
 }
+
+/* ══ ROADMAP ═══════════════════════════════════════════════════════════════════
+ *
+ * Per-formation recommended WOB / RPM / flow bands, mined from the offset runs
+ * on screen. The aggregation lives in `@dd/shared/drilling/roadmap` — this
+ * component only supplies the economics inputs, draws the depth track and the
+ * table, and copies it out as CSV.
+ */
+function RoadmapView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
+  const [sizeFilter, setSizeFilter] = useState("");
+  const [rigDay, setRigDay] = useState(30000);
+  const [tripSpeed, setTripSpeed] = useState(300);
+  const [prices] = useState<BitPrices>(PRICE_DEFAULTS);
+  const [copied, setCopied] = useState(false);
+
+  const pts = useMemo(
+    () => (sizeFilter ? points.filter((p) => p.bitSize === sizeFilter) : points),
+    [points, sizeFilter],
+  );
+
+  const rows = useMemo(() => {
+    const rigHr = rigUsdPerHr(rigDay);
+    // Cost per metre is computed PER RUN here, not per IADC group as the
+    // economics view does: the roadmap ranks individual runs against each other
+    // inside a formation, so it needs each run's own cost.
+    const runs: RoadmapRun[] = pts.map((p) => {
+      const depth = runDepth(p);
+      const tripHr = depth != null && depth > 0
+        ? tripHours({ depthM: depth, tripSpeedMHr: tripSpeed, handlingHr: 2 })
+        : 0;
+      const bitUsd = p.bitClass != null ? priceFor(p.bitClass, p.diaIn, prices) : null;
+      const costPerM = bitUsd != null && p.meters != null && p.meters > 0 && p.bitHour != null && p.bitHour > 0
+        ? costPerMeter({ bitUsd, rigUsdPerHr: rigHr, drillHr: p.bitHour, tripHr, meterageM: p.meters })
+        : null;
+      const tripRopMHr = p.meters != null && p.meters > 0 && p.bitHour != null && p.bitHour > 0
+        ? tripAdjustedRop({ meterageM: p.meters, drillHr: p.bitHour, tripHr })
+        : null;
+      return {
+        formation: p.topFormation, bitSize: p.bitSize,
+        wobKlb: p.wob, rpm: p.rpm, flowGpm: p.flow, ropMHr: p.rop,
+        costPerM, tripRopMHr, mse: p.mse,
+        dullInner: p.dullInner, dullOuter: p.dullOuter,
+        meters: p.meters, reasonCode: p.reasonCode, depthMid: midDepth(p),
+      };
+    });
+    const cuts = cautionCutoffs(runs);
+    return buildRoadmap(runs, { wearCautionThreshold: cuts.wear, mseCvThreshold: cuts.mseCv });
+  }, [pts, rigDay, tripSpeed, prices]);
+
+  const usable = rows.filter((r) => !r.insufficient);
+  const short = rows.filter((r) => r.insufficient);
+
+  // Shared parameter axes, so a band's LENGTH is comparable between rows.
+  const axis = (pick: (r: RoadmapRow) => Band | null) => {
+    const vs = usable.flatMap((r) => { const b = pick(r); return b ? [b.p25, b.p75] : []; });
+    if (!vs.length) return null;
+    const lo = Math.min(...vs), hi = Math.max(...vs);
+    return hi > lo ? { lo, hi } : { lo: lo * 0.9, hi: hi * 1.1 || 1 };
+  };
+  const wobAxis = axis((r) => r.wob), rpmAxis = axis((r) => r.rpm);
+
+  const csv = () => {
+    const head = ["Formation", "Depth (m)", "Hole size", "WOB P25 (klb)", "WOB P75 (klb)",
+      "WOB P25 (t)", "WOB P75 (t)", "RPM P25", "RPM P75", "Flow P25 (gpm)", "Flow P75 (gpm)",
+      "Runs", "Best-set n", "Zone", "Basis"];
+    const cell = (v: unknown) => {
+      const t = v == null ? "" : String(v);
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const body = usable.map((r) => [
+      r.formation, r.depthFrom != null ? Math.round(r.depthFrom) : "", r.bitSizes.join(" / "),
+      r.wob ? r.wob.p25.toFixed(1) : "", r.wob ? r.wob.p75.toFixed(1) : "",
+      r.wob ? klbToTonnes(r.wob.p25).toFixed(1) : "", r.wob ? klbToTonnes(r.wob.p75).toFixed(1) : "",
+      r.rpm ? Math.round(r.rpm.p25) : "", r.rpm ? Math.round(r.rpm.p75) : "",
+      r.flow ? Math.round(r.flow.p25) : "", r.flow ? Math.round(r.flow.p75) : "",
+      r.n, r.bestN, r.zone, `best tercile by ${r.basis} of ${r.n} runs`,
+    ].map(cell).join(","));
+    void navigator.clipboard?.writeText([head.join(","), ...body].join("\n"));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  };
+
+  if (!rows.length) return <Empty>No runs carry a formation for this selection.</Empty>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-3 text-xs">
+        <label className="flex flex-col gap-1">
+          <span className="text-gray-500">Hole size</span>
+          <select value={sizeFilter} onChange={(e) => setSizeFilter(e.target.value)}
+            className="h-7 px-2 border border-gray-300 rounded bg-white">
+            <option value="">All</option>
+            {bitSizes.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-gray-500">Rig rate ($/day)</span>
+          <input type="number" value={rigDay} min={0} step={1000}
+            onChange={(e) => setRigDay(Math.max(0, Number(e.target.value) || 0))}
+            className="h-7 px-2 w-28 border border-gray-300 rounded" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-gray-500">Trip speed (m/hr)</span>
+          <input type="number" value={tripSpeed} min={1} step={50}
+            onChange={(e) => setTripSpeed(Math.max(1, Number(e.target.value) || 1))}
+            className="h-7 px-2 w-24 border border-gray-300 rounded" />
+        </label>
+        <button type="button" onClick={csv} disabled={!usable.length}
+          className="h-7 px-3 rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40">
+          {copied ? "Copied ✓" : "Copy as CSV"}
+        </button>
+        <span className="text-gray-400 ml-auto">
+          {usable.length} formation{usable.length === 1 ? "" : "s"} banded
+          {short.length ? ` · ${short.length} with too few runs` : ""}
+        </span>
+      </div>
+
+      {/* Depth track: one row per formation, ordered as the hole is drilled. */}
+      {usable.length > 0 && (
+        <div className="border border-gray-200 rounded-lg bg-white p-3 overflow-x-auto">
+          <div className="text-[11px] font-semibold text-gray-700 mb-2">
+            Recommended operating bands by formation
+            <span className="font-normal text-gray-400"> · P25–P75 of the best-performing runs</span>
+          </div>
+          <table className="w-full text-[11px]" style={{ minWidth: 720 }}>
+            <thead>
+              <tr className="text-gray-500 text-left">
+                <th className="py-1 pr-2 font-medium">Formation</th>
+                <th className="py-1 pr-2 font-medium w-20">Depth</th>
+                <th className="py-1 pr-2 font-medium" style={{ width: "30%" }}>WOB (klb)</th>
+                <th className="py-1 pr-2 font-medium" style={{ width: "30%" }}>RPM</th>
+                <th className="py-1 pr-2 font-medium w-16">Zone</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usable.map((r) => (
+                <tr key={r.formation} className="border-t border-gray-100 align-middle">
+                  <td className="py-1 pr-2 text-gray-800">{r.formation}</td>
+                  <td className="py-1 pr-2 tabular-nums text-gray-500">{intc(r.depthFrom)}</td>
+                  <td className="py-1 pr-2"><BandBar band={r.wob} axis={wobAxis} unit="klb" /></td>
+                  <td className="py-1 pr-2"><BandBar band={r.rpm} axis={rpmAxis} unit="rpm" /></td>
+                  <td className="py-1 pr-2">
+                    <span
+                      title={r.zoneReasons.join("; ") || "no dysfunction evidence in these runs"}
+                      className={`px-1.5 py-0.5 rounded text-[10px] ${
+                        r.zone === "caution"
+                          ? "bg-amber-100 text-amber-800 border border-amber-300"
+                          : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}
+                    >
+                      {r.zone}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* The same rows as a plain table, with the numbers spelled out. */}
+      <div className="border border-gray-200 rounded-lg bg-white overflow-x-auto">
+        <table className="w-full text-[11px]">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr className="text-left">
+              <th className="px-2 py-1.5 font-medium">Formation</th>
+              <th className="px-2 py-1.5 font-medium">Depth (m)</th>
+              <th className="px-2 py-1.5 font-medium">Hole size</th>
+              <th className="px-2 py-1.5 font-medium">WOB (klb)</th>
+              <th className="px-2 py-1.5 font-medium">WOB (t)</th>
+              <th className="px-2 py-1.5 font-medium">RPM</th>
+              <th className="px-2 py-1.5 font-medium">Flow (gpm)</th>
+              <th className="px-2 py-1.5 font-medium">n</th>
+              <th className="px-2 py-1.5 font-medium">Zone</th>
+              <th className="px-2 py-1.5 font-medium">Basis</th>
+            </tr>
+          </thead>
+          <tbody>
+            {usable.map((r) => (
+              <tr key={r.formation} className="border-t border-gray-100">
+                <td className="px-2 py-1 text-gray-800">{r.formation}</td>
+                <td className="px-2 py-1 tabular-nums text-gray-500">{intc(r.depthFrom)}</td>
+                <td className="px-2 py-1 text-gray-500">{r.bitSizes.join(" / ")}</td>
+                <td className="px-2 py-1 tabular-nums">{bandText(r.wob, 1)}</td>
+                <td className="px-2 py-1 tabular-nums text-gray-500">
+                  {r.wob ? `${klbToTonnes(r.wob.p25).toFixed(1)}–${klbToTonnes(r.wob.p75).toFixed(1)}` : "—"}
+                </td>
+                <td className="px-2 py-1 tabular-nums">{bandText(r.rpm, 0)}</td>
+                <td className="px-2 py-1 tabular-nums">{bandText(r.flow, 0)}</td>
+                <td className="px-2 py-1 tabular-nums text-gray-500">{r.n}</td>
+                <td className="px-2 py-1">
+                  <span className={r.zone === "caution" ? "text-amber-700" : "text-emerald-700"}>{r.zone}</span>
+                </td>
+                <td className="px-2 py-1 text-gray-400">
+                  best tercile by {r.basis} of {r.n} runs
+                  {r.screenFellBack && (
+                    <span className="text-amber-700"> · every run was dull-screened, so the full set was used</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {short.map((r) => (
+              <tr key={r.formation} className="border-t border-gray-100 text-gray-400">
+                <td className="px-2 py-1">{r.formation}</td>
+                <td className="px-2 py-1 tabular-nums">{intc(r.depthFrom)}</td>
+                <td className="px-2 py-1">{r.bitSizes.join(" / ")}</td>
+                <td className="px-2 py-1" colSpan={6}>insufficient runs — {r.n} of the 5 needed for a band</td>
+                <td className="px-2 py-1" />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <Interp>
+        Each band is the <b>P25–P75</b> of the parameters used by the best third of runs in that
+        formation, ranked by cost per metre where the economics are computable and by
+        trip-adjusted ROP otherwise. Runs that ended badly — cutting structure at 4/8 or worse, or
+        pulled for a failure reason — are <b>excluded before ranking</b>, so the roadmap never
+        recommends the settings that tore bits up. A <b>caution</b> zone means the group shows
+        dysfunction evidence (wear rate in the worst quartile, MSE varying by more than half its
+        mean, or a quarter of runs pulled for failure); hover the chip for which. These are offset
+        averages, so treat them as a starting window to be confirmed on the rig — and remember most
+        ROP limiters are not the bit. Source: SLB DrillOps parameter roadmap; SPE OPES-2024 (Muscat)
+        hybrid roadmap workflow.
+      </Interp>
+    </div>
+  );
+}
+
+/** A P25–P75 band drawn on a shared axis, so lengths compare across rows. */
+function BandBar({ band, axis, unit }: {
+  band: Band | null;
+  axis: { lo: number; hi: number } | null;
+  unit: string;
+}) {
+  if (!band || !axis) return <span className="text-gray-300">—</span>;
+  const span = axis.hi - axis.lo || 1;
+  const left = ((band.p25 - axis.lo) / span) * 100;
+  const width = Math.max(1.5, ((band.p75 - band.p25) / span) * 100);
+  const mid = ((band.median - axis.lo) / span) * 100;
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative h-3 flex-1 bg-gray-100 rounded" title={`${band.n} run(s) carried this parameter`}>
+        <div className="absolute h-3 rounded bg-blue-200 border border-blue-400"
+          style={{ left: `${left}%`, width: `${width}%` }} />
+        <div className="absolute h-3 w-0.5 bg-blue-700" style={{ left: `${mid}%` }} />
+      </div>
+      <span className="tabular-nums text-gray-600 whitespace-nowrap">
+        {bandText(band, unit === "rpm" ? 0 : 1)}
+      </span>
+    </div>
+  );
+}
+
+const bandText = (b: Band | null, dp: number) =>
+  b ? `${b.p25.toFixed(dp)}–${b.p75.toFixed(dp)}` : "—";
 
 // ── Bit-type facet: cone vs PDC, then IADC series (leading digit) within each ──
 // Sidebar filter sitting under "Bit sizes". Picking a class reveals that class's

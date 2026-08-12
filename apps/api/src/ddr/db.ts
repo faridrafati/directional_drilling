@@ -1780,7 +1780,20 @@ function bitKind(r: Row, lk: Lookups): string | null {
 
 /** Assemble + decode the IADC 8-position dull grade for an L05 bit row, using the
  *  corrected column mapping (gauge ← ODullCharacteristicCode, other ← GaugeWearCode). */
-function bitDull(r: Row, lk: Lookups): { code: string | null; title: string | null } {
+/**
+ * The IADC 8-position dull grade, as a code, a decoded title, AND the discrete
+ * positions.
+ *
+ * The positions were always computed here and only ever joined into a string.
+ * The wear view needs them apart: the dull CHARACTERISTIC (position 3) is what a
+ * Pareto of damage modes counts, and inner/outer wear are what a wear RATE
+ * divides by hours. The IADC scale is linear in remaining cutter height
+ * (SPE/IADC 23939), which is what makes a rate meaningful at all.
+ */
+function bitDull(r: Row, lk: Lookups): {
+  code: string | null; title: string | null;
+  dullChar: string | null; location: string | null; bearing: string | null; gauge: string | null;
+} {
   const inner = stripZeros(s(r.ICutterWearCode)), outer = stripZeros(s(r.OCutterWearCode));
   const dchar = s(r.DullCharacteristicCode).toUpperCase();
   const loc = s(r.WearLocationCode).toUpperCase();
@@ -1788,7 +1801,9 @@ function bitDull(r: Row, lk: Lookups): { code: string | null; title: string | nu
   const gRaw = s(r.ODullCharacteristicCode).toUpperCase();   // position 6 — GAUGE (swapped name)
   const other = s(r.GaugeWearCode).toUpperCase();            // position 7 — OTHER dull (swapped name)
   const reason = s(r.ReasonPulledCode).toUpperCase();
-  if (![inner, outer, dchar, loc, bear, gRaw, other, reason].some(Boolean)) return { code: null, title: null };
+  if (![inner, outer, dchar, loc, bear, gRaw, other, reason].some(Boolean)) {
+    return { code: null, title: null, dullChar: null, location: null, bearing: null, gauge: null };
+  }
   const isPDC = bear === "X";
   // Gauge → code + text.
   let gCode = "", gTxt = "";
@@ -1810,7 +1825,10 @@ function bitDull(r: Row, lk: Lookups): { code: string | null; title: string | nu
   if (gCode) t.push(`gauge ${gTxt}`);
   if (other && other !== "NO") t.push(`other ${other} = ${IADC_DULL_CHAR[other] ?? other}`);
   if (reason) t.push(`pulled ${reason} = ${IADC_REASON[reason] ?? look(lk.reasonPulled, r.ReasonPulledCode) ?? reason}`);
-  return { code, title: t.join(" · ") };
+  return {
+    code, title: t.join(" · "),
+    dullChar: dchar || null, location: loc || null, bearing: bear || null, gauge: gCode || null,
+  };
 }
 
 const TOOL_SPECS: Record<string, ToolSpec> = {
@@ -2128,8 +2146,10 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
       const tqMeasured = Number(s(r.TorqueOnBottom));
       const hasTq = Number.isFinite(tqMeasured) && tqMeasured > 0;
       let mse: number | null = null, mseEstimated = false;
+      let torqueUsed: number | null = hasTq ? tqMeasured : null;
       if (diaIn != null) {
         const torque = hasTq ? tqMeasured : estimateTorque({ mu: MU_DEFAULT[cls], dIn: diaIn, wobLbf });
+        torqueUsed = torque;
         mseEstimated = !hasTq;
         const v = mseTeale({ wobLbf, rpm, torqueFtLbf: torque, ropFtHr, dIn: diaIn });
         mse = v != null ? Math.round(v) : null;
@@ -2173,6 +2193,16 @@ export function getRopOptimization(f: RopOptimizationFilters): Record<string, un
         spp: spp > 0 ? Number(spp.toFixed(0)) : null,
         mudWeight: mudWeight != null ? Number(mudWeight.toFixed(2)) : null,
         dullInner: dull(r.ICutterWearCode), dullOuter: dull(r.OCutterWearCode),
+        // The discrete dull positions, for the wear view's damage-mode Pareto and
+        // its formation × bit-family wear heatmap.
+        dullChar: dg.dullChar, dullLocation: dg.location,
+        dullBearing: dg.bearing, dullGauge: dg.gauge,
+        // The torque MSE was computed from, and whether it was measured. The
+        // aggressiveness metric mu = 36T/(dW) inverts estimateTorque exactly, so
+        // on an ESTIMATED torque it would just hand back MU_DEFAULT — a constant
+        // dressed up as a measurement. The flag is what lets the UI exclude them.
+        torqueFtLbf: torqueUsed != null ? Number(torqueUsed.toFixed(0)) : null,
+        torqueMeasured: hasTq,
         // Full IADC 8-position dull grade (code + decoded title) and reason-pulled (§3.1).
         dullGrade: dg.code, dullTitle: dg.title,
         reasonCode: rpCode,

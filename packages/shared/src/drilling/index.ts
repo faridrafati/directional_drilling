@@ -29,5 +29,11 @@ export {
   rigUsdPerHr, tripHours, costPerMeter, tripAdjustedRop, HANDLING_HR_DEFAULT,
 } from "./cost.js";
 
+export {
+  wearAvg, wearPerHour, wearPer100m, isSevereDull, isFailureReason,
+  FAILURE_REASON_CODES,
+} from "./wear.js";
+export { buildRoadmap, wearCautionCutoff, cautionCutoffs, MIN_RUNS, MIN_BEST, MSE_CV_FLOOR } from "./roadmap.js";
+export type { RoadmapRun, RoadmapRow, Band, ZoneFlag } from "./roadmap.js";
 export { parseBitSizeInches, bitClass } from "./bit.js";
 export type { BitClass } from "./bit.js";
