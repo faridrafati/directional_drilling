@@ -1152,8 +1152,15 @@ function BandBar({ band, axis, unit }: {
   );
 }
 
-const bandText = (b: Band | null, dp: number) =>
-  b ? `${b.p25.toFixed(dp)}–${b.p75.toFixed(dp)}` : "—";
+// A band whose quartiles coincide is one value, not a range — "95–95" reads
+// like a rendering mistake where "95" reads like what it is: every best run
+// used the same setting.
+const bandText = (b: Band | null, dp: number) => {
+  if (!b) return "—";
+  const lo = b.p25.toFixed(dp);
+  const hi = b.p75.toFixed(dp);
+  return lo === hi ? lo : `${lo}–${hi}`;
+};
 
 // ── Bit-type facet: cone vs PDC, then IADC series (leading digit) within each ──
 // Sidebar filter sitting under "Bit sizes". Picking a class reveals that class's

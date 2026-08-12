@@ -67,14 +67,18 @@ const fmt = (v: unknown): string => {
   return String(v);
 };
 
+// Weight columns carry the unit: the archive records mud weight in pcf (the
+// remarks themselves say "INCREASE MW TO 134 PCF"), and every other tab that
+// reads these same columns labels them pcf — a bare "MinWt" here was the one
+// place a reader had to guess.
 const REMARKS_COLS: [keyof SearchRow, string][] = [
   ["holeSize", "Hole"], ["fromPoint", "From"], ["toPoint", "To"], ["mud", "Mud"],
-  ["minWeight", "MinWt"], ["maxWeight", "MaxWt"], ["rig", "Rig"], ["wellCode", "Well"],
+  ["minWeight", "MinWt (pcf)"], ["maxWeight", "MaxWt (pcf)"], ["rig", "Rig"], ["wellCode", "Well"],
   ["date", "Date"], ["opCode", "Op"], ["fromTime", "F.Time"], ["toTime", "T.Time"], ["description", "Description"],
 ];
 const SUMMARY_COLS: [keyof SearchRow, string][] = [
   ["holeSize", "Hole size"], ["fromPoint", "From point"], ["toPoint", "To point"], ["mud", "Mud name"],
-  ["minWeight", "Min wt"], ["maxWeight", "Max wt"], ["rig", "Rig"], ["wellCode", "Well name"],
+  ["minWeight", "Min wt (pcf)"], ["maxWeight", "Max wt (pcf)"], ["rig", "Rig"], ["wellCode", "Well name"],
   ["date", "Drilling date"], ["description", "Description"],
 ];
 
