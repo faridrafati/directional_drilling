@@ -29,6 +29,7 @@ import {
   buildRoadmap, cautionCutoffs, type RoadmapRun, type RoadmapRow, type Band,
   wearAvg, wearPer100m, quantile as quantileOf,
   apparentCcsFromMse, binghamFit, dExponent, dcExponent, familiesForUcs,
+  aggressiveness, depthOfCutIn, drillingStrength, efficiencyRatio,
   mhrToFthr,
 } from "@dd/shared/drilling";
 import { api } from "../../api/client.js";
@@ -2730,13 +2731,20 @@ function MseView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] 
               </ResponsiveContainer>
               <div className="text-[11px] text-gray-600 px-1">
                 {founder.founderWob != null
-                  ? <>Founder onset ≈ <b>WOB {fmt1(founder.founderWob)} klb ({klbToTonnes(founder.founderWob).toFixed(1)} t)</b> — beyond it more weight stops adding ROP. Recommended WOB ≈ <b>{fmt1(founder.optimalWob ?? founder.founderWob)} klb ({klbToTonnes(founder.optimalWob ?? founder.founderWob).toFixed(1)} t)</b>, just below founder.</>
-                  : <>No founder detected — ROP keeps responding to WOB across the recorded range (consider testing higher weight).</>}
+                  ? <>Founder onset ≈ <b>WOB {fmt1(founder.founderWob)} klb ({klbToTonnes(founder.founderWob).toFixed(1)} t)</b> — beyond it more weight stops adding ROP. Recommended WOB ≈ <b>{fmt1(founder.optimalWob ?? founder.founderWob)} klb ({klbToTonnes(founder.optimalWob ?? founder.founderWob).toFixed(1)} t)</b>, just below founder.{" "}
+                    <span className="text-gray-500" title={LIMITER_TOOLTIP}>
+                      Past founder the limit is <b>inefficiency</b> — bit balling, bottomhole balling or vibrations.
+                    </span></>
+                  : <>No founder in the recorded range — ROP keeps responding to WOB, so this selection is{" "}
+                    <span className="text-gray-500" title={LIMITER_TOOLTIP}><b>energy-input limited</b></span>{" "}
+                    rather than foundering (consider testing higher weight).</>}
               </div>
             </>
           ) : <Empty>Not enough WOB spread to build a drill-off response.</Empty>}
         </div>
       </div>
+
+      <MseDiagnostics points={pts} />
 
       <Interp>
         {mseInterpretation(fit ? fit.b : null)} MSE measures the energy spent per unit volume of rock removed — efficient drilling keeps it close to the rock strength, while spikes flag balling, vibration or founder. Reference field exponents by section: 0.49 (17½″), 0.92 (12¼″), 0.48 (8½″).
@@ -2768,6 +2776,23 @@ function MseView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] 
   );
 }
 
+/**
+ * Dupriest's taxonomy, for the founder panel's tooltip.
+ *
+ * Every ROP limitation is either INEFFICIENCY — founder, with exactly three
+ * causes — or an ENERGY-INPUT limit. ExxonMobil catalogued 40+ limiter
+ * categories and only four are bit-related, which is why this tooltip exists:
+ * the founder panel is about weight and rate, and a reader who takes it as
+ * "the bit is the problem" has drawn the wrong conclusion most of the time.
+ */
+const LIMITER_TOOLTIP =
+  "Dupriest (SPE 102210): every ROP limit is either inefficiency — bit balling, "
+  + "bottomhole balling, or vibrations — or an energy-input limit: hole cleaning, "
+  + "motor differential rating, top-drive or make-up torque, hole integrity, "
+  + "surface equipment. ExxonMobil catalogued 40+ limiter categories and only four "
+  + "are bit-related, so slow footage is usually not the bit's fault. All limiters "
+  + "sit on the same ROP-vs-WOB line and exactly one is active at a time.";
+
 function mseInterpretation(b: number | null): string {
   if (b == null) return "Not enough spread in MSE/ROP to fit a power law for this selection.";
   if (b >= 0.8) return `Power-law exponent b ≈ ${b.toFixed(2)} (close to 1): drilling energy is efficiently converted to rock destruction.`;
@@ -2798,6 +2823,200 @@ function FounderTip({ active, payload }: any) {
 }
 
 // ── Hydraulics: ROP vs HSI trend + cleaning diagnosis ────────────────────────
+
+/* ── WP5: efficiency ratio, aggressiveness, and the E–S cross-plot ─────────────
+ *
+ * Three normalised readings of the same runs, from SPE 92194 / 102210 and the
+ * 2017 MSE/DS paper. All three are CROSS-RUN SCREENING — the published
+ * dysfunction diagnostics need 1–3 ft depth density and 10-ft averaging already
+ * loses the variations they read, so nothing here says "detection".
+ */
+function MseDiagnostics({ points }: { points: RopPoint[] }) {
+  /** Apparent CCS per formation, so efficiency can be normalised by the rock. */
+  const ccsByFormation = useMemo(() => {
+    const byF = new Map<string, { msePsi: number | null; measuredTorque?: boolean }[]>();
+    for (const p of points) {
+      const k = (p.topFormation ?? "—").trim().toLowerCase();
+      const a = byF.get(k);
+      const v = { msePsi: p.mse, measuredTorque: p.torqueMeasured };
+      if (a) a.push(v); else byF.set(k, [v]);
+    }
+    const out = new Map<string, number>();
+    for (const [k, vals] of byF) {
+      const st = apparentCcsFromMse(vals);
+      if (st) out.set(k, st.ccsPsi);
+    }
+    return out;
+  }, [points]);
+
+  /** Efficiency = 3·CCS / MSE against depth, capped so one noisy run cannot flatten it. */
+  const CAP = 1.5;
+  const efficiency = useMemo(() => points.flatMap((p) => {
+    const depth = midDepth(p);
+    const ccs = ccsByFormation.get((p.topFormation ?? "—").trim().toLowerCase());
+    const e = efficiencyRatio(p.mse, ccs ?? null);
+    if (depth == null || e == null) return [];
+    return [{ depth, eff: Math.min(e, CAP), over: e > CAP, estimated: p.mseEstimated, formation: p.topFormation ?? "—" }];
+  }), [points, ccsByFormation]);
+
+  /** Aggressiveness — MEASURED torque only. */
+  const mu = useMemo(() => {
+    const rows = points.flatMap((p) => {
+      if (!p.torqueMeasured) return [];
+      const v = aggressiveness({ torqueFtLbf: p.torqueFtLbf, dIn: p.diaIn, wobLbf: p.wob * 1000 });
+      return v == null ? [] : [{ make: p.make ?? "—", mu: v }];
+    });
+    const byMake = new Map<string, number[]>();
+    for (const r of rows) { const a = byMake.get(r.make); if (a) a.push(r.mu); else byMake.set(r.make, [r.mu]); }
+    return [...byMake.entries()]
+      .map(([make, vs]) => ({
+        make, n: vs.length,
+        p25: quantileOf(vs, 0.25) ?? 0, med: median(vs) ?? 0, p75: quantileOf(vs, 0.75) ?? 0,
+      }))
+      .filter((r) => r.n >= 3)
+      .sort((a, b) => b.med - a.med)
+      .slice(0, 10);
+  }, [points]);
+
+  /** MSE against drilling strength — the Detournay & Defourny frame. */
+  const es = useMemo(() => points.flatMap((p) => {
+    if (p.mse == null || p.mse <= 0 || p.diaIn == null) return [];
+    const doc = depthOfCutIn({ ropFtHr: mhrToFthr(p.rop), rpm: p.rpm });
+    const S = drillingStrength({ wobLbf: p.wob * 1000, dIn: p.diaIn, docIn: doc });
+    if (S == null || !Number.isFinite(S)) return [];
+    return [{ s: Math.round(S), mse: p.mse, depth: midDepth(p) ?? 0, ratio: p.mse / S }];
+  }), [points]);
+
+  const esMax = es.length ? Math.max(...es.map((e) => Math.max(e.s, e.mse))) : 0;
+  const muTotal = mu.reduce((a, r) => a + r.n, 0);
+
+  return (
+    <div className="space-y-3">
+      {/* efficiency strip */}
+      <div className="border border-gray-200 rounded-lg bg-white p-3">
+        <div className="text-[11px] font-semibold text-gray-700 mb-1">
+          Mechanical efficiency against depth
+          <span className="font-normal text-gray-400">
+            {" "}· 3 × apparent CCS ÷ MSE — about 1 is efficient · n = {efficiency.length}
+            {efficiency.some((e) => e.over) && " · values above 1.5 are pinned at the cap"}
+          </span>
+        </div>
+        {efficiency.length === 0 ? (
+          <div className="text-[11px] text-gray-400 py-3">
+            No run carries both an MSE and a formation with enough MSE to anchor a strength.
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={260}>
+            <ScatterChart margin={{ top: 6, right: 16, bottom: 24, left: 4 }}>
+              <CartesianGrid stroke="#eee" />
+              <XAxis type="number" dataKey="eff" domain={[0, CAP]} tick={{ fontSize: 10 }}
+                label={{ value: "efficiency (3·CCS ÷ MSE)", position: "insideBottom", offset: -12, fontSize: 10 }} />
+              <YAxis type="number" dataKey="depth" reversed tick={{ fontSize: 10 }} width={62}
+                label={{ value: "Depth (m)", angle: -90, position: "insideLeft", fontSize: 10 }} />
+              <Tooltip cursor={{ strokeDasharray: "3 3" }} />
+              <ReferenceLine x={1} stroke="#047857" strokeDasharray="4 3"
+                label={{ value: "anchor", fontSize: 9, position: "top" }} />
+              <Legend verticalAlign="top" height={18} wrapperStyle={{ fontSize: 10 }} />
+              <Scatter name="measured torque" data={efficiency.filter((e) => !e.estimated)} fill="#047857" fillOpacity={0.6} />
+              <Scatter name="estimated torque" data={efficiency.filter((e) => e.estimated)} fill="#94a3b8" fillOpacity={0.45} />
+            </ScatterChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* aggressiveness */}
+      <div className="border border-gray-200 rounded-lg bg-white p-3">
+        <div className="text-[11px] font-semibold text-gray-700 mb-1">
+          Bit aggressiveness μ by make
+          <span className="font-normal text-gray-400">
+            {" "}· 36·T ÷ (D·W), measured torque only · n = {muTotal}
+          </span>
+        </div>
+        {mu.length === 0 ? (
+          <div className="text-[11px] text-gray-400 py-3">
+            No run in this selection reports a measured torque. μ is deliberately not computed from
+            an estimated torque: the estimate is itself μ × D × W ÷ 36, so it would hand back the
+            assumed friction coefficient dressed up as a measurement.
+          </div>
+        ) : (
+          <table className="text-[11px]">
+            <thead>
+              <tr className="text-gray-500 text-left">
+                <th className="py-1 pr-3 font-medium">Make</th>
+                <th className="py-1 pr-3 font-medium">n</th>
+                <th className="py-1 pr-3 font-medium" style={{ width: 260 }}>μ (P25 – median – P75)</th>
+                <th className="py-1 font-medium">median</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mu.map((r) => {
+                const hi = Math.max(...mu.map((x) => x.p75), 0.1);
+                return (
+                  <tr key={r.make} className="border-t border-gray-100">
+                    <td className="py-1 pr-3 text-gray-800">{r.make}</td>
+                    <td className="py-1 pr-3 tabular-nums text-gray-500">{r.n}</td>
+                    <td className="py-1 pr-3">
+                      <div className="relative h-3 bg-gray-100 rounded">
+                        <div className="absolute h-3 rounded bg-teal-200 border border-teal-500"
+                          style={{ left: `${(r.p25 / hi) * 100}%`, width: `${Math.max(1.5, ((r.p75 - r.p25) / hi) * 100)}%` }} />
+                        <div className="absolute h-3 w-0.5 bg-teal-700" style={{ left: `${(r.med / hi) * 100}%` }} />
+                      </div>
+                    </td>
+                    <td className="py-1 tabular-nums text-gray-700">{r.med.toFixed(2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {mu.some((r) => r.med > 1) && (
+          <p className="text-[10px] text-amber-800 mt-1 leading-relaxed">
+            A median μ above 1 is physically implausible — aggressiveness is a friction-like
+            coefficient and published bit values sit between roughly 0.15 and 0.9. Where it exceeds
+            that, suspect the recording rather than the bit: a torque logged in the wrong unit, or a
+            WOB entered as tonnes where the column expects klb, both land here. Shown as recorded.
+          </p>
+        )}
+      </div>
+
+      {/* E–S cross-plot */}
+      <div className="border border-gray-200 rounded-lg bg-white p-3">
+        <div className="text-[11px] font-semibold text-gray-700 mb-1">
+          MSE against drilling strength
+          <span className="font-normal text-gray-400"> · cross-run screening · n = {es.length}</span>
+        </div>
+        {es.length === 0 ? (
+          <div className="text-[11px] text-gray-400 py-3">No run carries MSE, WOB, RPM and a bit diameter together.</div>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={300}>
+              <ScatterChart margin={{ top: 6, right: 16, bottom: 24, left: 4 }}>
+                <CartesianGrid stroke="#eee" />
+                <XAxis type="number" dataKey="s" name="S" tick={{ fontSize: 10 }}
+                  label={{ value: "drilling strength S (psi)", position: "insideBottom", offset: -12, fontSize: 10 }} />
+                <YAxis type="number" dataKey="mse" name="MSE" tick={{ fontSize: 10 }} width={68}
+                  label={{ value: "MSE (psi)", angle: -90, position: "insideLeft", fontSize: 10 }} />
+                <ZAxis type="number" dataKey="depth" range={[20, 120]} name="depth" />
+                <Tooltip cursor={{ strokeDasharray: "3 3" }} />
+                <ReferenceLine segment={[{ x: 0, y: 0 }, { x: esMax, y: esMax }]}
+                  stroke="#111" strokeDasharray="5 4"
+                  label={{ value: "MSE = S", fontSize: 9, position: "insideTopLeft" }} />
+                <Scatter data={es} fill="#7c3aed" fillOpacity={0.5} />
+              </ScatterChart>
+            </ResponsiveContainer>
+            <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
+              Points hugging one line share a friction behaviour. Reading the published bands across
+              runs: <b>MSE and MSE/S rising together</b> points at vibration-type trouble;{" "}
+              <b>MSE rising while MSE/S falls</b> at balling or wear. Ratios of 1–1.5 are efficient
+              and ≫ 5 severe. This is <b>screening across runs</b>, not detection within one — the
+              published diagnostic needs 1–3 ft depth density and these are whole-run averages.
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function HydraulicsView({ points, bitSizes }: { points: RopPoint[]; bitSizes: string[] }) {
   const [sizeFilter, setSizeFilter] = useState("");

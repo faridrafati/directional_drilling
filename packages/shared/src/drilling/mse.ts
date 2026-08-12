@@ -170,3 +170,79 @@ export function founderAtConstantRpm(
   if (!founder) return null;
   return { rpmLo: lo, rpmHi: hi, nBand: idx.length, founder };
 }
+
+/**
+ * BIT AGGRESSIVENESS  mu = 36 · T / (D · W)
+ *
+ * T ft·lbf, D in, W lbf. The standard PDC-versus-roller discriminator and a
+ * published feature in ML bit-selection work (Energies 2021, Volve).
+ *
+ * MEASURED TORQUE ONLY. This is the exact inverse of `estimateTorque`, so
+ * feeding it an estimated torque returns `MU_DEFAULT` — the assumption that went
+ * in — and would display a constant as though it were a measurement. Callers
+ * must filter on the measured-torque flag; the guard here cannot know.
+ */
+export function aggressiveness(opts: {
+  torqueFtLbf: number | null | undefined;
+  dIn: number | null | undefined;
+  wobLbf: number | null | undefined;
+}): number | null {
+  const { torqueFtLbf, dIn, wobLbf } = opts;
+  if (torqueFtLbf == null || dIn == null || wobLbf == null) return null;
+  if (!(torqueFtLbf > 0) || !(dIn > 0) || !(wobLbf > 0)) return null;
+  return (36 * torqueFtLbf) / (dIn * wobLbf);
+}
+
+/** Depth of cut per revolution [in/rev]: `DOC = ROP[ft/hr] · 12 / (60 · RPM)`. */
+export function depthOfCutIn(opts: {
+  ropFtHr: number | null | undefined; rpm: number | null | undefined;
+}): number | null {
+  const { ropFtHr, rpm } = opts;
+  if (ropFtHr == null || rpm == null) return null;
+  if (!(ropFtHr > 0) || !(rpm > 0)) return null;
+  return (ropFtHr * 12) / (60 * rpm);
+}
+
+/**
+ * DRILLING STRENGTH  S = W / (A · DOC)   [psi]
+ *
+ * The Detournay & Defourny frame the 2017 MSE/DS practice is built on: the
+ * weight carried per unit of rock actually being cut. Plotted against MSE it
+ * separates dysfunction causes that MSE alone cannot —
+ *
+ *   MSE and MSE/S rising together  => vibration-type
+ *   MSE rising while MSE/S falls   => balling or wear
+ *
+ * with 1–1.5 efficient and >> 5 severe. On per-run averages this is CROSS-RUN
+ * SCREENING, never detection: the published diagnostic needs 1–3 ft depth
+ * density and 10-ft averaging already loses the variations it reads.
+ */
+export function drillingStrength(opts: {
+  wobLbf: number | null | undefined;
+  dIn: number | null | undefined;
+  docIn: number | null | undefined;
+}): number | null {
+  const { wobLbf, dIn, docIn } = opts;
+  if (wobLbf == null || dIn == null || docIn == null) return null;
+  if (!(wobLbf > 0) || !(dIn > 0) || !(docIn > 0)) return null;
+  const area = bitArea(dIn);
+  if (!(area > 0)) return null;
+  return wobLbf / (area * docIn);
+}
+
+/**
+ * Mechanical efficiency ratio: `3 · CCS / MSE`.
+ *
+ * About 1 means the run drilled at the efficient-drilling anchor; well under 1
+ * means it took far more energy than the rock should have cost. Normalising by
+ * the rock is what turns an absolute-MSE log into the display practitioners
+ * actually read.
+ */
+export function efficiencyRatio(
+  msePsi: number | null | undefined,
+  ccsPsi: number | null | undefined,
+): number | null {
+  if (msePsi == null || ccsPsi == null) return null;
+  if (!(msePsi > 0) || !(ccsPsi > 0)) return null;
+  return (3 * ccsPsi) / msePsi;
+}

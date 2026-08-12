@@ -13,6 +13,7 @@ export type { LinearFit, PowerLawFit, IqrFence } from "./stats.js";
 
 export {
   bitArea, psiToMPa, estimateTorque, mseTeale, founderPoint, founderAtConstantRpm, MU_DEFAULT,
+  aggressiveness, depthOfCutIn, drillingStrength, efficiencyRatio,
 } from "./mse.js";
 export type { MseInput, Founder, FounderCurvePoint, FounderAtRpm } from "./mse.js";
 
