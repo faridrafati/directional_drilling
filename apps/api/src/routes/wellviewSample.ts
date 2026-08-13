@@ -171,7 +171,7 @@ export async function registerWellviewSampleRoutes(app: FastifyInstance): Promis
       path: sampleDbPath(),
       searched: DB_CANDIDATES,
       hint: d == null
-        ? "Convert the Access database first: node scripts/wellview-db/mdb_to_sqlite.mjs \"WellView_files/user/database\" sqlite_DB/wellview"
+        ? "Convert the Access database first: node scripts/wellview-db/mdb_to_sqlite.mjs \"WellView_files/db\" sqlite_DB/wellview"
         : null,
     };
   });
