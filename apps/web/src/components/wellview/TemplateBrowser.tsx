@@ -16,6 +16,8 @@
  */
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { entryApi } from "../../entry/client.js";
+import { SampleFilledTemplate } from "./SampleFilledTemplate.js";
 
 /** The slice of reports.json this browser needs. */
 interface TemplateEntry {
@@ -40,6 +42,19 @@ const BASE = "/wellview-templates";
 export function TemplateBrowser() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  // "layout" = the empty .afr replica in its iframe; "data" = the same blocks
+  // resolved against the converted wv9.0 Sample database for one well.
+  const [mode, setMode] = useState<"layout" | "data">("layout");
+  const [well, setWell] = useState<string>("");
+
+  const wellsQ = useQuery({
+    queryKey: ["wellview", "sample", "wells"],
+    queryFn: () => entryApi.get<{ idwell: string; name: string; rows: number }[]>("/wellview/sample/wells"),
+    staleTime: Infinity,
+    retry: false,
+  });
+  const wells = wellsQ.data ?? [];
+  const activeWell = well || wells[0]?.idwell || "";
 
   const indexQ = useQuery({
     queryKey: ["wellview", "templates", "index"],
@@ -182,26 +197,59 @@ export function TemplateBrowser() {
                   {current.parent_template ? ` · master: ${current.parent_template}` : ""}
                   {current.root_table ? ` · root: ${current.root_table}` : ""}
                 </span>
-                <a
-                  href={`${BASE}/${current.html.split("/").map(encodeURIComponent).join("/")}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="ml-auto text-[11px] text-blue-700 hover:underline"
-                >
-                  Open in a new tab ↗
-                </a>
+                <div className="ml-auto flex items-center gap-2">
+                  <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+                    {([["layout", "Layout"], ["data", "Sample data"]] as const).map(([k, label]) => (
+                      <button key={k} type="button" onClick={() => setMode(k)}
+                        className={`px-2 h-6 text-[11px] ${mode === k
+                          ? "bg-blue-600 text-white"
+                          : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {mode === "data" && wells.length > 0 && (
+                    <select value={activeWell} onChange={(e) => setWell(e.target.value)}
+                      aria-label="Sample well"
+                      className="h-6 px-1 text-[11px] border border-gray-300 rounded bg-white text-gray-700 max-w-56">
+                      {wells.map((w) => (
+                        <option key={w.idwell} value={w.idwell}>{w.name} ({w.rows.toLocaleString()} rows)</option>
+                      ))}
+                    </select>
+                  )}
+                  <a
+                    href={`${BASE}/${current.html.split("/").map(encodeURIComponent).join("/")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-blue-700 hover:underline"
+                  >
+                    Open in a new tab ↗
+                  </a>
+                </div>
               </div>
               {current.warnings.length > 0 && (
                 <div className="px-3 py-1.5 bg-amber-50 border-b border-amber-200 text-[10px] text-amber-800">
                   {current.warnings.join(" · ")}
                 </div>
               )}
-              <iframe
-                key={current.html}
-                title={`${current.name} — WellView template`}
-                src={`${BASE}/${current.html.split("/").map(encodeURIComponent).join("/")}`}
-                className="flex-1 w-full border-0 bg-gray-100"
-              />
+              {mode === "data" ? (
+                wellsQ.error ? (
+                  <div className="m-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
+                    The sample database is not available: {(wellsQ.error as Error).message}
+                  </div>
+                ) : activeWell ? (
+                  <SampleFilledTemplate html={current.html} well={activeWell} />
+                ) : (
+                  <div className="p-4 text-sm text-gray-400">Loading the sample wells…</div>
+                )
+              ) : (
+                <iframe
+                  key={current.html}
+                  title={`${current.name} — WellView template`}
+                  src={`${BASE}/${current.html.split("/").map(encodeURIComponent).join("/")}`}
+                  className="flex-1 w-full border-0 bg-gray-100"
+                />
+              )}
             </>
           )}
         </div>
