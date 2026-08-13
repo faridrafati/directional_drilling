@@ -61,6 +61,7 @@ def main(src_root: Path, out_root: Path, size: int = 128) -> int:
 
     work: list[dict] = []
     entries: list[dict] = []
+    used_pngs: set[str] = set()
     failures: list[dict] = []
     skipped_pce = 0
     partial: list[dict] = []
@@ -80,6 +81,16 @@ def main(src_root: Path, out_root: Path, size: int = 128) -> int:
         # is a distinct icon in WellView, so the suffix is kept, not stripped.
         stem = path.stem
         rel_png = f"{slugify(category)}/{slugify(stem)}.png"
+        # Slugs can collide between DISTINCT source files: WellView ships both
+        # "Packer - Dual.emf" and "Packer Dual.emf", and hyphen-folding maps
+        # them to the same packer-dual.png — so the second conversion silently
+        # overwrote the first, and the icon browser keyed two entries by the
+        # same path. Suffix the later arrivals instead of losing them.
+        n = 2
+        while rel_png in used_pngs:
+            rel_png = f"{slugify(category)}/{slugify(stem)}-{n}.png"
+            n += 1
+        used_pngs.add(rel_png)
         target = out_root / rel_png
 
         entry = {
