@@ -1,0 +1,9501 @@
+{
+ "generated_from": "sqlite_DB/wellview/wv9.0_Sample.sqlite",
+ "derivation": "sample-data",
+ "note": "DERIVED from the sample database, NOT decrypted from the WellView .lib files. Each list is the distinct values that occur in the mapped table.column; a field the sample never populated is absent here even though its true (encrypted) library would carry a full list. Values are ordered most-common-first with occurrence counts.",
+ "library_count": 754,
+ "usable": 129,
+ "sparse": 92,
+ "resolved_but_empty": 214,
+ "unresolved": 319,
+ "encrypted_only": [
+  {
+   "library": "libadditiveunits",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libaliassource",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libannularfluid",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libattachmenttyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcascomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcascompconnsz",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcascompconntgtperf",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcascompconnthrd",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcascompecpinflationmeth",
+   "reason": "wvCasCompECP.InflationMeth empty in sample data"
+  },
+  {
+   "library": "libcascompecptyp",
+   "reason": "wvCasCompECP.Typ empty in sample data"
+  },
+  {
+   "library": "libcascompheatrating",
+   "reason": "wvCasComp.HeatRating empty in sample data"
+  },
+  {
+   "library": "libcascomplnrhngrelastomertyp",
+   "reason": "wvCasCompLnrHngr.ElastomerTyp empty in sample data"
+  },
+  {
+   "library": "libcascontractor",
+   "reason": "wvCas.Contractor empty in sample data"
+  },
+  {
+   "library": "libcaspullreason",
+   "reason": "wvCas.PullReason empty in sample data"
+  },
+  {
+   "library": "libcasreasoncutpull",
+   "reason": "wvCas.ReasonCutPull empty in sample data"
+  },
+  {
+   "library": "libcasusertxt1",
+   "reason": "wvCas.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libcasusertxt2",
+   "reason": "wvCas.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libcasusertxt3",
+   "reason": "wvCas.UserTxt3 empty in sample data"
+  },
+  {
+   "library": "libcementstagefluidadd",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcementstagefluidaddamtunitlbl",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcementsubtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcementtechnicalresult",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libchemtreat",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libchemtreatcontractor",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libchemtreatproduct",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libchemtreatpurpose",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcomment",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcoreresult",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libcoretreatmentmethod",
+   "reason": "wvCore.TreatmentMethod empty in sample data"
+  },
+  {
+   "library": "libcurrencycode",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libdepthannotationtyp",
+   "reason": "wvDepthAnnotation.Typ empty in sample data"
+  },
+  {
+   "library": "libdrillstringcompusedclass",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libelevationhistorylabel",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libelvationhistorynote",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libextreport",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libextreportdetail",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libextreportdetaillist",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libextreportrqdby",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libfluidanalysis",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libfluidanalysisgascomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libfluidanalysish2smethod",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libfluidanalysiswatercomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libfluidanalysiswatercompion",
+   "reason": "wvFluidAnalysisWaterComp.Ion empty in sample data"
+  },
+  {
+   "library": "libformation",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libformationdepthsource",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libformationelementtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libformationlayername",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libformationlithology",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevaldistribution",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalfluids",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalgrainszcode",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevallith",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevallithdunhamclass",
+   "reason": "wvGeoEvalLith.DunhamClass empty in sample data"
+  },
+  {
+   "library": "libgeoevallithnotegrainsize",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevallithperm",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevallithshale",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalother",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalothervaluecode",
+   "reason": "wvGeoEvalOther.ValueCode empty in sample data"
+  },
+  {
+   "library": "libgeoevalporositytyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalqualifierabundance",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowgas",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowgaschromgasunit",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowgaschromtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowgastraptyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowoil",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowoilcolor",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowoildegree",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowoildist",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowoilform",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowoillevel",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowoilodor",
+   "reason": "wvGeoEvalShowOil.Odor empty in sample data"
+  },
+  {
+   "library": "libgeoevalshowoilorigin",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowoilquality",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowoilspeed",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevalshowoilstrength",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libgeoevaltyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libiextreport",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libinspect",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libinspectdetail",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libinspectdetaillist",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libinspectrqdby",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobafecostcode",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobafestatus",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobafetyp",
+   "reason": "wvJobAFE.Typ empty in sample data"
+  },
+  {
+   "library": "libjobapproval",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobapprovalapprovtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobapprovalassign",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobapprovalcontact",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobapprovaldeliv",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobcarrier",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobchartofaccounts",
+   "reason": "wvJob.ChartOfAccounts empty in sample data"
+  },
+  {
+   "library": "libjobclient",
+   "reason": "wvJob.Client empty in sample data"
+  },
+  {
+   "library": "libjobcompany",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobcompanycontracttyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobcompanyemployeetyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobcompanyservicetyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobcompanytyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobcontact",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobcontactrptdist",
+   "reason": "wvJobContact.RptDist empty in sample data"
+  },
+  {
+   "library": "libjobcostcode",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobcosttyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobcostunschedtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobdatetyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobdrillbit",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobdrillbitszod",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobdrillstringbitnozzletyp",
+   "reason": "wvJobDrillStringBitNozzle.Typ empty in sample data"
+  },
+  {
+   "library": "libjobdrillstringcomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobdrillstringcompmaterial",
+   "reason": "wvJobDrillStringComp.Material empty in sample data"
+  },
+  {
+   "library": "libjobdrillstringcompmotordefltype",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobdrillstringcompservice",
+   "reason": "wvJobDrillStringComp.Service empty in sample data"
+  },
+  {
+   "library": "libjobdrillstringcompstatus",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobdrillstringcompvgs",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobdrillstringdrillparamtforef",
+   "reason": "wvJobDrillStringDrillParam.TFORef empty in sample data"
+  },
+  {
+   "library": "libjobdrillstringdrillparamtorqueunits",
+   "reason": "wvJobDrillStringDrillParam.TorqueUnits empty in sample data"
+  },
+  {
+   "library": "libjobdrillstringsensortyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobintervallessoncomusertxt1",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobintervalproblem",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobintervalproblemcomusertxt1",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobintervalproblemseverity",
+   "reason": "wvJobIntervalProblem.Severity empty in sample data"
+  },
+  {
+   "library": "libjobintervalproblemstatus",
+   "reason": "wvJobIntervalProblem.Status empty in sample data"
+  },
+  {
+   "library": "libjobintervalproblemsystem",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjoblostcircopsinprog",
+   "reason": "wvJobLostCirc.OpsInProg empty in sample data"
+  },
+  {
+   "library": "libjobmaterial",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobmaterialcarrier",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobmaterialcond",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobmaterialenvtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobmaterialloc",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobmaterialreason",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobmaterialtranscond",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobmaterialtransreason",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobmaterialtranstyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobmaterialtransunitlabel",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobmaterialunit",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobofflineactivity",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobofflineactivityaff",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjoboffshoreanchordes",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjoboffshorelegdes",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjoboffshorethrusterdes",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobopscategory",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobopscondition",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobprogramgeosamplerequiredby",
+   "reason": "wvJobProgramGeoSample.RequiredBy empty in sample data"
+  },
+  {
+   "library": "libjobprogramphasecode",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrentalitemcode",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreportcostgen",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreportcostrental",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreportfluidsleasedestsource",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreportfluidsleaseenvironmenttyp",
+   "reason": "wvJobReportFluidsLease.EnvironmentTyp empty in sample data"
+  },
+  {
+   "library": "libjobreporthazard",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreporthazardaction",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreporthazardseverity",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreporthazardstat",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreporthazardtour",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreportmudadd",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreportmudaddtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreportmudchkcheckedby",
+   "reason": "wvJobReportMudChk.CheckedBy empty in sample data"
+  },
+  {
+   "library": "libjobreportmudchkcontract",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreportmudchkphmethod",
+   "reason": "wvJobReportMudChk.pHMethod empty in sample data"
+  },
+  {
+   "library": "libjobreportoffshoreanchorsanchordes",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreportoffshorecloudcover",
+   "reason": "wvJobReportOffshore.CloudCover empty in sample data"
+  },
+  {
+   "library": "libjobreportstatusend",
+   "reason": "wvJobReport.StatusEnd empty in sample data"
+  },
+  {
+   "library": "libjobreportsupportves",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreporttimelog",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreporttimelogopsphase",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobreporttimelogusertxt1",
+   "reason": "wvJobReportTimeLog.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libjobreporttimelogusertxt2",
+   "reason": "wvJobReportTimeLog.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libjobreportusertxt1",
+   "reason": "wvJobReport.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libjobreportusertxt2",
+   "reason": "wvJobReport.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libjobreportusertxt3",
+   "reason": "wvJobReport.UserTxt3 empty in sample data"
+  },
+  {
+   "library": "libjobreportusertxt4",
+   "reason": "wvJobReport.UserTxt4 empty in sample data"
+  },
+  {
+   "library": "libjobreportusertxt5",
+   "reason": "wvJobReport.UserTxt5 empty in sample data"
+  },
+  {
+   "library": "libjobresponsiblegrp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobresulttechnical",
+   "reason": "wvJob.ResultTechnical empty in sample data"
+  },
+  {
+   "library": "libjobriganchorlinetyp",
+   "reason": "wvJobRig.AnchorLineTyp empty in sample data"
+  },
+  {
+   "library": "libjobriganchortyp",
+   "reason": "wvJobRig.AnchorTyp empty in sample data"
+  },
+  {
+   "library": "libjobrigbopclass",
+   "reason": "wvJobRigBOP.Class empty in sample data"
+  },
+  {
+   "library": "libjobrigbopcomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigbopdes",
+   "reason": "wvJobRigBOP.Des empty in sample data"
+  },
+  {
+   "library": "libjobrigbopservice",
+   "reason": "wvJobRigBOP.Service empty in sample data"
+  },
+  {
+   "library": "libjobrigbopszbodytyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigbopszpipebody",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigboptyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigdatetyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigotherequip",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigotherequipchk",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigpostyp",
+   "reason": "wvJobRig.PosTyp empty in sample data"
+  },
+  {
+   "library": "libjobrigpump",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigrotarysystem",
+   "reason": "wvJobRig.RotarySystem empty in sample data"
+  },
+  {
+   "library": "libjobrigsolidscentcyc",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigsolidsshaker",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigsolidsshakerscrn",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigtank",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobrigtanksupplier",
+   "reason": "wvJobRigTank.Supplier empty in sample data"
+  },
+  {
+   "library": "libjobrigtyp2",
+   "reason": "wvJobRig.Typ2 empty in sample data"
+  },
+  {
+   "library": "libjobsafetychkinspector",
+   "reason": "wvJobSafetyChk.Inspector empty in sample data"
+  },
+  {
+   "library": "libjobsafetyincidentcomusertxt1",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobsafetyincidentonline",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobsafetyincidentopsfunction",
+   "reason": "wvJobSafetyIncident.OpsFunction empty in sample data"
+  },
+  {
+   "library": "libjobsafetyincidentseverity",
+   "reason": "wvJobSafetyIncident.Severity empty in sample data"
+  },
+  {
+   "library": "libjobsafetyincidenttyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobsafetyincidentvictincidentresult",
+   "reason": "wvJobSafetyIncidentVict.IncidentResult empty in sample data"
+  },
+  {
+   "library": "libjobsafetyincidentvictoccupation",
+   "reason": "wvJobSafetyIncidentVict.Occupation empty in sample data"
+  },
+  {
+   "library": "libjobsafetyincidentvictsex",
+   "reason": "wvJobSafetyIncidentVict.Sex empty in sample data"
+  },
+  {
+   "library": "libjobsafetyincidentvicttypemploy",
+   "reason": "wvJobSafetyIncidentVict.TypEmploy empty in sample data"
+  },
+  {
+   "library": "libjobsafetyincidentvictusertxt1",
+   "reason": "wvJobSafetyIncidentVict.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libjobsafetyincidentvictusertxt2",
+   "reason": "wvJobSafetyIncidentVict.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libjobsafetytour",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobservicecontractevaldata",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobstatus",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobsupply",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobsupplyenvtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobsupportves",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobsupportvessupplier",
+   "reason": "wvJobSupportVes.Supplier empty in sample data"
+  },
+  {
+   "library": "libjobtimelogcode",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobusersingle1",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobusersingle2",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobusersingle3",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobusersingle4",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobusersingle5",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libjobusertxt1",
+   "reason": "wvJob.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libjobusertxt2",
+   "reason": "wvJob.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libjobusertxt3",
+   "reason": "wvJob.UserTxt3 empty in sample data"
+  },
+  {
+   "library": "libjobusertxt4",
+   "reason": "wvJob.UserTxt4 empty in sample data"
+  },
+  {
+   "library": "libjobusertxt5",
+   "reason": "wvJob.UserTxt5 empty in sample data"
+  },
+  {
+   "library": "liblegalstat",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "liblegalstatusname",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "liblegalstatusstat",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "liblegalsurveytyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libloccongressionalmer",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "liblocfpseventseq",
+   "reason": "wvLocFPS.EventSeq empty in sample data"
+  },
+  {
+   "library": "liblocfpslocexcept",
+   "reason": "wvLocFPS.LocExcept empty in sample data"
+  },
+  {
+   "library": "liblocnorthseameridian",
+   "reason": "wvLocNorthSea.Meridian empty in sample data"
+  },
+  {
+   "library": "liblocntsblock",
+   "reason": "wvLocNTS.Block empty in sample data"
+  },
+  {
+   "library": "liblocntsletterquad",
+   "reason": "wvLocNTS.LetterQuad empty in sample data"
+  },
+  {
+   "library": "liblocntsprimquad",
+   "reason": "wvLocNTS.PrimQuad empty in sample data"
+  },
+  {
+   "library": "liblocntsqtr",
+   "reason": "wvLocNTS.Qtr empty in sample data"
+  },
+  {
+   "library": "liblocntssix",
+   "reason": "wvLocNTS.SIX empty in sample data"
+  },
+  {
+   "library": "liblocntsunit",
+   "reason": "wvLocNTS.Unit empty in sample data"
+  },
+  {
+   "library": "liblocohiomeridian",
+   "reason": "wvLocOhio.Meridian empty in sample data"
+  },
+  {
+   "library": "liblocquadrangle",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "liblocsource",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libloganalyst",
+   "reason": "wvLog.Analyst empty in sample data"
+  },
+  {
+   "library": "libnotetyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "liboperatorhistory",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "liboperatorhistorychange",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libotherinhole",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libotherinholematerial",
+   "reason": "wvOtherInHole.Material empty in sample data"
+  },
+  {
+   "library": "libotherinholeplunger",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libotherinholeplungerpull",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libotherstrcomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libotherstrcompcoating",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libotherstrcompconnszbtm",
+   "reason": "wvOtherStrComp.ConnSzBtm empty in sample data"
+  },
+  {
+   "library": "libotherstrcompconnsztop",
+   "reason": "wvOtherStrComp.ConnSzTop empty in sample data"
+  },
+  {
+   "library": "libotherstrcompconnthrdbtm",
+   "reason": "wvOtherStrComp.ConnThrdBtm empty in sample data"
+  },
+  {
+   "library": "libotherstrcompconnthrdtop",
+   "reason": "wvOtherStrComp.ConnThrdTop empty in sample data"
+  },
+  {
+   "library": "libotherstrcontractor",
+   "reason": "wvOtherStr.Contractor empty in sample data"
+  },
+  {
+   "library": "libotherstrpullreason",
+   "reason": "wvOtherStr.PullReason empty in sample data"
+  },
+  {
+   "library": "libotherstrusertxt1",
+   "reason": "wvOtherStr.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libotherstrusertxt2",
+   "reason": "wvOtherStr.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libotherstrusertxt3",
+   "reason": "wvOtherStr.UserTxt3 empty in sample data"
+  },
+  {
+   "library": "libpackerelastomertyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libpackerretrievemeth",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libpackersetfluidtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libpackersetmech",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libperforation",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libperforationexplosivetyp",
+   "reason": "wvPerforation.ExplosiveTyp empty in sample data"
+  },
+  {
+   "library": "libperforationfluidtyp",
+   "reason": "wvPerforation.FluidTyp empty in sample data"
+  },
+  {
+   "library": "libperforationguncentralize",
+   "reason": "wvPerforation.GunCentralize empty in sample data"
+  },
+  {
+   "library": "libperforationgunmetallurgy",
+   "reason": "wvPerforation.GunMetallurgy empty in sample data"
+  },
+  {
+   "library": "libprimemover",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libprimemoverbeltmodel",
+   "reason": "wvPrimeMover.BeltModel empty in sample data"
+  },
+  {
+   "library": "libprimemoverbeltxsect",
+   "reason": "wvPrimeMover.BeltXSect empty in sample data"
+  },
+  {
+   "library": "libprimemoverconditionend",
+   "reason": "wvPrimeMover.ConditionEnd empty in sample data"
+  },
+  {
+   "library": "libprimemoverconditionstart",
+   "reason": "wvPrimeMover.ConditionStart empty in sample data"
+  },
+  {
+   "library": "libprimemoverelectric",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libprimemoverelectricnemarating",
+   "reason": "wvPrimeMoverElectric.NEMARating empty in sample data"
+  },
+  {
+   "library": "libprimemoverelectrictyp",
+   "reason": "wvPrimeMoverElectric.Typ empty in sample data"
+  },
+  {
+   "library": "libprimemoverelectricutilityco",
+   "reason": "wvPrimeMoverElectric.UtilityCo empty in sample data"
+  },
+  {
+   "library": "libprimemovericcycle",
+   "reason": "wvPrimeMoverIC.Cycle empty in sample data"
+  },
+  {
+   "library": "libprimemovericfuel",
+   "reason": "wvPrimeMoverIC.Fuel empty in sample data"
+  },
+  {
+   "library": "libprimemovericnocyl",
+   "reason": "wvPrimeMoverIC.NoCyl empty in sample data"
+  },
+  {
+   "library": "libprimemovericstartertyp",
+   "reason": "wvPrimeMoverIC.StarterTyp empty in sample data"
+  },
+  {
+   "library": "libproblemcausedetail",
+   "reason": "wvProblem.CauseDetail empty in sample data"
+  },
+  {
+   "library": "libproblemcomusertxt1",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libproblemmetallurgy",
+   "reason": "wvProblem.Metallurgy empty in sample data"
+  },
+  {
+   "library": "libproblempriority",
+   "reason": "wvProblem.Priority empty in sample data"
+  },
+  {
+   "library": "libproblemusernum2",
+   "reason": "wvProblem.UserNum2 empty in sample data"
+  },
+  {
+   "library": "libproblemusertxt1",
+   "reason": "wvProblem.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libproblemusertxt2",
+   "reason": "wvProblem.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libproblemusertxt3",
+   "reason": "wvProblem.UserTxt3 empty in sample data"
+  },
+  {
+   "library": "libprodsettingprodmethdetail",
+   "reason": "wvProdSetting.ProdMethDetail empty in sample data"
+  },
+  {
+   "library": "libproductiondowntimereason",
+   "reason": "wvProductionDownTime.Reason empty in sample data"
+  },
+  {
+   "library": "libproductiongasvolumemethod",
+   "reason": "wvProductionGas.VolumeMethod empty in sample data"
+  },
+  {
+   "library": "libpumpingunit",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libpumpingunitconditionend",
+   "reason": "wvPumpingUnit.ConditionEnd empty in sample data"
+  },
+  {
+   "library": "libpumpingunitcounterwtauxmodel",
+   "reason": "wvPumpingUnitCounterWtAux.Model empty in sample data"
+  },
+  {
+   "library": "libpumpingunitcounterwtmodel",
+   "reason": "wvPumpingUnitCounterWt.Model empty in sample data"
+  },
+  {
+   "library": "libpumpingunitcrank",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libpumpingunitgearboxtorquemaxin",
+   "reason": "wvPumpingUnit.GearBoxTorqueMaxIn empty in sample data"
+  },
+  {
+   "library": "libpumpingunitrotationdir",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libpumpingunitusertxt1",
+   "reason": "wvPumpingUnit.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libpumpingunitusertxt2",
+   "reason": "wvPumpingUnit.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libresponsibleteam",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libresponsibleteamrptdist",
+   "reason": "wvResponsibleTeam.RptDist empty in sample data"
+  },
+  {
+   "library": "libresponsibleteamtyp",
+   "reason": "wvResponsibleTeam.Typ empty in sample data"
+  },
+  {
+   "library": "librisercomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "librisercompconntyp",
+   "reason": "wvRiserComp.ConnTyp empty in sample data"
+  },
+  {
+   "library": "libriserdes",
+   "reason": "wvRiser.Des empty in sample data"
+  },
+  {
+   "library": "librodcomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "librodcomppcprotorconntop",
+   "reason": "wvRodCompPCPRotor.ConnTop empty in sample data"
+  },
+  {
+   "library": "librodcomppcprotordrivetyp",
+   "reason": "wvRodCompPCPRotor.DriveTyp empty in sample data"
+  },
+  {
+   "library": "librodcomppcprotorlobeconfig",
+   "reason": "wvRodCompPCPRotor.LobeConfig empty in sample data"
+  },
+  {
+   "library": "librodcomppolishrodmaterialpolishrodlnr",
+   "reason": "wvRodCompPolishRod.MaterialPolishRodLnr empty in sample data"
+  },
+  {
+   "library": "librodcomppolishrodszodpolishrodlnr",
+   "reason": "wvRodCompPolishRod.SzODPolishRodLnr empty in sample data"
+  },
+  {
+   "library": "librodcompusedclass",
+   "reason": "wvRodComp.UsedClass empty in sample data"
+  },
+  {
+   "library": "librodusertxt1",
+   "reason": "wvRod.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "librodusertxt2",
+   "reason": "wvRod.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "librodusertxt3",
+   "reason": "wvRod.UserTxt3 empty in sample data"
+  },
+  {
+   "library": "libsandsize",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libstimtreat",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libstimtreatproppant",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libstimtreattechnicalresult",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libstringcoating",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libstringconditionpull",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libstringconditionrun",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libstringmaterial",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libsurfcontrolequip",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libsurfcontrolequipvsdmtr",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libsurfcontrolequipvsdtvss",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libsysrecdel",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtaskcomusertxt1",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtaskcontacts",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtaskcontactsassign",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtaskcontactsrequest",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtaskpriority",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtaskrecurpattern",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtaskstatus",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtasktyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtaskusertxt1",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtaskusertxt2",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtestbuilduptyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtestbuilduptypfluidrecov",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtestdstcontractor",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtestdstflowperdatachokesize",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtestdstrectyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtestdsttyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtestequiptestfluidpos",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtestequiptestfluidtyp",
+   "reason": "wvTestEquip.TestFluidTyp empty in sample data"
+  },
+  {
+   "library": "libtestfluidlevelstatus",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtestleakofftesttyp",
+   "reason": "wvTestLeakOff.TestTyp empty in sample data"
+  },
+  {
+   "library": "libtestprodprodmethod",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtestprodtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtimecurve",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtimecurveanalyst",
+   "reason": "wvTimeCurve.Analyst empty in sample data"
+  },
+  {
+   "library": "libtimecurvecontractor",
+   "reason": "wvTimeCurve.Contractor empty in sample data"
+  },
+  {
+   "library": "libtubcomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompcoatingouter",
+   "reason": "wvTubComp.CoatingOuter empty in sample data"
+  },
+  {
+   "library": "libtubcompctrlline",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompctrllineencap",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompctrllinefluid",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompctrllinetyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespcond",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespmotor",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespmotormtrcableinsul",
+   "reason": "wvTubCompESPMotor.MtrCableInsul empty in sample data"
+  },
+  {
+   "library": "libtubcompespmotorpenetratortyp",
+   "reason": "wvTubCompESPMotor.PenetratorTyp empty in sample data"
+  },
+  {
+   "library": "libtubcompespmotorpwrcablearmor",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespmotorpwrcablega",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespmotorpwrcableinsul",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespmotorpwrcablemake",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespmotorpwrcableshape",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespmotorpwrcablesheath",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespmotorpwrcabletyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespmtrcblprot",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompespmtrcblshape",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompesppumphsngmat",
+   "reason": "wvTubCompESPPump.HsngMat empty in sample data"
+  },
+  {
+   "library": "libtubcompesppumpimpellermat",
+   "reason": "wvTubCompESPPump.ImpellerMat empty in sample data"
+  },
+  {
+   "library": "libtubcompesppwrcbl",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompesppwrcblarmor",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompesppwrcblband",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompesppwrcblcond",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompesppwrcblguard",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompesppwrcblinsul",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompesppwrcblprofile",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompesppwrcblshape",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompesppwrcblsheath",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompesppwrcbltyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompgravelpkcarrierfluid",
+   "reason": "wvTubCompGravelPk.CarrierFluid empty in sample data"
+  },
+  {
+   "library": "libtubcompgravelpkcompany",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompgravelpkshroud",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompgravelpktyp",
+   "reason": "wvTubCompGravelPk.Typ empty in sample data"
+  },
+  {
+   "library": "libtubcompmandrelinsert",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompmandrelinsertlatchmaterial",
+   "reason": "wvTubCompMandrelInsert.LatchMaterial empty in sample data"
+  },
+  {
+   "library": "libtubcompmandrelinsertlatchtyp",
+   "reason": "wvTubCompMandrelInsert.LatchTyp empty in sample data"
+  },
+  {
+   "library": "libtubcompmandrelinsertorificematerial",
+   "reason": "wvTubCompMandrelInsert.OrificeMaterial empty in sample data"
+  },
+  {
+   "library": "libtubcompmandrelinsertpullreason",
+   "reason": "wvTubCompMandrelInsert.PullReason empty in sample data"
+  },
+  {
+   "library": "libtubcompmandrelinsertretrievemeth",
+   "reason": "wvTubCompMandrelInsert.RetrieveMeth empty in sample data"
+  },
+  {
+   "library": "libtubcompmandrelinsertservice",
+   "reason": "wvTubCompMandrelInsert.Service empty in sample data"
+  },
+  {
+   "library": "libtubcompmandrelinsertvalvematerial",
+   "reason": "wvTubCompMandrelInsert.ValveMaterial empty in sample data"
+  },
+  {
+   "library": "libtubcompmandrelinsertvalvepacking",
+   "reason": "wvTubCompMandrelInsert.ValvePacking empty in sample data"
+  },
+  {
+   "library": "libtubcompmandrelinsertvalvetyp",
+   "reason": "wvTubCompMandrelInsert.ValveTyp empty in sample data"
+  },
+  {
+   "library": "libtubcomppackerelastomertyp",
+   "reason": "wvTubCompPacker.ElastomerTyp empty in sample data"
+  },
+  {
+   "library": "libtubcomppackerpentyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcomppullreason",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompsensorconnecttyp",
+   "reason": "wvTubCompSensor.ConnectTyp empty in sample data"
+  },
+  {
+   "library": "libtubcompsensormake",
+   "reason": "wvTubCompSensor.Make empty in sample data"
+  },
+  {
+   "library": "libtubcompsensormodel",
+   "reason": "wvTubCompSensor.Model empty in sample data"
+  },
+  {
+   "library": "libtubcompsensortyp",
+   "reason": "wvTubCompSensor.Typ empty in sample data"
+  },
+  {
+   "library": "libtubcompsssvctrlfluid",
+   "reason": "wvTubCompSSSV.CtrlFluid empty in sample data"
+  },
+  {
+   "library": "libtubcompsssvctrltyp",
+   "reason": "wvTubCompSSSV.CtrlTyp empty in sample data"
+  },
+  {
+   "library": "libtubcompsssvinsert",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompsssvinsertpullreason",
+   "reason": "wvTubCompSSSVInsert.PullReason empty in sample data"
+  },
+  {
+   "library": "libtubcompsssvinsertvalvetyp",
+   "reason": "wvTubCompSSSVInsert.ValveTyp empty in sample data"
+  },
+  {
+   "library": "libtubcompstatus",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libtubcompusedclass",
+   "reason": "wvTubComp.UsedClass empty in sample data"
+  },
+  {
+   "library": "libtubcontractor",
+   "reason": "wvTub.Contractor empty in sample data"
+  },
+  {
+   "library": "libtubreasoncutpull",
+   "reason": "wvTub.ReasonCutPull empty in sample data"
+  },
+  {
+   "library": "libviscrpm",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellalias",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellaliaschangetype",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellattributesattrib",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellborealias",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellborealiaschangetype",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellboredirsurveyazmcorrect",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellboredirsurveydepthcorrect",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellboredirsurveysurveyedby",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellborepbtdmeas",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellborepurpose",
+   "reason": "wvWellbore.Purpose empty in sample data"
+  },
+  {
+   "library": "libwellborereservoir",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellborestatus",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellborestatususertxt1",
+   "reason": "wvWellboreStatus.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libwellboreusertxt1",
+   "reason": "wvWellbore.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libwellboreusertxt2",
+   "reason": "wvWellbore.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libwellboreusertxt3",
+   "reason": "wvWellbore.UserTxt3 empty in sample data"
+  },
+  {
+   "library": "libwellhead",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheadcomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheadcompconbtmsize",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheadcompconbtmtyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheadcompcontopsize",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheadcompcontoptyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheadcompcontyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheadcompoutlet",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheadcompoutletsztypwp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderagent",
+   "reason": "wvWellHeader.Agent empty in sample data"
+  },
+  {
+   "library": "libwellheadercurrentwellstatus",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderelvother",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderfield",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderfieldoffice",
+   "reason": "wvWellHeader.FieldOffice empty in sample data"
+  },
+  {
+   "library": "libwellheadergovauthority",
+   "reason": "wvWellHeader.GovAuthority empty in sample data"
+  },
+  {
+   "library": "libwellheaderlatlongsource",
+   "reason": "wvWellHeader.LatLongSource empty in sample data"
+  },
+  {
+   "library": "libwellheaderlegalsurvey",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderlocref",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderpumper",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderresponsiblecomp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderresponsibledrill",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderresponsiblefieldprod",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderresponsiblegeology",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderresponsibleland",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderresponsiblereserv",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderresponsiblesseng",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderriskclass",
+   "reason": "wvWellHeader.RiskClass empty in sample data"
+  },
+  {
+   "library": "libwellheadertownflag",
+   "reason": "wvWellHeader.TownFlag empty in sample data"
+  },
+  {
+   "library": "libwellheaderusertxt10",
+   "reason": "wvWellHeader.UserTxt10 empty in sample data"
+  },
+  {
+   "library": "libwellheaderusertxt2",
+   "reason": "wvWellHeader.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libwellheaderusertxt3",
+   "reason": "wvWellHeader.UserTxt3 empty in sample data"
+  },
+  {
+   "library": "libwellheaderusertxt4",
+   "reason": "wvWellHeader.UserTxt4 empty in sample data"
+  },
+  {
+   "library": "libwellheaderusertxt5",
+   "reason": "wvWellHeader.UserTxt5 empty in sample data"
+  },
+  {
+   "library": "libwellheaderusertxt6",
+   "reason": "wvWellHeader.UserTxt6 empty in sample data"
+  },
+  {
+   "library": "libwellheaderusertxt7",
+   "reason": "wvWellHeader.UserTxt7 empty in sample data"
+  },
+  {
+   "library": "libwellheaderusertxt8",
+   "reason": "wvWellHeader.UserTxt8 empty in sample data"
+  },
+  {
+   "library": "libwellheaderusertxt9",
+   "reason": "wvWellHeader.UserTxt9 empty in sample data"
+  },
+  {
+   "library": "libwellheaderutmsource",
+   "reason": "wvWellHeader.UTMSource empty in sample data"
+  },
+  {
+   "library": "libwellheaderwellstatsource",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellheaderwelltyp2",
+   "reason": "wvWellHeader.WellTyp2 empty in sample data"
+  },
+  {
+   "library": "libwellreview",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellreviewcomusertxt1",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellreviewcontact",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellreviewpriority",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellreviewproj",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellreviewprojstatus",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellreviewusertxt1",
+   "reason": "wvWellReview.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libwellreviewusertxt2",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwellreviewusertxt3",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltestinjectpurpose",
+   "reason": "wvWellTestInject.Purpose empty in sample data"
+  },
+  {
+   "library": "libwelltestinjecttypproduct",
+   "reason": "wvWellTestInject.TypProduct empty in sample data"
+  },
+  {
+   "library": "libwelltestlogprod",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltestlogprodtestedby",
+   "reason": "wvWellTestLogProd.TestedBy empty in sample data"
+  },
+  {
+   "library": "libwelltestprestravgauge",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltestprestravgaugetyp",
+   "reason": "wvWellTestPresTravGauge.Typ empty in sample data"
+  },
+  {
+   "library": "libwelltestprestravtyp",
+   "reason": "wvWellTestPresTrav.Typ empty in sample data"
+  },
+  {
+   "library": "libwelltestprod",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltestprodpurpose",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltestprodtestedby",
+   "reason": "wvWellTestProd.TestedBy empty in sample data"
+  },
+  {
+   "library": "libwelltestrftconfigtool",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltestrftdatafluidtyp",
+   "reason": "wvWellTestRFTData.FluidTyp empty in sample data"
+  },
+  {
+   "library": "libwelltestrftdatatypacq",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltestrftdatatypaquisition",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltestrfttypprobe",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltestrfttyptool",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltesttestedby",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltesttransanalysismethod",
+   "reason": "wvWellTestTrans.AnalysisMethod empty in sample data"
+  },
+  {
+   "library": "libwelltesttransanalysissoftware",
+   "reason": "wvWellTestTrans.AnalysisSoftware empty in sample data"
+  },
+  {
+   "library": "libwelltesttranscontractor",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwelltesttransgaugegaugeloc",
+   "reason": "wvWellTestTransGauge.GaugeLoc empty in sample data"
+  },
+  {
+   "library": "libwelltesttransgaugemake",
+   "reason": "wvWellTestTransGauge.Make empty in sample data"
+  },
+  {
+   "library": "libwelltesttransgaugemodel",
+   "reason": "wvWellTestTransGauge.Model empty in sample data"
+  },
+  {
+   "library": "libwelltesttransloadfluidtyp",
+   "reason": "wvWellTestTrans.LoadFluidTyp empty in sample data"
+  },
+  {
+   "library": "libwelltesttransphasesepmethod",
+   "reason": "wvWellTestTrans.PhaseSepMethod empty in sample data"
+  },
+  {
+   "library": "libwelltesttransproducedto",
+   "reason": "wvWellTestTrans.ProducedTo empty in sample data"
+  },
+  {
+   "library": "libwelltesttransresboundtyp",
+   "reason": "wvWellTestTrans.ResBoundTyp empty in sample data"
+  },
+  {
+   "library": "libwelltesttranssurfacetestequip",
+   "reason": "wvWellTestTrans.SurfaceTestEquip empty in sample data"
+  },
+  {
+   "library": "libwelltesttransvolumemethod",
+   "reason": "wvWellTestTrans.VolumeMethod empty in sample data"
+  },
+  {
+   "library": "libwhdrive",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwhdrivebearingtyp",
+   "reason": "wvWHDrive.BearingTyp empty in sample data"
+  },
+  {
+   "library": "libwhdrivecondition",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libwhdriveshafttyp",
+   "reason": "wvWHDrive.ShaftTyp empty in sample data"
+  },
+  {
+   "library": "libwhdriveusertxt1",
+   "reason": "wvWHDrive.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libwhdriveusertxt2",
+   "reason": "wvWHDrive.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libworkingint",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libworkingintpartner",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libworkingintpartnerdataobl",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libworkingintpartnerrptdist",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libworkingintpartnerstatus",
+   "reason": "wvWorkingIntPartner.Status empty in sample data"
+  },
+  {
+   "library": "libworkinginttyp",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libzone",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libzonealias",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libzonealiaschangetype",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libzonelicensee",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libzoneres",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libzoneunit",
+   "reason": "no matching table.column"
+  },
+  {
+   "library": "libzoneusertxt1",
+   "reason": "wvZone.UserTxt1 empty in sample data"
+  },
+  {
+   "library": "libzoneusertxt2",
+   "reason": "wvZone.UserTxt2 empty in sample data"
+  },
+  {
+   "library": "libzoneusertxt3",
+   "reason": "wvZone.UserTxt3 empty in sample data"
+  },
+  {
+   "library": "libzoneusertxt4",
+   "reason": "wvZone.UserTxt4 empty in sample data"
+  },
+  {
+   "library": "libzoneusertxt5",
+   "reason": "wvZone.UserTxt5 empty in sample data"
+  }
+ ],
+ "picklists": {
+  "libattachmentattachextension": {
+   "source": "wvAttachment.AttachExtension",
+   "usable": true,
+   "count": 6,
+   "values": [
+    {
+     "value": "jpg",
+     "count": 6
+    },
+    {
+     "value": "gif",
+     "count": 4
+    },
+    {
+     "value": "bmp",
+     "count": 3
+    },
+    {
+     "value": "doc",
+     "count": 1
+    },
+    {
+     "value": "efx",
+     "count": 1
+    },
+    {
+     "value": "xls",
+     "count": 1
+    }
+   ]
+  },
+  "libcascompusedclass": {
+   "source": "wvCasComp.UsedClass",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "A",
+     "count": 16
+    }
+   ]
+  },
+  "libcasdes": {
+   "source": "wvCas.Des",
+   "usable": true,
+   "count": 23,
+   "values": [
+    {
+     "value": "SURFACE",
+     "count": 22
+    },
+    {
+     "value": "PRODUCTION",
+     "count": 21
+    },
+    {
+     "value": "Surface Casing",
+     "count": 10
+    },
+    {
+     "value": "Production Casing",
+     "count": 8
+    },
+    {
+     "value": "Production",
+     "count": 6
+    },
+    {
+     "value": "Surface",
+     "count": 6
+    },
+    {
+     "value": "CASING",
+     "count": 3
+    },
+    {
+     "value": "Intermediate Casing",
+     "count": 3
+    },
+    {
+     "value": "Drive Pipe",
+     "count": 2
+    },
+    {
+     "value": "Liner",
+     "count": 2
+    },
+    {
+     "value": "Production Liner",
+     "count": 2
+    },
+    {
+     "value": "CONDUCTOR",
+     "count": 1
+    },
+    {
+     "value": "Conductor Pipe",
+     "count": 1
+    },
+    {
+     "value": "INTERMEDIATE",
+     "count": 1
+    },
+    {
+     "value": "Intermediate Casing 1",
+     "count": 1
+    },
+    {
+     "value": "Intermediate Casing 2",
+     "count": 1
+    },
+    {
+     "value": "Intermediate casing",
+     "count": 1
+    },
+    {
+     "value": "LINER",
+     "count": 1
+    },
+    {
+     "value": "PROD1",
+     "count": 1
+    },
+    {
+     "value": "Proposed Production String",
+     "count": 1
+    },
+    {
+     "value": "Proposed Surface String",
+     "count": 1
+    },
+    {
+     "value": "SURF",
+     "count": 1
+    },
+    {
+     "value": "Structural Casing",
+     "count": 1
+    }
+   ]
+  },
+  "libcementcontractor": {
+   "source": "wvCement.Contractor",
+   "usable": true,
+   "count": 11,
+   "values": [
+    {
+     "value": "Halliburton",
+     "count": 12
+    },
+    {
+     "value": "Nowsco Well Service Ltd.",
+     "count": 4
+    },
+    {
+     "value": "BJ Services",
+     "count": 3
+    },
+    {
+     "value": "Dowell",
+     "count": 2
+    },
+    {
+     "value": "Fracmaster",
+     "count": 2
+    },
+    {
+     "value": "Fracmaster Ltd.",
+     "count": 2
+    },
+    {
+     "value": "HALLIBURTON",
+     "count": 2
+    },
+    {
+     "value": "Sanjel Cementers Ltd.",
+     "count": 2
+    },
+    {
+     "value": "Well Service Ltd.",
+     "count": 2
+    },
+    {
+     "value": "BJ Services Company",
+     "count": 1
+    },
+    {
+     "value": "Halliburton Energy Services",
+     "count": 1
+    }
+   ]
+  },
+  "libcementdes": {
+   "source": "wvCement.Des",
+   "usable": true,
+   "count": 38,
+   "values": [
+    {
+     "value": "Surface",
+     "count": 15
+    },
+    {
+     "value": "Production",
+     "count": 14
+    },
+    {
+     "value": "Cement plug",
+     "count": 9
+    },
+    {
+     "value": "Cement Plug",
+     "count": 7
+    },
+    {
+     "value": "CEMENT SQUEEZE",
+     "count": 6
+    },
+    {
+     "value": "Surface Casing",
+     "count": 6
+    },
+    {
+     "value": "BRIDGE PLUG CAPPED W/CEMENT",
+     "count": 5
+    },
+    {
+     "value": "Production Casing",
+     "count": 5
+    },
+    {
+     "value": "Production Casing Cement",
+     "count": 5
+    },
+    {
+     "value": "Surface Casing Cement",
+     "count": 5
+    },
+    {
+     "value": "Cement Squeeze",
+     "count": 3
+    },
+    {
+     "value": "Primary Cement Job",
+     "count": 3
+    },
+    {
+     "value": "Intermediate 2 Cement",
+     "count": 2
+    },
+    {
+     "value": "Intermediate Casing Cement",
+     "count": 2
+    },
+    {
+     "value": "Primary Cement",
+     "count": 2
+    },
+    {
+     "value": "Production Cement",
+     "count": 2
+    },
+    {
+     "value": "CEMENT PLUG",
+     "count": 1
+    },
+    {
+     "value": "Conductor Cement",
+     "count": 1
+    },
+    {
+     "value": "First Stage for liner",
+     "count": 1
+    },
+    {
+     "value": "Intermediate 1",
+     "count": 1
+    },
+    {
+     "value": "Intermediate 2",
+     "count": 1
+    },
+    {
+     "value": "Intermediate Casing",
+     "count": 1
+    },
+    {
+     "value": "Lap stage",
+     "count": 1
+    },
+    {
+     "value": "Liner",
+     "count": 1
+    },
+    {
+     "value": "PROD1",
+     "count": 1
+    },
+    {
+     "value": "Plug Back Cement",
+     "count": 1
+    },
+    {
+     "value": "Plug back",
+     "count": 1
+    },
+    {
+     "value": "Primary Cement Job - Stage 1",
+     "count": 1
+    },
+    {
+     "value": "Production Liner Cement",
+     "count": 1
+    },
+    {
+     "value": "Proposed Cement from squeeze",
+     "count": 1
+    },
+    {
+     "value": "Proposed Production",
+     "count": 1
+    },
+    {
+     "value": "Proposed Surface",
+     "count": 1
+    },
+    {
+     "value": "Proposed perf squeeze",
+     "count": 1
+    },
+    {
+     "value": "SURF",
+     "count": 1
+    },
+    {
+     "value": "Squeeze Perfs",
+     "count": 1
+    },
+    {
+     "value": "Squeeze for sidetrack",
+     "count": 1
+    },
+    {
+     "value": "Structural Cement",
+     "count": 1
+    },
+    {
+     "value": "Surface Cement",
+     "count": 1
+    }
+   ]
+  },
+  "libcementevalmethod": {
+   "source": "wvCement.EvalMethod",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Returns to Surface",
+     "count": 4
+    },
+    {
+     "value": "Cement Bond Log",
+     "count": 2
+    },
+    {
+     "value": "Temperature Log",
+     "count": 2
+    }
+   ]
+  },
+  "libcementstagefluidaddconcunitlbl": {
+   "source": "wvCementStageFluidAdd.ConcUnitLbl",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "%",
+     "count": 32
+    },
+    {
+     "value": "% (BWOC)",
+     "count": 20
+    }
+   ]
+  },
+  "libcementstagefluidcmtclass": {
+   "source": "wvCementStageFluid.CmtClass",
+   "usable": true,
+   "count": 10,
+   "values": [
+    {
+     "value": "G",
+     "count": 21
+    },
+    {
+     "value": "C",
+     "count": 18
+    },
+    {
+     "value": "G-CLASS",
+     "count": 4
+    },
+    {
+     "value": "H",
+     "count": 4
+    },
+    {
+     "value": "0:1:0 OW",
+     "count": 3
+    },
+    {
+     "value": "1:1:2",
+     "count": 3
+    },
+    {
+     "value": "1:1:2 Poz",
+     "count": 3
+    },
+    {
+     "value": "SPACER",
+     "count": 3
+    },
+    {
+     "value": "Lite",
+     "count": 2
+    },
+    {
+     "value": "c",
+     "count": 1
+    }
+   ]
+  },
+  "libcementstagefluiddesfluid": {
+   "source": "wvCementStageFluid.DesFluid",
+   "usable": true,
+   "count": 21,
+   "values": [
+    {
+     "value": "H2O",
+     "count": 4
+    },
+    {
+     "value": "Neat",
+     "count": 3
+    },
+    {
+     "value": "Acqua",
+     "count": 2
+    },
+    {
+     "value": "D=1,7 kg/l",
+     "count": 2
+    },
+    {
+     "value": "LEAD SLURRY",
+     "count": 2
+    },
+    {
+     "value": "MCS II/IV",
+     "count": 2
+    },
+    {
+     "value": "SPACER UNWEIGHTED",
+     "count": 2
+    },
+    {
+     "value": "COBRASEAL @ 1550KG/M3",
+     "count": 1
+    },
+    {
+     "value": "FW-PO-LU",
+     "count": 1
+    },
+    {
+     "value": "Fango",
+     "count": 1
+    },
+    {
+     "value": "Fango FW-PO-LU",
+     "count": 1
+    },
+    {
+     "value": "Including gel and retarder",
+     "count": 1
+    },
+    {
+     "value": "LIQUID ADDITIVE EXT.",
+     "count": 1
+    },
+    {
+     "value": "Malta pesante",
+     "count": 1
+    },
+    {
+     "value": "Malta talquale",
+     "count": 1
+    },
+    {
+     "value": "Neat with Retarder",
+     "count": 1
+    },
+    {
+     "value": "SPACER WEIGHTED",
+     "count": 1
+    },
+    {
+     "value": "Spherelite + microsilica",
+     "count": 1
+    },
+    {
+     "value": "TAIL SLURRY",
+     "count": 1
+    },
+    {
+     "value": "THIXOTROPIC SLURRY",
+     "count": 1
+    },
+    {
+     "value": "Tissotropica",
+     "count": 1
+    }
+   ]
+  },
+  "libcementstagefluidobjective": {
+   "source": "wvCementStageFluid.Objective",
+   "usable": true,
+   "count": 15,
+   "values": [
+    {
+     "value": "Cement Intermediate Casing",
+     "count": 4
+    },
+    {
+     "value": "Squeeze Perfs",
+     "count": 3
+    },
+    {
+     "value": "Cement Surface Casing",
+     "count": 2
+    },
+    {
+     "value": "Conductor Support",
+     "count": 2
+    },
+    {
+     "value": "FILLER SLURRY",
+     "count": 2
+    },
+    {
+     "value": "PRODUCTION SLURRY",
+     "count": 2
+    },
+    {
+     "value": "Shoe Integrity",
+     "count": 2
+    },
+    {
+     "value": "Cement Production Liner",
+     "count": 1
+    },
+    {
+     "value": "Cement Top of EZSV",
+     "count": 1
+    },
+    {
+     "value": "DIESEL",
+     "count": 1
+    },
+    {
+     "value": "DUAL SPACER",
+     "count": 1
+    },
+    {
+     "value": "Filler Cement",
+     "count": 1
+    },
+    {
+     "value": "SPACER",
+     "count": 1
+    },
+    {
+     "value": "Set Cement Plug",
+     "count": 1
+    },
+    {
+     "value": "Support Structural Casing",
+     "count": 1
+    }
+   ]
+  },
+  "libcementstagefluidtyp": {
+   "source": "wvCementStageFluid.Typ",
+   "usable": true,
+   "count": 36,
+   "values": [
+    {
+     "value": "Lead Cement",
+     "count": 13
+    },
+    {
+     "value": "Cement plug",
+     "count": 8
+    },
+    {
+     "value": "Lead",
+     "count": 8
+    },
+    {
+     "value": "Cement Squeeze",
+     "count": 7
+    },
+    {
+     "value": "Tail",
+     "count": 7
+    },
+    {
+     "value": "Displacement",
+     "count": 6
+    },
+    {
+     "value": "Spacer",
+     "count": 6
+    },
+    {
+     "value": "BRIDGE PLUG CAPPED W/CEMENT",
+     "count": 5
+    },
+    {
+     "value": "Lead Slurry",
+     "count": 5
+    },
+    {
+     "value": "Tail Slurry",
+     "count": 5
+    },
+    {
+     "value": "Cement",
+     "count": 4
+    },
+    {
+     "value": "Surface Cement",
+     "count": 4
+    },
+    {
+     "value": "Tail Cement",
+     "count": 4
+    },
+    {
+     "value": "Primary Cement",
+     "count": 3
+    },
+    {
+     "value": "Squeezed Perfs",
+     "count": 3
+    },
+    {
+     "value": "Lap",
+     "count": 2
+    },
+    {
+     "value": "Plug back",
+     "count": 2
+    },
+    {
+     "value": "Preflush",
+     "count": 2
+    },
+    {
+     "value": "SPACER",
+     "count": 2
+    },
+    {
+     "value": "CEMENT",
+     "count": 1
+    },
+    {
+     "value": "CEMENT PLUG",
+     "count": 1
+    },
+    {
+     "value": "CEMENT/HILITE 1300",
+     "count": 1
+    },
+    {
+     "value": "CEMENT/HILITE 1400",
+     "count": 1
+    },
+    {
+     "value": "CEMENT/ULTRABOND '\"M",
+     "count": 1
+    },
+    {
+     "value": "Cement Plug",
+     "count": 1
+    },
+    {
+     "value": "Cement Plug and Plastic",
+     "count": 1
+    },
+    {
+     "value": "Int 1",
+     "count": 1
+    },
+    {
+     "value": "Int 1 #2",
+     "count": 1
+    },
+    {
+     "value": "Int 2 #2",
+     "count": 1
+    },
+    {
+     "value": "Intermediate Cement",
+     "count": 1
+    },
+    {
+     "value": "PRE FLUSH",
+     "count": 1
+    },
+    {
+     "value": "Plug",
+     "count": 1
+    },
+    {
+     "value": "Plug Back Cement",
+     "count": 1
+    },
+    {
+     "value": "Primary",
+     "count": 1
+    },
+    {
+     "value": "Production Cement",
+     "count": 1
+    },
+    {
+     "value": "Squeeze",
+     "count": 1
+    }
+   ]
+  },
+  "libcementstagefluidwatersource": {
+   "source": "wvCementStageFluid.WaterSource",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "Fresh Water",
+     "count": 14
+    },
+    {
+     "value": "WATER WELL",
+     "count": 6
+    },
+    {
+     "value": "Seawater",
+     "count": 2
+    },
+    {
+     "value": "Fresh water",
+     "count": 1
+    },
+    {
+     "value": "Freshwater",
+     "count": 1
+    }
+   ]
+  },
+  "libcementstagemeasmethod": {
+   "source": "wvCementStage.MeasMethod",
+   "usable": true,
+   "count": 8,
+   "values": [
+    {
+     "value": "Volume Calculations",
+     "count": 4
+    },
+    {
+     "value": "Calculated",
+     "count": 2
+    },
+    {
+     "value": "Acoustic Log",
+     "count": 1
+    },
+    {
+     "value": "Cement Bond Log",
+     "count": 1
+    },
+    {
+     "value": "Returns to Surface",
+     "count": 1
+    },
+    {
+     "value": "Temperature Log",
+     "count": 1
+    },
+    {
+     "value": "Visual check",
+     "count": 1
+    },
+    {
+     "value": "Wireline Tag",
+     "count": 1
+    }
+   ]
+  },
+  "libcementstageoddrillout": {
+   "source": "wvCementStage.ODDrillOut",
+   "usable": true,
+   "count": 6,
+   "values": [
+    {
+     "value": "0.09840000420808792",
+     "count": 2
+    },
+    {
+     "value": "0.20000000298023224",
+     "count": 1
+    },
+    {
+     "value": "0.22224999964237213",
+     "count": 1
+    },
+    {
+     "value": "0.3111499845981598",
+     "count": 1
+    },
+    {
+     "value": "0.4762499928474426",
+     "count": 1
+    },
+    {
+     "value": "0.7111999988555908",
+     "count": 1
+    }
+   ]
+  },
+  "libcementstagetagmethod": {
+   "source": "wvCementStage.TagMethod",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Drill Bit",
+     "count": 4
+    },
+    {
+     "value": "Drill String",
+     "count": 2
+    },
+    {
+     "value": "Tubing",
+     "count": 1
+    },
+    {
+     "value": "Wireline",
+     "count": 1
+    }
+   ]
+  },
+  "libcommentusertxt1": {
+   "source": "wvComment.UserTxt1",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Yes",
+     "count": 8
+    },
+    {
+     "value": "No",
+     "count": 1
+    }
+   ]
+  },
+  "libcorecontractor": {
+   "source": "wvCore.Contractor",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Baker Hughes",
+     "count": 4
+    },
+    {
+     "value": "Baker Hughes INTEQ",
+     "count": 4
+    },
+    {
+     "value": "Schlumberger",
+     "count": 1
+    },
+    {
+     "value": "Security DBS",
+     "count": 1
+    }
+   ]
+  },
+  "libcorepurpose": {
+   "source": "wvCore.Purpose",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Petrophysical",
+     "count": 1
+    }
+   ]
+  },
+  "libcoresidewalltyp": {
+   "source": "wvCoreSideWall.Typ",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Other",
+     "count": 1
+    }
+   ]
+  },
+  "libcoretyp": {
+   "source": "wvCore.Typ",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "01",
+     "count": 15
+    },
+    {
+     "value": "Conventional",
+     "count": 5
+    },
+    {
+     "value": "PVC",
+     "count": 2
+    },
+    {
+     "value": "Rubber sleeve",
+     "count": 2
+    },
+    {
+     "value": "Oriented",
+     "count": 1
+    }
+   ]
+  },
+  "libfluidanalysisoilcolor": {
+   "source": "wvFluidAnalysisOil.Color",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Lt Brown",
+     "count": 1
+    }
+   ]
+  },
+  "libfluidanalysistestedby": {
+   "source": "wvFluidAnalysis.TestedBy",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Fluid Labs Inc.",
+     "count": 1
+    },
+    {
+     "value": "Rudy's Test Lab",
+     "count": 1
+    }
+   ]
+  },
+  "libgeoevallithclass": {
+   "source": "wvGeoEvalLith.Class",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Lithology Classification",
+     "count": 1
+    }
+   ]
+  },
+  "libgeoevallithcolor": {
+   "source": "wvGeoEvalLith.Color",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "N",
+     "count": 96
+    },
+    {
+     "value": "Q",
+     "count": 95
+    }
+   ]
+  },
+  "libgeoevallithhardness": {
+   "source": "wvGeoEvalLith.Hardness",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Mod Hd",
+     "count": 1
+    }
+   ]
+  },
+  "libgeoevallithmatrixcement": {
+   "source": "wvGeoEvalLith.MatrixCement",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Calcite",
+     "count": 1
+    }
+   ]
+  },
+  "libgeoevallithporositytyp": {
+   "source": "wvGeoEvalLith.PorosityTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Mod",
+     "count": 1
+    }
+   ]
+  },
+  "libgeoevallithroundness": {
+   "source": "wvGeoEvalLith.Roundness",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Mod Rnd",
+     "count": 1
+    }
+   ]
+  },
+  "libgeoevallithsorting": {
+   "source": "wvGeoEvalLith.Sorting",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Good",
+     "count": 1
+    }
+   ]
+  },
+  "libgeoevallithtexture": {
+   "source": "wvGeoEvalLith.Texture",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Friable",
+     "count": 1
+    }
+   ]
+  },
+  "libgeoevalqualifiertyp": {
+   "source": "wvGeoEvalQualifier.Typ",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Pyrite",
+     "count": 1
+    }
+   ]
+  },
+  "libinspectdetailstatus": {
+   "source": "wvInspectDetail.Status",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Completed",
+     "count": 3
+    }
+   ]
+  },
+  "libjobapprovaldelivstatus": {
+   "source": "wvJobApprovalDeliv.Status",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Completed",
+     "count": 12
+    }
+   ]
+  },
+  "libjobapprovalstatus": {
+   "source": "wvJobApproval.Status",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Completed",
+     "count": 2
+    }
+   ]
+  },
+  "libjobcontacttyp": {
+   "source": "wvJobContact.Typ",
+   "usable": true,
+   "count": 30,
+   "values": [
+    {
+     "value": "Contractor",
+     "count": 13
+    },
+    {
+     "value": "Operator",
+     "count": 12
+    },
+    {
+     "value": "Company",
+     "count": 6
+    },
+    {
+     "value": "Safety",
+     "count": 5
+    },
+    {
+     "value": "Bits",
+     "count": 4
+    },
+    {
+     "value": "Drilling",
+     "count": 4
+    },
+    {
+     "value": "Regulatory",
+     "count": 4
+    },
+    {
+     "value": "Consultant",
+     "count": 3
+    },
+    {
+     "value": "Cement",
+     "count": 2
+    },
+    {
+     "value": "DST",
+     "count": 2
+    },
+    {
+     "value": "Directional Driller",
+     "count": 2
+    },
+    {
+     "value": "MWD",
+     "count": 2
+    },
+    {
+     "value": "Other",
+     "count": 2
+    },
+    {
+     "value": "Service",
+     "count": 2
+    },
+    {
+     "value": "Stimulation",
+     "count": 2
+    },
+    {
+     "value": "Vendor",
+     "count": 2
+    },
+    {
+     "value": "Well Testing",
+     "count": 2
+    },
+    {
+     "value": "Wellhead",
+     "count": 2
+    },
+    {
+     "value": "Wireline",
+     "count": 2
+    },
+    {
+     "value": "Casing",
+     "count": 1
+    },
+    {
+     "value": "Casing Bowl",
+     "count": 1
+    },
+    {
+     "value": "Cementing",
+     "count": 1
+    },
+    {
+     "value": "Directional Drilling",
+     "count": 1
+    },
+    {
+     "value": "Drilling Contractor",
+     "count": 1
+    },
+    {
+     "value": "Drilling Engineer",
+     "count": 1
+    },
+    {
+     "value": "Drilling Fluids",
+     "count": 1
+    },
+    {
+     "value": "Logging",
+     "count": 1
+    },
+    {
+     "value": "Perforation",
+     "count": 1
+    },
+    {
+     "value": "Perforation/Wireline",
+     "count": 1
+    },
+    {
+     "value": "Supplier",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillbitmake": {
+   "source": "wvJobDrillBit.Make",
+   "usable": true,
+   "count": 19,
+   "values": [
+    {
+     "value": "HUGHES",
+     "count": 36
+    },
+    {
+     "value": "SMITH",
+     "count": 28
+    },
+    {
+     "value": "SECURITY",
+     "count": 20
+    },
+    {
+     "value": "Hughes",
+     "count": 11
+    },
+    {
+     "value": "REED",
+     "count": 11
+    },
+    {
+     "value": "HUGHS",
+     "count": 8
+    },
+    {
+     "value": "Reed",
+     "count": 6
+    },
+    {
+     "value": "Security",
+     "count": 6
+    },
+    {
+     "value": "Security DBS",
+     "count": 5
+    },
+    {
+     "value": "Smith",
+     "count": 5
+    },
+    {
+     "value": "D.B.S.",
+     "count": 4
+    },
+    {
+     "value": "HYCALOG",
+     "count": 4
+    },
+    {
+     "value": "GeoDiamond",
+     "count": 3
+    },
+    {
+     "value": "DBS",
+     "count": 2
+    },
+    {
+     "value": "HC",
+     "count": 2
+    },
+    {
+     "value": "HUGHES CHRISTENSON",
+     "count": 2
+    },
+    {
+     "value": "RBI",
+     "count": 2
+    },
+    {
+     "value": "WESTERN",
+     "count": 2
+    },
+    {
+     "value": "VAREL",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillbitusedclass": {
+   "source": "wvJobDrillBit.UsedClass",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "N",
+     "count": 11
+    },
+    {
+     "value": "New",
+     "count": 8
+    },
+    {
+     "value": "Used",
+     "count": 7
+    },
+    {
+     "value": "Reconditioned",
+     "count": 2
+    },
+    {
+     "value": "U",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillstringcompconnszbtm": {
+   "source": "wvJobDrillStringComp.ConnSzBtm",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "0.11429999768733978",
+     "count": 1
+    },
+    {
+     "value": "0.1746249943971634",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillstringcompconnsztop": {
+   "source": "wvJobDrillStringComp.ConnSzTop",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "0.11429999768733978",
+     "count": 76
+    },
+    {
+     "value": "0.16827499866485596",
+     "count": 67
+    },
+    {
+     "value": "0.12700000405311584",
+     "count": 37
+    },
+    {
+     "value": "0.1679999977350235",
+     "count": 18
+    },
+    {
+     "value": "0.1936749964952469",
+     "count": 12
+    }
+   ]
+  },
+  "libjobdrillstringcompconnthrdbtm": {
+   "source": "wvJobDrillStringComp.ConnThrdBtm",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "API REG",
+     "count": 1
+    },
+    {
+     "value": "IF",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillstringcompconnthrdtop": {
+   "source": "wvJobDrillStringComp.ConnThrdTop",
+   "usable": true,
+   "count": 6,
+   "values": [
+    {
+     "value": "IF",
+     "count": 76
+    },
+    {
+     "value": "API REG",
+     "count": 55
+    },
+    {
+     "value": "H90",
+     "count": 37
+    },
+    {
+     "value": "REG",
+     "count": 18
+    },
+    {
+     "value": "FH",
+     "count": 14
+    },
+    {
+     "value": "Reg",
+     "count": 10
+    }
+   ]
+  },
+  "libjobdrillstringdes": {
+   "source": "wvJobDrillString.Des",
+   "usable": true,
+   "count": 16,
+   "values": [
+    {
+     "value": "Drilling Assembly",
+     "count": 131
+    },
+    {
+     "value": "12-1/4\" Directional Assy",
+     "count": 6
+    },
+    {
+     "value": "6 1/4\" Packed Hole Assy",
+     "count": 6
+    },
+    {
+     "value": "DIRECTIONAL BHA",
+     "count": 6
+    },
+    {
+     "value": "Slick",
+     "count": 5
+    },
+    {
+     "value": "8 1/2\" Packed Hole Assy",
+     "count": 4
+    },
+    {
+     "value": "Steerable",
+     "count": 3
+    },
+    {
+     "value": "6 1/4\" Coring Assembly",
+     "count": 2
+    },
+    {
+     "value": "6 1/4\" DST Assembly",
+     "count": 2
+    },
+    {
+     "value": "PERFORMANCE MOTOR",
+     "count": 2
+    },
+    {
+     "value": "Slick Assembly",
+     "count": 2
+    },
+    {
+     "value": "12-1/4\" Coring Assembly",
+     "count": 1
+    },
+    {
+     "value": "17-1/2\" Directional Assy",
+     "count": 1
+    },
+    {
+     "value": "26\" Drilling Assy",
+     "count": 1
+    },
+    {
+     "value": "36\" Drilling Assy",
+     "count": 1
+    },
+    {
+     "value": "SURFACE",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillstringdrillparamtyp": {
+   "source": "wvJobDrillStringDrillParam.Typ",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "D",
+     "count": 745
+    },
+    {
+     "value": "Drill Form",
+     "count": 4
+    },
+    {
+     "value": "Drill Cement",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillstringwearbearing": {
+   "source": "wvJobDrillString.WearBearing",
+   "usable": true,
+   "count": 14,
+   "values": [
+    {
+     "value": "E",
+     "count": 43
+    },
+    {
+     "value": "F",
+     "count": 16
+    },
+    {
+     "value": "2",
+     "count": 8
+    },
+    {
+     "value": "X",
+     "count": 6
+    },
+    {
+     "value": "3",
+     "count": 5
+    },
+    {
+     "value": "8",
+     "count": 5
+    },
+    {
+     "value": "D",
+     "count": 5
+    },
+    {
+     "value": "4",
+     "count": 4
+    },
+    {
+     "value": "0",
+     "count": 2
+    },
+    {
+     "value": "6",
+     "count": 2
+    },
+    {
+     "value": "1",
+     "count": 1
+    },
+    {
+     "value": "5",
+     "count": 1
+    },
+    {
+     "value": "7",
+     "count": 1
+    },
+    {
+     "value": "N",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillstringweardull": {
+   "source": "wvJobDrillString.WearDull",
+   "usable": true,
+   "count": 14,
+   "values": [
+    {
+     "value": "BT",
+     "count": 31
+    },
+    {
+     "value": "WT",
+     "count": 29
+    },
+    {
+     "value": "FC",
+     "count": 19
+    },
+    {
+     "value": "NO",
+     "count": 5
+    },
+    {
+     "value": "CD",
+     "count": 3
+    },
+    {
+     "value": "ER",
+     "count": 2
+    },
+    {
+     "value": "LT",
+     "count": 2
+    },
+    {
+     "value": "RG",
+     "count": 2
+    },
+    {
+     "value": "BC",
+     "count": 1
+    },
+    {
+     "value": "CC",
+     "count": 1
+    },
+    {
+     "value": "CI",
+     "count": 1
+    },
+    {
+     "value": "CT",
+     "count": 1
+    },
+    {
+     "value": "PB",
+     "count": 1
+    },
+    {
+     "value": "SD",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillstringweargauge": {
+   "source": "wvJobDrillString.WearGauge",
+   "usable": true,
+   "count": 24,
+   "values": [
+    {
+     "value": "1",
+     "count": 15
+    },
+    {
+     "value": "0",
+     "count": 13
+    },
+    {
+     "value": "0.00",
+     "count": 13
+    },
+    {
+     "value": "1.00",
+     "count": 12
+    },
+    {
+     "value": "2.00",
+     "count": 8
+    },
+    {
+     "value": "0.01",
+     "count": 6
+    },
+    {
+     "value": "3",
+     "count": 5
+    },
+    {
+     "value": "0.10",
+     "count": 4
+    },
+    {
+     "value": "1.32",
+     "count": 2
+    },
+    {
+     "value": "2",
+     "count": 2
+    },
+    {
+     "value": "4.00",
+     "count": 2
+    },
+    {
+     "value": "I",
+     "count": 2
+    },
+    {
+     "value": ".02",
+     "count": 1
+    },
+    {
+     "value": ".03",
+     "count": 1
+    },
+    {
+     "value": "0.02",
+     "count": 1
+    },
+    {
+     "value": "0.03",
+     "count": 1
+    },
+    {
+     "value": "0.24",
+     "count": 1
+    },
+    {
+     "value": "1.90",
+     "count": 1
+    },
+    {
+     "value": "15.00",
+     "count": 1
+    },
+    {
+     "value": "2.60",
+     "count": 1
+    },
+    {
+     "value": "3.00",
+     "count": 1
+    },
+    {
+     "value": "3.30",
+     "count": 1
+    },
+    {
+     "value": "5",
+     "count": 1
+    },
+    {
+     "value": "8",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillstringwearinner": {
+   "source": "wvJobDrillString.WearInner",
+   "usable": true,
+   "count": 8,
+   "values": [
+    {
+     "value": "3",
+     "count": 32
+    },
+    {
+     "value": "4",
+     "count": 21
+    },
+    {
+     "value": "2",
+     "count": 18
+    },
+    {
+     "value": "1",
+     "count": 11
+    },
+    {
+     "value": "8",
+     "count": 8
+    },
+    {
+     "value": "7",
+     "count": 5
+    },
+    {
+     "value": "5",
+     "count": 4
+    },
+    {
+     "value": "6",
+     "count": 3
+    }
+   ]
+  },
+  "libjobdrillstringwearloc": {
+   "source": "wvJobDrillString.WearLoc",
+   "usable": true,
+   "count": 7,
+   "values": [
+    {
+     "value": "A",
+     "count": 61
+    },
+    {
+     "value": "H",
+     "count": 26
+    },
+    {
+     "value": "C",
+     "count": 4
+    },
+    {
+     "value": "M",
+     "count": 3
+    },
+    {
+     "value": "S",
+     "count": 3
+    },
+    {
+     "value": "G",
+     "count": 1
+    },
+    {
+     "value": "N",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillstringwearother": {
+   "source": "wvJobDrillString.WearOther",
+   "usable": true,
+   "count": 16,
+   "values": [
+    {
+     "value": "NO",
+     "count": 25
+    },
+    {
+     "value": "BT",
+     "count": 13
+    },
+    {
+     "value": "FC",
+     "count": 10
+    },
+    {
+     "value": "LT",
+     "count": 8
+    },
+    {
+     "value": "WT",
+     "count": 7
+    },
+    {
+     "value": "CT",
+     "count": 6
+    },
+    {
+     "value": "BU",
+     "count": 5
+    },
+    {
+     "value": "RG",
+     "count": 5
+    },
+    {
+     "value": "CD",
+     "count": 3
+    },
+    {
+     "value": "ER",
+     "count": 3
+    },
+    {
+     "value": "EC",
+     "count": 2
+    },
+    {
+     "value": "SD",
+     "count": 2
+    },
+    {
+     "value": "BC",
+     "count": 1
+    },
+    {
+     "value": "CI",
+     "count": 1
+    },
+    {
+     "value": "JD",
+     "count": 1
+    },
+    {
+     "value": "LC",
+     "count": 1
+    }
+   ]
+  },
+  "libjobdrillstringwearouter": {
+   "source": "wvJobDrillString.WearOuter",
+   "usable": true,
+   "count": 8,
+   "values": [
+    {
+     "value": "4",
+     "count": 23
+    },
+    {
+     "value": "3",
+     "count": 18
+    },
+    {
+     "value": "2",
+     "count": 16
+    },
+    {
+     "value": "8",
+     "count": 11
+    },
+    {
+     "value": "6",
+     "count": 10
+    },
+    {
+     "value": "5",
+     "count": 9
+    },
+    {
+     "value": "1",
+     "count": 8
+    },
+    {
+     "value": "7",
+     "count": 7
+    }
+   ]
+  },
+  "libjobdrillstringwearpulled": {
+   "source": "wvJobDrillString.WearPulled",
+   "usable": true,
+   "count": 19,
+   "values": [
+    {
+     "value": "PR",
+     "count": 39
+    },
+    {
+     "value": "TD",
+     "count": 21
+    },
+    {
+     "value": "TO",
+     "count": 9
+    },
+    {
+     "value": "BHA",
+     "count": 7
+    },
+    {
+     "value": "HP",
+     "count": 4
+    },
+    {
+     "value": "HR",
+     "count": 4
+    },
+    {
+     "value": "CP",
+     "count": 2
+    },
+    {
+     "value": "TW",
+     "count": 2
+    },
+    {
+     "value": "AZ",
+     "count": 1
+    },
+    {
+     "value": "DSF",
+     "count": 1
+    },
+    {
+     "value": "FM",
+     "count": 1
+    },
+    {
+     "value": "IN",
+     "count": 1
+    },
+    {
+     "value": "LOG",
+     "count": 1
+    },
+    {
+     "value": "PH",
+     "count": 1
+    },
+    {
+     "value": "PL",
+     "count": 1
+    },
+    {
+     "value": "PT",
+     "count": 1
+    },
+    {
+     "value": "SW",
+     "count": 1
+    },
+    {
+     "value": "TQ",
+     "count": 1
+    },
+    {
+     "value": "WC",
+     "count": 1
+    }
+   ]
+  },
+  "libjobintervallessoncom": {
+   "source": "wvJobIntervalLesson.Com",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "The formations in this interval seem very sensitive to hydraulic horsepower. Maximizing horsepower reduced cost of drilling this interval by one day.",
+     "count": 2
+    },
+    {
+     "value": "Could eliminate wiper trip if increased gel of mud prior to running logs.",
+     "count": 1
+    },
+    {
+     "value": "Using a shock sub with the Smith bit yielded slower than normal ROP's",
+     "count": 1
+    }
+   ]
+  },
+  "libjobintervallessontyp": {
+   "source": "wvJobIntervalLesson.Typ",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Drilling Performance",
+     "count": 2
+    },
+    {
+     "value": "Drilling",
+     "count": 1
+    },
+    {
+     "value": "Improve Process",
+     "count": 1
+    }
+   ]
+  },
+  "libjobintervalproblemaccountablepty": {
+   "source": "wvJobIntervalProblem.AccountablePty",
+   "usable": true,
+   "count": 9,
+   "values": [
+    {
+     "value": "Operator",
+     "count": 21
+    },
+    {
+     "value": "The Drilling Fluids Co.",
+     "count": 12
+    },
+    {
+     "value": "Rig Contractor",
+     "count": 11
+    },
+    {
+     "value": "Vendor X",
+     "count": 4
+    },
+    {
+     "value": "Nabors",
+     "count": 3
+    },
+    {
+     "value": "Contractor",
+     "count": 2
+    },
+    {
+     "value": "Cementer",
+     "count": 1
+    },
+    {
+     "value": "Vendor Y",
+     "count": 1
+    },
+    {
+     "value": "Vendor Z",
+     "count": 1
+    }
+   ]
+  },
+  "libjobintervalproblemactiontaken": {
+   "source": "wvJobIntervalProblem.ActionTaken",
+   "usable": true,
+   "count": 6,
+   "values": [
+    {
+     "value": "Repair ROV",
+     "count": 3
+    },
+    {
+     "value": "Contractor increased inventory",
+     "count": 2
+    },
+    {
+     "value": "Back ream and pump out",
+     "count": 1
+    },
+    {
+     "value": "Pump Out",
+     "count": 1
+    },
+    {
+     "value": "Short Trip",
+     "count": 1
+    },
+    {
+     "value": "found small leak on packing of jars & drive sub on mud motor",
+     "count": 1
+    }
+   ]
+  },
+  "libjobintervalproblemcom": {
+   "source": "wvJobIntervalProblem.Com",
+   "usable": true,
+   "count": 34,
+   "values": [
+    {
+     "value": "Kelly saver damaged and replacement was not available for 24 hours.",
+     "count": 2
+    },
+    {
+     "value": "Swabbed the hole",
+     "count": 2
+    },
+    {
+     "value": "CHANGE OUT WASH PIPE.",
+     "count": 1
+    },
+    {
+     "value": "CONDITION MUD & CIRC.  BOTTOMS  UP 3M3 PIT GAIN GAS TO SURFACE",
+     "count": 1
+    },
+    {
+     "value": "CONDITION MUD & CIRC. ( CMTRS COULD NOT CIRC, PUMP 2 JTS OUT,CIRC )",
+     "count": 1
+    },
+    {
+     "value": "Continue working on directional controls.",
+     "count": 1
+    },
+    {
+     "value": "DRILL FROM 1083M TO 1110",
+     "count": 1
+    },
+    {
+     "value": "DROP  THE  EMERGENCY SHIFTING BOMB FOR STAGE  TOOL",
+     "count": 1
+    },
+    {
+     "value": "Directional control on ROV not functioning properly.  Problem fixed.",
+     "count": 1
+    },
+    {
+     "value": "Made short trip to wipe hole clean. Circulated hole clean.",
+     "count": 1
+    },
+    {
+     "value": "Primary control signal to ROV was lost.  Switched to backup system.",
+     "count": 1
+    },
+    {
+     "value": "REAM   FR/1241    5M FILL",
+     "count": 1
+    },
+    {
+     "value": "REAM  TO  BOTTOM  1200--1228M",
+     "count": 1
+    },
+    {
+     "value": "REAM / CLEAN HOLE F/ 1175 TO 1200 M",
+     "count": 1
+    },
+    {
+     "value": "REAM 1726M TO 1738M.",
+     "count": 1
+    },
+    {
+     "value": "REAM FR 1280M TO 1295M. 1503M-1525M. 2003M to 2032M.",
+     "count": 1
+    },
+    {
+     "value": "REAM FR 1530M TO 1563M",
+     "count": 1
+    },
+    {
+     "value": "REAM THROUGH TIGHT SPOT @ 1420 M.",
+     "count": 1
+    },
+    {
+     "value": "REAMING F/1479M TO 1501M, 1620 TO 1629M",
+     "count": 1
+    },
+    {
+     "value": "REAMING,ACUMILATED REAMING@647m-652m / 1128m-1140m",
+     "count": 1
+    },
+    {
+     "value": "REAMING,FR/654m-666m",
+     "count": 1
+    },
+    {
+     "value": "REAMINGFR/1665-1815",
+     "count": 1
+    },
+    {
+     "value": "REAMINGFR/303-373",
+     "count": 1
+    },
+    {
+     "value": "REPAIR EATON BRAKE HOSE.",
+     "count": 1
+    },
+    {
+     "value": "Tight hole - had to back ream and pump out of hole.  O/P = 65 Klbs",
+     "count": 1
+    },
+    {
+     "value": "Tight hole - had to pump out of hole to keep O/P below 70Klbs.",
+     "count": 1
+    },
+    {
+     "value": "WAIT ON NEW KELLY COCK AND MAKE UP",
+     "count": 1
+    },
+    {
+     "value": "WAIT ON TRUCKS",
+     "count": 1
+    },
+    {
+     "value": "WASH 2 SINGLES TO BOTTOM",
+     "count": 1
+    },
+    {
+     "value": "WASH FR/2041m-2061m",
+     "count": 1
+    },
+    {
+     "value": "WORK AND CIRCULATE TIGHT HOLE AT 1730,1980",
+     "count": 1
+    },
+    {
+     "value": "WORK BIT THROUGH THE SHOE",
+     "count": 1
+    },
+    {
+     "value": "WORK TIGHT CONNECTION @ 1360m.",
+     "count": 1
+    },
+    {
+     "value": "WORK TIGHT CONNECTIONS",
+     "count": 1
+    }
+   ]
+  },
+  "libjobjobsubtyp": {
+   "source": "wvJob.JobSubTyp",
+   "usable": true,
+   "count": 10,
+   "values": [
+    {
+     "value": "Clean-out",
+     "count": 3
+    },
+    {
+     "value": "Fill Clean-out",
+     "count": 2
+    },
+    {
+     "value": "Fracture Treatment",
+     "count": 2
+    },
+    {
+     "value": "Abandon Zone",
+     "count": 1
+    },
+    {
+     "value": "Completion",
+     "count": 1
+    },
+    {
+     "value": "Fluid Level",
+     "count": 1
+    },
+    {
+     "value": "Initial Completion",
+     "count": 1
+    },
+    {
+     "value": "Install Artificial Lift",
+     "count": 1
+    },
+    {
+     "value": "Perforating",
+     "count": 1
+    },
+    {
+     "value": "Recompletion",
+     "count": 1
+    }
+   ]
+  },
+  "libjobjobtyp": {
+   "source": "wvJob.JobTyp",
+   "usable": true,
+   "count": 15,
+   "values": [
+    {
+     "value": "Pump Repair",
+     "count": 29
+    },
+    {
+     "value": "Drilling - original",
+     "count": 21
+    },
+    {
+     "value": "Completion",
+     "count": 14
+    },
+    {
+     "value": "Rod Repair",
+     "count": 8
+    },
+    {
+     "value": "Drilling",
+     "count": 7
+    },
+    {
+     "value": "Initial Completion",
+     "count": 7
+    },
+    {
+     "value": "Tubing Repair",
+     "count": 6
+    },
+    {
+     "value": "Workover",
+     "count": 5
+    },
+    {
+     "value": "Acid Treatment",
+     "count": 4
+    },
+    {
+     "value": "Recompletion",
+     "count": 3
+    },
+    {
+     "value": "Casing Repair",
+     "count": 2
+    },
+    {
+     "value": "Pumpjack Repair",
+     "count": 2
+    },
+    {
+     "value": "Abandon Well",
+     "count": 1
+    },
+    {
+     "value": "Production Test",
+     "count": 1
+    },
+    {
+     "value": "Reconfigure Tubing/Components",
+     "count": 1
+    }
+   ]
+  },
+  "libjobkickkickclass": {
+   "source": "wvJobKick.KickClass",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "A",
+     "count": 1
+    }
+   ]
+  },
+  "libjobkickopsinprog": {
+   "source": "wvJobKick.OpsInProg",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Drilling",
+     "count": 1
+    }
+   ]
+  },
+  "libjobmudaddunitlabel": {
+   "source": "wvJobMudAdd.UnitLabel",
+   "usable": true,
+   "count": 40,
+   "values": [
+    {
+     "value": "SX",
+     "count": 188
+    },
+    {
+     "value": "25 KG",
+     "count": 29
+    },
+    {
+     "value": "PAILS",
+     "count": 18
+    },
+    {
+     "value": "sacks",
+     "count": 16
+    },
+    {
+     "value": "50 LB",
+     "count": 9
+    },
+    {
+     "value": "20 LITER",
+     "count": 8
+    },
+    {
+     "value": "25 LB",
+     "count": 6
+    },
+    {
+     "value": "PAIL",
+     "count": 5
+    },
+    {
+     "value": "100 LB",
+     "count": 4
+    },
+    {
+     "value": "208 LITER",
+     "count": 4
+    },
+    {
+     "value": "25 lb",
+     "count": 4
+    },
+    {
+     "value": "50 lb",
+     "count": 4
+    },
+    {
+     "value": "M3",
+     "count": 4
+    },
+    {
+     "value": "SK",
+     "count": 4
+    },
+    {
+     "value": "/SACK",
+     "count": 2
+    },
+    {
+     "value": "1 $",
+     "count": 2
+    },
+    {
+     "value": "100 lbs",
+     "count": 2
+    },
+    {
+     "value": "20 liter",
+     "count": 2
+    },
+    {
+     "value": "25 25 KG",
+     "count": 2
+    },
+    {
+     "value": "25 kg",
+     "count": 2
+    },
+    {
+     "value": "40 lb",
+     "count": 2
+    },
+    {
+     "value": "50 LBS",
+     "count": 2
+    },
+    {
+     "value": "80 lb",
+     "count": 2
+    },
+    {
+     "value": "JUGS",
+     "count": 2
+    },
+    {
+     "value": "kg",
+     "count": 2
+    },
+    {
+     "value": "1 BBL",
+     "count": 1
+    },
+    {
+     "value": "1 DAY",
+     "count": 1
+    },
+    {
+     "value": "1 EACH",
+     "count": 1
+    },
+    {
+     "value": "1 KG",
+     "count": 1
+    },
+    {
+     "value": "1 LITER",
+     "count": 1
+    },
+    {
+     "value": "1 M3",
+     "count": 1
+    },
+    {
+     "value": "180 KG",
+     "count": 1
+    },
+    {
+     "value": "20 KG",
+     "count": 1
+    },
+    {
+     "value": "202 liter",
+     "count": 1
+    },
+    {
+     "value": "25 KB",
+     "count": 1
+    },
+    {
+     "value": "25 LITER",
+     "count": 1
+    },
+    {
+     "value": "40 LB",
+     "count": 1
+    },
+    {
+     "value": "BBL",
+     "count": 1
+    },
+    {
+     "value": "KG",
+     "count": 1
+    },
+    {
+     "value": "L",
+     "count": 1
+    }
+   ]
+  },
+  "libjobprogramgeosamplesampledby": {
+   "source": "wvJobProgramGeoSample.SampledBy",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Geologist",
+     "count": 2
+    },
+    {
+     "value": "Mud Logger",
+     "count": 2
+    }
+   ]
+  },
+  "libjobprogramphasecode1": {
+   "source": "wvJobProgramPhase.Code1",
+   "usable": true,
+   "count": 29,
+   "values": [
+    {
+     "value": "Production",
+     "count": 38
+    },
+    {
+     "value": "Surface",
+     "count": 35
+    },
+    {
+     "value": "Mob",
+     "count": 13
+    },
+    {
+     "value": "Mob and Rig up",
+     "count": 11
+    },
+    {
+     "value": "Frac",
+     "count": 4
+    },
+    {
+     "value": "Completion String",
+     "count": 2
+    },
+    {
+     "value": "Intermediate",
+     "count": 2
+    },
+    {
+     "value": "Abandon Shunda A zone.",
+     "count": 1
+    },
+    {
+     "value": "Acidize well.",
+     "count": 1
+    },
+    {
+     "value": "Acidized perforations.",
+     "count": 1
+    },
+    {
+     "value": "Cement squeeze.",
+     "count": 1
+    },
+    {
+     "value": "Clean Out",
+     "count": 1
+    },
+    {
+     "value": "Clean out well for completion.",
+     "count": 1
+    },
+    {
+     "value": "Drill Out Cement",
+     "count": 1
+    },
+    {
+     "value": "Flow Well",
+     "count": 1
+    },
+    {
+     "value": "Install Wellhead",
+     "count": 1
+    },
+    {
+     "value": "Install pump jack.",
+     "count": 1
+    },
+    {
+     "value": "Install tubing",
+     "count": 1
+    },
+    {
+     "value": "Installed tubing and rod strings.",
+     "count": 1
+    },
+    {
+     "value": "Logging",
+     "count": 1
+    },
+    {
+     "value": "Perforate",
+     "count": 1
+    },
+    {
+     "value": "Perforated well",
+     "count": 1
+    },
+    {
+     "value": "Perforated well.",
+     "count": 1
+    },
+    {
+     "value": "Place well on test.",
+     "count": 1
+    },
+    {
+     "value": "Put well on test.",
+     "count": 1
+    },
+    {
+     "value": "Rerun same rods with new bottomhole pump.",
+     "count": 1
+    },
+    {
+     "value": "Shut In",
+     "count": 1
+    },
+    {
+     "value": "Tie-in well.",
+     "count": 1
+    },
+    {
+     "value": "Unseat and pull rods and bottomhole pump.",
+     "count": 1
+    }
+   ]
+  },
+  "libjobprogramphasecode2": {
+   "source": "wvJobProgramPhase.Code2",
+   "usable": true,
+   "count": 10,
+   "values": [
+    {
+     "value": "Run and Cement Casing",
+     "count": 27
+    },
+    {
+     "value": "Drill-Vertical",
+     "count": 25
+    },
+    {
+     "value": "Mob and Rig up",
+     "count": 12
+    },
+    {
+     "value": "Demob",
+     "count": 10
+    },
+    {
+     "value": "NU, Test and Drill Out",
+     "count": 9
+    },
+    {
+     "value": "Log",
+     "count": 7
+    },
+    {
+     "value": "Drill-Deviation Control",
+     "count": 6
+    },
+    {
+     "value": "Log & Core",
+     "count": 1
+    },
+    {
+     "value": "Rig Down",
+     "count": 1
+    },
+    {
+     "value": "Rig Up",
+     "count": 1
+    }
+   ]
+  },
+  "libjobreportcontactspos": {
+   "source": "wvJobReportContacts.Pos",
+   "usable": true,
+   "count": 17,
+   "values": [
+    {
+     "value": "Consultant",
+     "count": 38
+    },
+    {
+     "value": "Engineer",
+     "count": 28
+    },
+    {
+     "value": "Geologist",
+     "count": 28
+    },
+    {
+     "value": "Drilling Engineer",
+     "count": 21
+    },
+    {
+     "value": "Ops. Foreman",
+     "count": 15
+    },
+    {
+     "value": "Tool Push",
+     "count": 12
+    },
+    {
+     "value": "Prod. Engineer",
+     "count": 11
+    },
+    {
+     "value": "Field Supervisor",
+     "count": 8
+    },
+    {
+     "value": "Field Operator",
+     "count": 7
+    },
+    {
+     "value": "Directional Driller",
+     "count": 3
+    },
+    {
+     "value": "Lead MWD",
+     "count": 3
+    },
+    {
+     "value": "Ops. Engineer",
+     "count": 3
+    },
+    {
+     "value": "Cementing Engineer",
+     "count": 1
+    },
+    {
+     "value": "Perforating Super.",
+     "count": 1
+    },
+    {
+     "value": "Stimulation Engineer",
+     "count": 1
+    },
+    {
+     "value": "Stimulation Rep.",
+     "count": 1
+    },
+    {
+     "value": "Wireline Operator",
+     "count": 1
+    }
+   ]
+  },
+  "libjobreportdischargematerial": {
+   "source": "wvJobReportDischarge.Material",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Condensate",
+     "count": 2
+    },
+    {
+     "value": "Drilled cuttings",
+     "count": 2
+    },
+    {
+     "value": "Drilling Mud",
+     "count": 2
+    },
+    {
+     "value": "Foam",
+     "count": 1
+    }
+   ]
+  },
+  "libjobreportdischargetyp": {
+   "source": "wvJobReportDischarge.Typ",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Overboard",
+     "count": 4
+    },
+    {
+     "value": "Flare",
+     "count": 2
+    },
+    {
+     "value": "Testing",
+     "count": 1
+    }
+   ]
+  },
+  "libjobreportfluidsleasefluidtyp": {
+   "source": "wvJobReportFluidsLease.FluidTyp",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Water",
+     "count": 10
+    },
+    {
+     "value": "Oil",
+     "count": 5
+    },
+    {
+     "value": "Condensate",
+     "count": 2
+    }
+   ]
+  },
+  "libjobreportfluidswellfluidtyp": {
+   "source": "wvJobReportFluidsWell.FluidTyp",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "Drilling Mud",
+     "count": 5
+    },
+    {
+     "value": "Oil",
+     "count": 3
+    },
+    {
+     "value": "Other",
+     "count": 3
+    },
+    {
+     "value": "Condensate",
+     "count": 1
+    },
+    {
+     "value": "Water",
+     "count": 1
+    }
+   ]
+  },
+  "libjobreportmudchkmudtyp": {
+   "source": "wvJobReportMudChk.MudTyp",
+   "usable": true,
+   "count": 22,
+   "values": [
+    {
+     "value": "Water Base",
+     "count": 266
+    },
+    {
+     "value": "POTASSIUM",
+     "count": 42
+    },
+    {
+     "value": "INVERT",
+     "count": 35
+    },
+    {
+     "value": "PETROFREE",
+     "count": 32
+    },
+    {
+     "value": "Water base",
+     "count": 24
+    },
+    {
+     "value": "BRINE",
+     "count": 16
+    },
+    {
+     "value": "POLYMER",
+     "count": 10
+    },
+    {
+     "value": "GEL CHEM",
+     "count": 9
+    },
+    {
+     "value": "Gel / water",
+     "count": 6
+    },
+    {
+     "value": "hi-vis sweeps",
+     "count": 5
+    },
+    {
+     "value": "Gel-Chem",
+     "count": 4
+    },
+    {
+     "value": "Oil base",
+     "count": 3
+    },
+    {
+     "value": "Seawater",
+     "count": 3
+    },
+    {
+     "value": "GEL-CEM",
+     "count": 2
+    },
+    {
+     "value": "Invert",
+     "count": 2
+    },
+    {
+     "value": "Floc Water",
+     "count": 1
+    },
+    {
+     "value": "GEL-CHEM",
+     "count": 1
+    },
+    {
+     "value": "GEL/CHEM",
+     "count": 1
+    },
+    {
+     "value": "GELL CHEM",
+     "count": 1
+    },
+    {
+     "value": "Gel / Water",
+     "count": 1
+    },
+    {
+     "value": "PLOYMER",
+     "count": 1
+    },
+    {
+     "value": "POTTASIUM",
+     "count": 1
+    }
+   ]
+  },
+  "libjobreportmudchksource": {
+   "source": "wvJobReportMudChk.Source",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "FLW",
+     "count": 43
+    },
+    {
+     "value": "IN",
+     "count": 38
+    },
+    {
+     "value": "OTH",
+     "count": 17
+    },
+    {
+     "value": "PIT",
+     "count": 5
+    },
+    {
+     "value": "OUT",
+     "count": 3
+    }
+   ]
+  },
+  "libjobreportoffshorepreciptyp": {
+   "source": "wvJobReportOffshore.PrecipTyp",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Rain",
+     "count": 3
+    },
+    {
+     "value": "None",
+     "count": 2
+    }
+   ]
+  },
+  "libjobreporttimelogunschedtyp": {
+   "source": "wvJobReportTimeLog.UnschedTyp",
+   "usable": true,
+   "count": 23,
+   "values": [
+    {
+     "value": "Hole Conditions",
+     "count": 281
+    },
+    {
+     "value": "P",
+     "count": 273
+    },
+    {
+     "value": "Equipment Failure",
+     "count": 49
+    },
+    {
+     "value": "EQUIP TROU",
+     "count": 15
+    },
+    {
+     "value": "Safety Meeting",
+     "count": 12
+    },
+    {
+     "value": "RIG REP",
+     "count": 10
+    },
+    {
+     "value": "Rig Repairs",
+     "count": 7
+    },
+    {
+     "value": "Lost Circulation",
+     "count": 4
+    },
+    {
+     "value": "TROU",
+     "count": 3
+    },
+    {
+     "value": "Waiting On Materials",
+     "count": 3
+    },
+    {
+     "value": "Safety Incident",
+     "count": 2
+    },
+    {
+     "value": "Schedule",
+     "count": 2
+    },
+    {
+     "value": "Site Conditions",
+     "count": 2
+    },
+    {
+     "value": "Surface equipment",
+     "count": 2
+    },
+    {
+     "value": "WHEAD",
+     "count": 2
+    },
+    {
+     "value": "Waiting On People",
+     "count": 2
+    },
+    {
+     "value": "C",
+     "count": 1
+    },
+    {
+     "value": "EQ PROB",
+     "count": 1
+    },
+    {
+     "value": "Environment",
+     "count": 1
+    },
+    {
+     "value": "Eqjuipment Failure",
+     "count": 1
+    },
+    {
+     "value": "Kick",
+     "count": 1
+    },
+    {
+     "value": "Scheduling",
+     "count": 1
+    },
+    {
+     "value": "Surface Conditions",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigbopcomptyp": {
+   "source": "wvJobRigBOPComp.Typ",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "Annular Preventers",
+     "count": 2
+    },
+    {
+     "value": "Pipe Rams",
+     "count": 2
+    },
+    {
+     "value": "Annular",
+     "count": 1
+    },
+    {
+     "value": "Blind Rams",
+     "count": 1
+    },
+    {
+     "value": "Shear",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigboppresrating": {
+   "source": "wvJobRigBOP.PresRating",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "10342.134765625",
+     "count": 1
+    },
+    {
+     "value": "20000",
+     "count": 1
+    },
+    {
+     "value": "21000",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigbopszidnom": {
+   "source": "wvJobRigBOP.SzIDNom",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "0.2800000011920929",
+     "count": 1
+    },
+    {
+     "value": "0.33972498774528503",
+     "count": 1
+    },
+    {
+     "value": "0.6549999713897705",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigcontractor": {
+   "source": "wvJobRig.Contractor",
+   "usable": true,
+   "count": 11,
+   "values": [
+    {
+     "value": "Precision Drilling Ltd",
+     "count": 7
+    },
+    {
+     "value": "Ensign Drilling Inc",
+     "count": 5
+    },
+    {
+     "value": "Cenalta Well Services Inc.",
+     "count": 3
+    },
+    {
+     "value": "Tri-City Drilling Ltd.",
+     "count": 3
+    },
+    {
+     "value": "Ensco",
+     "count": 2
+    },
+    {
+     "value": "Frontier",
+     "count": 2
+    },
+    {
+     "value": "NABORS",
+     "count": 2
+    },
+    {
+     "value": "Precision Drilling Ltd.",
+     "count": 2
+    },
+    {
+     "value": "Ensign Drilling Corp.",
+     "count": 1
+    },
+    {
+     "value": "Pirate Drilling",
+     "count": 1
+    },
+    {
+     "value": "Precision",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigcontracttyp": {
+   "source": "wvJobRig.ContractTyp",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Day Rate",
+     "count": 6
+    },
+    {
+     "value": "DAY RATE",
+     "count": 2
+    },
+    {
+     "value": "Hourly Rate",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigpumpopszliner": {
+   "source": "wvJobRigPumpOp.SzLiner",
+   "usable": true,
+   "count": 12,
+   "values": [
+    {
+     "value": "0.1396999955177307",
+     "count": 121
+    },
+    {
+     "value": "0.15199999511241913",
+     "count": 60
+    },
+    {
+     "value": "0.16509999334812164",
+     "count": 25
+    },
+    {
+     "value": "0.14000000059604645",
+     "count": 11
+    },
+    {
+     "value": "0.16500000655651093",
+     "count": 9
+    },
+    {
+     "value": "0",
+     "count": 3
+    },
+    {
+     "value": "0.010999999940395355",
+     "count": 2
+    },
+    {
+     "value": "0.13199999928474426",
+     "count": 2
+    },
+    {
+     "value": "0.1589999943971634",
+     "count": 2
+    },
+    {
+     "value": "0.09000000357627869",
+     "count": 1
+    },
+    {
+     "value": "0.11400000005960464",
+     "count": 1
+    },
+    {
+     "value": "0.17145000398159027",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigrigno": {
+   "source": "wvJobRig.RigNo",
+   "usable": true,
+   "count": 15,
+   "values": [
+    {
+     "value": "2",
+     "count": 5
+    },
+    {
+     "value": "1",
+     "count": 3
+    },
+    {
+     "value": "11",
+     "count": 3
+    },
+    {
+     "value": "22",
+     "count": 3
+    },
+    {
+     "value": "122",
+     "count": 2
+    },
+    {
+     "value": "3",
+     "count": 2
+    },
+    {
+     "value": "33",
+     "count": 2
+    },
+    {
+     "value": "432",
+     "count": 2
+    },
+    {
+     "value": "12a",
+     "count": 1
+    },
+    {
+     "value": "255",
+     "count": 1
+    },
+    {
+     "value": "26",
+     "count": 1
+    },
+    {
+     "value": "354",
+     "count": 1
+    },
+    {
+     "value": "5",
+     "count": 1
+    },
+    {
+     "value": "55",
+     "count": 1
+    },
+    {
+     "value": "7",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigsolidscentcycchkdischargepoint": {
+   "source": "wvJobRigSolidsCentCycChk.DischargePoint",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "PIT 5",
+     "count": 2
+    },
+    {
+     "value": "PIT 6",
+     "count": 2
+    }
+   ]
+  },
+  "libjobrigsolidscentcycchksuctionpoint": {
+   "source": "wvJobRigSolidsCentCycChk.SuctionPoint",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "PIT 3",
+     "count": 4
+    }
+   ]
+  },
+  "libjobrigsolidscentcyctyp": {
+   "source": "wvJobRigSolidsCentCyc.Typ",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "HGS Centrifuge",
+     "count": 7
+    },
+    {
+     "value": "CENTRIFUGE - HIGH G",
+     "count": 2
+    },
+    {
+     "value": "LGS Centrifuge",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigsolidsshakerdes": {
+   "source": "wvJobRigSolidsShaker.Des",
+   "usable": true,
+   "count": 7,
+   "values": [
+    {
+     "value": "# 1",
+     "count": 2
+    },
+    {
+     "value": "# 2",
+     "count": 2
+    },
+    {
+     "value": "# 3",
+     "count": 2
+    },
+    {
+     "value": "Multi Deck",
+     "count": 2
+    },
+    {
+     "value": "# 1, SHAKER - MEDIUM",
+     "count": 1
+    },
+    {
+     "value": "# 2, SHAKER - MEDIUM",
+     "count": 1
+    },
+    {
+     "value": "Conventional",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigsolidsshakerscrnnote": {
+   "source": "wvJobRigSolidsShakerScrn.Note",
+   "usable": true,
+   "count": 15,
+   "values": [
+    {
+     "value": "Hrs: 0",
+     "count": 79
+    },
+    {
+     "value": "Hrs: 24",
+     "count": 43
+    },
+    {
+     "value": "Bottom screen.",
+     "count": 31
+    },
+    {
+     "value": "Top screen.",
+     "count": 28
+    },
+    {
+     "value": "Middle screen.",
+     "count": 10
+    },
+    {
+     "value": "Hrs: 18",
+     "count": 4
+    },
+    {
+     "value": "Hrs: 13",
+     "count": 2
+    },
+    {
+     "value": "Hrs: 14.5",
+     "count": 2
+    },
+    {
+     "value": "Hrs: 16",
+     "count": 2
+    },
+    {
+     "value": "Hrs: 2",
+     "count": 2
+    },
+    {
+     "value": "Hrs: 4",
+     "count": 2
+    },
+    {
+     "value": "Hrs: 8",
+     "count": 2
+    },
+    {
+     "value": "Bottom",
+     "count": 1
+    },
+    {
+     "value": "Middle",
+     "count": 1
+    },
+    {
+     "value": "Top",
+     "count": 1
+    }
+   ]
+  },
+  "libjobrigtyp1": {
+   "source": "wvJobRig.Typ1",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Drilling - Double",
+     "count": 4
+    },
+    {
+     "value": "Service",
+     "count": 3
+    },
+    {
+     "value": "Drilling - Triple",
+     "count": 2
+    },
+    {
+     "value": "Semi (Moored)",
+     "count": 2
+    }
+   ]
+  },
+  "libjobsafetychkresult": {
+   "source": "wvJobSafetyChk.Result",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Acceptable",
+     "count": 20
+    },
+    {
+     "value": "Unacceptable",
+     "count": 2
+    }
+   ]
+  },
+  "libjobsafetychktyp": {
+   "source": "wvJobSafetyChk.Typ",
+   "usable": true,
+   "count": 7,
+   "values": [
+    {
+     "value": "Safety Meeting",
+     "count": 824
+    },
+    {
+     "value": "BOP Drill",
+     "count": 5
+    },
+    {
+     "value": "Choke Drill",
+     "count": 2
+    },
+    {
+     "value": "H2S Drill",
+     "count": 2
+    },
+    {
+     "value": "Pre Frac Safety Meeting",
+     "count": 2
+    },
+    {
+     "value": "Pre Perf Safety Meeting",
+     "count": 1
+    },
+    {
+     "value": "Pre-Job Safety Meeting",
+     "count": 1
+    }
+   ]
+  },
+  "libjobsafetyincidentcategory": {
+   "source": "wvJobSafetyIncident.Category",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Non-Recordable",
+     "count": 1
+    }
+   ]
+  },
+  "libjobsafetyincidentcause": {
+   "source": "wvJobSafetyIncident.Cause",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Food",
+     "count": 1
+    }
+   ]
+  },
+  "libjobsafetyincidentcom": {
+   "source": "wvJobSafetyIncident.Com",
+   "usable": true,
+   "count": 9,
+   "values": [
+    {
+     "value": "Fiona sprained her finger",
+     "count": 2
+    },
+    {
+     "value": "AD was helping to rig up drilling bails when his hand became caught in the elevators latch.  Latch cut his thumb and severed part of his fingernail requiring bandages from medic. No LTA.",
+     "count": 1
+    },
+    {
+     "value": "Broke tooth on donut sparkles.",
+     "count": 1
+    },
+    {
+     "value": "Glove caught in chain",
+     "count": 1
+    },
+    {
+     "value": "Injured back lifting 12-1/4\" bit",
+     "count": 1
+    },
+    {
+     "value": "Service hand who was testing adjustable stabilizer was using a pipe wrench that was not rig approved.  He had retrieved the wrench from his toolbox and it had a cracked handle.",
+     "count": 1
+    },
+    {
+     "value": "While clearing rig floor, rig hand inadvertantly relased line holding back tongs.  Tongs swung forward and narrowly missed hitting driller in the shoulder.",
+     "count": 1
+    },
+    {
+     "value": "While performing a choke drill, driller noticed that someone had left spare tools lying on catwalk.  Driller had to clear catwalk of debris before proceeding to choke manifold.",
+     "count": 1
+    },
+    {
+     "value": "While rigging up cement head to casing, cementing hand dropped his sledge hammer.  Hammer landed approx 6 inches away from the foot of rig hand.",
+     "count": 1
+    }
+   ]
+  },
+  "libjobservicecontractevalstatus": {
+   "source": "wvJobServiceContract.EvalStatus",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Approved",
+     "count": 1
+    },
+    {
+     "value": "In Progress",
+     "count": 1
+    }
+   ]
+  },
+  "libjobsupplyunitlabel": {
+   "source": "wvJobSupply.UnitLabel",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "SX",
+     "count": 3
+    },
+    {
+     "value": "US gal",
+     "count": 3
+    },
+    {
+     "value": "gal",
+     "count": 2
+    },
+    {
+     "value": "tonnes",
+     "count": 2
+    }
+   ]
+  },
+  "libjobtargetform": {
+   "source": "wvJob.TargetForm",
+   "usable": true,
+   "count": 7,
+   "values": [
+    {
+     "value": "Shunda",
+     "count": 4
+    },
+    {
+     "value": "Austin Chalk",
+     "count": 2
+    },
+    {
+     "value": "A & B",
+     "count": 1
+    },
+    {
+     "value": "A,B,C",
+     "count": 1
+    },
+    {
+     "value": "Blue Heron Shale",
+     "count": 1
+    },
+    {
+     "value": "Notikewin",
+     "count": 1
+    },
+    {
+     "value": "Rock Creek and Glauconite",
+     "count": 1
+    }
+   ]
+  },
+  "liblogcontractor": {
+   "source": "wvLog.Contractor",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Schlumberger Wireline & Testing",
+     "count": 14
+    },
+    {
+     "value": "Tucker Wireline Services",
+     "count": 10
+    },
+    {
+     "value": "Baker Atlas",
+     "count": 7
+    },
+    {
+     "value": "Schlumberger",
+     "count": 7
+    }
+   ]
+  },
+  "liblogtyp": {
+   "source": "wvLog.Typ",
+   "usable": true,
+   "count": 74,
+   "values": [
+    {
+     "value": "COLLAR LOG (WV54 LogRun)",
+     "count": 11
+    },
+    {
+     "value": "TVD",
+     "count": 9
+    },
+    {
+     "value": "GAMMA RAY CEMENT BOND (WV54 LogRun)",
+     "count": 8
+    },
+    {
+     "value": "BHC SONIC",
+     "count": 7
+    },
+    {
+     "value": "COMP NEUTRON LITHO DENSITY",
+     "count": 6
+    },
+    {
+     "value": "DUAL INDUCTION LOG",
+     "count": 6
+    },
+    {
+     "value": "GAMMA RAY CORR (WV54 LogRun)",
+     "count": 6
+    },
+    {
+     "value": "BHC SONIC (WV54 LogRun)",
+     "count": 5
+    },
+    {
+     "value": "COMP NEUTRON FORM DENSITY (WV54 LogRun)",
+     "count": 5
+    },
+    {
+     "value": "COMP NEUTRON LITHO DENSITY (WV54 LogRun)",
+     "count": 5
+    },
+    {
+     "value": "DUAL INDUCTION SPHER-FOC (WV54 LogRun)",
+     "count": 5
+    },
+    {
+     "value": "CEMENT VOLUME",
+     "count": 4
+    },
+    {
+     "value": "COMP NEUTRON SONIC",
+     "count": 4
+    },
+    {
+     "value": "DUAL INDUCTION LOG (WV54 LogRun)",
+     "count": 3
+    },
+    {
+     "value": "LWD GR",
+     "count": 3
+    },
+    {
+     "value": "MICRO LOG (WV54 LogRun)",
+     "count": 3
+    },
+    {
+     "value": "Acoustic",
+     "count": 2
+    },
+    {
+     "value": "Compensated Neutron",
+     "count": 2
+    },
+    {
+     "value": "DIPOLE SHEAR SONIC IMAGER",
+     "count": 2
+    },
+    {
+     "value": "DSI",
+     "count": 2
+    },
+    {
+     "value": "DUAL INDUCTION LATEROLOG (WV54 LogRun)",
+     "count": 2
+    },
+    {
+     "value": "Gamma Ray",
+     "count": 2
+    },
+    {
+     "value": "NOISE LOG (WV54 LogRun)",
+     "count": 2
+    },
+    {
+     "value": "Sonic",
+     "count": 2
+    },
+    {
+     "value": "ACTS-AIT-EPT-MSIP-SP-GR",
+     "count": 1
+    },
+    {
+     "value": "ACTS-CMR",
+     "count": 1
+    },
+    {
+     "value": "ACTS-MDT-GR",
+     "count": 1
+    },
+    {
+     "value": "ACTS-TLD-APS-GR",
+     "count": 1
+    },
+    {
+     "value": "ACTS-XPT-GR",
+     "count": 1
+    },
+    {
+     "value": "AIT-GR",
+     "count": 1
+    },
+    {
+     "value": "BHC ACOUSTILOG (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "Bridge Plug Setting Record",
+     "count": 1
+    },
+    {
+     "value": "CBL-VDL-GR",
+     "count": 1
+    },
+    {
+     "value": "CEMENT BOND VAR DENSITY",
+     "count": 1
+    },
+    {
+     "value": "CEMENT BOND VAR DENSITY (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "CNL-LDT-GR (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "CNR-LTD",
+     "count": 1
+    },
+    {
+     "value": "COMPENSATED NEUTRON GAMMA C (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "COMPLETION RECORD (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "Calliper",
+     "count": 1
+    },
+    {
+     "value": "Cement Bond Log",
+     "count": 1
+    },
+    {
+     "value": "Combo",
+     "count": 1
+    },
+    {
+     "value": "Compensated Density",
+     "count": 1
+    },
+    {
+     "value": "Cyberlook",
+     "count": 1
+    },
+    {
+     "value": "DIPOLE SHEAR SONIC IMAGER (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "DOL PLAYBACK",
+     "count": 1
+    },
+    {
+     "value": "DUAL INDUCTION FOC-GR (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "Dipmeter",
+     "count": 1
+    },
+    {
+     "value": "Dipole Sonic Imager",
+     "count": 1
+    },
+    {
+     "value": "Dual Induction",
+     "count": 1
+    },
+    {
+     "value": "Dual Laterolog Micro-Log",
+     "count": 1
+    },
+    {
+     "value": "GAMMA RAY NEUTRON CEMENT BD (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "GR - CCL - Resistivity",
+     "count": 1
+    },
+    {
+     "value": "GR - LDT - CNR - DIT",
+     "count": 1
+    },
+    {
+     "value": "GR-CCL",
+     "count": 1
+    },
+    {
+     "value": "GR-DSI",
+     "count": 1
+    },
+    {
+     "value": "HIGH RESOL DIPMETER (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "HIGH RESOLUTION",
+     "count": 1
+    },
+    {
+     "value": "LS PLAYBACK",
+     "count": 1
+    },
+    {
+     "value": "Laterolog",
+     "count": 1
+    },
+    {
+     "value": "MAGNETIC RESONANCE IMAGING (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "MICRO ELECTRICAL LOG (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "MUD LOG-HYDROC  WELL LOG",
+     "count": 1
+    },
+    {
+     "value": "MUD LOG-HYDROC  WELL LOG (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "PERFORATION COLLAR LOG (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "PERFORATION LOG (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "PIT 120",
+     "count": 1
+    },
+    {
+     "value": "PULSE ECHO (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "Perforation Record",
+     "count": 1
+    },
+    {
+     "value": "RBT-VDL-GR-CCL",
+     "count": 1
+    },
+    {
+     "value": "Resistivity",
+     "count": 1
+    },
+    {
+     "value": "SONIC LOG (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "TRACER SURVEY (WV54 LogRun)",
+     "count": 1
+    },
+    {
+     "value": "XYT",
+     "count": 1
+    }
+   ]
+  },
+  "libotherinholepullreason": {
+   "source": "wvOtherInHole.PullReason",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "No longer a need for isolation",
+     "count": 1
+    }
+   ]
+  },
+  "libotherstrdes": {
+   "source": "wvOtherStr.Des",
+   "usable": true,
+   "count": 13,
+   "values": [
+    {
+     "value": "Baker SC-LP Sump Packer",
+     "count": 1
+    },
+    {
+     "value": "Basket Bridge Plug",
+     "count": 1
+    },
+    {
+     "value": "Dropped TCP Gun",
+     "count": 1
+    },
+    {
+     "value": "EZSV",
+     "count": 1
+    },
+    {
+     "value": "GP Packer String 1",
+     "count": 1
+    },
+    {
+     "value": "GP Packer String 2",
+     "count": 1
+    },
+    {
+     "value": "GP Packer String 3",
+     "count": 1
+    },
+    {
+     "value": "GP Packer String 4",
+     "count": 1
+    },
+    {
+     "value": "GP Packer String 5",
+     "count": 1
+    },
+    {
+     "value": "Halliburton EZSV",
+     "count": 1
+    },
+    {
+     "value": "Proposed Perf Guns",
+     "count": 1
+    },
+    {
+     "value": "Sump Packer",
+     "count": 1
+    },
+    {
+     "value": "TCP Guns",
+     "count": 1
+    }
+   ]
+  },
+  "libperforationbalance": {
+   "source": "wvPerforation.Balance",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Over Balanced",
+     "count": 4
+    },
+    {
+     "value": "Under Balanced",
+     "count": 2
+    }
+   ]
+  },
+  "libperforationchargemake": {
+   "source": "wvPerforation.ChargeMake",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Baker Atlas",
+     "count": 5
+    }
+   ]
+  },
+  "libperforationchargetyp": {
+   "source": "wvPerforation.ChargeTyp",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "Jet",
+     "count": 6
+    },
+    {
+     "value": "BH",
+     "count": 2
+    },
+    {
+     "value": "Big Hole",
+     "count": 2
+    },
+    {
+     "value": "Powder",
+     "count": 2
+    },
+    {
+     "value": "Silver jet",
+     "count": 1
+    }
+   ]
+  },
+  "libperforationcontractor": {
+   "source": "wvPerforation.Contractor",
+   "usable": true,
+   "count": 6,
+   "values": [
+    {
+     "value": "Schlumberger",
+     "count": 8
+    },
+    {
+     "value": "Schlumberger Wireline & Testing",
+     "count": 4
+    },
+    {
+     "value": "Baker Atlas",
+     "count": 3
+    },
+    {
+     "value": "Baker Oil Tools",
+     "count": 2
+    },
+    {
+     "value": "Plains Perforating Ltd.",
+     "count": 2
+    },
+    {
+     "value": "Western Perforating",
+     "count": 2
+    }
+   ]
+  },
+  "libperforationconveymeth": {
+   "source": "wvPerforation.ConveyMeth",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Wireline",
+     "count": 7
+    },
+    {
+     "value": "Tubing",
+     "count": 2
+    }
+   ]
+  },
+  "libperforationgundes": {
+   "source": "wvPerforation.GunDes",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "HSD",
+     "count": 2
+    },
+    {
+     "value": "HSD 12 spf",
+     "count": 1
+    },
+    {
+     "value": "HSD 12spf",
+     "count": 1
+    }
+   ]
+  },
+  "libperforationphasing": {
+   "source": "wvPerforation.Phasing",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "90",
+     "count": 4
+    },
+    {
+     "value": "60",
+     "count": 3
+    },
+    {
+     "value": "120",
+     "count": 2
+    },
+    {
+     "value": "180",
+     "count": 1
+    }
+   ]
+  },
+  "libperforationstatusstatus": {
+   "source": "wvPerforationStatus.Status",
+   "usable": true,
+   "count": 9,
+   "values": [
+    {
+     "value": "Open - Flowing",
+     "count": 11
+    },
+    {
+     "value": "12 spf / 197",
+     "count": 2
+    },
+    {
+     "value": "12 spf 275 car. BH",
+     "count": 2
+    },
+    {
+     "value": "Abandoned",
+     "count": 2
+    },
+    {
+     "value": "Squeezed",
+     "count": 2
+    },
+    {
+     "value": "12 SPF 236 car. BH",
+     "count": 1
+    },
+    {
+     "value": "12 SPF 275 car. BH",
+     "count": 1
+    },
+    {
+     "value": "12 spf  197 charges",
+     "count": 1
+    },
+    {
+     "value": "12 spf / 157",
+     "count": 1
+    }
+   ]
+  },
+  "libperforationstatususertxt1": {
+   "source": "wvPerforationStatus.UserTxt1",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "NN",
+     "count": 4
+    },
+    {
+     "value": "nn",
+     "count": 4
+    }
+   ]
+  },
+  "libperforationszgun": {
+   "source": "wvPerforation.SzGun",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "0.10160000622272491",
+     "count": 7
+    },
+    {
+     "value": "0.1143",
+     "count": 4
+    },
+    {
+     "value": "0.1777999997138977",
+     "count": 4
+    },
+    {
+     "value": "0.04286250099539757",
+     "count": 1
+    }
+   ]
+  },
+  "libperforationtyp": {
+   "source": "wvPerforation.Typ",
+   "usable": true,
+   "count": 10,
+   "values": [
+    {
+     "value": "JET PERFORATION",
+     "count": 63
+    },
+    {
+     "value": "Perforated",
+     "count": 9
+    },
+    {
+     "value": "Wire Line",
+     "count": 5
+    },
+    {
+     "value": "TCP",
+     "count": 4
+    },
+    {
+     "value": "ISF",
+     "count": 3
+    },
+    {
+     "value": "Hollow Steel Carrier",
+     "count": 2
+    },
+    {
+     "value": "Standard",
+     "count": 2
+    },
+    {
+     "value": "Deep penetration",
+     "count": 1
+    },
+    {
+     "value": "Exp Hollow Carriers",
+     "count": 1
+    },
+    {
+     "value": "Expendable",
+     "count": 1
+    }
+   ]
+  },
+  "libproblemareafailed": {
+   "source": "wvProblem.AreaFailed",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Internal",
+     "count": 3
+    },
+    {
+     "value": "External",
+     "count": 1
+    },
+    {
+     "value": "Internal & External",
+     "count": 1
+    }
+   ]
+  },
+  "libproblemcause": {
+   "source": "wvProblem.Cause",
+   "usable": true,
+   "count": 14,
+   "values": [
+    {
+     "value": "Fatigue",
+     "count": 9
+    },
+    {
+     "value": "Sand",
+     "count": 8
+    },
+    {
+     "value": "Corrosion",
+     "count": 6
+    },
+    {
+     "value": "Abrasion/Wear",
+     "count": 5
+    },
+    {
+     "value": "Misuse / Human Error",
+     "count": 2
+    },
+    {
+     "value": "Other",
+     "count": 2
+    },
+    {
+     "value": "Under torqued",
+     "count": 2
+    },
+    {
+     "value": "Corrosion External",
+     "count": 1
+    },
+    {
+     "value": "Erosion",
+     "count": 1
+    },
+    {
+     "value": "Formation",
+     "count": 1
+    },
+    {
+     "value": "Heat",
+     "count": 1
+    },
+    {
+     "value": "Junk/Scale",
+     "count": 1
+    },
+    {
+     "value": "Load / Excess Stress",
+     "count": 1
+    },
+    {
+     "value": "Washout",
+     "count": 1
+    }
+   ]
+  },
+  "libproblemcom": {
+   "source": "wvProblem.Com",
+   "usable": true,
+   "count": 23,
+   "values": [
+    {
+     "value": "39th 3/4\", fish hung up, swab well, change out 2-1/4\" pump barrel and 3 3/4\" rods with 1 1\" and 2 3/4\" rods, replace 36' pr.",
+     "count": 1
+    },
+    {
+     "value": "Additional comment on the failure.",
+     "count": 1
+    },
+    {
+     "value": "Broken coupling on 21st 3/4\" 97 rod, replace plunger on 2 1/4\" pump and rods.",
+     "count": 1
+    },
+    {
+     "value": "Broken pin on 10th 3/4\" norris 97 rod - screw into sv, tooh, check tac - was set, pu new plunger for 1 3/4\" pump, replace 6 3/4\" rods.",
+     "count": 1
+    },
+    {
+     "value": "CHANGED OUT 25-3/4\" ROD BOXES. PARTED CASING @ 3983-85. NEW PUMP.",
+     "count": 1
+    },
+    {
+     "value": "Change out tubing pump. donut got stuck in well, perforated tubing, jarred tac free, tooh, hydrotested in hole - replaced 3 jts 2 7/8\" tbg, 2-1/4\" tubing pump, sn, tac and 23 3/4\" rod cplgs.",
+     "count": 1
+    },
+    {
+     "value": "Change rod string to new el rods - lay down 76 1\", 80 7/8\", 143 3/4\" 65 3/4\" guided N97 rods, pu 76 1\", 80 7/8\", 105 3/4\", 100 3/4\" guided el rods, replaced 2-1/4\" pump.",
+     "count": 1
+    },
+    {
+     "value": "Grounded down hole. Found burnt cable in pothead. Replaced both motors, 2 seal assemblies & top 738' cable. Ran new motors in hole & found wire wrong, toh & tih again. Ran 2 1/2 days, going down on high amp spikes, found bad pumps & shafts on motors. Ran in new pumps, motors & seal assemblies.",
+     "count": 1
+    },
+    {
+     "value": "Low production, found washed seal between both pumps, inspected all equipment & reran, except new seal assembly.",
+     "count": 1
+    },
+    {
+     "value": "Metals incompatable with producing fluids were used. Future packers will use low carbon steel.",
+     "count": 1
+    },
+    {
+     "value": "Pull rods to fish broken 3/4\" pin on 10th rod.  fish rods, toh ld plgr, rel tac, toh, scanalog, repl pump bbl, repl 2 jts tbg, set tac, clean pins, tih, test held.",
+     "count": 1
+    },
+    {
+     "value": "Pull rods to fish broken cplg on 41st 1\" rod, fish rods, ld plgr, ck tac, was set, pu plgr, tih chg out 11 3/4\" rods, fill tbg, test held.",
+     "count": 1
+    },
+    {
+     "value": "RAN ALIGNMENT TOOL AND CEMENTED CASING PART @ C3986-88.",
+     "count": 1
+    },
+    {
+     "value": "REPLACED WITH 2\" INSERT PUMP.",
+     "count": 1
+    },
+    {
+     "value": "Replace plunger on 2 1/4\" pump, clean and dope pins.",
+     "count": 1
+    },
+    {
+     "value": "Replaced 2 1/4\" tubing pump, tried screwing into sv, didn't catch, install bop, swab on well, tooh, replace 43C tac, tbg barrel, tih, set tac, pu plunger, replace 2 3/4\" el rods and 12 3/4\" cplgs.",
+     "count": 1
+    },
+    {
+     "value": "Replaced plunger and bad rods.",
+     "count": 1
+    },
+    {
+     "value": "Rod pin break on 141st 3/4\" el rod - broken guides.  Replaced 10 3/4\" rods.",
+     "count": 1
+    },
+    {
+     "value": "Rod pin break top 42nd 3/4\" el rod & replaced w/ 7/8\" el rod,  changed out 32 -3/4\" rod couplings, replaced pump & polish rod",
+     "count": 1
+    },
+    {
+     "value": "TAC slipped - replaced tac and sv, laid down 1 jt 2 7/8 tbg and 2 jts 2\" rod (to shorten strings) replaced 1 jt 2 7/8\" tbg and 2 1/4\" plunger pump.",
+     "count": 1
+    },
+    {
+     "value": "TAC was not set, tooh, replace 1 jt 2 7/8\" tbg and 2 1/4\"pump.",
+     "count": 1
+    },
+    {
+     "value": "Took 3 fishing runs on the failure.",
+     "count": 1
+    },
+    {
+     "value": "replace 36' rod.",
+     "count": 1
+    }
+   ]
+  },
+  "libproblemdes": {
+   "source": "wvProblem.Des",
+   "usable": true,
+   "count": 19,
+   "values": [
+    {
+     "value": "Pump Failure",
+     "count": 9
+    },
+    {
+     "value": "Rod Pin Failure",
+     "count": 5
+    },
+    {
+     "value": "Tubing Body Failure",
+     "count": 5
+    },
+    {
+     "value": "Rod Box Failure",
+     "count": 3
+    },
+    {
+     "value": "Backed off shoe",
+     "count": 2
+    },
+    {
+     "value": "Rod Pump Failure",
+     "count": 2
+    },
+    {
+     "value": "Casing Failure",
+     "count": 1
+    },
+    {
+     "value": "Collapsed Casing",
+     "count": 1
+    },
+    {
+     "value": "Corroded liner",
+     "count": 1
+    },
+    {
+     "value": "ESP Motor Failure",
+     "count": 1
+    },
+    {
+     "value": "ESP Pump Failure",
+     "count": 1
+    },
+    {
+     "value": "Failed Pump",
+     "count": 1
+    },
+    {
+     "value": "Failed packer",
+     "count": 1
+    },
+    {
+     "value": "Packer failure",
+     "count": 1
+    },
+    {
+     "value": "Parted Rods",
+     "count": 1
+    },
+    {
+     "value": "Polished Rod Failure",
+     "count": 1
+    },
+    {
+     "value": "Rod Body Failure",
+     "count": 1
+    },
+    {
+     "value": "Rod Break",
+     "count": 1
+    },
+    {
+     "value": "Tubing Failure",
+     "count": 1
+    }
+   ]
+  },
+  "libproblemstatus": {
+   "source": "wvProblem.Status",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Completed",
+     "count": 20
+    }
+   ]
+  },
+  "libproblemsubitem": {
+   "source": "wvProblem.SubItem",
+   "usable": true,
+   "count": 9,
+   "values": [
+    {
+     "value": "Rod Pump",
+     "count": 7
+    },
+    {
+     "value": "Rod Body",
+     "count": 2
+    },
+    {
+     "value": "Collar",
+     "count": 1
+    },
+    {
+     "value": "Connector",
+     "count": 1
+    },
+    {
+     "value": "ESP Cable",
+     "count": 1
+    },
+    {
+     "value": "ESP Cable/motor flat",
+     "count": 1
+    },
+    {
+     "value": "Joint\\Thread",
+     "count": 1
+    },
+    {
+     "value": "Pipe\\Tube",
+     "count": 1
+    },
+    {
+     "value": "Tubing Body",
+     "count": 1
+    }
+   ]
+  },
+  "libproblemtyp": {
+   "source": "wvProblem.Typ",
+   "usable": true,
+   "count": 10,
+   "values": [
+    {
+     "value": "Parted",
+     "count": 10
+    },
+    {
+     "value": "Wear",
+     "count": 8
+    },
+    {
+     "value": "Parted / Uncoupled",
+     "count": 6
+    },
+    {
+     "value": "Plugged",
+     "count": 6
+    },
+    {
+     "value": "Other",
+     "count": 4
+    },
+    {
+     "value": "Collapse",
+     "count": 2
+    },
+    {
+     "value": "Hole",
+     "count": 2
+    },
+    {
+     "value": "Backed off",
+     "count": 1
+    },
+    {
+     "value": "Leak / Spill",
+     "count": 1
+    },
+    {
+     "value": "Lost cone",
+     "count": 1
+    }
+   ]
+  },
+  "libproblemtypdetail": {
+   "source": "wvProblem.TypDetail",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Thread",
+     "count": 2
+    },
+    {
+     "value": "Body",
+     "count": 1
+    }
+   ]
+  },
+  "libproblemusernum1": {
+   "source": "wvProblem.UserNum1",
+   "usable": true,
+   "count": 7,
+   "values": [
+    {
+     "value": "24",
+     "count": 5
+    },
+    {
+     "value": "12",
+     "count": 4
+    },
+    {
+     "value": "48",
+     "count": 2
+    },
+    {
+     "value": "6",
+     "count": 1
+    },
+    {
+     "value": "8",
+     "count": 1
+    },
+    {
+     "value": "27",
+     "count": 1
+    },
+    {
+     "value": "40",
+     "count": 1
+    }
+   ]
+  },
+  "libprodsettingprodmethtyp": {
+   "source": "wvProdSetting.ProdMethTyp",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "wvProdSettingRodPump",
+     "count": 7
+    },
+    {
+     "value": "wvProdSettingESP",
+     "count": 1
+    }
+   ]
+  },
+  "libproductionactivitytyp": {
+   "source": "wvProduction.ActivityTyp",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "P",
+     "count": 468
+    },
+    {
+     "value": "Produce",
+     "count": 311
+    },
+    {
+     "value": "Monthly Production",
+     "count": 144
+    }
+   ]
+  },
+  "libproductiondatasource": {
+   "source": "wvProduction.DataSource",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Public Import",
+     "count": 612
+    },
+    {
+     "value": "IHS Import",
+     "count": 311
+    }
+   ]
+  },
+  "libproductiongasproducttyp": {
+   "source": "wvProductionGas.ProductTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Reservoir Gas",
+     "count": 672
+    }
+   ]
+  },
+  "libproductionliquidproducttyp": {
+   "source": "wvProductionLiquid.ProductTyp",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Water",
+     "count": 586
+    },
+    {
+     "value": "Oil",
+     "count": 322
+    },
+    {
+     "value": "Condensate",
+     "count": 10
+    }
+   ]
+  },
+  "libproductionliquidvolumemethod": {
+   "source": "wvProductionLiquid.VolumeMethod",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "LIVINGSTONE A",
+     "count": 12
+    },
+    {
+     "value": "LOWER MANNVILLE FM",
+     "count": 10
+    },
+    {
+     "value": "SECOND WHITE SPECKS D",
+     "count": 1
+    }
+   ]
+  },
+  "libpumpingunitconditionstart": {
+   "source": "wvPumpingUnit.ConditionStart",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Excellent",
+     "count": 1
+    }
+   ]
+  },
+  "libpumpingunitcounterwtlocation": {
+   "source": "wvPumpingUnitCounterWt.Location",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Front Lag",
+     "count": 1
+    },
+    {
+     "value": "Front Lead",
+     "count": 1
+    },
+    {
+     "value": "Rear Lag",
+     "count": 1
+    },
+    {
+     "value": "Rear Lead",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpanchortyp": {
+   "source": "wvRodCompPump.AnchorTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "B",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpbarrellength": {
+   "source": "wvRodCompPump.BarrelLength",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "10.972800254821777",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpbarrelmaterial": {
+   "source": "wvRodCompPump.BarrelMaterial",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Brass Nickel Carbide",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpbarreltyp": {
+   "source": "wvRodCompPump.BarrelTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "X",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpplungerlengthnom": {
+   "source": "wvRodCompPump.PlungerLengthNom",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "1.5240000486373901",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpplungermaterial": {
+   "source": "wvRodCompPump.PlungerMaterial",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Spraymetal with Monel Ends",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumppumptyp": {
+   "source": "wvRodCompPump.PumpTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "R",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpseatassysz": {
+   "source": "wvRodCompPump.SeatAssySz",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "0.06350000202655792",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpseatassytyp": {
+   "source": "wvRodCompPump.SeatAssyTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "M",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpstandvalveballmtl": {
+   "source": "wvRodCompPump.StandValveBallMtl",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Tung Carbide",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpstandvalveseatmtl": {
+   "source": "wvRodCompPump.StandValveSeatMtl",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Tungsten Carbide",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumpszidbore": {
+   "source": "wvRodCompPump.SzIDBore",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "0.05079999938607216",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumptravvalvballmtl": {
+   "source": "wvRodCompPump.TravValvBallMtl",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Tungsten Carbide",
+     "count": 1
+    }
+   ]
+  },
+  "librodcomppumptravvalvseatmtl": {
+   "source": "wvRodCompPump.TravValvSeatMtl",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Tungsten Carbide",
+     "count": 1
+    }
+   ]
+  },
+  "libroddes": {
+   "source": "wvRod.Des",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Rod String",
+     "count": 7
+    },
+    {
+     "value": "Rod",
+     "count": 5
+    },
+    {
+     "value": "Rod with PCP",
+     "count": 2
+    }
+   ]
+  },
+  "librodpullreason": {
+   "source": "wvRod.PullReason",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Change out bottomhole pump",
+     "count": 4
+    },
+    {
+     "value": "Pulled due to failure",
+     "count": 4
+    },
+    {
+     "value": "Rod Part",
+     "count": 1
+    }
+   ]
+  },
+  "libstimtreatcontractor": {
+   "source": "wvStimTreat.Contractor",
+   "usable": true,
+   "count": 6,
+   "values": [
+    {
+     "value": "Halliburton Energy Services",
+     "count": 5
+    },
+    {
+     "value": "Nowsco Well Service Ltd.",
+     "count": 5
+    },
+    {
+     "value": "Dowell",
+     "count": 3
+    },
+    {
+     "value": "Dowell Schlumberger",
+     "count": 3
+    },
+    {
+     "value": "Dresser Titan",
+     "count": 2
+    },
+    {
+     "value": "Fracmaster Ltd.",
+     "count": 1
+    }
+   ]
+  },
+  "libstimtreatdeliverymode": {
+   "source": "wvStimTreat.DeliveryMode",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Frack & Pack",
+     "count": 5
+    },
+    {
+     "value": "Coil Tubing",
+     "count": 1
+    }
+   ]
+  },
+  "libstimtreatdiversioncontractor": {
+   "source": "wvStimTreat.DiversionContractor",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Halliburton Energy Services",
+     "count": 5
+    },
+    {
+     "value": "Dowell Schlumberger",
+     "count": 2
+    },
+    {
+     "value": "Dowell",
+     "count": 1
+    }
+   ]
+  },
+  "libstimtreatdiversionmethod": {
+   "source": "wvStimTreat.DiversionMethod",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Washtool",
+     "count": 5
+    },
+    {
+     "value": "None",
+     "count": 4
+    },
+    {
+     "value": "Perf Balls",
+     "count": 2
+    },
+    {
+     "value": "Ball",
+     "count": 1
+    }
+   ]
+  },
+  "libstimtreatfluidadddes": {
+   "source": "wvStimTreatFluidAdd.Des",
+   "usable": true,
+   "count": 12,
+   "values": [
+    {
+     "value": "Acid Gellant",
+     "count": 2
+    },
+    {
+     "value": "De-Foamer",
+     "count": 2
+    },
+    {
+     "value": "Mutual Solvent",
+     "count": 2
+    },
+    {
+     "value": "ACTIVATOR SOLUTION",
+     "count": 1
+    },
+    {
+     "value": "BREAKER",
+     "count": 1
+    },
+    {
+     "value": "CLAY STABILIZER",
+     "count": 1
+    },
+    {
+     "value": "ENCAPSULATED BREAKER",
+     "count": 1
+    },
+    {
+     "value": "ENZYME BREAKER",
+     "count": 1
+    },
+    {
+     "value": "GELLING AGENT",
+     "count": 1
+    },
+    {
+     "value": "OXYGEN SCAVENGER",
+     "count": 1
+    },
+    {
+     "value": "PH BUFFER",
+     "count": 1
+    },
+    {
+     "value": "SURFACTANT",
+     "count": 1
+    }
+   ]
+  },
+  "libstimtreatfluidfluidname": {
+   "source": "wvStimTreatFluid.FluidName",
+   "usable": true,
+   "count": 14,
+   "values": [
+    {
+     "value": "Aqualinear 28 LB",
+     "count": 8
+    },
+    {
+     "value": "15% HCl",
+     "count": 6
+    },
+    {
+     "value": "Brine CaCl2",
+     "count": 5
+    },
+    {
+     "value": "Brine KCl 7%",
+     "count": 3
+    },
+    {
+     "value": "28% HCl",
+     "count": 2
+    },
+    {
+     "value": "28% Paraclean Acid",
+     "count": 2
+    },
+    {
+     "value": "Acqualinear 28 LB",
+     "count": 2
+    },
+    {
+     "value": "Auqaclear",
+     "count": 2
+    },
+    {
+     "value": "Brine KCl",
+     "count": 2
+    },
+    {
+     "value": "Gelled Reformate",
+     "count": 2
+    },
+    {
+     "value": "Rheo-Gel II",
+     "count": 2
+    },
+    {
+     "value": "10% HCl",
+     "count": 1
+    },
+    {
+     "value": "Acid",
+     "count": 1
+    },
+    {
+     "value": "General Fluid Additives",
+     "count": 1
+    }
+   ]
+  },
+  "libstimtreatfluidfluidtyp": {
+   "source": "wvStimTreatFluid.FluidTyp",
+   "usable": true,
+   "count": 6,
+   "values": [
+    {
+     "value": "Acid",
+     "count": 11
+    },
+    {
+     "value": "Carrier",
+     "count": 10
+    },
+    {
+     "value": "Displacement",
+     "count": 5
+    },
+    {
+     "value": "Pad",
+     "count": 5
+    },
+    {
+     "value": "Alcohol",
+     "count": 2
+    },
+    {
+     "value": "Gelled Salt Water",
+     "count": 2
+    }
+   ]
+  },
+  "libstimtreatfracdiagnosticmethod": {
+   "source": "wvStimTreat.FracDiagnosticMethod",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "EconoProp",
+     "count": 5
+    }
+   ]
+  },
+  "libstimtreatpresbhmethod": {
+   "source": "wvStimTreat.PresBHMethod",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Calculated",
+     "count": 5
+    },
+    {
+     "value": "Bottom Hole Gauges",
+     "count": 2
+    }
+   ]
+  },
+  "libstimtreatpresclosuremethod": {
+   "source": "wvStimTreat.PresClosureMethod",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Pressure Decline Analysis",
+     "count": 6
+    },
+    {
+     "value": "Nolte-Smith Calc",
+     "count": 1
+    }
+   ]
+  },
+  "libstimtreatstgadddes": {
+   "source": "wvStimTreatStgAdd.Des",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Prop XYZ",
+     "count": 6
+    },
+    {
+     "value": "abc",
+     "count": 1
+    },
+    {
+     "value": "def",
+     "count": 1
+    }
+   ]
+  },
+  "libstimtreatstgaddtyp": {
+   "source": "wvStimTreatStgAdd.Typ",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Bulk Sand",
+     "count": 6
+    }
+   ]
+  },
+  "libstimtreatstggastyp": {
+   "source": "wvStimTreatStg.GasTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Nitrogen",
+     "count": 7
+    }
+   ]
+  },
+  "libstimtreatstgstagetyp": {
+   "source": "wvStimTreatStg.StageTyp",
+   "usable": true,
+   "count": 19,
+   "values": [
+    {
+     "value": "Main Frac Slurry",
+     "count": 30
+    },
+    {
+     "value": "1st Stage",
+     "count": 23
+    },
+    {
+     "value": "Acidization",
+     "count": 9
+    },
+    {
+     "value": "Displacement",
+     "count": 9
+    },
+    {
+     "value": "Mini Frac Test",
+     "count": 5
+    },
+    {
+     "value": "Pad",
+     "count": 5
+    },
+    {
+     "value": "Squeeze",
+     "count": 5
+    },
+    {
+     "value": "Step Rate Test",
+     "count": 5
+    },
+    {
+     "value": "Circulation",
+     "count": 4
+    },
+    {
+     "value": "Reverse Circulation",
+     "count": 4
+    },
+    {
+     "value": "Pre-Wash",
+     "count": 2
+    },
+    {
+     "value": "Acid Frac",
+     "count": 1
+    },
+    {
+     "value": "Flush",
+     "count": 1
+    },
+    {
+     "value": "Slurry - Start 100 Stage",
+     "count": 1
+    },
+    {
+     "value": "Slurry - Start 200 Stage",
+     "count": 1
+    },
+    {
+     "value": "Slurry - Start 300 Stage",
+     "count": 1
+    },
+    {
+     "value": "Slurry - Start 400 Stage",
+     "count": 1
+    },
+    {
+     "value": "Slurry - Start 500 Stage",
+     "count": 1
+    },
+    {
+     "value": "Start Scour",
+     "count": 1
+    }
+   ]
+  },
+  "libstimtreatusertxt1": {
+   "source": "wvStimTreat.UserTxt1",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "30/50",
+     "count": 5
+    }
+   ]
+  },
+  "libswabcontractor": {
+   "source": "wvSwab.Contractor",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Swab Services",
+     "count": 1
+    }
+   ]
+  },
+  "libtaskcom": {
+   "source": "wvTask.Com",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Annual requirement for packer isolation test",
+     "count": 1
+    }
+   ]
+  },
+  "libtaskdes": {
+   "source": "wvTask.Des",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Add cost vendor data",
+     "count": 1
+    },
+    {
+     "value": "Remove \"All Caps\"",
+     "count": 1
+    },
+    {
+     "value": "SCVF",
+     "count": 1
+    }
+   ]
+  },
+  "libtestequiptesttyp": {
+   "source": "wvTestEquip.TestTyp",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "Gravel Circ. Test",
+     "count": 5
+    },
+    {
+     "value": "Packer Isolation",
+     "count": 2
+    },
+    {
+     "value": "SCVF",
+     "count": 2
+    },
+    {
+     "value": "Other",
+     "count": 1
+    },
+    {
+     "value": "Wellhead",
+     "count": 1
+    }
+   ]
+  },
+  "libtestleakofffluidtyp": {
+   "source": "wvTestLeakOff.FluidTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Mud",
+     "count": 2
+    }
+   ]
+  },
+  "libtubcompconnszbtm": {
+   "source": "wvTubComp.ConnSzBtm",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "0.07302499562501907",
+     "count": 20
+    },
+    {
+     "value": "0.0333000011742115",
+     "count": 1
+    }
+   ]
+  },
+  "libtubcompconnsztop": {
+   "source": "wvTubComp.ConnSzTop",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "0.07302499562501907",
+     "count": 20
+    },
+    {
+     "value": "0.032999999821186066",
+     "count": 1
+    }
+   ]
+  },
+  "libtubcompconnthrdbtm": {
+   "source": "wvTubComp.ConnThrdBtm",
+   "usable": true,
+   "count": 6,
+   "values": [
+    {
+     "value": "ADMS - PIN",
+     "count": 56
+    },
+    {
+     "value": "8rd",
+     "count": 20
+    },
+    {
+     "value": "API NU - PIN",
+     "count": 9
+    },
+    {
+     "value": "LINE PIPE",
+     "count": 4
+    },
+    {
+     "value": "NEW VAM - PIN",
+     "count": 4
+    },
+    {
+     "value": "ST&C",
+     "count": 1
+    }
+   ]
+  },
+  "libtubcompconnthrdtop": {
+   "source": "wvTubComp.ConnThrdTop",
+   "usable": true,
+   "count": 13,
+   "values": [
+    {
+     "value": "ADMS - BOX",
+     "count": 62
+    },
+    {
+     "value": "Vam Ace",
+     "count": 47
+    },
+    {
+     "value": "API NU - BOX",
+     "count": 40
+    },
+    {
+     "value": "EUE",
+     "count": 33
+    },
+    {
+     "value": "8rd",
+     "count": 20
+    },
+    {
+     "value": "STL - BOX",
+     "count": 8
+    },
+    {
+     "value": "LTC - BOX",
+     "count": 7
+    },
+    {
+     "value": "NEW VAM - BOX",
+     "count": 4
+    },
+    {
+     "value": "New Vam",
+     "count": 4
+    },
+    {
+     "value": "LTC - PIN",
+     "count": 3
+    },
+    {
+     "value": "STL - PIN",
+     "count": 2
+    },
+    {
+     "value": "VAM",
+     "count": 1
+    },
+    {
+     "value": "Vam Ace2",
+     "count": 1
+    }
+   ]
+  },
+  "libtubcompespmotormtrcablearmor": {
+   "source": "wvTubCompESPMotor.MtrCableArmor",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Galvanized Steel",
+     "count": 4
+    }
+   ]
+  },
+  "libtubcompespmotormtrcablega": {
+   "source": "wvTubCompESPMotor.MtrCableGa",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "2",
+     "count": 4
+    }
+   ]
+  },
+  "libtubcompespmotormtrcablemake": {
+   "source": "wvTubCompESPMotor.MtrCableMake",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Centralift",
+     "count": 4
+    }
+   ]
+  },
+  "libtubcompespmotormtrcablesheath": {
+   "source": "wvTubCompESPMotor.MtrCableSheath",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Lead",
+     "count": 4
+    }
+   ]
+  },
+  "libtubcompespmotormtrcabletyp": {
+   "source": "wvTubCompESPMotor.MtrCableTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "2SOL CELF",
+     "count": 4
+    }
+   ]
+  },
+  "libtubcompespmotormtrtyp": {
+   "source": "wvTubCompESPMotor.MtrTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "DMFU1 & DM",
+     "count": 4
+    }
+   ]
+  },
+  "libtubdes": {
+   "source": "wvTub.Des",
+   "usable": true,
+   "count": 31,
+   "values": [
+    {
+     "value": "Tubing - Production",
+     "count": 14
+    },
+    {
+     "value": "Production Tubing",
+     "count": 5
+    },
+    {
+     "value": "Gravel",
+     "count": 4
+    },
+    {
+     "value": "Inner String",
+     "count": 4
+    },
+    {
+     "value": "Acid Wash Work String",
+     "count": 2
+    },
+    {
+     "value": "Coil Tubing",
+     "count": 2
+    },
+    {
+     "value": "Isolation Packer",
+     "count": 2
+    },
+    {
+     "value": "Production String",
+     "count": 2
+    },
+    {
+     "value": "Bottom of Long String",
+     "count": 1
+    },
+    {
+     "value": "Bottom of Short String",
+     "count": 1
+    },
+    {
+     "value": "Completion String",
+     "count": 1
+    },
+    {
+     "value": "Future Perf Zone",
+     "count": 1
+    },
+    {
+     "value": "Isolation Tubing",
+     "count": 1
+    },
+    {
+     "value": "Long String",
+     "count": 1
+    },
+    {
+     "value": "Long string",
+     "count": 1
+    },
+    {
+     "value": "Lower Isolation String",
+     "count": 1
+    },
+    {
+     "value": "Lower Screens",
+     "count": 1
+    },
+    {
+     "value": "Primary Tubing String",
+     "count": 1
+    },
+    {
+     "value": "Production Lower Section",
+     "count": 1
+    },
+    {
+     "value": "Proposed",
+     "count": 1
+    },
+    {
+     "value": "Proposed Production Tubing",
+     "count": 1
+    },
+    {
+     "value": "Proposed ProductionTubing",
+     "count": 1
+    },
+    {
+     "value": "Short String",
+     "count": 1
+    },
+    {
+     "value": "Short String Production Tubing",
+     "count": 1
+    },
+    {
+     "value": "Top of Long String",
+     "count": 1
+    },
+    {
+     "value": "Top of Short String",
+     "count": 1
+    },
+    {
+     "value": "Tubing",
+     "count": 1
+    },
+    {
+     "value": "Tubing - Long String",
+     "count": 1
+    },
+    {
+     "value": "Tubing - Short String",
+     "count": 1
+    },
+    {
+     "value": "Tubing with PCP",
+     "count": 1
+    },
+    {
+     "value": "Upper Screens",
+     "count": 1
+    }
+   ]
+  },
+  "libtubusertxt1": {
+   "source": "wvTub.UserTxt1",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "DUAL COMPLETION",
+     "count": 10
+    }
+   ]
+  },
+  "libtubusertxt2": {
+   "source": "wvTub.UserTxt2",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "YES",
+     "count": 10
+    }
+   ]
+  },
+  "libtubusertxt3": {
+   "source": "wvTub.UserTxt3",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Halliburton",
+     "count": 10
+    }
+   ]
+  },
+  "libwellboredes": {
+   "source": "wvWellbore.Des",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Original Hole",
+     "count": 41
+    },
+    {
+     "value": "Sidetrack 1",
+     "count": 1
+    },
+    {
+     "value": "Sidetrack 2",
+     "count": 1
+    },
+    {
+     "value": "Wellbore2",
+     "count": 1
+    }
+   ]
+  },
+  "libwellboredirsurveyazimuthnorthtyp": {
+   "source": "wvWellboreDirSurvey.AzimuthNorthTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "True",
+     "count": 1
+    }
+   ]
+  },
+  "libwellboredirsurveydatanote": {
+   "source": "wvWellboreDirSurveyData.Note",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Interp",
+     "count": 1
+    }
+   ]
+  },
+  "libwellboredirsurveydatasurveymethod": {
+   "source": "wvWellboreDirSurveyData.SurveyMethod",
+   "usable": true,
+   "count": 7,
+   "values": [
+    {
+     "value": "MWD",
+     "count": 303
+    },
+    {
+     "value": "Gyro - MS",
+     "count": 16
+    },
+    {
+     "value": "mwd",
+     "count": 13
+    },
+    {
+     "value": "Gyro - SS",
+     "count": 6
+    },
+    {
+     "value": "Incl",
+     "count": 6
+    },
+    {
+     "value": "Gyro SS",
+     "count": 5
+    },
+    {
+     "value": "Extrap.",
+     "count": 2
+    }
+   ]
+  },
+  "libwellborekickoffmethod": {
+   "source": "wvWellbore.KickOffMethod",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Steerable Motor",
+     "count": 2
+    },
+    {
+     "value": "Cement Plug",
+     "count": 1
+    },
+    {
+     "value": "Whipstock and cement",
+     "count": 1
+    }
+   ]
+  },
+  "libwellborelatlongdatum": {
+   "source": "wvWellbore.LatLongDatum",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "GRS 80",
+     "count": 1
+    }
+   ]
+  },
+  "libwellborepbtdtyp": {
+   "source": "wvWellborePBTD.Typ",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Cement Plug",
+     "count": 2
+    },
+    {
+     "value": "Fish",
+     "count": 1
+    },
+    {
+     "value": "Packing Device",
+     "count": 1
+    },
+    {
+     "value": "Plug",
+     "count": 1
+    }
+   ]
+  },
+  "libwellboreprofiletyp": {
+   "source": "wvWellbore.ProfileTyp",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Directional",
+     "count": 3
+    },
+    {
+     "value": "Vertical",
+     "count": 3
+    },
+    {
+     "value": "Deviated",
+     "count": 1
+    }
+   ]
+  },
+  "libwellboresizedes": {
+   "source": "wvWellboreSize.Des",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Surface",
+     "count": 18
+    },
+    {
+     "value": "Production",
+     "count": 17
+    },
+    {
+     "value": "Intermediate",
+     "count": 2
+    },
+    {
+     "value": "Liner",
+     "count": 1
+    }
+   ]
+  },
+  "libwellboresizesz": {
+   "source": "wvWellboreSize.Sz",
+   "usable": true,
+   "count": 29,
+   "values": [
+    {
+     "value": "0.3111500144004822",
+     "count": 14
+    },
+    {
+     "value": "0.3109999895095825",
+     "count": 13
+    },
+    {
+     "value": "0.22200000286102295",
+     "count": 10
+    },
+    {
+     "value": "0.16509999334812164",
+     "count": 9
+    },
+    {
+     "value": "0.20000000298023224",
+     "count": 9
+    },
+    {
+     "value": "0.2159000039100647",
+     "count": 6
+    },
+    {
+     "value": "0.1587499976158142",
+     "count": 5
+    },
+    {
+     "value": "0.3746500015258789",
+     "count": 5
+    },
+    {
+     "value": "0.3111499845981598",
+     "count": 4
+    },
+    {
+     "value": "0.20002499222755432",
+     "count": 2
+    },
+    {
+     "value": "0.15240000188350677",
+     "count": 1
+    },
+    {
+     "value": "0.1555749922990799",
+     "count": 1
+    },
+    {
+     "value": "0.15600000321865082",
+     "count": 1
+    },
+    {
+     "value": "0.2159",
+     "count": 1
+    },
+    {
+     "value": "0.22230000793933868",
+     "count": 1
+    },
+    {
+     "value": "0.24130000174045563",
+     "count": 1
+    },
+    {
+     "value": "0.2508249878883362",
+     "count": 1
+    },
+    {
+     "value": "0.2730500102043152",
+     "count": 1
+    },
+    {
+     "value": "0.3110000193119049",
+     "count": 1
+    },
+    {
+     "value": "0.3112",
+     "count": 1
+    },
+    {
+     "value": "0.31120002269744873",
+     "count": 1
+    },
+    {
+     "value": "0.3490000069141388",
+     "count": 1
+    },
+    {
+     "value": "0.4064",
+     "count": 1
+    },
+    {
+     "value": "0.44449999928474426",
+     "count": 1
+    },
+    {
+     "value": "0.48260000348091125",
+     "count": 1
+    },
+    {
+     "value": "0.5080000162124634",
+     "count": 1
+    },
+    {
+     "value": "0.6096000075340271",
+     "count": 1
+    },
+    {
+     "value": "0.6603999733924866",
+     "count": 1
+    },
+    {
+     "value": "0.9143999814987183",
+     "count": 1
+    }
+   ]
+  },
+  "libwellboreutmgridzone": {
+   "source": "wvWellbore.UTMGridZone",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "14",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheadcompoutletoutletlocation": {
+   "source": "wvWellheadCompOutlet.OutletLocation",
+   "usable": true,
+   "count": 11,
+   "values": [
+    {
+     "value": "Lower",
+     "count": 3
+    },
+    {
+     "value": "Upper",
+     "count": 3
+    },
+    {
+     "value": "225 deg",
+     "count": 2
+    },
+    {
+     "value": "45 deg",
+     "count": 2
+    },
+    {
+     "value": "Act. S/C",
+     "count": 1
+    },
+    {
+     "value": "Act. S/L",
+     "count": 1
+    },
+    {
+     "value": "Middle",
+     "count": 1
+    },
+    {
+     "value": "Swab S/C",
+     "count": 1
+    },
+    {
+     "value": "Swab S/L",
+     "count": 1
+    },
+    {
+     "value": "Wing S/C",
+     "count": 1
+    },
+    {
+     "value": "Wing S/L",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderarea": {
+   "source": "wvWellHeader.Area",
+   "usable": true,
+   "count": 17,
+   "values": [
+    {
+     "value": "Sundre",
+     "count": 3
+    },
+    {
+     "value": "Balam",
+     "count": 2
+    },
+    {
+     "value": "Bashaw",
+     "count": 2
+    },
+    {
+     "value": "Harris",
+     "count": 2
+    },
+    {
+     "value": "Mountain View",
+     "count": 2
+    },
+    {
+     "value": "Austin",
+     "count": 1
+    },
+    {
+     "value": "Bohai",
+     "count": 1
+    },
+    {
+     "value": "Canada",
+     "count": 1
+    },
+    {
+     "value": "Fairbanks",
+     "count": 1
+    },
+    {
+     "value": "Laird",
+     "count": 1
+    },
+    {
+     "value": "Leduc",
+     "count": 1
+    },
+    {
+     "value": "Queens",
+     "count": 1
+    },
+    {
+     "value": "South",
+     "count": 1
+    },
+    {
+     "value": "Terra",
+     "count": 1
+    },
+    {
+     "value": "Tuck",
+     "count": 1
+    },
+    {
+     "value": "Vancouver",
+     "count": 1
+    },
+    {
+     "value": "West of 5",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderbasin": {
+   "source": "wvWellHeader.Basin",
+   "usable": true,
+   "count": 8,
+   "values": [
+    {
+     "value": "Imperial Basin",
+     "count": 5
+    },
+    {
+     "value": "Deep Water Basin",
+     "count": 4
+    },
+    {
+     "value": "Metric Basin",
+     "count": 3
+    },
+    {
+     "value": "Beaucoup D'Eau Basin",
+     "count": 2
+    },
+    {
+     "value": "Shallow Water Basin",
+     "count": 2
+    },
+    {
+     "value": "Cooper Basin",
+     "count": 1
+    },
+    {
+     "value": "Jeanne d'Arc",
+     "count": 1
+    },
+    {
+     "value": "Madre de Dios",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheadercountry": {
+   "source": "wvWellHeader.Country",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "Canada",
+     "count": 29
+    },
+    {
+     "value": "USA",
+     "count": 8
+    },
+    {
+     "value": "Indonesia",
+     "count": 2
+    },
+    {
+     "value": "Australia",
+     "count": 1
+    },
+    {
+     "value": "Suriname",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheadercounty": {
+   "source": "wvWellHeader.County",
+   "usable": true,
+   "count": 6,
+   "values": [
+    {
+     "value": "Mountain View",
+     "count": 2
+    },
+    {
+     "value": "Austin",
+     "count": 1
+    },
+    {
+     "value": "Fairbanks North Star",
+     "count": 1
+    },
+    {
+     "value": "Harris",
+     "count": 1
+    },
+    {
+     "value": "Rockyview",
+     "count": 1
+    },
+    {
+     "value": "Tuck",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderdistrict": {
+   "source": "wvWellHeader.District",
+   "usable": true,
+   "count": 6,
+   "values": [
+    {
+     "value": "Western",
+     "count": 17
+    },
+    {
+     "value": "Central",
+     "count": 15
+    },
+    {
+     "value": "Northern",
+     "count": 4
+    },
+    {
+     "value": "Southern",
+     "count": 2
+    },
+    {
+     "value": "Eastern",
+     "count": 1
+    },
+    {
+     "value": "Offshore",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderdivision": {
+   "source": "wvWellHeader.Division",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "North American",
+     "count": 37
+    },
+    {
+     "value": "Offshore - Gulf Coast",
+     "count": 2
+    },
+    {
+     "value": "Offshore",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderewflag": {
+   "source": "wvWellHeader.EWFlag",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "E",
+     "count": 9
+    },
+    {
+     "value": "W",
+     "count": 6
+    }
+   ]
+  },
+  "libwellheaderlease": {
+   "source": "wvWellHeader.Lease",
+   "usable": true,
+   "count": 19,
+   "values": [
+    {
+     "value": "05-12-031-14 W5",
+     "count": 1
+    },
+    {
+     "value": "1167267256",
+     "count": 1
+    },
+    {
+     "value": "123123132",
+     "count": 1
+    },
+    {
+     "value": "12345456",
+     "count": 1
+    },
+    {
+     "value": "13-02-036-04 W5",
+     "count": 1
+    },
+    {
+     "value": "1340240226",
+     "count": 1
+    },
+    {
+     "value": "1513213196",
+     "count": 1
+    },
+    {
+     "value": "1686186167",
+     "count": 1
+    },
+    {
+     "value": "321321321",
+     "count": 1
+    },
+    {
+     "value": "345234534523",
+     "count": 1
+    },
+    {
+     "value": "41801176736",
+     "count": 1
+    },
+    {
+     "value": "456456456",
+     "count": 1
+    },
+    {
+     "value": "654654654",
+     "count": 1
+    },
+    {
+     "value": "821321316",
+     "count": 1
+    },
+    {
+     "value": "994294286.1",
+     "count": 1
+    },
+    {
+     "value": "Blue Irish",
+     "count": 1
+    },
+    {
+     "value": "Sample Lease 1",
+     "count": 1
+    },
+    {
+     "value": "Sample Lease 2",
+     "count": 1
+    },
+    {
+     "value": "Ship Shoal 237",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderlocationtyp": {
+   "source": "wvWellHeader.LocationTyp",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Offshore-Deep Water",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheadernsflag": {
+   "source": "wvWellHeader.NSFlag",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "N",
+     "count": 8
+    },
+    {
+     "value": "S",
+     "count": 7
+    }
+   ]
+  },
+  "libwellheaderoperator": {
+   "source": "wvWellHeader.Operator",
+   "usable": true,
+   "count": 10,
+   "values": [
+    {
+     "value": "Peloton Oil & Gas",
+     "count": 22
+    },
+    {
+     "value": "Nal Resources Limited",
+     "count": 5
+    },
+    {
+     "value": "Gulf Canada Resources Limited",
+     "count": 4
+    },
+    {
+     "value": "Peloton",
+     "count": 4
+    },
+    {
+     "value": "Beau Canada Exploration Ltd.",
+     "count": 1
+    },
+    {
+     "value": "Burlington Resources Canada Energy Ltd.",
+     "count": 1
+    },
+    {
+     "value": "Mobil Oil Canada",
+     "count": 1
+    },
+    {
+     "value": "Numac Energy Inc.",
+     "count": 1
+    },
+    {
+     "value": "Shell",
+     "count": 1
+    },
+    {
+     "value": "Sonat",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderplatform": {
+   "source": "wvWellHeader.Platform",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "Burnaby",
+     "count": 1
+    },
+    {
+     "value": "Fairbanks 17",
+     "count": 1
+    },
+    {
+     "value": "Gulf Coast 111",
+     "count": 1
+    },
+    {
+     "value": "Hibernia",
+     "count": 1
+    },
+    {
+     "value": "Ram Powell",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderstateprov": {
+   "source": "wvWellHeader.StateProv",
+   "usable": true,
+   "count": 9,
+   "values": [
+    {
+     "value": "Alberta",
+     "count": 25
+    },
+    {
+     "value": "Texas",
+     "count": 6
+    },
+    {
+     "value": "British Columbia",
+     "count": 2
+    },
+    {
+     "value": "Sumatra",
+     "count": 2
+    },
+    {
+     "value": "Alaska",
+     "count": 1
+    },
+    {
+     "value": "Newfoundland",
+     "count": 1
+    },
+    {
+     "value": "North Dakota",
+     "count": 1
+    },
+    {
+     "value": "Queens",
+     "count": 1
+    },
+    {
+     "value": "Saskatchewan",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderusertxt1": {
+   "source": "wvWellHeader.UserTxt1",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "America",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderwellclass": {
+   "source": "wvWellHeader.WellClass",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Normal",
+     "count": 32
+    },
+    {
+     "value": "Critical H2S",
+     "count": 6
+    },
+    {
+     "value": "Sweet",
+     "count": 2
+    }
+   ]
+  },
+  "libwellheaderwellconfig": {
+   "source": "wvWellHeader.WellConfig",
+   "usable": true,
+   "count": 4,
+   "values": [
+    {
+     "value": "Deviated",
+     "count": 20
+    },
+    {
+     "value": "Vertical",
+     "count": 17
+    },
+    {
+     "value": "Horizontal",
+     "count": 2
+    },
+    {
+     "value": "Multiple Laterals",
+     "count": 2
+    }
+   ]
+  },
+  "libwellheaderwelllicensee": {
+   "source": "wvWellHeader.WellLicensee",
+   "usable": true,
+   "count": 10,
+   "values": [
+    {
+     "value": "Peloton",
+     "count": 22
+    },
+    {
+     "value": "Nal Resources Limited",
+     "count": 5
+    },
+    {
+     "value": "Gulf Canada Resources Limited",
+     "count": 4
+    },
+    {
+     "value": "Mato Inc.",
+     "count": 3
+    },
+    {
+     "value": "Beau Canada Exploration Ltd.",
+     "count": 1
+    },
+    {
+     "value": "Burlington Resources Canada Energy Ltd.",
+     "count": 1
+    },
+    {
+     "value": "Mobil Oil Canada",
+     "count": 1
+    },
+    {
+     "value": "Numac Energy Inc.",
+     "count": 1
+    },
+    {
+     "value": "Peloton Oil and Gas Inc.",
+     "count": 1
+    },
+    {
+     "value": "Sonat",
+     "count": 1
+    }
+   ]
+  },
+  "libwellheaderwelltyp1": {
+   "source": "wvWellHeader.WellTyp1",
+   "usable": true,
+   "count": 7,
+   "values": [
+    {
+     "value": "Development",
+     "count": 24
+    },
+    {
+     "value": "Exploration",
+     "count": 8
+    },
+    {
+     "value": "New Pool Wildcat",
+     "count": 3
+    },
+    {
+     "value": "Observation",
+     "count": 2
+    },
+    {
+     "value": "Outpost",
+     "count": 2
+    },
+    {
+     "value": "Deeper-Pool Test",
+     "count": 1
+    },
+    {
+     "value": "Extension",
+     "count": 1
+    }
+   ]
+  },
+  "libwellreviewcom": {
+   "source": "wvWellReview.Com",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Well is producing as expected.",
+     "count": 1
+    }
+   ]
+  },
+  "libwelltestproddatasource": {
+   "source": "wvWellTestProd.DataSource",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "IHS Import",
+     "count": 1
+    }
+   ]
+  },
+  "libwelltestrftdataquality": {
+   "source": "wvWellTestRFTData.Quality",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Bad",
+     "count": 8
+    },
+    {
+     "value": "Good",
+     "count": 3
+    },
+    {
+     "value": "Questionable",
+     "count": 2
+    }
+   ]
+  },
+  "libwelltestrftgaugepresref": {
+   "source": "wvWellTestRFTGauge.PresRef",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Absolute",
+     "count": 1
+    },
+    {
+     "value": "Relative",
+     "count": 1
+    }
+   ]
+  },
+  "libwelltestrftgaugetyp": {
+   "source": "wvWellTestRFTGauge.Typ",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "CQG",
+     "count": 1
+    },
+    {
+     "value": "SG",
+     "count": 1
+    },
+    {
+     "value": "Saphire",
+     "count": 1
+    }
+   ]
+  },
+  "libwelltestrftrunmethod": {
+   "source": "wvWellTestRFT.RunMethod",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Wireline",
+     "count": 2
+    }
+   ]
+  },
+  "libwelltestrftwellsituation": {
+   "source": "wvWellTestRFT.WellSituation",
+   "usable": false,
+   "count": 1,
+   "values": [
+    {
+     "value": "Open Hole",
+     "count": 2
+    }
+   ]
+  },
+  "libwelltesttransflowpertyp": {
+   "source": "wvWellTestTransFlowPer.Typ",
+   "usable": true,
+   "count": 13,
+   "values": [
+    {
+     "value": "Fissa",
+     "count": 214
+    },
+    {
+     "value": "1st Flow Period",
+     "count": 24
+    },
+    {
+     "value": "2nd Flow Period",
+     "count": 24
+    },
+    {
+     "value": "fissa",
+     "count": 23
+    },
+    {
+     "value": "Final Shut In",
+     "count": 1
+    },
+    {
+     "value": "Grayling Flow",
+     "count": 1
+    },
+    {
+     "value": "Inital Shut In",
+     "count": 1
+    },
+    {
+     "value": "Initial flow period",
+     "count": 1
+    },
+    {
+     "value": "Open flow",
+     "count": 1
+    },
+    {
+     "value": "Preflow",
+     "count": 1
+    },
+    {
+     "value": "Reg",
+     "count": 1
+    },
+    {
+     "value": "Second Flow",
+     "count": 1
+    },
+    {
+     "value": "Second flow period",
+     "count": 1
+    }
+   ]
+  },
+  "libwelltesttransgaugedes": {
+   "source": "wvWellTestTransGauge.Des",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "WH & BH Data",
+     "count": 52
+    },
+    {
+     "value": "1",
+     "count": 2
+    }
+   ]
+  },
+  "libwelltesttransgaugetyp": {
+   "source": "wvWellTestTransGauge.Typ",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Crystal",
+     "count": 2
+    },
+    {
+     "value": "Open hole - Double\\Straddle packer",
+     "count": 2
+    },
+    {
+     "value": "Open Hole - Double\\Straddle Packer",
+     "count": 1
+    }
+   ]
+  },
+  "libwelltesttranssubtyp": {
+   "source": "wvWellTestTrans.SubTyp",
+   "usable": true,
+   "count": 12,
+   "values": [
+    {
+     "value": "DRILL STEM TEST",
+     "count": 24
+    },
+    {
+     "value": "PRODUCTION",
+     "count": 7
+    },
+    {
+     "value": "SWAB",
+     "count": 4
+    },
+    {
+     "value": "Flowrate",
+     "count": 2
+    },
+    {
+     "value": "Straddle",
+     "count": 2
+    },
+    {
+     "value": "Bottom Hole",
+     "count": 1
+    },
+    {
+     "value": "Bottom Hole Static Gradient",
+     "count": 1
+    },
+    {
+     "value": "Flow Test",
+     "count": 1
+    },
+    {
+     "value": "Flow and Buildup",
+     "count": 1
+    },
+    {
+     "value": "Modified Isochronal",
+     "count": 1
+    },
+    {
+     "value": "Repeat of Initial DS",
+     "count": 1
+    },
+    {
+     "value": "What type of DST",
+     "count": 1
+    }
+   ]
+  },
+  "libzonestatusfluiddes": {
+   "source": "wvZoneStatus.FluidDes",
+   "usable": true,
+   "count": 3,
+   "values": [
+    {
+     "value": "Oil",
+     "count": 19
+    },
+    {
+     "value": "Gas",
+     "count": 10
+    },
+    {
+     "value": "Condensate",
+     "count": 1
+    }
+   ]
+  },
+  "libzonestatusstatus": {
+   "source": "wvZoneStatus.Status",
+   "usable": true,
+   "count": 15,
+   "values": [
+    {
+     "value": "Flowing",
+     "count": 11
+    },
+    {
+     "value": "FLOWING",
+     "count": 8
+    },
+    {
+     "value": "SUSPENDED",
+     "count": 7
+    },
+    {
+     "value": "CAPPED",
+     "count": 6
+    },
+    {
+     "value": "Pumping - Rod",
+     "count": 5
+    },
+    {
+     "value": "Abandoned",
+     "count": 4
+    },
+    {
+     "value": "PUMPING",
+     "count": 4
+    },
+    {
+     "value": "Suspended",
+     "count": 3
+    },
+    {
+     "value": "ABANDONED",
+     "count": 2
+    },
+    {
+     "value": "Testing",
+     "count": 2
+    },
+    {
+     "value": "Active",
+     "count": 1
+    },
+    {
+     "value": "Cased",
+     "count": 1
+    },
+    {
+     "value": "Gas Lift",
+     "count": 1
+    },
+    {
+     "value": "Pumping - Progressive Cavity",
+     "count": 1
+    },
+    {
+     "value": "Shut in",
+     "count": 1
+    }
+   ]
+  },
+  "libzonestatustyp": {
+   "source": "wvZoneStatus.Typ",
+   "usable": false,
+   "count": 2,
+   "values": [
+    {
+     "value": "Producer",
+     "count": 18
+    },
+    {
+     "value": "Storage",
+     "count": 1
+    }
+   ]
+  },
+  "libzoneusertxt6": {
+   "source": "wvZone.UserTxt6",
+   "usable": true,
+   "count": 5,
+   "values": [
+    {
+     "value": "Pebble Beach, Swan Neck",
+     "count": 2
+    },
+    {
+     "value": "Viking",
+     "count": 2
+    },
+    {
+     "value": "Fish Scale SD",
+     "count": 1
+    },
+    {
+     "value": "Lower Mannville Fm",
+     "count": 1
+    },
+    {
+     "value": "Second White Speckled Shale",
+     "count": 1
+    }
+   ]
+  }
+ }
+}
