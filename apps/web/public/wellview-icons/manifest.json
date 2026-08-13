@@ -1,5 +1,5 @@
 {
-  "source_root": "WellView_files/system/icons",
+  "source_root": "/home/farid/directional_drilling/WellView_files/system/icons",
   "note": "WellView's schematic icon library. EMF was converted to SVG by scripts/wellview-icons/emf_svg.py and rasterised through a browser; BMP and ICO were rasterised directly. .pce files are Peloton metadata, not images, and were skipped.",
   "icon_size_px": 128,
   "count": 1611,

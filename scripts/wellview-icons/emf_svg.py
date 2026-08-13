@@ -207,9 +207,20 @@ def convert(path: Path) -> Result:
     records = drawn = 0
 
     # Path-construction state: BEGINPATH…ENDPATH then FILLPATH/STROKEPATH.
+    #
+    # THE CURRENT POSITION IS DEVICE-SPACE, NOT LOGICAL. These files change the
+    # world transform BETWEEN setting the pen position and using it: each band of
+    # a symbol is first clipped in icon coordinates (~0–380), then STROKED via a
+    # path that OPENS with LINETO under a fresh ~1/16-scale transform, inheriting
+    # the pen position from the previous figure. GDI keeps that position in
+    # device space, so the real renderer draws the band's edge. Storing the raw
+    # logical point and re-applying the transform of the moment it is USED — the
+    # first version of this converter — re-mapped (2, 326) to (0.1, 20) and drew
+    # a long diagonal across the icon instead ("Circulating Plug" and family).
+    # So: transform at SET time, never at use time.
     building = False
     path_d: list[str] = []
-    cur = (0.0, 0.0)
+    cur = (0.0, 0.0)  # device coords, always already through the xform of its day
 
     def esc_pts(points: list[tuple[float, float]]) -> str:
         return " ".join(
@@ -228,36 +239,48 @@ def convert(path: Path) -> Result:
             f'stroke="{st.pen.stroke}" stroke-width="{max(st.pen.width, 0.5):.2f}"/>'
         )
 
+    def emit_poly_dev(points: list[tuple[float, float]], closed: bool) -> None:
+        """emit_poly for points ALREADY in device space (no transform applied)."""
+        nonlocal drawn
+        if len(points) < 2:
+            return
+        drawn += 1
+        tag = "polygon" if closed else "polyline"
+        fill = st.brush.fill if closed else "none"
+        pts = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+        body.append(
+            f'<{tag} points="{pts}" fill="{fill}" '
+            f'stroke="{st.pen.stroke}" stroke-width="{max(st.pen.width, 0.5):.2f}"/>'
+        )
+
     def move_to(p: tuple[float, float]) -> None:
         nonlocal cur
-        cur = p
+        cur = _apply(st.xform, *p)
         if building:
-            x, y = _apply(st.xform, *p)
-            path_d.append(f"M {x:.2f} {y:.2f}")
+            path_d.append(f"M {cur[0]:.2f} {cur[1]:.2f}")
 
     def line_to(points: list[tuple[float, float]]) -> None:
         nonlocal cur, drawn
-        if building:
-            for p in points:
-                x, y = _apply(st.xform, *p)
-                path_d.append(f"L {x:.2f} {y:.2f}")
-            cur = points[-1] if points else cur
+        dev = [_apply(st.xform, *p) for p in points]
+        if not dev:
             return
-        if points:
-            emit_poly([cur] + points, closed=False)
-            cur = points[-1]
+        if building:
+            for x, y in dev:
+                path_d.append(f"L {x:.2f} {y:.2f}")
+        else:
+            emit_poly_dev([cur] + dev, closed=False)
+        cur = dev[-1]
 
     def bezier_to(points: list[tuple[float, float]]) -> None:
         nonlocal cur
         for i in range(0, len(points) - 2, 3):
-            trio = points[i:i + 3]
-            coords = " ".join(f"{x:.2f} {y:.2f}" for x, y in (_apply(st.xform, *p) for p in trio))
+            trio = [_apply(st.xform, *p) for p in points[i:i + 3]]
+            coords = " ".join(f"{x:.2f} {y:.2f}" for x, y in trio)
             if building:
                 path_d.append(f"C {coords}")
             else:
-                start = _apply(st.xform, *cur)
                 body.append(
-                    f'<path d="M {start[0]:.2f} {start[1]:.2f} C {coords}" fill="none" '
+                    f'<path d="M {cur[0]:.2f} {cur[1]:.2f} C {coords}" fill="none" '
                     f'stroke="{st.pen.stroke}" stroke-width="{max(st.pen.width, 0.5):.2f}"/>'
                 )
             cur = trio[-1]
@@ -332,9 +355,12 @@ def convert(path: Path) -> Result:
             # began with "L" — invalid SVG, and a renderer discards the whole
             # path silently. That is what made 86 icons come out blank while
             # still reporting shapes drawn.
+            #
+            # `cur` is already device-space (transformed when it was set) —
+            # applying the transform of THIS moment again is exactly the bug
+            # that drew diagonals across the "Circulating Plug" family.
             building = True
-            sx, sy = _apply(st.xform, *cur)
-            path_d = [f"M {sx:.2f} {sy:.2f}"]
+            path_d = [f"M {cur[0]:.2f} {cur[1]:.2f}"]
         elif rtype == ENDPATH:
             building = False
         elif rtype == CLOSEFIGURE:
