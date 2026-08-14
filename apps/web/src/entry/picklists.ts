@@ -4,7 +4,8 @@
  * The values come from `public/wellview-picklists.json`, which is DERIVED from
  * the sample database (scripts/wellview-db/build_picklists.mjs) — NOT decrypted
  * from WellView's encrypted `custom/library/*.lib` files, which need Peloton's
- * password. So a list here is the values that actually occur in the sample
+ * password. Each library is BOUND to its table.column by WellView's own data
+ * model (mdl.xml); the values are then those that actually occur in the sample
  * data, ordered most-common-first: a real, usable subset, never a full library.
  *
  * Consume it two ways, whichever a form has to hand:
@@ -21,6 +22,10 @@ export interface PicklistValue { value: string; count: number }
 export interface Picklist {
   /** e.g. "wvCas.Des" — the sample-DB column the values came from. */
   source: string;
+  /** The field's long caption from the data model, e.g. "Casing Description". */
+  caption: string;
+  /** How the library was bound to its column: authoritative model, or fallback. */
+  binding: "model" | "heuristic";
   /** true when the list has 3+ values (a worthwhile dropdown). */
   usable: boolean;
   count: number;
@@ -30,6 +35,8 @@ export interface PicklistCatalog {
   derivation: "sample-data";
   note: string;
   library_count: number;
+  bound_by_model: number;
+  bound_by_heuristic: number;
   usable: number;
   sparse: number;
   picklists: Record<string, Picklist>;
