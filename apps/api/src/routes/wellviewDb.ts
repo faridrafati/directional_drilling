@@ -1,0 +1,820 @@
+/**
+ * WellView Online — the database-facing half of the WellView web application.
+ *
+ * The desktop WellView (Peloton) is a shell around one relational schema:
+ * every table carries `idwell`, records are identified by `IDRec`, and child
+ * records point at their parent record through `IDRecParent`. The parent TABLE
+ * is not stored anywhere — it is encoded in the table NAME: `wvJobReportTimeLog`
+ * is a child of `wvJobReport`, which is a child of `wvJob`. That prefix rule
+ * was verified against the converted sample database (128 child tables with
+ * live rows all resolve; the three exceptions are `wvWellbore`, whose
+ * IDRecParent is a SELF-reference for sidetracks, and `wvAttachment`/`wvComment`,
+ * which attach to any record).
+ *
+ * This module serves, for each converted database in `sqlite_DB/wellview/`:
+ *   • the Open Database list (the manual's chapter-1 dialog)
+ *   • the Well Explorer list with selectable well-header columns and the
+ *     Quick Query filter (manual §3.2–3.3)
+ *   • the Edit Data subject-area tree with per-well record counts (§3.9)
+ *   • records of any folder, and add / edit / duplicate / delete with the
+ *     manual's cascade rule ("when deleting a record containing records in a
+ *     subfolder, all of the records in the subfolder are also deleted")
+ *   • the Data Audit rules of §10.2, each one skipped honestly when the
+ *     schema lacks its columns rather than silently passing
+ *   • the schematic payload (§3.8) and the template-data resolution shared
+ *     with the sample-database browser.
+ *
+ * Mutations open the SQLite file writable — that file IS the database, exactly
+ * as the .mdb was for desktop WellView. The conversion source `.mdb` files are
+ * kept under WellView_files/db, so a database can always be regenerated.
+ */
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import type { FastifyInstance, FastifyReply } from "fastify";
+import { requireUser } from "../entry/auth.js";
+import { resolveTemplateData } from "./wellviewSample.js";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = join(HERE, "..", "..", "..", "..");
+const DB_DIR = join(REPO, "sqlite_DB", "wellview");
+const REPORTS_JSON = join(REPO, "apps", "web", "public", "wellview-templates", "reports.json");
+
+// ── database registry ─────────────────────────────────────────────────────────
+interface Db {
+  id: string;
+  path: string;
+  ro: DatabaseSync;
+  rw: DatabaseSync | null;
+}
+const _dbs = new Map<string, Db>();
+
+function listDbFiles(): { id: string; path: string }[] {
+  if (!existsSync(DB_DIR)) return [];
+  return readdirSync(DB_DIR)
+    .filter((f) => f.endsWith(".sqlite"))
+    .map((f) => ({ id: f.replace(/\.sqlite$/, ""), path: join(DB_DIR, f) }));
+}
+
+function db(id: string): Db | null {
+  const hit = _dbs.get(id);
+  if (hit) return hit;
+  const file = listDbFiles().find((f) => f.id === id);
+  if (!file) return null;
+  const entry: Db = { id, path: file.path, ro: new DatabaseSync(file.path, { readOnly: true }), rw: null };
+  _dbs.set(id, entry);
+  return entry;
+}
+
+/** The writable handle, opened only when a mutation actually happens. */
+function writable(d: Db): DatabaseSync {
+  if (!d.rw) d.rw = new DatabaseSync(d.path);
+  return d.rw;
+}
+
+// ── schema model (per database) ───────────────────────────────────────────────
+interface TableInfo {
+  name: string;                       // actual mixed-case name
+  cols: string[];                     // actual column names in order
+  colSet: Map<string, string>;        // lowercase → actual
+  hasIdwell: boolean;
+  hasParent: boolean;
+  parent: string | null;              // parent TABLE name (prefix rule)
+  children: string[];
+}
+const _schemas = new Map<string, Map<string, TableInfo>>();
+
+function schema(d: Db): Map<string, TableInfo> {
+  const hit = _schemas.get(d.id);
+  if (hit) return hit;
+  const out = new Map<string, TableInfo>();
+  const names = (d.ro.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as
+    { name: string }[]).map((r) => r.name);
+  const byLc = new Map(names.map((n) => [n.toLowerCase(), n]));
+  for (const name of names) {
+    const cols = (d.ro.prepare(`PRAGMA table_info("${name}")`).all() as { name: string }[]).map((c) => c.name);
+    const colSet = new Map(cols.map((c) => [c.toLowerCase(), c]));
+    out.set(name.toLowerCase(), {
+      name, cols, colSet,
+      hasIdwell: colSet.has("idwell"),
+      hasParent: colSet.has("idrecparent"),
+      parent: null, children: [],
+    });
+  }
+  for (const t of out.values()) {
+    if (!t.hasParent) continue;
+    const lc = t.name.toLowerCase();
+    // Longest proper prefix that is itself a table = the parent table.
+    for (let i = lc.length - 1; i > 2; i--) {
+      const cand = lc.slice(0, i);
+      if (byLc.has(cand)) {
+        // wvWellbore's IDRecParent is a self-reference (sidetrack → parent bore),
+        // not a link into another table — it stays a top-level subject area.
+        if (cand === lc) continue;
+        t.parent = byLc.get(cand)!;
+        out.get(cand)!.children.push(t.name);
+        break;
+      }
+    }
+  }
+  _schemas.set(d.id, out);
+  return out;
+}
+
+const table = (d: Db, name: string): TableInfo | null => schema(d).get(name.toLowerCase()) ?? null;
+
+/** System/bookkeeping columns, hidden unless the client asks (§3.9 "View System Fields"). */
+const isSysCol = (c: string) => /^sys/i.test(c);
+/** Link/identity columns the grid shows dimmed but never edits directly. */
+const isIdCol = (c: string) => /^id(well|rec)/i.test(c);
+
+// ── labels ────────────────────────────────────────────────────────────────────
+/**
+ * Folder names as the manual uses them, keyed by table name sans "wv".
+ * Anything not listed falls back to camel-case splitting of its suffix.
+ */
+const FOLDER_LABELS: Record<string, string> = {
+  WellHeader: "Well Header (General)",
+  Wellbore: "Wellbores",
+  WellboreDirSurvey: "Directional Surveys",
+  WellboreDirSurveyData: "Survey Stations",
+  WellboreFormation: "Formations",
+  WellboreSize: "Wellbore Sizes (Sections)",
+  Zone: "Zones",
+  Job: "Jobs",
+  JobAFE: "AFE / WBS",
+  JobAFEDetail: "AFE Cost Breakdown",
+  JobContact: "Job Contacts",
+  JobPhase: "Job Phases",
+  JobPhaseActivity: "Phase Activities",
+  JobReport: "Daily Operations",
+  JobReportTimeLog: "Time Log",
+  JobReportCostGen: "Daily Costs",
+  JobReportPersonnel: "Personnel",
+  JobReportContact: "Daily Contacts",
+  JobReportSafety: "Safety / Inspections",
+  JobReportMudPumpOps: "Mud Pump Operations",
+  JobReportProblem: "Unscheduled Events",
+  JobDrillBit: "Drill Bits",
+  JobDrillString: "Drill Strings / BHA",
+  JobDrillStringComp: "BHA Components",
+  JobDrillStringDrillParam: "Drilling Parameters",
+  JobMudPump: "Mud Pumps",
+  JobRig: "Rig / Unit",
+  JobSupply: "Job Supplies",
+  JobMudAdd: "Mud Additives",
+  Cas: "Casing Strings",
+  CasComp: "Casing Components",
+  CasCompTally: "Casing Tally",
+  Cement: "Cement",
+  CementStage: "Cement Stages",
+  CementStageFluid: "Cement Fluids",
+  CementStageFluidAdd: "Cement Fluid Additives",
+  Tub: "Tubing Strings",
+  TubComp: "Tubing Components",
+  TubCompTally: "Tubing Tally",
+  Rod: "Rod Strings",
+  RodComp: "Rod Components",
+  OtherInHole: "Other in Hole",
+  OtherStr: "Other Strings",
+  Perforation: "Perforations",
+  StimTreat: "Stimulations",
+  Core: "Cores",
+  Log: "Logs",
+  GeoEval: "Geological Evaluation",
+  Problem: "Interval Problems",
+  Note: "Notes / Lessons",
+  Attachment: "Attachments",
+  Production: "Production",
+  WellTestProd: "Production Tests",
+  Wellhead: "Wellhead",
+  Inspect: "Inspections",
+  Task: "Tasks",
+  ResponsibleTeam: "Responsible Teams",
+};
+
+/** DtTmSpud → "Date/Time Spud", ElvOrigKB → "Elevation Orig KB", SzODNom → "Size OD Nom" … */
+function humanise(raw: string): string {
+  let s = raw
+    .replace(/^DtTm/, "DateTime ")
+    .replace(/^Elv/, "Elevation ")
+    .replace(/^Sz/, "Size ")
+    .replace(/^Pres/, "Pressure ")
+    .replace(/^Wt/, "Weight ");
+  s = s.replace(/([a-z\d])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
+  return s.replace(/\s+/g, " ").trim();
+}
+
+function folderLabel(tableName: string, parent: string | null): string {
+  const key = tableName.replace(/^wv/i, "");
+  if (FOLDER_LABELS[key]) return FOLDER_LABELS[key];
+  const suffix = parent ? tableName.slice(parent.length) : key;
+  return humanise(suffix || key);
+}
+
+/** table → column → interpreted label, mined from the parsed report templates. */
+let _fieldLabels: Map<string, Map<string, string>> | null = null;
+function fieldLabels(): Map<string, Map<string, string>> {
+  if (_fieldLabels) return _fieldLabels;
+  _fieldLabels = new Map();
+  try {
+    const raw = JSON.parse(readFileSync(REPORTS_JSON, "utf-8")) as {
+      reports: { blocks: { table: string | null; fields: { column: string; label_interpreted?: string | null }[] }[] }[];
+    };
+    for (const r of raw.reports) {
+      for (const b of r.blocks) {
+        if (!b.table) continue;
+        const t = b.table.toLowerCase();
+        let m = _fieldLabels.get(t);
+        if (!m) { m = new Map(); _fieldLabels.set(t, m); }
+        for (const f of b.fields) {
+          const lc = f.column.toLowerCase();
+          if (f.label_interpreted && !m.has(lc)) m.set(lc, f.label_interpreted);
+        }
+      }
+    }
+  } catch { /* templates not exported — humanised names still work */ }
+  return _fieldLabels;
+}
+
+function columnLabel(tableName: string, col: string): string {
+  return fieldLabels().get(tableName.toLowerCase())?.get(col.toLowerCase()) ?? humanise(col);
+}
+
+// ── subject-area tree ─────────────────────────────────────────────────────────
+/** Top-level display order, per the manual's "start with the first subject area
+ *  and work down the list". Unlisted top tables follow alphabetically. */
+const SUBJECT_ORDER = [
+  "wvWellHeader", "wvWellbore", "wvZone", "wvJob", "wvCas", "wvCement", "wvTub",
+  "wvRod", "wvOtherInHole", "wvOtherStr", "wvPerforation", "wvStimTreat",
+  "wvCore", "wvLog", "wvGeoEval", "wvProblem", "wvNote", "wvAttachment",
+];
+/** Bookkeeping tables that are not subject areas. */
+const HIDDEN_TABLES = /^wv(sys|externaldata|units)/i;
+
+interface TreeNode { table: string; label: string; count: number; children: TreeNode[] }
+
+function buildTree(d: Db, idwell: string | null): TreeNode[] {
+  const sch = schema(d);
+  const count = (t: TableInfo): number => {
+    try {
+      if (idwell && t.hasIdwell) {
+        return (d.ro.prepare(`SELECT COUNT(*) c FROM "${t.name}" WHERE idwell = ?`).get(idwell) as { c: number }).c;
+      }
+      return (d.ro.prepare(`SELECT COUNT(*) c FROM "${t.name}"`).get() as { c: number }).c;
+    } catch { return 0; }
+  };
+  const node = (t: TableInfo): TreeNode => ({
+    table: t.name,
+    label: folderLabel(t.name, t.parent),
+    count: count(t),
+    children: t.children
+      .map((c) => sch.get(c.toLowerCase())!)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(node),
+  });
+  const tops = [...sch.values()].filter(
+    (t) => t.hasIdwell && (!t.hasParent || t.name.toLowerCase() === "wvwellbore") && !HIDDEN_TABLES.test(t.name),
+  );
+  const rank = (t: TableInfo) => {
+    const i = SUBJECT_ORDER.findIndex((s) => s.toLowerCase() === t.name.toLowerCase());
+    return i === -1 ? SUBJECT_ORDER.length : i;
+  };
+  tops.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  return tops.map(node);
+}
+
+// ── record helpers ────────────────────────────────────────────────────────────
+const newIdRec = () => randomUUID().replace(/-/g, "").toUpperCase();
+
+/** The column to order a folder's records by — dates first, then sequence/depth. */
+function orderColumn(t: TableInfo): string | null {
+  for (const k of ["dttm", "dttmstart", "dttmspud", "dttmrun", "sysseq", "seqno", "depthtop", "depth", "md"]) {
+    const c = t.colSet.get(k);
+    if (c) return c;
+  }
+  return null;
+}
+
+function shapeValue(v: unknown): string | number | null {
+  if (v == null) return null;
+  if (v instanceof Uint8Array) return `(binary · ${v.byteLength} bytes)`;
+  if (typeof v === "bigint") return Number(v);
+  return v as string | number;
+}
+
+/** Cascade delete: the record, then every child record in prefix-child tables. */
+function deleteRecord(d: Db, t: TableInfo, idrec: string): number {
+  const sch = schema(d);
+  const w = writable(d);
+  let removed = 0;
+  for (const childName of t.children) {
+    const child = sch.get(childName.toLowerCase())!;
+    if (!child.colSet.has("idrec") || !child.hasParent) continue;
+    const kids = w.prepare(`SELECT "${child.colSet.get("idrec")}" AS id FROM "${child.name}" WHERE "${child.colSet.get("idrecparent")}" = ?`)
+      .all(idrec) as { id: string }[];
+    for (const k of kids) removed += deleteRecord(d, child, k.id);
+  }
+  const idCol = t.colSet.get("idrec");
+  if (idCol) {
+    w.prepare(`DELETE FROM "${t.name}" WHERE "${idCol}" = ?`).run(idrec);
+    removed += 1;
+  }
+  return removed;
+}
+
+// ── §10.2 data-audit rules ────────────────────────────────────────────────────
+interface AuditRule {
+  id: string;
+  report: string;
+  rule: string;
+  table: string;
+  /** SQL where-clause over alias t; may reference well-header alias h. */
+  where: string;
+  needs: string[];               // t.columns the rule reads — skipped if absent
+  detail: string[];              // columns to show for each violation
+}
+
+const AUDIT_RULES: AuditRule[] = [
+  {
+    id: "hdr-tub-gt-cas", report: "Well Header Information", table: "wvWellHeader",
+    rule: "Tubing head elevation is greater than the casing head elevation.",
+    where: "t.ElvTubHead IS NOT NULL AND t.ElvCasFlange IS NOT NULL AND CAST(t.ElvTubHead AS REAL) > CAST(t.ElvCasFlange AS REAL)",
+    needs: ["elvtubhead", "elvcasflange"], detail: ["ElvTubHead", "ElvCasFlange"],
+  },
+  {
+    id: "hdr-head-gt-kb", report: "Well Header Information", table: "wvWellHeader",
+    rule: "Tubing or casing head elevation is greater than original KB.",
+    where: "t.ElvOrigKB IS NOT NULL AND ((t.ElvTubHead IS NOT NULL AND CAST(t.ElvTubHead AS REAL) > CAST(t.ElvOrigKB AS REAL)) OR (t.ElvCasFlange IS NOT NULL AND CAST(t.ElvCasFlange AS REAL) > CAST(t.ElvOrigKB AS REAL)))",
+    needs: ["elvorigkb"], detail: ["ElvOrigKB", "ElvTubHead", "ElvCasFlange"],
+  },
+  {
+    id: "hdr-planned-spud", report: "Well Header Information", table: "wvWellHeader",
+    rule: "Well is flagged as Planned but has an original spud date recorded.",
+    where: "t.DtTmSpud IS NOT NULL AND (t.CurrentWellStatus1 LIKE '%planned%' OR t.CurrentWellStatus2 LIKE '%planned%')",
+    needs: ["dttmspud", "currentwellstatus1"], detail: ["CurrentWellStatus1", "DtTmSpud"],
+  },
+  {
+    id: "hdr-spud-after-prod", report: "Well Header Information", table: "wvWellHeader",
+    rule: "Original spud date is later than the first production date.",
+    where: "t.DtTmSpud IS NOT NULL AND t.DtTmFirstProd IS NOT NULL AND t.DtTmSpud > t.DtTmFirstProd",
+    needs: ["dttmspud", "dttmfirstprod"], detail: ["DtTmSpud", "DtTmFirstProd"],
+  },
+  {
+    id: "zone-depths", report: "Zone Information", table: "wvZone",
+    rule: "Bottom zone depth is shallower than the top depth.",
+    where: "t.DepthTop IS NOT NULL AND t.DepthBtm IS NOT NULL AND CAST(t.DepthBtm AS REAL) < CAST(t.DepthTop AS REAL)",
+    needs: ["depthtop", "depthbtm"], detail: ["ZoneName", "DepthTop", "DepthBtm"],
+  },
+  {
+    id: "bore-kickoff", report: "Wellbore", table: "wvWellbore",
+    rule: "Sidetrack wellbore is missing its kick-off depth or kick-off method.",
+    // An original hole's IDRecParent is a SELF-reference — only a bore pointing
+    // at a DIFFERENT bore is a sidetrack (verified against the sample data).
+    where: "t.IDRecParent IS NOT NULL AND t.IDRecParent <> t.IDRec AND ((t.KickOffDepth IS NULL AND t.KickOffMethod IS NOT NULL) OR (t.KickOffDepth IS NOT NULL AND t.KickOffMethod IS NULL) OR (t.KickOffDepth IS NULL AND t.KickOffMethod IS NULL))",
+    needs: ["idrecparent", "idrec", "kickoffdepth", "kickoffmethod"], detail: ["Des", "KickOffDepth", "KickOffMethod"],
+  },
+  {
+    id: "bore-vsdir", report: "Wellbore", table: "wvWellbore",
+    rule: "Directional wellbore has a survey but no vertical section direction.",
+    where: "t.IDRecDirSrvyActual IS NOT NULL AND t.VSDir IS NULL",
+    needs: ["idrecdirsrvyactual", "vsdir"], detail: ["Des", "VSDir"],
+  },
+  {
+    id: "boresize-dates", report: "Wellbore Section", table: "wvWellboreSize",
+    rule: "Wellbore section has a depth but no start or end date.",
+    where: "t.DepthBtmActual IS NOT NULL AND (t.DtTmStart IS NULL OR t.DtTmEnd IS NULL)",
+    needs: ["depthbtmactual", "dttmstart", "dttmend"], detail: ["Des", "DepthBtmActual", "DtTmStart", "DtTmEnd"],
+  },
+  {
+    id: "job-dates", report: "Job", table: "wvJob",
+    rule: "Job end date is earlier than the start date.",
+    where: "t.DtTmStart IS NOT NULL AND t.DtTmEnd IS NOT NULL AND t.DtTmEnd < t.DtTmStart",
+    needs: ["dttmstart", "dttmend"], detail: ["JobTyp1", "DtTmStart", "DtTmEnd"],
+  },
+  {
+    id: "job-cost-final", report: "Job", table: "wvJob",
+    rule: "Job ended more than six months ago with no final actual cost.",
+    where: "t.DtTmEnd IS NOT NULL AND t.DtTmEnd < datetime('now', '-6 months') AND t.CostFinalActual IS NULL",
+    needs: ["dttmend", "costfinalactual"], detail: ["JobTyp1", "DtTmEnd", "CostFinalActual"],
+  },
+  {
+    id: "drillparam-24h", report: "Drilling Parameters", table: "wvJobDrillStringDrillParam",
+    rule: "Drilling-parameter interval spans more than 24 hours.",
+    where: "t.DtTmStart IS NOT NULL AND t.DtTmEnd IS NOT NULL AND (julianday(t.DtTmEnd) - julianday(t.DtTmStart)) > 1.0",
+    needs: ["dttmstart", "dttmend"], detail: ["DtTmStart", "DtTmEnd"],
+  },
+  {
+    id: "drillparam-depth", report: "Drilling Parameters", table: "wvJobDrillStringDrillParam",
+    rule: "Drilling-parameter end depth is less than the start depth.",
+    where: "t.DepthStart IS NOT NULL AND t.DepthEnd IS NOT NULL AND CAST(t.DepthEnd AS REAL) < CAST(t.DepthStart AS REAL)",
+    needs: ["depthstart", "depthend"], detail: ["DepthStart", "DepthEnd"],
+  },
+  {
+    id: "daily-24h", report: "Daily Operations", table: "wvJobReport",
+    rule: "Daily operation spans more than 24 hours (report start to end).",
+    where: "t.DtTmStart IS NOT NULL AND t.DtTmEnd IS NOT NULL AND (julianday(t.DtTmEnd) - julianday(t.DtTmStart)) > 1.0001",
+    needs: ["dttmstart", "dttmend"], detail: ["DtTmStart", "DtTmEnd"],
+  },
+  {
+    id: "daily-lti", report: "Daily Operations", table: "wvJobReport",
+    rule: "Daily operation is missing days since last reportable incident.",
+    where: "t.DurationSinceLTInc IS NULL",
+    needs: ["durationsinceltinc"], detail: ["DtTmStart"],
+  },
+  {
+    id: "cas-run-date", report: "Casing", table: "wvCas",
+    rule: "Casing string is not proposed and has no run date.",
+    where: "(t.ProposedRun IS NULL OR t.ProposedRun IN ('0','false','False')) AND t.DtTmRun IS NULL",
+    needs: ["proposedrun", "dttmrun"], detail: ["Des", "DtTmRun"],
+  },
+  {
+    id: "cas-id-gt-od", report: "Casing — Incorrect ID", table: "wvCasComp",
+    rule: "Casing component ID is greater than its OD.",
+    where: "t.SzIDNom IS NOT NULL AND t.SzODNom IS NOT NULL AND CAST(t.SzIDNom AS REAL) > CAST(t.SzODNom AS REAL)",
+    needs: ["szidnom", "szodnom"], detail: ["Des", "SzIDNom", "SzODNom"],
+  },
+  {
+    id: "tub-run-date", report: "Tubing", table: "wvTub",
+    rule: "Tubing string is not proposed and has no run date.",
+    where: "(t.ProposedRun IS NULL OR t.ProposedRun IN ('0','false','False')) AND t.DtTmRun IS NULL",
+    needs: ["proposedrun", "dttmrun"], detail: ["Des", "DtTmRun"],
+  },
+  {
+    id: "tub-id-gt-od", report: "Tubing — Incorrect ID", table: "wvTubComp",
+    rule: "Tubing component ID is greater than its OD.",
+    where: "t.SzIDNom IS NOT NULL AND t.SzODNom IS NOT NULL AND CAST(t.SzIDNom AS REAL) > CAST(t.SzODNom AS REAL)",
+    needs: ["szidnom", "szodnom"], detail: ["Des", "SzIDNom", "SzODNom"],
+  },
+  {
+    id: "oih-run", report: "Other in Hole", table: "wvOtherInHole",
+    rule: "Other-in-hole item is not proposed and has no run date.",
+    where: "(t.ProposedRun IS NULL OR t.ProposedRun IN ('0','false','False')) AND t.DtTmRun IS NULL",
+    needs: ["proposedrun", "dttmrun"], detail: ["Des", "DtTmRun"],
+  },
+  {
+    id: "oih-id-gt-od", report: "Other in Hole", table: "wvOtherInHole",
+    rule: "Other-in-hole item ID is greater than its OD.",
+    where: "t.SzIDNom IS NOT NULL AND t.SzODMax IS NOT NULL AND CAST(t.SzIDNom AS REAL) > CAST(t.SzODMax AS REAL)",
+    needs: ["szidnom", "szodmax"], detail: ["Des", "SzIDNom", "SzODMax"],
+  },
+  {
+    id: "cement-start", report: "Cement", table: "wvCement",
+    rule: "Cement job is not planned and has no start date.",
+    where: "(t.Proposed IS NULL OR t.Proposed IN ('0','false','False')) AND t.DtTmStart IS NULL",
+    needs: ["proposed", "dttmstart"], detail: ["Des", "DtTmStart"],
+  },
+  {
+    id: "perf-depths", report: "Perforation Information", table: "wvPerforation",
+    rule: "Actual perforation bottom depth is shallower than its top depth.",
+    where: "(t.Proposed IS NULL OR t.Proposed IN ('0','false','False')) AND t.DepthTop IS NOT NULL AND t.DepthBtm IS NOT NULL AND CAST(t.DepthBtm AS REAL) < CAST(t.DepthTop AS REAL)",
+    needs: ["proposed", "depthtop", "depthbtm"], detail: ["DepthTop", "DepthBtm"],
+  },
+];
+
+// ── schematic payload ─────────────────────────────────────────────────────────
+/** One string drawn on the schematic: casing, tubing, rods, other-in-hole. */
+function stringRows(d: Db, tname: string, idwell: string, extra: string[] = []): Record<string, unknown>[] {
+  const t = table(d, tname);
+  if (!t) return [];
+  const want = ["IDRec", "Des", "DepthBtm", "DepthTop", "DtTmRun", "DtTmPull", "ProposedRun", "IDRecWellBore", ...extra]
+    .map((c) => t.colSet.get(c.toLowerCase()))
+    .filter((c): c is string => !!c);
+  if (!want.length) return [];
+  return (d.ro.prepare(`SELECT ${want.map((c) => `"${c}"`).join(", ")} FROM "${t.name}" WHERE idwell = ?`)
+    .all(idwell) as Record<string, unknown>[]).map((r) => {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
+    return out;
+  });
+}
+
+/** Max component OD per parent string, for honest widths on the drawing. */
+function maxOdByParent(d: Db, compTable: string, idwell: string): Map<string, number> {
+  const t = table(d, compTable);
+  const out = new Map<string, number>();
+  if (!t) return out;
+  const od = t.colSet.get("szodnom") ?? t.colSet.get("szodmax");
+  const par = t.colSet.get("idrecparent");
+  if (!od || !par) return out;
+  const rows = d.ro.prepare(
+    `SELECT "${par}" p, MAX(CAST("${od}" AS REAL)) m FROM "${t.name}" WHERE idwell = ? AND "${od}" IS NOT NULL GROUP BY "${par}"`,
+  ).all(idwell) as { p: string; m: number }[];
+  for (const r of rows) out.set(r.p, r.m);
+  return out;
+}
+
+// ── routes ────────────────────────────────────────────────────────────────────
+function need(reply: FastifyReply, id: string): Db | null {
+  const d = db(id);
+  if (!d) void reply.code(404).send({ error: `no database named ${id}` });
+  return d;
+}
+
+export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<void> {
+  /** The Open Database window. */
+  app.get("/entry/wellview/dbs", { preHandler: requireUser }, async () => {
+    return listDbFiles().map((f) => {
+      const d = db(f.id)!;
+      let wells = 0;
+      try {
+        wells = (d.ro.prepare("SELECT COUNT(*) c FROM wvWellHeader").get() as { c: number }).c;
+      } catch { /* not a WellView database */ }
+      return { id: f.id, file: `${f.id}.sqlite`, wells, sizeBytes: statSync(f.path).size };
+    });
+  });
+
+  /** Well-header columns, for the column chooser / group-by / quick-query pickers. */
+  app.get<{ Params: { db: string } }>(
+    "/entry/wellview/dbs/:db/header-columns",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, "wvWellHeader");
+      if (!t) return reply.code(404).send({ error: "wvWellHeader missing" });
+      return t.cols
+        .filter((c) => !isSysCol(c) && c.toLowerCase() !== "idwell")
+        .map((c) => ({ column: c, label: columnLabel(t.name, c) }));
+    },
+  );
+
+  /**
+   * The Well Explorer list. `cols` picks well-header columns (§3.2 Well List
+   * Properties); `lookin`+`lookfor` is the Quick Query (§3.3), matching full
+   * or partial values just as the manual describes.
+   */
+  app.get<{ Params: { db: string }; Querystring: { cols?: string; lookin?: string; lookfor?: string } }>(
+    "/entry/wellview/dbs/:db/wells",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, "wvWellHeader");
+      if (!t) return reply.code(404).send({ error: "wvWellHeader missing" });
+      const wanted = (req.query.cols ?? "WellName,WellIDA")
+        .split(",")
+        .map((c) => t.colSet.get(c.trim().toLowerCase()))
+        .filter((c): c is string => !!c);
+      if (!wanted.includes(t.colSet.get("wellname")!)) wanted.unshift(t.colSet.get("wellname")!);
+      const sel = ["idwell", ...wanted].map((c) => `"${c}"`).join(", ");
+      let where = "";
+      const args: string[] = [];
+      const lookin = req.query.lookin ? t.colSet.get(req.query.lookin.toLowerCase()) : null;
+      if (lookin && req.query.lookfor) {
+        where = `WHERE "${lookin}" LIKE ?`;
+        args.push(`%${req.query.lookfor}%`);
+      }
+      const rows = d.ro.prepare(`SELECT ${sel} FROM "${t.name}" ${where} ORDER BY "${t.colSet.get("wellname")}"`)
+        .all(...args) as Record<string, unknown>[];
+      return {
+        columns: wanted.map((c) => ({ column: c, label: columnLabel(t.name, c) })),
+        wells: rows.map((r) => {
+          const out: Record<string, string | number | null> = {};
+          for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
+          return out;
+        }),
+      };
+    },
+  );
+
+  /** The Edit Data subject-area tree, with per-well record counts. */
+  app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
+    "/entry/wellview/dbs/:db/tree",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      return { tree: buildTree(d, req.query.idwell || null) };
+    },
+  );
+
+  /** Records of one folder, scoped to a well and (for subfolders) a parent record. */
+  app.get<{ Params: { db: string; table: string }; Querystring: { idwell?: string; parent?: string; system?: string } }>(
+    "/entry/wellview/dbs/:db/records/:table",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, req.params.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
+      const showSys = req.query.system === "1";
+      const cols = t.cols.filter((c) => showSys || !isSysCol(c));
+      const where: string[] = [];
+      const args: string[] = [];
+      if (req.query.idwell && t.hasIdwell) { where.push(`"${t.colSet.get("idwell")}" = ?`); args.push(req.query.idwell); }
+      if (req.query.parent && t.hasParent) { where.push(`"${t.colSet.get("idrecparent")}" = ?`); args.push(req.query.parent); }
+      const ord = orderColumn(t);
+      const rows = d.ro.prepare(
+        `SELECT ${cols.map((c) => `"${c}"`).join(", ")} FROM "${t.name}"` +
+        (where.length ? ` WHERE ${where.join(" AND ")}` : "") +
+        (ord ? ` ORDER BY "${ord}"` : "") +
+        " LIMIT 500",
+      ).all(...args) as Record<string, unknown>[];
+      return {
+        table: t.name,
+        label: folderLabel(t.name, t.parent),
+        parentTable: t.parent,
+        columns: cols.map((c) => ({
+          column: c,
+          label: columnLabel(t.name, c),
+          id: isIdCol(c),
+          system: isSysCol(c),
+        })),
+        rows: rows.map((r) => {
+          const out: Record<string, string | number | null> = {};
+          for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
+          return out;
+        }),
+      };
+    },
+  );
+
+  /** Add a record (§3.9 "Add a New Record"): IDRec generated, links filled in. */
+  app.post<{ Params: { db: string; table: string }; Body: { idwell?: string; parent?: string; values?: Record<string, unknown> } }>(
+    "/entry/wellview/dbs/:db/records/:table",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, req.params.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
+      const values: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(req.body?.values ?? {})) {
+        const actual = t.colSet.get(k.toLowerCase());
+        if (actual && !isSysCol(actual) && !isIdCol(actual)) values[actual] = v;
+      }
+      const idrec = t.colSet.has("idrec") ? newIdRec() : null;
+      if (idrec) values[t.colSet.get("idrec")!] = idrec;
+      if (t.hasIdwell) {
+        if (!req.body?.idwell) return reply.code(400).send({ error: "idwell is required" });
+        values[t.colSet.get("idwell")!] = req.body.idwell;
+      }
+      if (t.hasParent && req.body?.parent) values[t.colSet.get("idrecparent")!] = req.body.parent;
+      const user = (req as unknown as { entryUser?: { username?: string } }).entryUser?.username ?? "web";
+      const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      for (const [k, v] of [["syscreatedate", now], ["syscreateuser", user], ["sysmoddate", now], ["sysmoduser", user]] as const) {
+        const c = t.colSet.get(k);
+        if (c) values[c] = v;
+      }
+      const cols = Object.keys(values);
+      if (!cols.length) return reply.code(400).send({ error: "nothing to insert" });
+      writable(d).prepare(
+        `INSERT INTO "${t.name}" (${cols.map((c) => `"${c}"`).join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
+      ).run(...cols.map((c) => values[c] as string | number | null));
+      return { idrec };
+    },
+  );
+
+  /** Edit fields of a record. */
+  app.patch<{ Params: { db: string; table: string; idrec: string }; Body: { values?: Record<string, unknown> } }>(
+    "/entry/wellview/dbs/:db/records/:table/:idrec",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, req.params.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
+      const keyCol = t.colSet.get("idrec") ?? (t.name.toLowerCase() === "wvwellheader" ? t.colSet.get("idwell") : null);
+      if (!keyCol) return reply.code(400).send({ error: `${t.name} has no record key` });
+      const sets: string[] = [];
+      const args: (string | number | null)[] = [];
+      for (const [k, v] of Object.entries(req.body?.values ?? {})) {
+        const actual = t.colSet.get(k.toLowerCase());
+        if (!actual || isSysCol(actual) || isIdCol(actual)) continue;
+        sets.push(`"${actual}" = ?`);
+        args.push((v === "" ? null : v) as string | number | null);
+      }
+      if (!sets.length) return reply.code(400).send({ error: "nothing to update" });
+      const user = (req as unknown as { entryUser?: { username?: string } }).entryUser?.username ?? "web";
+      const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      for (const [k, v] of [["sysmoddate", now], ["sysmoduser", user]] as const) {
+        const c = t.colSet.get(k);
+        if (c) { sets.push(`"${c}" = ?`); args.push(v); }
+      }
+      const res = writable(d).prepare(`UPDATE "${t.name}" SET ${sets.join(", ")} WHERE "${keyCol}" = ?`)
+        .run(...args, req.params.idrec);
+      return { changed: Number(res.changes) };
+    },
+  );
+
+  /** Delete a record and, per the manual, everything in its subfolders. */
+  app.delete<{ Params: { db: string; table: string; idrec: string } }>(
+    "/entry/wellview/dbs/:db/records/:table/:idrec",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, req.params.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
+      if (!t.colSet.has("idrec")) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
+      return { removed: deleteRecord(d, t, req.params.idrec) };
+    },
+  );
+
+  /** §10.2 Data Audit across selected wells (or all). */
+  app.get<{ Params: { db: string }; Querystring: { wells?: string } }>(
+    "/entry/wellview/dbs/:db/audit",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const hdr = table(d, "wvWellHeader");
+      if (!hdr) return reply.code(404).send({ error: "wvWellHeader missing" });
+      const wellIds = (req.query.wells ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+      const findings: {
+        ruleId: string; report: string; rule: string; table: string;
+        idwell: string; well: string | null; idrec: string | null; detail: Record<string, string | number | null>;
+      }[] = [];
+      const skipped: { ruleId: string; reason: string }[] = [];
+      for (const r of AUDIT_RULES) {
+        const t = table(d, r.table);
+        if (!t) { skipped.push({ ruleId: r.id, reason: `table ${r.table} absent` }); continue; }
+        const missing = r.needs.filter((c) => !t.colSet.has(c));
+        if (missing.length) { skipped.push({ ruleId: r.id, reason: `columns absent: ${missing.join(", ")}` }); continue; }
+        const detailCols = r.detail.map((c) => t.colSet.get(c.toLowerCase())).filter((c): c is string => !!c);
+        const idrecSel = t.colSet.has("idrec") ? `t."${t.colSet.get("idrec")}"` : "NULL";
+        const scope = wellIds.length ? ` AND t.idwell IN (${wellIds.map(() => "?").join(",")})` : "";
+        try {
+          const rows = d.ro.prepare(
+            `SELECT t.idwell AS _idwell, ${idrecSel} AS _idrec, h."${hdr.colSet.get("wellname")}" AS _well` +
+            (detailCols.length ? ", " + detailCols.map((c) => `t."${c}"`).join(", ") : "") +
+            ` FROM "${t.name}" t LEFT JOIN "${hdr.name}" h ON h.idwell = t.idwell WHERE (${r.where})${scope} LIMIT 200`,
+          ).all(...wellIds) as Record<string, unknown>[];
+          for (const row of rows) {
+            const detail: Record<string, string | number | null> = {};
+            for (const c of detailCols) detail[c] = shapeValue(row[c]);
+            findings.push({
+              ruleId: r.id, report: r.report, rule: r.rule, table: t.name,
+              idwell: String(row._idwell), well: (row._well as string) ?? null,
+              idrec: row._idrec == null ? null : String(row._idrec), detail,
+            });
+          }
+        } catch (e) {
+          skipped.push({ ruleId: r.id, reason: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      return { findings, skipped, rulesRun: AUDIT_RULES.length - skipped.length };
+    },
+  );
+
+  /** Everything the schematic view draws, in one honest payload. */
+  app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
+    "/entry/wellview/dbs/:db/schematic",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const idwell = req.query.idwell ?? "";
+      if (!idwell) return reply.code(400).send({ error: "idwell is required" });
+      const casOd = maxOdByParent(d, "wvCasComp", idwell);
+      const tubOd = maxOdByParent(d, "wvTubComp", idwell);
+      const withOd = (rows: Record<string, unknown>[], od: Map<string, number>) =>
+        rows.map((r) => ({ ...r, maxOd: od.get(String(r.IDRec)) ?? null }));
+      const bores = stringRows(d, "wvWellbore", idwell, ["KickOffDepth", "IDRecParent", "ProfileTyp"]);
+      const sizes = stringRows(d, "wvWellboreSize", idwell, ["DepthTopActual", "DepthBtmActual", "Sz", "DtTmStart", "DtTmEnd", "IDRecParent"]);
+      const dates = new Set<string>();
+      const collect = (rows: Record<string, unknown>[], keys: string[]) => {
+        for (const r of rows) for (const k of keys) {
+          const v = r[k];
+          if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) dates.add(v.slice(0, 10));
+        }
+      };
+      const casings = withOd(stringRows(d, "wvCas", idwell), casOd);
+      const tubings = withOd(stringRows(d, "wvTub", idwell), tubOd);
+      const rods = stringRows(d, "wvRod", idwell);
+      const other = stringRows(d, "wvOtherInHole", idwell, ["SzODMax", "IconName"]);
+      const perfs = stringRows(d, "wvPerforation", idwell, ["DepthTop", "DtTm", "Proposed", "Typ"]);
+      const cement = stringRows(d, "wvCement", idwell, ["IDRecString", "DtTmStart", "Proposed"]);
+      const zones = stringRows(d, "wvZone", idwell, ["DepthTop", "ZoneName"]);
+      for (const set of [casings, tubings, rods, other]) collect(set, ["DtTmRun", "DtTmPull"]);
+      collect(perfs, ["DtTm"]);
+      collect(cement, ["DtTmStart"]);
+      collect(sizes, ["DtTmStart", "DtTmEnd"]);
+      return {
+        wellbores: bores, sizes, casings, tubings, rods, otherInHole: other,
+        perforations: perfs, cement, zones,
+        dates: [...dates].sort(),
+      };
+    },
+  );
+
+  /** A report template resolved against THIS database for one well (§3.8 Reports). */
+  app.get<{ Params: { db: string }; Querystring: { html?: string; well?: string } }>(
+    "/entry/wellview/dbs/:db/template-data",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const html = String(req.query.html ?? "");
+      const well = String(req.query.well ?? "");
+      if (!html) return reply.code(400).send({ error: "html (template id) is required" });
+      if (!well) return reply.code(400).send({ error: "well (idwell) is required" });
+      const resolved = resolveTemplateData(d.ro, html, well);
+      if (!resolved) return reply.code(404).send({ error: `no template with html=${html}` });
+      return resolved;
+    },
+  );
+}

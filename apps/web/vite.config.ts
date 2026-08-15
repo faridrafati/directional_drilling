@@ -7,7 +7,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:4000",
+        // Overridable so a test can stand up its own API instance on another
+        // port and point a second dev server at it.
+        target: process.env.API_PROXY_TARGET ?? "http://localhost:4000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },

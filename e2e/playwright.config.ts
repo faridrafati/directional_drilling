@@ -20,7 +20,11 @@ export default defineConfig({
   // test's assertions. Serial is the only honest setting for DB-backed E2E.
   workers: 1,
   use: {
-    baseURL: "http://localhost:5173",
+    // Overridable so a test run can target a self-contained stack on other
+    // ports; E2E_STORAGE_STATE seeds an authenticated session (localStorage
+    // token) instead of driving the sign-in form.
+    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:5173",
+    storageState: process.env.E2E_STORAGE_STATE || undefined,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },

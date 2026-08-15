@@ -35,6 +35,10 @@ const ReportEntryPage = lazy(() =>
 const WellviewReportsPage = lazy(() =>
   import("./pages/WellviewReportsPage.js").then((m) => ({ default: m.WellviewReportsPage }))
 );
+// WellView Online — the desktop application rebuilt over the converted databases.
+const WellViewOnlinePage = lazy(() =>
+  import("./pages/WellViewOnlinePage.js").then((m) => ({ default: m.WellViewOnlinePage }))
+);
 
 export function App() {
   return (
@@ -56,6 +60,7 @@ export function App() {
           <Route path="/ddr-entry" element={<ReportEntryPage />} />
           {/* Well Reports — the WellView report suite, from the entry database. */}
           <Route path="/well-reports" element={<WellviewReportsPage />} />
+          <Route path="/wellview" element={<WellViewOnlinePage />} />
           <Route
             path="/3d/:id"
             element={<PlaceholderPage title="3D Field Visualization" phase="Phase 5" />}
