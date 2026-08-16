@@ -22,6 +22,9 @@ export interface WvTreeNode {
   children: WvTreeNode[];
 }
 
+/** The physical types WellView's data model declares for a field. */
+export type WvFieldType = "string" | "stringlong" | "double" | "datetime" | "boolean" | "integer" | "blob";
+
 export interface WvRecordColumn {
   column: string;
   label: string;
@@ -31,10 +34,25 @@ export interface WvRecordColumn {
   tk?: boolean;
   /** Record-link column: candidate target tables + the TK column to keep in step. */
   link?: { tkColumn: string | null; targets: string[] };
+  /** Field help from WellView's data model (§3.11). */
+  help?: string;
+  /** Computed by WellView at print time — the desktop's green, locked fields. */
+  calculated?: boolean;
+  /** Hidden until "Show All Fields". */
+  hiddenByDefault?: boolean;
+  type?: WvFieldType;
+  unit?: string;
 }
 export interface WvRecords {
   table: string;
   label: string;
+  /** Folder help from the data model (§3.11 Folder and Field Help). */
+  help?: string;
+  /** Ordered folders (tallies, string components) — the manual's Move up/down,
+   *  Add Records to Top and Invert Components commands apply to these. */
+  sequenced?: boolean;
+  allowInsertTop?: boolean;
+  allowSeqInvert?: boolean;
   parentTable: string | null;
   columns: WvRecordColumn[];
   rows: Record<string, string | number | null>[];

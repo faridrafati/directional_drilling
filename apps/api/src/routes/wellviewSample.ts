@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance } from "fastify";
 import { requireUser } from "../entry/auth.js";
+import { columnLabel, modelField, modelTable } from "../wellview/model.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
@@ -169,6 +170,17 @@ function orderColumn(cols: Map<string, string>): string | null {
   return null;
 }
 
+/**
+ * A block's heading. The .afr often leaves it blank, which used to print the
+ * bare table name twice ("wvWellbore / wvWellbore"); the data model supplies
+ * the caption WellView itself would have printed.
+ */
+function blockTitle(b: TemplateBlock): string | null {
+  if (b.title) return b.title;
+  const m = b.table ? modelTable(b.table) : undefined;
+  return m?.label ?? b.title;
+}
+
 /** The longest proper table-name prefix that is itself a table — WellView's
  *  parent rule, needed here to scope blocks to an anchor record. */
 function prefixParent(sch: ReturnType<typeof schema>, tnameLc: string): string | null {
@@ -227,12 +239,12 @@ export function resolveTemplateData(
 
   const blocks = tpl.blocks.map((b) => {
     const tname = (b.table ?? "").toLowerCase();
-    if (!tname) return { table: b.table, title: b.title, exists: false, computed: false };
+    if (!tname) return { table: b.table, title: blockTitle(b), exists: false, computed: false };
     const t = sch.get(tname);
     if (!t) {
       return {
         table: b.table,
-        title: b.title,
+        title: blockTitle(b),
         exists: false,
         // wv*calc tables are WellView print-time computations — there is
         // nothing to read; every other miss is simply not in this database.
@@ -241,13 +253,17 @@ export function resolveTemplateData(
     }
     const wanted = b.fields.map((f) => ({
       column: f.column,
-      label: f.label_interpreted || f.column,
+      // WellView's own caption for the field, not the .afr's capitalised
+      // column name ("Wellboreida"). The template label is only a fallback.
+      label: modelField(b.table ?? "", f.column)
+        ? columnLabel(b.table!, f.column)
+        : (f.label_interpreted || f.column),
       actual: t.cols.get(f.column.toLowerCase()) ?? null,
     }));
     const present = wanted.filter((w) => w.actual != null);
     const missing = wanted.filter((w) => w.actual == null).map((w) => w.column);
     if (present.length === 0) {
-      return { table: t.name, title: b.title, exists: true, computed: false, columns: [], missing, rowCount: 0, rows: [] };
+      return { table: t.name, title: blockTitle(b), exists: true, computed: false, columns: [], missing, rowCount: 0, rows: [] };
     }
 
     const hasIdwell = t.cols.has("idwell");
@@ -310,7 +326,7 @@ export function resolveTemplateData(
     const allNull = shaped.length > 0 && shaped.every((r) => r.every((v) => v == null));
     return {
       table: t.name,
-      title: b.title,
+      title: blockTitle(b),
       exists: true,
       computed: false,
       columns: present.map((p) => ({ column: p.column, label: p.label })),

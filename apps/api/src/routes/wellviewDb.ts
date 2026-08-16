@@ -28,7 +28,7 @@
  * as the .mdb was for desktop WellView. The conversion source `.mdb` files are
  * kept under WellView_files/db, so a database can always be regenerated.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -36,11 +36,11 @@ import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { requireUser } from "../entry/auth.js";
 import { resolveTemplateData } from "./wellviewSample.js";
+import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
 const DB_DIR = join(REPO, "sqlite_DB", "wellview");
-const REPORTS_JSON = join(REPO, "apps", "web", "public", "wellview-templates", "reports.json");
 
 // ── database registry ─────────────────────────────────────────────────────────
 interface Db {
@@ -143,8 +143,17 @@ const isKeyCol = (c: string) => ["idwell", "idrec", "idrecparent"].includes(c.to
  * wvCement.IDRecStringTK = 'wvcas'), which is how ambiguous links like
  * "String" (casing or tubing?) stay unambiguous.
  */
-const isLinkCol = (c: string) => /^idrec./i.test(c) && !isKeyCol(c);
 const isTkCol = (c: string) => /^idrec.+tk$/i.test(c);
+/**
+ * The model states a field's lookup kind; `foreignidrec` IS the associated-data
+ * link the manual describes. The name regex stays as the fallback for the two
+ * tables the model does not describe (wvAttachment, wvComment).
+ */
+const isLinkCol = (t: TableInfo, c: string) => {
+  const declared = modelField(t.name, c)?.lookupTyp;
+  if (declared) return declared === "foreignidrec";
+  return /^idrec./i.test(c) && !isKeyCol(c);
+};
 /**
  * wvWellbore.IDRecParent is a SELF-reference (sidetrack → parent bore), not a
  * child-table key — the manual's §10.4 "link the new wellbore to its parent
@@ -194,6 +203,15 @@ function linkTargets(d: Db, t: TableInfo, col: string): string[] {
 
 /** Something readable to identify a record by — mirrors the client's captions. */
 function captionOf(t: TableInfo, row: Record<string, unknown>): string {
+  // The model states each table's record caption as a template of its own
+  // fields — wvCasComp is "<des>, <SzODNom><SzODNom.unit>" — which is the
+  // string the desktop puts on the record selector.
+  const des = renderRecordDes(t.name, (col) => {
+    const c = t.colSet.get(col.toLowerCase());
+    const v = c ? row[c] : null;
+    return v == null ? null : String(v);
+  });
+  if (des) return des.slice(0, 60);
   for (const k of ["dttmstart", "dttm", "dttmrun", "des", "wellname", "zonename", "com"]) {
     const c = t.colSet.get(k);
     const v = c ? row[c] : null;
@@ -201,119 +219,6 @@ function captionOf(t: TableInfo, row: Record<string, unknown>): string {
   }
   const id = t.colSet.get("idrec");
   return id ? String(row[id] ?? "record").slice(0, 12) : "record";
-}
-
-// ── labels ────────────────────────────────────────────────────────────────────
-/**
- * Folder names as the manual uses them, keyed by table name sans "wv".
- * Anything not listed falls back to camel-case splitting of its suffix.
- */
-const FOLDER_LABELS: Record<string, string> = {
-  WellHeader: "Well Header (General)",
-  Wellbore: "Wellbores",
-  WellboreDirSurvey: "Directional Surveys",
-  WellboreDirSurveyData: "Survey Stations",
-  WellboreFormation: "Formations",
-  WellboreSize: "Wellbore Sizes (Sections)",
-  Zone: "Zones",
-  Job: "Jobs",
-  JobAFE: "AFE / WBS",
-  JobAFEDetail: "AFE Cost Breakdown",
-  JobContact: "Job Contacts",
-  JobPhase: "Job Phases",
-  JobPhaseActivity: "Phase Activities",
-  JobReport: "Daily Operations",
-  JobReportTimeLog: "Time Log",
-  JobReportCostGen: "Daily Costs",
-  JobReportPersonnel: "Personnel",
-  JobReportContact: "Daily Contacts",
-  JobReportSafety: "Safety / Inspections",
-  JobReportMudPumpOps: "Mud Pump Operations",
-  JobReportProblem: "Unscheduled Events",
-  JobDrillBit: "Drill Bits",
-  JobDrillString: "Drill Strings / BHA",
-  JobDrillStringComp: "BHA Components",
-  JobDrillStringDrillParam: "Drilling Parameters",
-  JobMudPump: "Mud Pumps",
-  JobRig: "Rig / Unit",
-  JobSupply: "Job Supplies",
-  JobMudAdd: "Mud Additives",
-  Cas: "Casing Strings",
-  CasComp: "Casing Components",
-  CasCompTally: "Casing Tally",
-  Cement: "Cement",
-  CementStage: "Cement Stages",
-  CementStageFluid: "Cement Fluids",
-  CementStageFluidAdd: "Cement Fluid Additives",
-  Tub: "Tubing Strings",
-  TubComp: "Tubing Components",
-  TubCompTally: "Tubing Tally",
-  Rod: "Rod Strings",
-  RodComp: "Rod Components",
-  OtherInHole: "Other in Hole",
-  OtherStr: "Other Strings",
-  Perforation: "Perforations",
-  StimTreat: "Stimulations",
-  Core: "Cores",
-  Log: "Logs",
-  GeoEval: "Geological Evaluation",
-  Problem: "Interval Problems",
-  Note: "Notes / Lessons",
-  Attachment: "Attachments",
-  Production: "Production",
-  WellTestProd: "Production Tests",
-  Wellhead: "Wellhead",
-  Inspect: "Inspections",
-  Task: "Tasks",
-  ResponsibleTeam: "Responsible Teams",
-};
-
-/** DtTmSpud → "Date/Time Spud", ElvOrigKB → "Elevation Orig KB", SzODNom → "Size OD Nom" … */
-function humanise(raw: string): string {
-  let s = raw
-    .replace(/^DtTm/, "DateTime ")
-    .replace(/^Elv/, "Elevation ")
-    .replace(/^Sz/, "Size ")
-    .replace(/^Pres/, "Pressure ")
-    .replace(/^Wt/, "Weight ");
-  s = s.replace(/([a-z\d])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
-  return s.replace(/\s+/g, " ").trim();
-}
-
-function folderLabel(tableName: string, parent: string | null): string {
-  const key = tableName.replace(/^wv/i, "");
-  if (FOLDER_LABELS[key]) return FOLDER_LABELS[key];
-  const suffix = parent ? tableName.slice(parent.length) : key;
-  return humanise(suffix || key);
-}
-
-/** table → column → interpreted label, mined from the parsed report templates. */
-let _fieldLabels: Map<string, Map<string, string>> | null = null;
-function fieldLabels(): Map<string, Map<string, string>> {
-  if (_fieldLabels) return _fieldLabels;
-  _fieldLabels = new Map();
-  try {
-    const raw = JSON.parse(readFileSync(REPORTS_JSON, "utf-8")) as {
-      reports: { blocks: { table: string | null; fields: { column: string; label_interpreted?: string | null }[] }[] }[];
-    };
-    for (const r of raw.reports) {
-      for (const b of r.blocks) {
-        if (!b.table) continue;
-        const t = b.table.toLowerCase();
-        let m = _fieldLabels.get(t);
-        if (!m) { m = new Map(); _fieldLabels.set(t, m); }
-        for (const f of b.fields) {
-          const lc = f.column.toLowerCase();
-          if (f.label_interpreted && !m.has(lc)) m.set(lc, f.label_interpreted);
-        }
-      }
-    }
-  } catch { /* templates not exported — humanised names still work */ }
-  return _fieldLabels;
-}
-
-function columnLabel(tableName: string, col: string): string {
-  return fieldLabels().get(tableName.toLowerCase())?.get(col.toLowerCase()) ?? humanise(col);
 }
 
 // ── subject-area tree ─────────────────────────────────────────────────────────
@@ -686,23 +591,46 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         (ord ? ` ORDER BY "${ord}"` : "") +
         " LIMIT 500",
       ).all(...args) as Record<string, unknown>[];
+      const mt = modelTable(t.name);
       return {
         table: t.name,
         label: folderLabel(t.name, t.parent),
+        help: mt?.help,
+        /** Ordered folders (tallies, string components) offer the manual's
+         *  Move up/down, Add Records to Top and Invert Components commands. */
+        sequenced: mt?.sequenced,
+        allowInsertTop: mt?.allowInsertTop,
+        allowSeqInvert: mt?.allowSeqInvert,
         parentTable: t.parent,
-        columns: cols.map((c) => ({
-          column: c,
-          label: columnLabel(t.name, c),
-          id: isKeyCol(c) && !isSelfParentLink(t, c),
-          system: isSysCol(c),
-          // TK companions are managed alongside their link column, not shown.
-          tk: isTkCol(c) || undefined,
-          link: isSelfParentLink(t, c)
+        columns: cols.map((c) => {
+          const link = isSelfParentLink(t, c)
             ? { tkColumn: t.colSet.get(`${c.toLowerCase()}tk`) ?? null, targets: [t.name] }
-            : isLinkCol(c) && !isTkCol(c)
+            : isLinkCol(t, c) && !isTkCol(c)
               ? { tkColumn: t.colSet.get(`${c.toLowerCase()}tk`) ?? null, targets: linkTargets(d, t, c) }
-              : undefined,
-        })),
+              : undefined;
+          const mf = modelField(t.name, c);
+          return {
+            column: c,
+            // A TK companion is captioned from the link it belongs to, so it
+            // reads "Actual Deviation Survey — table", not "Actual Record".
+            label: columnLabel(t.name, c,
+              link?.targets ?? (isTkCol(c) ? linkTargets(d, t, c.replace(/tk$/i, "")) : undefined)),
+            id: isKeyCol(c) && !isSelfParentLink(t, c),
+            system: isSysCol(c),
+            // TK companions are managed alongside their link column, not shown.
+            tk: isTkCol(c) || undefined,
+            /** Field help (§3.11) — what the desktop shows under the grid. */
+            help: mf?.help,
+            /** WellView computes this at print time: the desktop's GREEN,
+             *  non-editable fields. Never offered as an input here. */
+            calculated: mf?.calculated,
+            /** Hidden by default; revealed by "Show All Fields". */
+            hiddenByDefault: mf?.hidden,
+            type: mf?.type,
+            unit: mf?.baseUnit,
+            link,
+          };
+        }),
         rows: rows.map((r) => {
           const out: Record<string, string | number | null> = {};
           for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
@@ -724,6 +652,10 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       const values: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(req.body?.values ?? {})) {
         const actual = t.colSet.get(k.toLowerCase());
+        // Calculated fields are WellView's print-time computations — the
+        // desktop greys them out, and accepting one here would store a value
+        // the real application would overwrite.
+        if (modelField(t.name, actual ?? "")?.calculated) continue;
         if (actual && !isSysCol(actual) && (!isKeyCol(actual) || isSelfParentLink(t, actual))) values[actual] = v;
       }
       const idrec = t.colSet.has("idrec") ? newIdRec() : null;
@@ -795,6 +727,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       for (const [k, v] of Object.entries(req.body?.values ?? {})) {
         const actual = t.colSet.get(k.toLowerCase());
         if (!actual || isSysCol(actual) || (isKeyCol(actual) && !isSelfParentLink(t, actual))) continue;
+        if (modelField(t.name, actual)?.calculated) continue;   // green = not editable
         sets.push(`"${actual}" = ?`);
         args.push((v === "" ? null : v) as string | number | null);
       }

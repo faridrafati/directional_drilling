@@ -338,6 +338,16 @@ function recordCaption(row: Row | undefined): string {
 
 /** DtTm columns hold "YYYY-MM-DDTHH:MM:SSZ" wall-clock stamps. */
 const isDtTmCol = (c: string) => /^dttm/i.test(c);
+
+/** Display form for a read-only cell: dates read as dates, floats stay sane. */
+function fmtCell(v: string): string {
+  if (!v) return "";
+  const m = v.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}Z$/);
+  if (m) return m[2] === "00:00" ? m[1] : `${m[1]} ${m[2]}`;
+  const n = Number(v);
+  if (v.trim() !== "" && Number.isFinite(n) && !Number.isInteger(n)) return String(Number(n.toFixed(4)));
+  return v;
+}
 const isoToLocalInput = (v: string): string => {
   const m = v.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
   return m ? `${m[1]}T${m[2]}` : "";
@@ -365,7 +375,10 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   registerFlush: (fn: (() => Promise<boolean>) | null) => void;
 }) {
   // TK companions are managed with their link column and never rendered.
-  const cols = data.columns.filter((c) => !c.tk && (showIds || !c.id));
+  // Fields the data model marks hidden appear only under "Show All Fields",
+  // which is what the desktop's toggle does.
+  const cols = data.columns.filter((c) =>
+    !c.tk && (showIds || !c.id) && (showIds || !c.hiddenByDefault));
   const [edits, setEdits] = useState<Record<string, Row>>({});      // record key → changed fields
   const [ghost, setGhost] = useState<Row>({});
   const [busy, setBusy] = useState(false);
@@ -532,7 +545,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     );
   }
 
-  const editable = (c: WvRecordColumn) => !c.id && !c.system;
+  /** Calculated fields are WellView's print-time computations — the desktop
+   *  paints them green and refuses edits, and so does the server. */
+  const editable = (c: WvRecordColumn) => !c.id && !c.system && !c.calculated;
   const valueOf = (row: Row, key: string, col: string): string => {
     const e = edits[key];
     if (e && col in e) return String(e[col] ?? "");
@@ -551,17 +566,53 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     if (c.link?.tkColumn) write(c.link.tkColumn, idrec ? (targetTable ?? "").toLowerCase() : null);
   };
 
-  const focusHelp = (c: WvRecordColumn) =>
-    onStatus(`${c.label} — ${data.table}.${c.column}${c.link ? " · linked record" : ""}${lookupFor.has(c.column.toLowerCase()) ? " · library lookup available" : ""}`);
+  /** §3.11: the help text for the current field, as WellView's model states it. */
+  const focusHelp = (c: WvRecordColumn) => {
+    const bits = [
+      c.help,
+      c.calculated ? "Calculated by WellView — not editable." : null,
+      c.unit ? `Base unit: ${c.unit}.` : null,
+      c.link ? "Linked record." : null,
+      lookupFor.has(c.column.toLowerCase()) ? "Library lookup available." : null,
+    ].filter(Boolean);
+    onStatus(`${c.label} (${data.table}.${c.column})${bits.length ? " — " + bits.join(" ") : ""}`);
+  };
 
   const cellInput = (row: Row | null, key: string | null, c: WvRecordColumn) => {
     const isGhost = row === null;
     const val = isGhost ? String(ghost[c.column] ?? "") : valueOf(row, key!, c.column);
 
     if (!editable(c)) {
+      // The desktop's colour code: green means WellView computes this field.
+      if (c.calculated) {
+        return (
+          <span
+            className="block px-1.5 py-0.5 text-[11px] bg-green-50 text-green-900 truncate cursor-help"
+            title={`Calculated by WellView${c.help ? ` — ${c.help}` : ""}`}
+            onMouseEnter={() => focusHelp(c)}>
+            {fmtCell(val) || <span className="text-green-600/40">—</span>}
+          </span>
+        );
+      }
       return isGhost
         ? <span className="block px-1.5 py-0.5 text-gray-300 text-[10px]">auto</span>
         : <span className="block px-1.5 py-0.5 text-gray-400 font-mono text-[10px] truncate" title={val}>{val}</span>;
+    }
+
+    // Yes/No fields get the control the manual describes, not free text.
+    if (c.type === "boolean") {
+      const on = val === "1" || val.toLowerCase() === "true";
+      return (
+        <label className="flex items-center gap-1.5 px-1.5 py-0.5 text-[11px] cursor-pointer">
+          <input type="checkbox" className="h-3.5 w-3.5" checked={on}
+            onFocus={() => focusHelp(c)}
+            onChange={(e) => {
+              const next = e.target.checked ? "1" : "0";
+              if (isGhost) setGhostValue(c.column, next); else setValue(key!, c.column, next);
+            }} />
+          <span className={on ? "text-gray-900" : "text-gray-400"}>{on ? "Yes" : "No"}</span>
+        </label>
+      );
     }
 
     // Record-link column: candidates popover, caption instead of GUID.
@@ -589,8 +640,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       );
     }
 
-    // Calendar fields (§3.9): native picker, 15-minute steps.
-    if (isDtTmCol(c.column)) {
+    // Calendar fields (§3.9): native picker, 15-minute steps. The model's
+    // declared type decides; the name check covers columns it does not list.
+    if (c.type === "datetime" || (!c.type && isDtTmCol(c.column))) {
       return (
         <input
           type="datetime-local"
@@ -674,7 +726,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2 shrink-0 flex-wrap">
-        <span className="text-xs font-semibold text-gray-800">{data.label}</span>
+        <span className="text-xs font-semibold text-gray-800" title={data.help}>{data.label}</span>
         <span className="text-[10px] text-gray-400 font-mono">{data.table}</span>
         <span className="text-[10px] text-gray-400 tabular-nums">{data.rows.length} record{data.rows.length === 1 ? "" : "s"}</span>
         <div className="ml-auto flex items-center gap-1.5">
@@ -722,9 +774,12 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
               </tr>
               {cols.map((c) => (
                 <tr key={c.column}>
-                  <td className="sticky left-0 bg-gray-100 px-2 py-0.5 font-medium text-gray-600 whitespace-nowrap border-b border-gray-100"
-                    title={`${data.table}.${c.column}`}>
+                  <td className={`sticky left-0 bg-gray-100 px-2 py-0.5 font-medium whitespace-nowrap border-b border-gray-100 ${
+                    c.calculated ? "text-green-700" : "text-gray-600"}`}
+                    title={[`${data.table}.${c.column}`, c.help, c.calculated ? "Calculated by WellView." : null]
+                      .filter(Boolean).join(" — ")}>
                     {c.label}
+                    {c.unit && <span className="ml-1 font-normal text-gray-400">({c.unit})</span>}
                   </td>
                   {data.rows.map((r, i) => {
                     const k = keyOf(r);
@@ -753,9 +808,11 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                 {cols.map((c) => (
                   <th key={c.column}
                     className={`px-1.5 py-1 text-left font-medium whitespace-nowrap border-b border-gray-200 ${
-                      c.id || c.system ? "text-gray-400" : "text-gray-600"}`}
-                    title={`${data.table}.${c.column}`}>
+                      c.calculated ? "text-green-700" : c.id || c.system ? "text-gray-400" : "text-gray-600"}`}
+                    title={[`${data.table}.${c.column}`, c.help, c.calculated ? "Calculated by WellView." : null]
+                      .filter(Boolean).join(" — ")}>
                     {c.label}
+                    {c.unit && <span className="ml-1 font-normal text-gray-400">({c.unit})</span>}
                   </th>
                 ))}
               </tr>
