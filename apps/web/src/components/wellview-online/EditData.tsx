@@ -654,10 +654,23 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   /** Calculated fields are WellView's print-time computations — the desktop
    *  paints them green and refuses edits, and so does the server. */
   const editable = (c: WvRecordColumn) => !c.id && !c.system && !c.calculated;
-  /** §4.3: "fields in yellow are required". Chevron's Data Entry Audit rules
-   *  say which; the cue shows while the field is still empty. */
+  /**
+   * §4.3's colour convention, in full:
+   *   yellow = required, cyan = required GLOBAL METRIC, green = calculated.
+   * The cue shows while the field is still empty; a global metric keeps its
+   * cyan marking always, because which fields they are is the point.
+   */
   const missingRequired = (c: WvRecordColumn, value: string) =>
-    !!c.required && value.trim() === "";
+    !!(c.required || c.globalMetric) && value.trim() === "";
+  const fieldTone = (c: WvRecordColumn, value: string): string => {
+    if (c.globalMetric) {
+      return missingRequired(c, value)
+        ? "bg-cyan-100 border-cyan-400"
+        : "bg-cyan-50 border-cyan-200";
+    }
+    if (missingRequired(c, value)) return "bg-amber-100 border-amber-300";
+    return "bg-transparent border-transparent";
+  };
   const valueOf = (row: Row, key: string, col: string): string => {
     const e = edits[key];
     if (e && col in e) return String(e[col] ?? "");
@@ -680,7 +693,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   const focusHelp = (c: WvRecordColumn) => {
     const bits = [
       c.help,
-      c.required ? "Required." : null,
+      c.globalMetric ? "Required global metric." : c.required ? "Required." : null,
       c.calculated ? "Calculated by WellView — not editable." : null,
       c.unit ? `Base unit: ${c.unit}.` : null,
       c.link ? "Linked record." : null,
@@ -766,7 +779,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           }}
           className={`w-full min-w-[10.5rem] px-1 py-0.5 text-[11px] border rounded
             focus:bg-white focus:border-blue-400 focus:outline-none ${
-              missingRequired(c, val) ? "bg-amber-100 border-amber-300" : "bg-transparent border-transparent"
+              fieldTone(c, val)
             } ${isGhost ? "italic text-gray-600" : "text-gray-900"}`}
         />
       );
@@ -787,7 +800,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
             : setValue(key!, c.column, e.target.value))}
           className={`w-full min-w-[7rem] px-1.5 py-0.5 text-[11px] border rounded
             focus:bg-white focus:border-blue-400 focus:outline-none ${
-              missingRequired(c, val) ? "bg-amber-100 border-amber-300" : "bg-transparent border-transparent"
+              fieldTone(c, val)
             } ${isGhost ? "italic text-gray-600" : "text-gray-900"}`}
         />
         {lookup && (
@@ -939,7 +952,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                     title={[`${data.table}.${c.column}`, c.help, c.calculated ? "Calculated by WellView." : null]
                       .filter(Boolean).join(" — ")}>
                     {c.label}
-                    {c.required && <span className="text-amber-600" title="Required">&nbsp;*</span>}
+                    {c.globalMetric
+                      ? <span className="text-cyan-600" title="Required global metric">&nbsp;◆</span>
+                      : c.required ? <span className="text-amber-600" title="Required">&nbsp;*</span> : null}
                     {c.unit && <span className="ml-1 font-normal text-gray-400">({c.unit})</span>}
                   </th>
                 ))}

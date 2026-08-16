@@ -1,0 +1,58 @@
+{
+  "_comment": [
+    "The guide's CYAN cue: 'Well information fields in cyan are required global metrics' (§4.3).",
+    "",
+    "Unlike the other two cues this one is NOT machine-readable anywhere in the shipped files:",
+    "green comes from the data model's calculated flag, yellow from Chevron's Data Entry Audit",
+    "INI, but the global-metric flag lives in Chevron's own WellView customisation, which is not",
+    "in WellView_files (their customisation also relabels fields — 'Business Unit', 'Global",
+    "Metrics Region', 'Surface Chevno' are Chevron labels for stock UserTxt columns, and the",
+    "mapping is not shipped either).",
+    "",
+    "What IS available is the guide itself. Its screenshots show the colouring, so each entry",
+    "below was READ off a named figure and then matched to a stored column via the data model's",
+    "caption and the report template's field list. `caption` is the label as the figure prints it",
+    "(Chevron's wording, which sometimes differs from the stock model caption, recorded in",
+    "`modelCaption`). Anything that could not be tied to a real column is listed in `unmapped`",
+    "rather than guessed at.",
+    "",
+    "Figures are extracted from 'WellView – SASBU Master Training Guide.html'; the pNNN prefix is",
+    "the guide page. Regenerate them with the snippet in scripts/wellview-db/README if needed."
+  ],
+  "source": "WellView – SASBU Master Training Guide, §4.3 colour convention, read from the guide's own screenshots",
+  "fields": [
+    { "table": "wvWellHeader", "column": "ElvMudLine", "caption": "Mud Line Elevation (ft)", "modelCaption": "Mud Line Elevation", "figures": ["p097_093.png", "p100_094.png"] },
+    { "table": "wvWellHeader", "column": "WaterDepth", "caption": "Water Depth (ft)", "modelCaption": "Water Depth", "figures": ["p097_093.png", "p100_094.png"] },
+
+    { "table": "wvWellbore", "column": "ProfileTyp", "caption": "Directional Type", "modelCaption": "Profile Type", "figures": ["p094_091.jpg", "p097_093.png", "p100_094.png"] },
+
+    { "table": "wvJob", "column": "WVTyp", "caption": "Job Category", "modelCaption": "Job Category", "figures": ["p097_093.png", "p100_094.png"] },
+    { "table": "wvJob", "column": "JobTyp", "caption": "Primary Job Type", "modelCaption": "Primary Job Type", "figures": ["p097_093.png", "p100_094.png"] },
+    { "table": "wvJob", "column": "DtTmStartPlan", "caption": "Planned Start Date", "modelCaption": "Planned Start Date", "figures": ["p097_093.png", "p100_094.png"] },
+    { "table": "wvJob", "column": "DtTmStart", "caption": "Actual Start Date", "modelCaption": "Start Date", "figures": ["p097_093.png", "p100_094.png"] },
+    { "table": "wvJob", "column": "DtTmSpud", "caption": "Job Spud Date", "modelCaption": "Spud Date", "figures": ["p097_093.png", "p100_094.png"] },
+    { "table": "wvJob", "column": "DtTmEnd", "caption": "Actual End Date", "modelCaption": "End Date", "figures": ["p097_093.png", "p100_094.png"] },
+
+    { "table": "wvJobProgramPhase", "column": "Code1", "caption": "Phase 1", "modelCaption": "Phase Type 1", "figures": ["p102_095.png"] },
+    { "table": "wvJobProgramPhase", "column": "Code2", "caption": "Phase 2", "modelCaption": "Phase Type 2", "figures": ["p102_095.png"] },
+    { "table": "wvJobProgramPhase", "column": "DtTmStartActual", "caption": "Actual Start Date", "modelCaption": "Actual Start Date", "figures": ["p102_095.png"] },
+    { "table": "wvJobProgramPhase", "column": "DtTmEndActual", "caption": "Actual End Date", "modelCaption": "Actual End Date", "figures": ["p102_095.png"] },
+    { "table": "wvJobProgramPhase", "column": "DurationML", "caption": "Planned AFE Duration (days)", "modelCaption": "Planned Likely Duration", "figures": ["p102_095.png"] },
+    { "table": "wvJobProgramPhase", "column": "CostML", "caption": "Planned AFE Cost", "modelCaption": "Planned Likely Phase Cost", "figures": ["p102_095.png"] }
+  ],
+  "unmapped": [
+    { "caption": "Business Unit", "figures": ["p097_093.png", "p100_094.png"], "why": "Chevron label for a stock UserTxt column on wvWellHeader; their field mapping is not in WellView_files" },
+    { "caption": "SBU Drilling Well Category", "figures": ["p097_093.png", "p100_094.png"], "why": "Chevron label for a UserTxt column on wvJob; mapping not shipped" },
+    { "caption": "SBU Completion Well Category", "figures": ["p097_093.png", "p100_094.png"], "why": "Chevron label for a UserTxt column on wvJob; mapping not shipped" },
+    { "caption": "Global Metrics Region", "figures": [], "why": "named in the §4.3 Well Header exercise; a Chevron UserTxt column, mapping not shipped" }
+  ],
+  "tableLevel": [
+    {
+      "table": "wvJobProgramPhase",
+      "rule": "At least one phase per job.",
+      "quote": "Phases are a Global Metric required entry. There must be at least one phase for each job.",
+      "where": "guide §4.5, repeated for completions",
+      "implementedAs": "Data Auditor rule job-no-phase"
+    }
+  ]
+}

@@ -379,6 +379,15 @@ const AUDIT_RULES: AuditRule[] = [
     needs: ["dttmend", "costfinalactual"], detail: ["JobTyp1", "DtTmEnd", "CostFinalActual"],
   },
   {
+    // The one GLOBAL METRIC requirement the guide states outright, twice:
+    // "Phases are a Global Metric required entry. There must be at least one
+    // phase for each job." (§4.5 drilling, and again for completions.)
+    id: "job-no-phase", report: "Job — Global Metric", table: "wvJob",
+    rule: "Job has no phases; at least one phase per job is a Global Metric requirement.",
+    where: "NOT EXISTS (SELECT 1 FROM wvJobProgramPhase p WHERE p.IDRecParent = t.IDRec)",
+    needs: ["idrec"], detail: ["JobTyp1", "DtTmStart", "DtTmEnd"],
+  },
+  {
     id: "drillparam-24h", report: "Drilling Parameters", table: "wvJobDrillStringDrillParam",
     rule: "Drilling-parameter interval spans more than 24 hours.",
     where: "t.DtTmStart IS NOT NULL AND t.DtTmEnd IS NOT NULL AND (julianday(t.DtTmEnd) - julianday(t.DtTmStart)) > 1.0",
@@ -634,6 +643,8 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
             group: mf?.group,
             /** Chevron's Data Entry Audit rules — the desktop's yellow fields. */
             required: mf?.required,
+            /** Required global metric — the desktop's cyan fields. */
+            globalMetric: mf?.globalMetric,
             warnOnly: mf?.warnOnly,
             link,
           };

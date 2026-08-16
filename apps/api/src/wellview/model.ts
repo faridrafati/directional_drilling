@@ -42,6 +42,9 @@ export interface ModelField {
   group?: string;
   /** Chevron's own field rules: required is what the desktop paints yellow. */
   required?: boolean;
+  /** A required GLOBAL METRIC — the desktop's cyan fields (§4.3). Recovered
+   *  from the training guide's own screenshots; see the curated source file. */
+  globalMetric?: boolean;
   minValue?: string;
   maxValue?: string;
   warnOnly?: boolean;

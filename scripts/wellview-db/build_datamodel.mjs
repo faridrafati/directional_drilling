@@ -171,10 +171,32 @@ for (const m of xml.matchAll(/<(afmtable|afmfield|afmtablegroupfield|afmtablegro
   fieldCount++;
 }
 
+/**
+ * The guide's CYAN cue — "required global metrics".
+ *
+ * Unlike required (an INI) and calculated (the model), nothing shipped states
+ * this one: the flag lives in Chevron's own customisation, which is not in
+ * these files. What IS available is the guide itself — its screenshots show the
+ * colouring, and §4.3 states what the colours mean. So the list is a curated
+ * file with the figure each entry was read from, rather than a heuristic over
+ * field names. Entries whose column does not exist are reported, not ignored.
+ */
+const GLOBAL_METRIC_JSON = join(HERE, "global-metric-fields.json");
+function globalMetricFields() {
+  try {
+    const raw = JSON.parse(readFileSync(GLOBAL_METRIC_JSON, "utf-8"));
+    return new Map((raw.fields ?? []).map((f) => [`${f.table}.${f.column}`.toLowerCase(), f]));
+  } catch {
+    return new Map();
+  }
+}
+
 // Merge in the form sections and Chevron's required-field rules.
 const rules = fieldRules();
+const globalMetrics = globalMetricFields();
 let grouped = 0;
 let requiredCount = 0;
+let globalMetricCount = 0;
 for (const t of Object.values(tables)) {
   const order = groupOrder.get(t.table);
   if (order?.length) t.fieldGroups = order;
@@ -187,6 +209,7 @@ for (const t of Object.values(tables)) {
     if (r?.minValue) f.minValue = r.minValue;
     if (r?.maxValue) f.maxValue = r.maxValue;
     if (r?.warnOnly) f.warnOnly = true;
+    if (globalMetrics.has(key)) { f.globalMetric = true; globalMetricCount++; }
   }
 }
 
@@ -211,6 +234,12 @@ const calc = Object.values(kept).reduce(
   (n, t) => n + Object.values(t.fields).filter((f) => f.calculated).length, 0);
 console.log(`  ${withHelp} fields with help text, ${calc} calculated fields`);
 console.log(`  ${grouped} fields placed in form sections, ${requiredCount} marked required`);
+console.log(`  ${globalMetricCount} marked required global metric`);
+const gmMissing = [...globalMetrics.keys()].filter((k) => {
+  const [t, c] = k.split(".");
+  return !kept[t]?.fields[c];
+});
+if (gmMissing.length) console.log(`  NOTE: ${gmMissing.length} global-metric entr(ies) name a field the model lacks: ${gmMissing.join(", ")}`);
 const unmatched = [...rules.keys()].filter((k) => {
   const [t, c] = k.split(".");
   return !kept[t]?.fields[c];

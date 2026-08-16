@@ -217,6 +217,48 @@ d("column captions come from WellView's data model", () => {
       .toEqual(["wellida", "wellname"]);
   });
 
+  /**
+   * §4.3's third cue: "fields in cyan are required global metrics". Nothing
+   * shipped states which those are, so the list was read off the guide's own
+   * screenshots and curated with provenance — these are spot checks that the
+   * flags reach the client on the fields those figures show.
+   */
+  it("marks the required global metrics the guide's figures show", async () => {
+    const job = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvJob`, headers: auth }))
+      .json() as { columns: { column: string; globalMetric?: boolean; required?: boolean }[] };
+    const gm = job.columns.filter((c) => c.globalMetric).map((c) => c.column.toLowerCase()).sort();
+    // Job Setup input report, figures p097_093 / p100_094.
+    expect(gm).toEqual(["dttmend", "dttmspud", "dttmstart", "dttmstartplan", "jobtyp", "wvtyp"]);
+
+    const bore = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvWellbore`, headers: auth }))
+      .json() as { columns: { column: string; globalMetric?: boolean }[] };
+    expect(bore.columns.find((c) => c.column === "ProfileTyp")?.globalMetric).toBe(true);
+
+    const hdr = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvWellHeader`, headers: auth }))
+      .json() as { columns: { column: string; globalMetric?: boolean }[] };
+    expect(hdr.columns.filter((c) => c.globalMetric).map((c) => c.column).sort())
+      .toEqual(["ElvMudLine", "WaterDepth"]);
+
+    // The two flags come from independent sources and legitimately overlap:
+    // Chevron's INI requires Job Category, Primary Job Type and Start Date, and
+    // the guide's figure additionally paints them cyan. Both agree they are
+    // mandatory; cyan just says WHY. The client shows cyan when both are set.
+    const both = job.columns.filter((c) => c.globalMetric && c.required)
+      .map((c) => c.column.toLowerCase()).sort();
+    expect(both).toEqual(["dttmstart", "jobtyp", "wvtyp"]);
+  });
+
+  /** "Phases are a Global Metric required entry. There must be at least one
+   *  phase for each job." — the guide states it twice; the auditor enforces it. */
+  it("audits the job-phase global-metric rule", async () => {
+    const res = (await app.inject({ url: `/entry/wellview/dbs/${DB}/audit`, headers: auth }))
+      .json() as { findings: { ruleId: string; rule: string }[]; skipped: { ruleId: string }[] };
+    expect(res.skipped.map((s) => s.ruleId)).not.toContain("job-no-phase");
+    const hits = res.findings.filter((f) => f.ruleId === "job-no-phase");
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].rule).toMatch(/Global Metric/i);
+  }, 60_000);
+
   /** The entry form's sections, as the guide's Well Header exercise prints them. */
   it("groups a table's fields into WellView's form sections", async () => {
     const hdr = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvWellHeader`, headers: auth }))

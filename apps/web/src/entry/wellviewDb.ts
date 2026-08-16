@@ -46,6 +46,8 @@ export interface WvRecordColumn {
   group?: string;
   /** Required by Chevron's Data Entry Audit rules — the desktop's yellow fields. */
   required?: boolean;
+  /** A required GLOBAL METRIC — the desktop's cyan fields (§4.3). */
+  globalMetric?: boolean;
   /** The rule only warns; it does not block. */
   warnOnly?: boolean;
 }
