@@ -34,7 +34,8 @@ function Inner() {
   const { user, loading, signOut } = useEntryAuth();
   const [db, setDb] = useState<string | null>(null);
   const [openWell, setOpenWell] = useState<string | null>(null);
-  const [edit, setEdit] = useState<{ idwell: string; table: string | null } | null>(null);
+  const [edit, setEdit] = useState<
+    { idwell: string; table: string | null; idrec?: string; column?: string | null } | null>(null);
   const [audit, setAudit] = useState<string[] | null>(null);
   /** Copy Record / Paste Record buffer — survives closing one well and opening
    *  another, which is exactly what the manual's between-wells copy needs. */
@@ -97,6 +98,8 @@ function Inner() {
             wellName={nameOf(openWell)}
             onClose={() => setOpenWell(null)}
             onEditTable={(table) => setEdit({ idwell: openWell, table })}
+            onEditRecord={(table, idrec, column) =>
+              setEdit({ idwell: openWell, table, idrec, column })}
           />
         )}
 
@@ -106,6 +109,8 @@ function Inner() {
             idwell={edit.idwell}
             wellName={nameOf(edit.idwell)}
             initialTable={edit.table}
+            initialRecord={edit.idrec ?? null}
+            initialColumn={edit.column ?? null}
             clipboard={clipboard}
             onClipboard={setClipboard}
             onClose={() => setEdit(null)}

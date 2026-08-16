@@ -785,6 +785,44 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
     },
   );
 
+  /**
+   * The ancestor chain of one record, subject-area root first.
+   *
+   * Opening Edit Data on a record found in a report means selecting the right
+   * record at every level above it — the manual's "double-click a field on the
+   * report to open the Edit Data window" only works if the parent folders are
+   * positioned on the same job and day. Walking IDRecParent up the prefix chain
+   * is what makes that possible.
+   */
+  app.get<{ Params: { db: string }; Querystring: { table?: string; idrec?: string } }>(
+    "/entry/wellview/dbs/:db/record-path",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const start = table(d, String(req.query.table ?? ""));
+      if (!start) return reply.code(404).send({ error: `no table ${req.query.table}` });
+      const path: { table: string; idrec: string }[] = [];
+      let t: TableInfo | null = start;
+      let id: string | null = String(req.query.idrec ?? "");
+      const seen = new Set<string>();
+      while (t && id) {
+        if (seen.has(`${t.name}:${id}`)) break;          // cycle guard
+        seen.add(`${t.name}:${id}`);
+        path.unshift({ table: t.name, idrec: id });
+        const parentCol = t.colSet.get("idrecparent");
+        const idCol = t.colSet.get("idrec");
+        // A self-parent (wvWellbore sidetrack) is not a step up the folder tree.
+        if (!t.parent || !parentCol || !idCol) break;
+        const row = d.ro.prepare(`SELECT "${parentCol}" p FROM "${t.name}" WHERE "${idCol}" = ?`)
+          .get(id) as { p: string | null } | undefined;
+        id = row?.p ?? null;
+        t = table(d, t.parent);
+      }
+      return { path };
+    },
+  );
+
   /** Distinct stored values of one well-header column — the Quick Query lookup. */
   app.get<{ Params: { db: string }; Querystring: { column?: string } }>(
     "/entry/wellview/dbs/:db/header-values",

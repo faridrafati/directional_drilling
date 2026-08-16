@@ -50,19 +50,48 @@ interface Props {
   wellName: string;
   /** Open at this table if given (double-click from a report block). */
   initialTable?: string | null;
+  /**
+   * Open ON this record, with every parent folder positioned to reach it, and
+   * the named column focused — the manual's "double-click a field on the
+   * report … the cursor will appear in the same field in the table".
+   */
+  initialRecord?: string | null;
+  initialColumn?: string | null;
   clipboard: WvClipboard | null;
   onClipboard: (c: WvClipboard | null) => void;
   onClose: () => void;
 }
 
-export function EditData({ db, idwell, wellName, initialTable, clipboard, onClipboard, onClose }: Props) {
+export function EditData({
+  db, idwell, wellName, initialTable, initialRecord, initialColumn, clipboard, onClipboard, onClose,
+}: Props) {
   const qc = useQueryClient();
   const [table, setTable] = useState<string | null>(initialTable ?? "wvWellHeader");
   const [vertical, setVertical] = useState(false);
   const [showSystem, setShowSystem] = useState(false);
-  /** Selected parent record per PARENT table — the §3.9 navigation state. */
-  const [parentPick, setParentPick] = useState<Record<string, number>>({});
+  /** Selected parent RECORD per parent table — the §3.9 navigation state.
+   *  Keyed by record id, not row index, so it survives a re-sort or a refresh
+   *  and can be set from a record's ancestor path. */
+  const [parentPick, setParentPick] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<string | null>(null);
+
+  /**
+   * Arriving from a report field: position every parent folder on the record's
+   * own ancestors before showing the grid, so the record is actually on screen.
+   */
+  const pathQ = useQuery({
+    queryKey: ["wvdb", db, "record-path", initialTable, initialRecord],
+    queryFn: () => wvDbApi.recordPath(db, initialTable!, initialRecord!),
+    enabled: !!initialTable && !!initialRecord,
+    staleTime: Infinity,
+  });
+  useEffect(() => {
+    const path = pathQ.data?.path;
+    if (!path?.length) return;
+    const picks: Record<string, string> = {};
+    for (const hop of path.slice(0, -1)) picks[hop.table] = hop.idrec;
+    setParentPick((p) => ({ ...p, ...picks }));
+  }, [pathQ.data]);
   /** The current grid's pending-edit flusher — §3.9 "records are automatically
    *  saved when a different folder is selected or the window is closed". */
   const flushRef = useRef<(() => Promise<boolean>) | null>(null);
@@ -153,6 +182,8 @@ export function EditData({ db, idwell, wellName, initialTable, clipboard, onClip
                 onStatus={setStatus}
                 onDirty={onDirty}
                 registerFlush={(fn) => { flushRef.current = fn; }}
+                focusRecord={initialRecord ?? null}
+                focusColumn={initialColumn ?? null}
               />
             ) : (
               <div className="flex-1 grid place-items-center text-sm text-gray-400">Pick a folder.</div>
@@ -216,20 +247,23 @@ function FolderGlyph({ filled }: { filled: boolean }) {
  * under the picked record of B. Each level's pick is an index, defaulting to
  * the first record, adjustable with Previous/Next exactly as §3.9 describes.
  */
-function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentPick, setParentPick, clipboard, onClipboard, onStatus, onDirty, registerFlush }: {
+function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentPick, setParentPick, clipboard, onClipboard, onStatus, onDirty, registerFlush, focusRecord, focusColumn }: {
   db: string;
   idwell: string;
   table: string;
   chain: { table: string; label: string }[];
   vertical: boolean;
   showSystem: boolean;
-  parentPick: Record<string, number>;
-  setParentPick: (f: (p: Record<string, number>) => Record<string, number>) => void;
+  parentPick: Record<string, string>;
+  setParentPick: (f: (p: Record<string, string>) => Record<string, string>) => void;
   clipboard: WvClipboard | null;
   onClipboard: (c: WvClipboard | null) => void;
   onStatus: (s: string | null) => void;
   onDirty: () => void;
   registerFlush: (fn: (() => Promise<boolean>) | null) => void;
+  /** Record/column to land on, arriving from a report field. */
+  focusRecord: string | null;
+  focusColumn: string | null;
 }) {
   // Resolve the parent chain record by record, top down.
   const ancestors = chain.slice(0, -1);
@@ -250,7 +284,11 @@ function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentP
       enabled: !chainBroken,
     });
     const rows = (q.data?.rows ?? []) as Row[];
-    const pick = Math.min(parentPick[anc.table] ?? 0, Math.max(0, rows.length - 1));
+    // The pick is a record id; an unknown id (or none yet) falls back to the
+    // first record, which is what the desktop shows on arrival.
+    const wanted = parentPick[anc.table];
+    const found = wanted ? rows.findIndex((r) => String(r.IDRec ?? "") === wanted) : -1;
+    const pick = found >= 0 ? found : 0;
     const idrec = rows.length ? String(rows[pick].IDRec ?? "") : null;
     ancestorQueries.push({ table: anc.table, label: anc.label, rows, pick, idrec });
     if (!idrec) chainBroken = true;
@@ -292,12 +330,12 @@ function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentP
             <span key={a.table} className="flex items-center gap-1">
               <span className="text-gray-400">{a.label}:</span>
               <button type="button" disabled={a.pick <= 0}
-                onClick={() => setParentPick((p) => ({ ...p, [a.table]: a.pick - 1 }))}
+                onClick={() => setParentPick((p) => ({ ...p, [a.table]: String(a.rows[a.pick - 1]?.IDRec ?? "") }))}
                 className="px-1 rounded border border-gray-300 disabled:opacity-30">‹</button>
               <b className="max-w-[16rem] truncate">{recordCaption(a.rows[a.pick])}</b>
               <span className="text-gray-400 tabular-nums">({a.pick + 1}/{a.rows.length})</span>
               <button type="button" disabled={a.pick >= a.rows.length - 1}
-                onClick={() => setParentPick((p) => ({ ...p, [a.table]: a.pick + 1 }))}
+                onClick={() => setParentPick((p) => ({ ...p, [a.table]: String(a.rows[a.pick + 1]?.IDRec ?? "") }))}
                 className="px-1 rounded border border-gray-300 disabled:opacity-30">›</button>
             </span>
           ))}
@@ -315,6 +353,7 @@ function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentP
           db={db} idwell={idwell} data={data} vertical={vertical} showIds={showSystem}
           parentIdrec={parentIdrec} clipboard={clipboard} onClipboard={onClipboard}
           onSaved={refresh} onStatus={onStatus} registerFlush={registerFlush}
+          focusRecord={focusRecord} focusColumn={focusColumn}
         />
       ) : null}
     </div>
@@ -360,7 +399,7 @@ const localInputToIso = (v: string): string | null => (v ? `${v}:00Z` : null);
  * flush the parent registers). The ghost row inserts on save. ID/link keys are
  * server-managed; record-LINK columns edit through the candidates popover.
  */
-function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboard, onClipboard, onSaved, onStatus, registerFlush }: {
+function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboard, onClipboard, onSaved, onStatus, registerFlush, focusRecord, focusColumn }: {
   db: string;
   idwell: string;
   data: WvRecords;
@@ -373,6 +412,8 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   onSaved: () => void;
   onStatus: (s: string | null) => void;
   registerFlush: (fn: (() => Promise<boolean>) | null) => void;
+  focusRecord: string | null;
+  focusColumn: string | null;
 }) {
   // TK companions are managed with their link column and never rendered.
   // Fields the data model marks hidden appear only under "Show All Fields",
@@ -386,6 +427,30 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   const [popover, setPopover] = useState<{ key: string | null; col: string } | null>(null);
 
   useEffect(() => { setEdits({}); setGhost({}); setPopover(null); }, [data.table, parentIdrec]);
+
+  /**
+   * Arriving from a report field: put the cursor in the same field of the same
+   * record, and bring it into view. The manual is explicit — "double-click a
+   * field on the report to open the Edit Data window. The cursor will appear in
+   * the same field in the table."
+   */
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!focusRecord) return;
+    // Column names arrive from the .afr lowercased, while the grid uses the
+    // database's mixed case — match on the lowercase form of both.
+    const cell = focusColumn
+      ? gridRef.current?.querySelector<HTMLElement>(
+        `[data-cell="${CSS.escape(`${focusRecord}|${focusColumn.toLowerCase()}`)}"]`)
+      : null;
+    const row = gridRef.current?.querySelector<HTMLElement>(`[data-row="${CSS.escape(focusRecord)}"]`);
+    const el = cell ?? row;
+    if (!el) return;
+    el.scrollIntoView({ block: "center", inline: "center" });
+    // Only a CELL gets the cursor; landing on a row must not focus its
+    // Copy/Delete buttons.
+    if (cell) (cell.querySelector("input,button") as HTMLElement | null)?.focus();
+  }, [focusRecord, focusColumn, data.table, data.rows.length]);
 
   /** The well header is one record per well — no ghost row, no duplicating. */
   const singleRecord = data.table.toLowerCase() === "wvwellheader";
@@ -756,7 +821,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" ref={gridRef}>
         {vertical ? (
           /* vertical edit mode: fields down the left, records across */
           <table className="text-[11px] border-collapse">
@@ -822,10 +887,13 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                 const k = keyOf(r);
                 const dirty = k !== null && !!edits[k] && Object.keys(edits[k]).length > 0;
                 return (
-                  <tr key={k ?? i} className={`${i % 2 ? "bg-gray-50" : ""} ${dirty ? "outline outline-1 outline-blue-300" : ""}`}>
+                  <tr key={k ?? i} data-row={k ?? undefined}
+                    className={`${i % 2 ? "bg-gray-50" : ""} ${dirty ? "outline outline-1 outline-blue-300" : ""} ${
+                      k && k === focusRecord ? "bg-amber-50" : ""}`}>
                     <td className="align-middle">{rowActions(r)}</td>
                     {cols.map((c) => (
-                      <td key={c.column} className="border-b border-gray-100 align-top">
+                      <td key={c.column} className="border-b border-gray-100 align-top"
+                        data-cell={k ? `${k}|${c.column.toLowerCase()}` : undefined}>
                         {k ? cellInput(r, k, c)
                           : <span className="block px-1.5 py-0.5 text-gray-400 text-[10px]">{String(r[c.column] ?? "")}</span>}
                       </td>

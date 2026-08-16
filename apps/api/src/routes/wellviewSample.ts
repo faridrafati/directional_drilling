@@ -314,8 +314,13 @@ export function resolveTemplateData(
     const desCol = t.cols.get("des");
     const withDes = desCol && COMPONENT_TABLE.test(t.name) && !present.some((p) => p.actual === desCol)
       ? `${sel}, t0."${desCol}"` : sel;
+    // The record id travels with every row so the report can hand a specific
+    // record to Edit Data — the manual's "double-click a field on the report".
+    const idCol = t.cols.get("idrec");
+    const withId = idCol && !present.some((p) => p.actual === idCol)
+      ? `${withDes}, t0."${idCol}" AS __idrec` : withDes;
     const rows = d.prepare(
-      `SELECT ${withDes} FROM "${t.name}" t0${joins}${where}${ord ? ` ORDER BY t0."${ord}"` : ""} LIMIT ${ROW_CAP}`,
+      `SELECT ${withId} FROM "${t.name}" t0${joins}${where}${ord ? ` ORDER BY t0."${ord}"` : ""} LIMIT ${ROW_CAP}`,
     ).all(...args) as Record<string, unknown>[];
 
     const decorate = desCol != null && COMPONENT_TABLE.test(t.name);
@@ -335,6 +340,12 @@ export function resolveTemplateData(
       truncated: total > rows.length,
       allNull,
       rows: allNull ? [] : shaped,
+      /** Record id per row, so a click can open THAT record in Edit Data. */
+      rowIds: allNull || !idCol ? undefined
+        : rows.map((r) => {
+          const v = r.__idrec ?? r[idCol];
+          return v == null ? null : String(v);
+        }),
       icons: decorate && !allNull ? rows.map((r) => iconFor(r[desCol!] as string | null)) : undefined,
     };
   });

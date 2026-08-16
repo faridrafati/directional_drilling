@@ -37,9 +37,11 @@ interface Props {
   onClose: () => void;
   /** Open Edit Data at a table (from a report block or a schematic item). */
   onEditTable: (table: string | null) => void;
+  /** Open Edit Data on a specific record, cursor in the given column. */
+  onEditRecord: (table: string, idrec: string, column: string | null) => void;
 }
 
-export function WellWindow({ db, idwell, wellName, onClose, onEditTable }: Props) {
+export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditRecord }: Props) {
   const [tab, setTab] = useState<"reports" | "schematic">("reports");
 
   return (
@@ -67,18 +69,33 @@ export function WellWindow({ db, idwell, wellName, onClose, onEditTable }: Props
       </div>
 
       {tab === "reports"
-        ? <ReportsTab db={db} idwell={idwell} onEditTable={onEditTable} />
+        ? <ReportsTab db={db} idwell={idwell} onEditTable={onEditTable} onEditRecord={onEditRecord} />
         : <SchematicTab db={db} idwell={idwell} onEditTable={onEditTable} />}
     </div>
   );
 }
 
 // ── Reports tab ───────────────────────────────────────────────────────────────
-function ReportsTab({ db, idwell, onEditTable }: {
-  db: string; idwell: string; onEditTable: (table: string) => void;
+/**
+ * WellView keeps its DATA-ENTRY layouts in "Job Setup", "General Input" and
+ * "Daily Input" folders — the guide calls them input reports and works through
+ * them chapter by chapter ("Use the Job Setup input report to create a new Job
+ * record"). Everything else — the *Summary folders, Asset History, Failure
+ * Analysis, Phase Analysis, Master Templates — is printed output.
+ */
+const INPUT_FOLDER = /(Job Setup|General Input|Daily Input)/i;
+const isInputReport = (r: { html: string }) => INPUT_FOLDER.test(r.html);
+
+function ReportsTab({ db, idwell, onEditTable, onEditRecord }: {
+  db: string;
+  idwell: string;
+  onEditTable: (table: string) => void;
+  onEditRecord: (table: string, idrec: string, column: string | null) => void;
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  /** Show only the input reports — "where do I enter data?" in one click. */
+  const [entryOnly, setEntryOnly] = useState(false);
 
   const indexQ = useQuery({
     queryKey: ["wellview", "templates", "index"],
@@ -93,54 +110,96 @@ function ReportsTab({ db, idwell, onEditTable }: {
   const groups = useMemo(() => {
     const reports = indexQ.data?.reports ?? [];
     const q = query.trim().toLowerCase();
-    const matched = q
-      ? reports.filter((r) => r.name.toLowerCase().includes(q) || r.folder_relative.toLowerCase().includes(q))
-      : reports;
+    const matched = reports.filter((r) => {
+      if (entryOnly && !isInputReport(r)) return false;
+      if (!q) return true;
+      return r.name.toLowerCase().includes(q) || r.folder_relative.toLowerCase().includes(q);
+    });
+    // Group by WellView's OWN folder, not just the top category: the app should
+    // show "Drilling / Daily Input" as its own group because that folder is
+    // where the daily data-entry forms live.
     const out = new Map<string, TemplateEntry[]>();
     for (const r of matched) {
-      const cat = r.folder_relative.split("/")[0] || "(root)";
-      (out.get(cat) ?? out.set(cat, []).get(cat)!).push(r);
+      const folder = r.html.split("/").slice(0, -1).join(" / ") || "(root)";
+      (out.get(folder) ?? out.set(folder, []).get(folder)!).push(r);
     }
-    return [...out.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [indexQ.data, query]);
+    // Entry folders first — that is the order the training guide works in.
+    return [...out.entries()].sort(([a], [b]) => {
+      const ea = INPUT_FOLDER.test(a) ? 0 : 1;
+      const eb = INPUT_FOLDER.test(b) ? 0 : 1;
+      return ea - eb || a.localeCompare(b);
+    });
+  }, [indexQ.data, query, entryOnly]);
 
   return (
     <div className="flex gap-3 flex-1 min-h-0">
       <aside className="w-72 shrink-0 border border-gray-200 rounded-lg bg-white flex flex-col min-h-0">
-        <div className="p-2 border-b border-gray-100">
+        <div className="p-2 border-b border-gray-100 space-y-1.5">
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
             placeholder="Search reports…" aria-label="Search reports"
             className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" />
+          <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
+            <input type="checkbox" className="h-3.5 w-3.5" checked={entryOnly}
+              data-testid="wv-entry-only"
+              onChange={(e) => setEntryOnly(e.target.checked)} />
+            Data-entry forms only
+          </label>
         </div>
         <div className="overflow-y-auto flex-1 p-1">
-          {groups.map(([cat, list]) => (
-            <div key={cat} className="mb-2">
-              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                {cat} <span className="font-normal text-gray-400 tabular-nums">{list.length}</span>
+          {groups.map(([folder, list]) => {
+            const entry = INPUT_FOLDER.test(folder);
+            return (
+              <div key={folder} className="mb-2">
+                <div className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5 ${
+                  entry ? "text-emerald-700" : "text-gray-500"}`}>
+                  {entry && <PencilIcon />}
+                  <span className="truncate">{folder}</span>
+                  <span className="font-normal text-gray-400 tabular-nums ml-auto">{list.length}</span>
+                </div>
+                {list.map((r) => (
+                  <button key={r.html} type="button" onClick={() => setSelected(r.html)}
+                    data-testid={`wv-report-${entry ? "input" : "output"}`}
+                    className={`w-full text-left px-2 py-1 rounded text-[11px] leading-snug ${
+                      r.html === selected ? "bg-blue-50 text-blue-800 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
+                    {r.name}
+                  </button>
+                ))}
               </div>
-              {list.map((r) => (
-                <button key={r.html} type="button" onClick={() => setSelected(r.html)}
-                  className={`w-full text-left px-2 py-1 rounded text-[11px] leading-snug ${
-                    r.html === selected ? "bg-blue-50 text-blue-800 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
-                  {r.name}
-                </button>
-              ))}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </aside>
 
       <div className="flex-1 min-w-0 border border-gray-200 rounded-lg bg-white flex flex-col min-h-0">
         {selected
-          ? <FilledTemplate db={db} html={selected} idwell={idwell} onEditTable={onEditTable} />
+          ? <FilledTemplate db={db} html={selected} idwell={idwell}
+              isInput={INPUT_FOLDER.test(selected)}
+              onEditTable={onEditTable} onEditRecord={onEditRecord} />
           : (
-            <div className="flex-1 grid place-items-center text-sm text-gray-400 px-6 text-center">
-              Select a report — it fills from this database for this well. Reports update as data is
-              edited, exactly as in WellView.
+            <div className="flex-1 grid place-items-center text-sm text-gray-400 px-6 text-center max-w-md mx-auto">
+              <div>
+                <p>Select a report — it fills from this database for this well.</p>
+                <p className="mt-2 text-[11px]">
+                  The <b className="text-emerald-700">Job Setup</b>,{" "}
+                  <b className="text-emerald-700">General Input</b> and{" "}
+                  <b className="text-emerald-700">Daily Input</b> folders are WellView&rsquo;s data-entry
+                  forms: open one, press <b>New</b> to add a record, or click any value to edit it.
+                </p>
+              </div>
             </div>
           )}
       </div>
     </div>
+  );
+}
+
+/** Entry-folder marker: these layouts are forms, not printed output. */
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="w-3 h-3 shrink-0" fill="none" stroke="currentColor"
+      strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11.5 2.5l2 2L6 12l-3 1 1-3 7.5-7.5z" />
+    </svg>
   );
 }
 
@@ -160,14 +219,20 @@ function anchorCaption(row: Record<string, string | number | null>): string {
 
 /** The template resolved against the chosen database — same block renderer
  *  contract as the sample browser, plus the manual's report-toolbar controls. */
-function FilledTemplate({ db, html, idwell, onEditTable }: {
-  db: string; html: string; idwell: string; onEditTable: (table: string) => void;
+function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }: {
+  db: string;
+  html: string;
+  idwell: string;
+  /** An input report is an entry surface: it gets the New button. */
+  isInput: boolean;
+  onEditTable: (table: string) => void;
+  onEditRecord: (table: string, idrec: string, column: string | null) => void;
 }) {
   interface BlockData {
     table: string | null; title: string | null; exists: boolean; computed: boolean;
     columns?: { column: string; label: string }[]; missing?: string[];
     rowCount?: number; truncated?: boolean; allNull?: boolean;
-    rows?: (string | number | null)[][]; icons?: (string | null)[];
+    rows?: (string | number | null)[][]; rowIds?: (string | null)[]; icons?: (string | null)[];
   }
   const qc = useQueryClient();
   const [jobId, setJobId] = useState<string>("");
@@ -218,6 +283,18 @@ function FilledTemplate({ db, html, idwell, onEditTable }: {
   const data = q.data;
   const withRows = (data?.blocks ?? []).filter((b) => (b.rowCount ?? 0) > 0).length;
 
+  /**
+   * What New creates. The guide's example is unambiguous — on the Job Setup
+   * report, "click the New button to create a new Job record" — i.e. the
+   * report's own primary subject area, which is its first block that resolves
+   * to a real table. A well-header banner block is a caption, not the record
+   * being added, so it is skipped.
+   */
+  const newBlock = (data?.blocks ?? probeQ.data?.blocks ?? [])
+    .find((b) => b.exists && b.table && b.table.toLowerCase() !== "wvwellheader");
+  const newTarget = newBlock?.table ?? null;
+  const newTargetLabel = newBlock?.title ?? null;
+
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {/* the report toolbar (§3.8 Table 3-2): anchors, refresh, zoom */}
@@ -247,6 +324,16 @@ function FilledTemplate({ db, html, idwell, onEditTable }: {
           </label>
         )}
         <div className="ml-auto flex items-center gap-1.5">
+          {isInput && newTarget && (
+            // §3.8 "Add a New Record": the New button opens Edit Data on the
+            // report's own subject area with a blank record ready.
+            <button type="button" data-testid="wv-report-new"
+              onClick={() => onEditTable(newTarget)}
+              title={`New record in ${newTargetLabel ?? newTarget}`}
+              className="h-7 px-2.5 text-[11px] rounded bg-emerald-600 text-white hover:bg-emerald-700">
+              New {newTargetLabel ?? ""}
+            </button>
+          )}
           <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
             Zoom
             <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))}
@@ -274,8 +361,10 @@ function FilledTemplate({ db, html, idwell, onEditTable }: {
           <div className="max-w-5xl mx-auto space-y-3" style={{ zoom: zoom / 100 }}>
             <p className="text-[11px] text-gray-500">
               <b>{data.report}</b> — {withRows} of {data.blocks.length} blocks have rows
-              {anchor ? " for this selection" : " for this well"}. Click a block&rsquo;s title bar, or
-              double-click a row, to edit that subject area.
+              {anchor ? " for this selection" : " for this well"}.{" "}
+              {isInput
+                ? "Click any value to edit it, or press New to add a record."
+                : "Click a block\u2019s title bar to open that subject area in Edit Data."}
             </p>
             {data.blocks.map((b, i) => (
               <section key={`${b.table}-${i}`} className="bg-white border border-gray-200 rounded">
@@ -323,25 +412,45 @@ function FilledTemplate({ db, html, idwell, onEditTable }: {
                         </tr>
                       </thead>
                       <tbody>
-                        {b.rows!.map((r, ri) => (
-                          <tr key={ri} className={`${ri % 2 ? "bg-gray-50" : ""} cursor-default`}
-                            title="Double-click to edit this subject area"
-                            onDoubleClick={() => b.table && onEditTable(b.table)}>
-                            {b.icons && (
-                              <td className="px-1 py-0.5 align-middle">
-                                {b.icons[ri] && (
-                                  <img src={`/wellview-icons/${b.icons[ri]}`} alt=""
-                                    className="w-5 h-5 object-contain" loading="lazy" />
-                                )}
-                              </td>
-                            )}
-                            {r.map((v, ci) => (
-                              <td key={ci} className="px-2 py-0.5 whitespace-nowrap text-gray-800">
-                                {fmt(v) || <span className="text-gray-300">—</span>}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
+                        {b.rows!.map((r, ri) => {
+                          const rowId = b.rowIds?.[ri] ?? null;
+                          return (
+                            <tr key={ri} className={ri % 2 ? "bg-gray-50" : ""}
+                              onDoubleClick={() => b.table && (rowId
+                                ? onEditRecord(b.table, rowId, null)
+                                : onEditTable(b.table))}>
+                              {b.icons && (
+                                <td className="px-1 py-0.5 align-middle">
+                                  {b.icons[ri] && (
+                                    <img src={`/wellview-icons/${b.icons[ri]}`} alt=""
+                                      className="w-5 h-5 object-contain" loading="lazy" />
+                                  )}
+                                </td>
+                              )}
+                              {r.map((v, ci) => {
+                                const col = b.columns?.[ci]?.column ?? null;
+                                // Clicking a value opens Edit Data on THAT record
+                                // with the cursor in THAT field (§3.8 / Table 3-2 M).
+                                return (
+                                  <td key={ci} className="px-0 py-0 whitespace-nowrap text-gray-800">
+                                    {b.table && rowId ? (
+                                      <button type="button" data-testid="wv-report-cell"
+                                        onClick={() => onEditRecord(b.table!, rowId, col)}
+                                        title={`Edit ${b.columns?.[ci]?.label ?? ""} on this record`}
+                                        className="w-full text-left px-2 py-0.5 hover:bg-blue-50 hover:ring-1 hover:ring-inset hover:ring-blue-300 rounded-sm">
+                                        {fmt(v) || <span className="text-gray-300">—</span>}
+                                      </button>
+                                    ) : (
+                                      <span className="block px-2 py-0.5">
+                                        {fmt(v) || <span className="text-gray-300">—</span>}
+                                      </span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

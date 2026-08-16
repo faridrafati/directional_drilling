@@ -143,6 +143,12 @@ export const wvDbApi = {
     entryApi.get<{ table: string; candidates: { idrec: string; caption: string }[] }>(
       `/wellview/dbs/${enc(db)}/link-candidates?table=${enc(table)}${idwell ? `&idwell=${enc(idwell)}` : ""}`),
 
+  /** A record's ancestor chain, subject-area root first — lets Edit Data open
+   *  on a record found in a report with every parent folder positioned. */
+  recordPath: (db: string, table: string, idrec: string) =>
+    entryApi.get<{ path: { table: string; idrec: string }[] }>(
+      `/wellview/dbs/${enc(db)}/record-path?table=${enc(table)}&idrec=${enc(idrec)}`),
+
   /** Distinct stored values of a well-header column — the Quick Query lookup. */
   headerValues: (db: string, column: string) =>
     entryApi.get<{ values: string[] }>(`/wellview/dbs/${enc(db)}/header-values?column=${enc(column)}`),
