@@ -22,7 +22,16 @@ export interface WvTreeNode {
   children: WvTreeNode[];
 }
 
-export interface WvRecordColumn { column: string; label: string; id: boolean; system: boolean }
+export interface WvRecordColumn {
+  column: string;
+  label: string;
+  id: boolean;
+  system: boolean;
+  /** TK companion of a link column — managed with it, never shown. */
+  tk?: boolean;
+  /** Record-link column: candidate target tables + the TK column to keep in step. */
+  link?: { tkColumn: string | null; targets: string[] };
+}
 export interface WvRecords {
   table: string;
   label: string;
@@ -92,7 +101,7 @@ export const wvDbApi = {
   },
 
   insert: (db: string, table: string, body: { idwell?: string; parent?: string; values: Record<string, unknown> }) =>
-    entryApi.post<{ idrec: string | null }>(`/wellview/dbs/${enc(db)}/records/${enc(table)}`, body),
+    entryApi.post<{ idrec: string | null; idwell: string | null }>(`/wellview/dbs/${enc(db)}/records/${enc(table)}`, body),
 
   update: (db: string, table: string, idrec: string, values: Record<string, unknown>) =>
     entryApi.patch<{ changed: number }>(`/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}`, { values }),
@@ -107,6 +116,25 @@ export const wvDbApi = {
   schematic: (db: string, idwell: string) =>
     entryApi.get<WvSchematic>(`/wellview/dbs/${enc(db)}/schematic?idwell=${enc(idwell)}`),
 
-  templateDataPath: (db: string, html: string, well: string) =>
-    `/wellview/dbs/${enc(db)}/template-data?html=${enc(html)}&well=${enc(well)}`,
+  templateDataPath: (db: string, html: string, well: string, anchor?: { table: string; idrec: string } | null) =>
+    `/wellview/dbs/${enc(db)}/template-data?html=${enc(html)}&well=${enc(well)}` +
+    (anchor ? `&anchor=${enc(`${anchor.table}:${anchor.idrec}`)}` : ""),
+
+  /** Candidate records (id + readable caption) for a link column's target table. */
+  linkCandidates: (db: string, table: string, idwell?: string) =>
+    entryApi.get<{ table: string; candidates: { idrec: string; caption: string }[] }>(
+      `/wellview/dbs/${enc(db)}/link-candidates?table=${enc(table)}${idwell ? `&idwell=${enc(idwell)}` : ""}`),
+
+  /** Distinct stored values of a well-header column — the Quick Query lookup. */
+  headerValues: (db: string, column: string) =>
+    entryApi.get<{ values: string[] }>(`/wellview/dbs/${enc(db)}/header-values?column=${enc(column)}`),
+
+  /** Deep-copy a record (subfolder records included) into a well/parent. */
+  copyRecord: (db: string, table: string, idrec: string, target?: { idwell?: string; parent?: string }) =>
+    entryApi.post<{ idrec: string; copied: number }>(
+      `/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}/copy`, target ?? {}),
+
+  /** Delete an entire well — every table's rows for the idwell. */
+  deleteWell: (db: string, idwell: string) =>
+    entryApi.del<{ removed: number }>(`/wellview/dbs/${enc(db)}/wells/${enc(idwell)}`),
 };

@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  test: {
+    // The WellView route tests write to the same SQLite file the sweep reads;
+    // parallel test FILES would contend on its write lock.
+    fileParallelism: false,
+  },
   resolve: {
     // The Vite under vitest 2 predates node:sqlite (a prefix-only builtin) and
     // resolves it as an npm package called "sqlite". Alias it to a shim that

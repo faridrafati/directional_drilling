@@ -79,7 +79,7 @@ export function DataAudit({ db, wells, onClose, onOpenRecord }: Props) {
               </h4>
               <div className="border border-gray-200 rounded overflow-hidden">
                 {findings.map((f, i) => (
-                  <button key={`${f.ruleId}-${i}`} type="button"
+                  <button key={`${f.ruleId}-${i}`} type="button" data-testid="wv-audit-finding"
                     onClick={() => onOpenRecord(f.idwell, f.table)}
                     title="Open in Edit Data"
                     className="w-full text-left px-2.5 py-1.5 text-[11px] flex flex-wrap items-baseline gap-x-3 gap-y-0.5 hover:bg-blue-50 border-b border-gray-100 last:border-b-0">

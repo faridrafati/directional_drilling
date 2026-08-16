@@ -50,6 +50,8 @@ function db(): DatabaseSync | null {
   if (_db !== undefined) return _db;
   const path = DB_CANDIDATES.find((p) => existsSync(p));
   _db = path ? new DatabaseSync(path, { readOnly: true }) : null;
+  // Wait out a concurrent writer instead of surfacing SQLITE_BUSY as a 500.
+  _db?.exec("PRAGMA busy_timeout = 3000");
   return _db;
 }
 export const sampleDbPath = (): string | null =>
@@ -167,14 +169,35 @@ function orderColumn(cols: Map<string, string>): string | null {
   return null;
 }
 
+/** The longest proper table-name prefix that is itself a table — WellView's
+ *  parent rule, needed here to scope blocks to an anchor record. */
+function prefixParent(sch: ReturnType<typeof schema>, tnameLc: string): string | null {
+  for (let i = tnameLc.length - 1; i > 2; i--) {
+    const cand = tnameLc.slice(0, i);
+    if (sch.has(cand) && cand !== tnameLc) return cand;
+  }
+  return null;
+}
+
 /**
  * Resolve one parsed template against a WellView database for one well:
  * every block in template order, its interpreted captions, its rows, and the
  * honest states (computed-at-print-time, missing columns, capped counts).
  * Shared by the sample-database browser and the WellView-online explorer.
  * Returns null when no template matches `html`.
+ *
+ * `anchor` is the manual's report-toolbar subject-area selector ("pick a Job,
+ * then a Daily Operation report"): a table + record. Blocks DESCENDING from the
+ * anchor table are joined up their IDRecParent chain to that record; blocks that
+ * are ANCESTORS of it (the job block on a daily report) are pinned to the
+ * anchor's own ancestor record. Unrelated blocks stay well-scoped, untouched.
  */
-export function resolveTemplateData(d: DatabaseSync, html: string, well: string): {
+export function resolveTemplateData(
+  d: DatabaseSync,
+  html: string,
+  well: string,
+  anchor?: { table: string; idrec: string } | null,
+): {
   report: string;
   well: { idwell: string; name: string };
   blocks: unknown[];
@@ -183,6 +206,25 @@ export function resolveTemplateData(d: DatabaseSync, html: string, well: string)
   if (!tpl) return null;
 
   const sch = schema(d);
+
+  // The anchor record's own ancestor chain: tableLc → that level's IDRec.
+  const anchorIds = new Map<string, string>();
+  if (anchor) {
+    const ancLc = anchor.table.toLowerCase();
+    let curT = sch.get(ancLc);
+    let curId: string | null = anchor.idrec;
+    while (curT && curId) {
+      anchorIds.set(curT.name.toLowerCase(), curId);
+      const parentLc = prefixParent(sch, curT.name.toLowerCase());
+      const parentCol = curT.cols.get("idrecparent");
+      if (!parentLc || !parentCol) break;
+      const row = d.prepare(`SELECT "${parentCol}" p FROM "${curT.name}" WHERE "${curT.cols.get("idrec")}" = ?`)
+        .get(curId) as { p: string | null } | undefined;
+      curId = row?.p ?? null;
+      curT = sch.get(parentLc);
+    }
+  }
+
   const blocks = tpl.blocks.map((b) => {
     const tname = (b.table ?? "").toLowerCase();
     if (!tname) return { table: b.table, title: b.title, exists: false, computed: false };
@@ -209,16 +251,55 @@ export function resolveTemplateData(d: DatabaseSync, html: string, well: string)
     }
 
     const hasIdwell = t.cols.has("idwell");
-    const where = hasIdwell ? "WHERE idwell = ?" : "";
-    const args = hasIdwell ? [well] : [];
-    const total = (d.prepare(`SELECT COUNT(*) c FROM "${t.name}" ${where}`).get(...args) as { c: number }).c;
+    const preds: string[] = hasIdwell ? [`t0."${t.cols.get("idwell")}" = ?`] : [];
+    const args: string[] = hasIdwell ? [well] : [];
+    let joins = "";
+
+    // Anchor scoping (report-toolbar subject-area selectors).
+    if (anchor && anchorIds.size) {
+      const ancLc = anchor.table.toLowerCase();
+      if (anchorIds.has(tname)) {
+        // Block IS the anchor level or one of its ancestors: pin to that record.
+        const idCol = t.cols.get("idrec");
+        if (idCol) { preds.push(`t0."${idCol}" = ?`); args.push(anchorIds.get(tname)!); }
+      } else if (tname.startsWith(ancLc)) {
+        // Block descends from the anchor: join IDRecParent up to it.
+        const chain: { name: string; idrec: string; parentCol: string }[] = [];
+        let cur = tname;
+        let ok = true;
+        while (cur !== ancLc) {
+          const ct = sch.get(cur);
+          const parentLc = prefixParent(sch, cur);
+          const parentCol = ct?.cols.get("idrecparent");
+          const parentT = parentLc ? sch.get(parentLc) : null;
+          if (!ct || !parentCol || !parentT || !parentT.cols.get("idrec")) { ok = false; break; }
+          chain.push({ name: parentT.name, idrec: parentT.cols.get("idrec")!, parentCol });
+          cur = parentLc!;
+        }
+        if (ok && chain.length) {
+          let prev = "t0";
+          chain.forEach((hop, i) => {
+            const alias = `a${i + 1}`;
+            const prevTable = i === 0 ? t : sch.get(chain[i - 1].name.toLowerCase())!;
+            const prevParentCol = i === 0 ? t.cols.get("idrecparent") : prevTable.cols.get("idrecparent");
+            joins += ` JOIN "${hop.name}" ${alias} ON ${alias}."${hop.idrec}" = ${prev}."${prevParentCol}"`;
+            prev = alias;
+          });
+          preds.push(`${prev}."${sch.get(ancLc)!.cols.get("idrec")}" = ?`);
+          args.push(anchor.idrec);
+        }
+      }
+    }
+
+    const where = preds.length ? ` WHERE ${preds.join(" AND ")}` : "";
+    const total = (d.prepare(`SELECT COUNT(*) c FROM "${t.name}" t0${joins}${where}`).get(...args) as { c: number }).c;
     const ord = orderColumn(t.cols);
-    const sel = present.map((p) => `"${p.actual}"`).join(", ");
+    const sel = present.map((p) => `t0."${p.actual}"`).join(", ");
     const desCol = t.cols.get("des");
     const withDes = desCol && COMPONENT_TABLE.test(t.name) && !present.some((p) => p.actual === desCol)
-      ? `${sel}, "${desCol}"` : sel;
+      ? `${sel}, t0."${desCol}"` : sel;
     const rows = d.prepare(
-      `SELECT ${withDes} FROM "${t.name}" ${where}${ord ? ` ORDER BY "${ord}"` : ""} LIMIT ${ROW_CAP}`,
+      `SELECT ${withDes} FROM "${t.name}" t0${joins}${where}${ord ? ` ORDER BY t0."${ord}"` : ""} LIMIT ${ROW_CAP}`,
     ).all(...args) as Record<string, unknown>[];
 
     const decorate = desCol != null && COMPONENT_TABLE.test(t.name);

@@ -19,7 +19,7 @@ import { EntryAuthProvider, useEntryAuth, SignInCard } from "../entry/auth.js";
 import { wvDbApi } from "../entry/wellviewDb.js";
 import { WellExplorer } from "../components/wellview-online/WellExplorer.js";
 import { WellWindow } from "../components/wellview-online/WellWindow.js";
-import { EditData } from "../components/wellview-online/EditData.js";
+import { EditData, type WvClipboard } from "../components/wellview-online/EditData.js";
 import { DataAudit } from "../components/wellview-online/DataAudit.js";
 
 export function WellViewOnlinePage() {
@@ -36,6 +36,9 @@ function Inner() {
   const [openWell, setOpenWell] = useState<string | null>(null);
   const [edit, setEdit] = useState<{ idwell: string; table: string | null } | null>(null);
   const [audit, setAudit] = useState<string[] | null>(null);
+  /** Copy Record / Paste Record buffer — survives closing one well and opening
+   *  another, which is exactly what the manual's between-wells copy needs. */
+  const [clipboard, setClipboard] = useState<WvClipboard | null>(null);
 
   // Well names for the title bars, fetched once per database.
   const wellsQ = useQuery({
@@ -103,6 +106,8 @@ function Inner() {
             idwell={edit.idwell}
             wellName={nameOf(edit.idwell)}
             initialTable={edit.table}
+            clipboard={clipboard}
+            onClipboard={setClipboard}
             onClose={() => setEdit(null)}
           />
         )}
@@ -151,7 +156,9 @@ function OpenDatabase({ onOpen }: { onOpen: (id: string) => void }) {
               data-testid={`wv-db-${d.id}`}
               className="w-full text-left px-3 py-2.5 rounded-md border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors duration-150 flex items-baseline gap-3">
               <span className="text-sm font-medium text-gray-900">{d.file}</span>
-              <span className="text-[11px] text-gray-500 tabular-nums">{d.wells} wells</span>
+              <span className="text-[11px] text-gray-500 tabular-nums">
+                {d.wells > 0 ? `${d.wells} wells` : "empty — WellView's blank template database"}
+              </span>
               <span className="ml-auto text-[10px] text-gray-400 tabular-nums">
                 {(d.sizeBytes / 1048576).toFixed(1)} MB
               </span>

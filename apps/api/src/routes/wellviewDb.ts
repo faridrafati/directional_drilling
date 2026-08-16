@@ -63,14 +63,21 @@ function db(id: string): Db | null {
   if (hit) return hit;
   const file = listDbFiles().find((f) => f.id === id);
   if (!file) return null;
-  const entry: Db = { id, path: file.path, ro: new DatabaseSync(file.path, { readOnly: true }), rw: null };
+  const ro = new DatabaseSync(file.path, { readOnly: true });
+  // A writer elsewhere (another process, a test worker) must mean "wait a
+  // moment", not SQLITE_BUSY bubbling up as a 500.
+  ro.exec("PRAGMA busy_timeout = 3000");
+  const entry: Db = { id, path: file.path, ro, rw: null };
   _dbs.set(id, entry);
   return entry;
 }
 
 /** The writable handle, opened only when a mutation actually happens. */
 function writable(d: Db): DatabaseSync {
-  if (!d.rw) d.rw = new DatabaseSync(d.path);
+  if (!d.rw) {
+    d.rw = new DatabaseSync(d.path);
+    d.rw.exec("PRAGMA busy_timeout = 3000");
+  }
   return d.rw;
 }
 
@@ -127,8 +134,74 @@ const table = (d: Db, name: string): TableInfo | null => schema(d).get(name.toLo
 
 /** System/bookkeeping columns, hidden unless the client asks (§3.9 "View System Fields"). */
 const isSysCol = (c: string) => /^sys/i.test(c);
-/** Link/identity columns the grid shows dimmed but never edits directly. */
-const isIdCol = (c: string) => /^id(well|rec)/i.test(c);
+/** The server-managed KEYS — never writable from the client. */
+const isKeyCol = (c: string) => ["idwell", "idrec", "idrecparent"].includes(c.toLowerCase());
+/**
+ * Record-LINK columns (IDRecWellBore, IDRecString, …): writable — the manual's
+ * associated-data lookups depend on them. Each pairs with an optional `…TK`
+ * companion that stores the TARGET TABLE name (observed in the data:
+ * wvCement.IDRecStringTK = 'wvcas'), which is how ambiguous links like
+ * "String" (casing or tubing?) stay unambiguous.
+ */
+const isLinkCol = (c: string) => /^idrec./i.test(c) && !isKeyCol(c);
+const isTkCol = (c: string) => /^idrec.+tk$/i.test(c);
+/**
+ * wvWellbore.IDRecParent is a SELF-reference (sidetrack → parent bore), not a
+ * child-table key — the manual's §10.4 "link the new wellbore to its parent
+ * wellbore". On chain-top tables it is therefore an editable link, not a key.
+ */
+const isSelfParentLink = (t: TableInfo, c: string) =>
+  c.toLowerCase() === "idrecparent" && t.hasParent && t.parent === null;
+
+/** Fallback link targets when a column's TK data is empty, by column suffix. */
+const LINK_TARGETS: Record<string, string[]> = {
+  wellbore: ["wvWellbore"], parent: ["wvWellbore"],
+  job: ["wvJob"], jobrun: ["wvJob"], jobpull: ["wvJob"],
+  string: ["wvCas", "wvTub", "wvOtherStr"], nextcas: ["wvCas"],
+  cas: ["wvCas"], tub: ["wvTub"],
+  dirsrvyactual: ["wvWellboreDirSurvey"], dirsrvyprop: ["wvWellboreDirSurvey"],
+  zone: ["wvZone"], bit: ["wvJobDrillBit"], log: ["wvLog"],
+  problem: ["wvProblem"], elvhistory: ["wvElevationHistory"],
+};
+
+/** Candidate target tables for a link column: the TK values actually present
+ *  in the data first, then the suffix fallback — resolved to real tables. */
+function linkTargets(d: Db, t: TableInfo, col: string): string[] {
+  const sch = schema(d);
+  const resolve = (n: string) => sch.get(n.toLowerCase())?.name ?? null;
+  const tk = t.colSet.get(`${col.toLowerCase()}tk`);
+  const seen: string[] = [];
+  if (tk) {
+    try {
+      const rows = d.ro.prepare(
+        `SELECT DISTINCT lower("${tk}") v FROM "${t.name}" WHERE "${tk}" IS NOT NULL LIMIT 8`,
+      ).all() as { v: string }[];
+      for (const r of rows) {
+        const hit = resolve(r.v);
+        if (hit && !seen.includes(hit)) seen.push(hit);
+      }
+    } catch { /* fall through to the suffix map */ }
+  }
+  if (!seen.length) {
+    const suffix = col.replace(/^idrec/i, "").replace(/tk$/i, "").toLowerCase();
+    for (const cand of LINK_TARGETS[suffix] ?? [`wv${suffix}`]) {
+      const hit = resolve(cand);
+      if (hit && !seen.includes(hit)) seen.push(hit);
+    }
+  }
+  return seen;
+}
+
+/** Something readable to identify a record by — mirrors the client's captions. */
+function captionOf(t: TableInfo, row: Record<string, unknown>): string {
+  for (const k of ["dttmstart", "dttm", "dttmrun", "des", "wellname", "zonename", "com"]) {
+    const c = t.colSet.get(k);
+    const v = c ? row[c] : null;
+    if (v != null && v !== "") return String(v).slice(0, 60);
+  }
+  const id = t.colSet.get("idrec");
+  return id ? String(row[id] ?? "record").slice(0, 12) : "record";
+}
 
 // ── labels ────────────────────────────────────────────────────────────────────
 /**
@@ -620,8 +693,15 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         columns: cols.map((c) => ({
           column: c,
           label: columnLabel(t.name, c),
-          id: isIdCol(c),
+          id: isKeyCol(c) && !isSelfParentLink(t, c),
           system: isSysCol(c),
+          // TK companions are managed alongside their link column, not shown.
+          tk: isTkCol(c) || undefined,
+          link: isSelfParentLink(t, c)
+            ? { tkColumn: t.colSet.get(`${c.toLowerCase()}tk`) ?? null, targets: [t.name] }
+            : isLinkCol(c) && !isTkCol(c)
+              ? { tkColumn: t.colSet.get(`${c.toLowerCase()}tk`) ?? null, targets: linkTargets(d, t, c) }
+              : undefined,
         })),
         rows: rows.map((r) => {
           const out: Record<string, string | number | null> = {};
@@ -644,13 +724,18 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       const values: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(req.body?.values ?? {})) {
         const actual = t.colSet.get(k.toLowerCase());
-        if (actual && !isSysCol(actual) && !isIdCol(actual)) values[actual] = v;
+        if (actual && !isSysCol(actual) && (!isKeyCol(actual) || isSelfParentLink(t, actual))) values[actual] = v;
       }
       const idrec = t.colSet.has("idrec") ? newIdRec() : null;
       if (idrec) values[t.colSet.get("idrec")!] = idrec;
+      let idwell = req.body?.idwell ?? null;
+      let mintedWell = false;
       if (t.hasIdwell) {
-        if (!req.body?.idwell) return reply.code(400).send({ error: "idwell is required" });
-        values[t.colSet.get("idwell")!] = req.body.idwell;
+        // Inserting a well-header row IS creating a new well (manual ch. 4) —
+        // the header is keyed by idwell alone, so a fresh one is minted here.
+        if (!idwell && t.name.toLowerCase() === "wvwellheader") { idwell = newIdRec(); mintedWell = true; }
+        if (!idwell) return reply.code(400).send({ error: "idwell is required" });
+        values[t.colSet.get("idwell")!] = idwell;
       }
       if (t.hasParent && req.body?.parent) values[t.colSet.get("idrecparent")!] = req.body.parent;
       const user = (req as unknown as { entryUser?: { username?: string } }).entryUser?.username ?? "web";
@@ -664,7 +749,33 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       writable(d).prepare(
         `INSERT INTO "${t.name}" (${cols.map((c) => `"${c}"`).join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
       ).run(...cols.map((c) => values[c] as string | number | null));
-      return { idrec };
+
+      // Ch. 4: creating the well auto-creates its Original Hole wellbore, so
+      // wellbore-linked folders have something to link to from the first day.
+      if (mintedWell) {
+        const wb = table(d, "wvWellbore");
+        if (wb?.colSet.has("idrec")) {
+          const wbId = newIdRec();
+          const wbValues: Record<string, unknown> = {
+            [wb.colSet.get("idwell")!]: idwell,
+            [wb.colSet.get("idrec")!]: wbId,
+          };
+          const des = wb.colSet.get("des");
+          if (des) wbValues[des] = "Original Hole";
+          // self-reference marks the original hole (§10.4)
+          const par = wb.colSet.get("idrecparent");
+          if (par) wbValues[par] = wbId;
+          for (const [k, v] of [["syscreatedate", now], ["syscreateuser", user], ["sysmoddate", now], ["sysmoduser", user]] as const) {
+            const c = wb.colSet.get(k);
+            if (c) wbValues[c] = v;
+          }
+          const wcols = Object.keys(wbValues);
+          writable(d).prepare(
+            `INSERT INTO "${wb.name}" (${wcols.map((c) => `"${c}"`).join(", ")}) VALUES (${wcols.map(() => "?").join(", ")})`,
+          ).run(...wcols.map((c) => wbValues[c] as string | number | null));
+        }
+      }
+      return { idrec, idwell: t.hasIdwell ? idwell : null };
     },
   );
 
@@ -683,7 +794,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       const args: (string | number | null)[] = [];
       for (const [k, v] of Object.entries(req.body?.values ?? {})) {
         const actual = t.colSet.get(k.toLowerCase());
-        if (!actual || isSysCol(actual) || isIdCol(actual)) continue;
+        if (!actual || isSysCol(actual) || (isKeyCol(actual) && !isSelfParentLink(t, actual))) continue;
         sets.push(`"${actual}" = ?`);
         args.push((v === "" ? null : v) as string | number | null);
       }
@@ -711,6 +822,135 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
       if (!t.colSet.has("idrec")) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
       return { removed: deleteRecord(d, t, req.params.idrec) };
+    },
+  );
+
+  /**
+   * Candidate records for a link column's target table, with readable captions
+   * — what the manual's associated-data lookup shows instead of GUIDs.
+   */
+  app.get<{ Params: { db: string }; Querystring: { table?: string; idwell?: string } }>(
+    "/entry/wellview/dbs/:db/link-candidates",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, String(req.query.table ?? ""));
+      if (!t) return reply.code(404).send({ error: `no table ${req.query.table}` });
+      const idCol = t.colSet.get("idrec");
+      if (!idCol) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
+      const where = req.query.idwell && t.hasIdwell ? "WHERE idwell = ?" : "";
+      const args = where ? [String(req.query.idwell)] : [];
+      const ord = orderColumn(t);
+      const rows = d.ro.prepare(
+        `SELECT * FROM "${t.name}" ${where}${ord ? ` ORDER BY "${ord}"` : ""} LIMIT 300`,
+      ).all(...args) as Record<string, unknown>[];
+      return {
+        table: t.name,
+        candidates: rows.map((r) => ({ idrec: String(r[idCol]), caption: captionOf(t, r) })),
+      };
+    },
+  );
+
+  /** Distinct stored values of one well-header column — the Quick Query lookup. */
+  app.get<{ Params: { db: string }; Querystring: { column?: string } }>(
+    "/entry/wellview/dbs/:db/header-values",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, "wvWellHeader");
+      if (!t) return reply.code(404).send({ error: "wvWellHeader missing" });
+      const col = t.colSet.get(String(req.query.column ?? "").toLowerCase());
+      if (!col) return reply.code(404).send({ error: `no header column ${req.query.column}` });
+      const rows = d.ro.prepare(
+        `SELECT DISTINCT "${col}" v FROM "${t.name}" WHERE "${col}" IS NOT NULL AND "${col}" <> '' ORDER BY 1 LIMIT 500`,
+      ).all() as { v: unknown }[];
+      return { values: rows.map((r) => String(r.v)) };
+    },
+  );
+
+  /**
+   * Deep-copy a record INCLUDING its subfolder records (manual: Copy Record /
+   * Paste Record and Duplicate Record both carry the subfolders). The copy can
+   * land in another well (targetIdwell) or under another parent record.
+   */
+  app.post<{
+    Params: { db: string; table: string; idrec: string };
+    Body: { idwell?: string; parent?: string };
+  }>(
+    "/entry/wellview/dbs/:db/records/:table/:idrec/copy",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, req.params.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
+      const idCol = t.colSet.get("idrec");
+      if (!idCol) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
+      const src = d.ro.prepare(`SELECT * FROM "${t.name}" WHERE "${idCol}" = ?`).get(req.params.idrec) as
+        Record<string, unknown> | undefined;
+      if (!src) return reply.code(404).send({ error: "record not found" });
+
+      const user = (req as unknown as { entryUser?: { username?: string } }).entryUser?.username ?? "web";
+      const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      const sch = schema(d);
+      const w = writable(d);
+      let copied = 0;
+
+      const copyRec = (tt: TableInfo, row: Record<string, unknown>, idwell: string | null, parent: string | null): string => {
+        const values: Record<string, unknown> = { ...row };
+        const newId = newIdRec();
+        values[tt.colSet.get("idrec")!] = newId;
+        if (tt.hasIdwell && idwell) values[tt.colSet.get("idwell")!] = idwell;
+        if (tt.hasParent) values[tt.colSet.get("idrecparent")!] = parent;
+        for (const [k, v] of [["syscreatedate", now], ["syscreateuser", user], ["sysmoddate", now], ["sysmoduser", user]] as const) {
+          const c = tt.colSet.get(k);
+          if (c) values[c] = v;
+        }
+        const cols = Object.keys(values);
+        w.prepare(
+          `INSERT INTO "${tt.name}" (${cols.map((c) => `"${c}"`).join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
+        ).run(...cols.map((c) => values[c] as string | number | null));
+        copied++;
+        // subfolder records travel with the record, exactly as the manual says
+        for (const childName of tt.children) {
+          const child = sch.get(childName.toLowerCase())!;
+          if (!child.colSet.has("idrec") || !child.hasParent) continue;
+          const kids = d.ro.prepare(
+            `SELECT * FROM "${child.name}" WHERE "${child.colSet.get("idrecparent")}" = ?`,
+          ).all(String(row[tt.colSet.get("idrec")!])) as Record<string, unknown>[];
+          for (const kid of kids) copyRec(child, kid, idwell, newId);
+        }
+        return newId;
+      };
+
+      const targetIdwell = req.body?.idwell ?? (t.hasIdwell ? String(src[t.colSet.get("idwell")!]) : null);
+      const targetParent = req.body?.parent ?? (t.hasParent ? (src[t.colSet.get("idrecparent")!] as string | null) : null);
+      const idrec = copyRec(t, src, targetIdwell, targetParent);
+      return { idrec, copied };
+    },
+  );
+
+  /**
+   * Delete a WHOLE well: its rows in every idwell-carrying table. This is the
+   * manual's warning made explicit — "the Delete command will delete the entire
+   * well from the database, not just the link to it."
+   */
+  app.delete<{ Params: { db: string; idwell: string } }>(
+    "/entry/wellview/dbs/:db/wells/:idwell",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const w = writable(d);
+      let removed = 0;
+      for (const t of schema(d).values()) {
+        if (!t.hasIdwell) continue;
+        const res = w.prepare(`DELETE FROM "${t.name}" WHERE "${t.colSet.get("idwell")}" = ?`).run(req.params.idwell);
+        removed += Number(res.changes);
+      }
+      return { removed };
     },
   );
 
@@ -801,8 +1041,12 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
     },
   );
 
-  /** A report template resolved against THIS database for one well (§3.8 Reports). */
-  app.get<{ Params: { db: string }; Querystring: { html?: string; well?: string } }>(
+  /**
+   * A report template resolved against THIS database for one well (§3.8).
+   * `anchor=<table>:<idrec>` scopes it the way the desktop report toolbar's
+   * subject-area list boxes do — pick a Job, then a Daily Operation report.
+   */
+  app.get<{ Params: { db: string }; Querystring: { html?: string; well?: string; anchor?: string } }>(
     "/entry/wellview/dbs/:db/template-data",
     { preHandler: requireUser },
     async (req, reply) => {
@@ -812,7 +1056,12 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       const well = String(req.query.well ?? "");
       if (!html) return reply.code(400).send({ error: "html (template id) is required" });
       if (!well) return reply.code(400).send({ error: "well (idwell) is required" });
-      const resolved = resolveTemplateData(d.ro, html, well);
+      let anchor: { table: string; idrec: string } | null = null;
+      if (req.query.anchor) {
+        const ix = req.query.anchor.indexOf(":");
+        if (ix > 0) anchor = { table: req.query.anchor.slice(0, ix), idrec: req.query.anchor.slice(ix + 1) };
+      }
+      const resolved = resolveTemplateData(d.ro, html, well, anchor);
       if (!resolved) return reply.code(404).send({ error: `no template with html=${html}` });
       return resolved;
     },

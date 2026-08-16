@@ -63,6 +63,8 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
   const [myWells, setMyWells] = useState<string[]>(() => store.get(K("my"), []));
   const [recent, setRecent] = useState<string[]>(() => store.get(K("recent"), []));
   const [groups, setGroups] = useState<GroupSpec[]>(() => store.get(K("groups"), []));
+  /** §3.2 "Show wells in lowest group only" — only leaf folders list wells. */
+  const [lowestOnly, setLowestOnly] = useState<boolean>(() => store.get(K("groupsLowest"), false));
   const [sort, setSort] = useState<{ column: string; desc: boolean } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const lastClick = useRef<number | null>(null);
@@ -79,6 +81,15 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
   useEffect(() => { store.set(K("my"), myWells); }, [myWells]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { store.set(K("recent"), recent); }, [recent]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { store.set(K("groups"), groups); }, [groups]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { store.set(K("groupsLowest"), lowestOnly); }, [lowestOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** §3.3: the Look-for lookup — values already stored in the chosen field. */
+  const lookValuesQ = useQuery({
+    queryKey: ["wvdb", db, "header-values", lookIn],
+    queryFn: () => wvDbApi.headerValues(db, lookIn),
+    enabled: folder.kind === "query",
+    staleTime: 60_000,
+  });
 
   const headerColsQ = useQuery({
     queryKey: ["wvdb", db, "header-columns"],
@@ -177,6 +188,36 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
     onOpen(id);
   }
 
+  /**
+   * Ch. 4 "Create a New Well": the header record IS the well, so one insert
+   * with a name mints the idwell; Edit Data then opens on it so the header
+   * and wellbore details can be entered top-down, as the manual teaches.
+   */
+  async function newWell() {
+    const name = window.prompt("Name for the new well (Well Header → Well Name):");
+    if (!name?.trim()) return;
+    const res = await wvDbApi.insert(db, "wvWellHeader", { values: { WellName: name.trim() } });
+    await wellsQ.refetch();
+    if (res.idwell) onEdit(res.idwell);
+  }
+
+  /**
+   * The manual's warning made real: Delete removes the ENTIRE well from the
+   * database — every table's rows — not just a shortcut. Hence the name check.
+   */
+  async function deleteWell(id: string) {
+    const name = nameOf(allWells.find((w) => idOf(w) === id) ?? { idwell: id });
+    const typed = window.prompt(
+      `This deletes "${name}" from the database — every record in every folder, not just a link. ` +
+      "Type the well name to confirm:");
+    if (typed?.trim() !== name) return;
+    await wvDbApi.deleteWell(db, id);
+    setSelected([]);
+    setMyWells((m) => m.filter((x) => x !== id));
+    setRecent((r) => r.filter((x) => x !== id));
+    await wellsQ.refetch();
+  }
+
   function copyWellList() {
     const head = columns.map((c) => c.label).join("\t");
     const body = rows.map((w) => columns.map((c) => String(w[c.column] ?? "")).join("\t")).join("\n");
@@ -199,6 +240,8 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
           disabled={!primary} onClick={() => primary && openWell(primary)} />
         <ToolButton label="Edit Data" hint="Open the Edit Data window to change well records"
           disabled={!primary} onClick={() => primary && onEdit(primary)} />
+        <ToolButton label="New Well" hint="Create a new well in this database (ch. 4 — Well Planning)"
+          onClick={() => void newWell()} />
         <ToolButton label="Data Audit" hint="Check that fields meet the §10.2 business rules"
           onClick={() => onAudit(selected)} />
         <ToolButton label="Multi Well Reports" hint="The 30-report suite runs from the Well Reports page"
@@ -235,10 +278,11 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
             <div className="mt-1 border-t border-gray-100 pt-1">
               <div className="px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-400 flex items-center">
                 Grouped wells
-                <button type="button" className="ml-auto text-blue-600 hover:underline normal-case"
+                <button type="button" data-testid="wv-group-edit"
+                  className="ml-auto text-blue-600 hover:underline normal-case"
                   onClick={() => setShowGroupDlg(true)}>edit</button>
               </div>
-              <GroupFolders nodes={groupTree} depth={0}
+              <GroupFolders nodes={groupTree} depth={0} lowestOnly={lowestOnly}
                 active={folder.kind === "group" ? folder.path : null}
                 onPick={(path) => setFolder({ kind: "group", path })} />
             </div>
@@ -272,7 +316,12 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
                   <input value={lookFor} onChange={(e) => setLookFor(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") setApplied({ lookin: lookIn, lookfor: lookFor }); }}
                     placeholder="full or partial value"
+                    list="wv-qq-lookup"
                     className="mt-0.5 w-full h-7 border border-gray-300 rounded px-1.5 text-xs normal-case tracking-normal" />
+                  {/* the manual's Database Lookup list: values already stored in that field */}
+                  <datalist id="wv-qq-lookup">
+                    {(lookValuesQ.data?.values ?? []).map((v) => <option key={v} value={v} />)}
+                  </datalist>
                 </label>
                 <button type="button"
                   onClick={() => setApplied({ lookin: lookIn, lookfor: lookFor })}
@@ -317,6 +366,10 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
                     Add to My Wells
                   </button>
                 )}
+                <button type="button" className="text-red-600 hover:underline ml-auto"
+                  onClick={() => void deleteWell(primary)}>
+                  Delete Well…
+                </button>
               </>
             )}
           </div>
@@ -391,9 +444,11 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
         <GroupByProperties
           all={headerColsQ.data ?? []}
           groups={groups}
+          lowestOnly={lowestOnly}
           onClose={() => setShowGroupDlg(false)}
-          onApply={(next) => {
+          onApply={(next, lowest) => {
             setGroups(next);
+            setLowestOnly(lowest);
             setShowGroupDlg(false);
             if (next.length === 0 && folder.kind === "group") setFolder({ kind: "all" });
           }}
@@ -431,29 +486,42 @@ function SearchIcon() {
 }
 
 /** Nested group folders (up to four levels, per the manual). */
-function GroupFolders({ nodes, depth, active, onPick }: {
+function GroupFolders({ nodes, depth, active, onPick, lowestOnly }: {
   nodes: { value: string; path: (string | null)[]; count: number; children: GroupFolders_Node[] }[];
   depth: number;
   active: (string | null)[] | null;
   onPick: (path: (string | null)[]) => void;
+  /** §3.2 "Show wells in lowest group only": intermediate levels are labels. */
+  lowestOnly: boolean;
 }) {
   return (
     <div>
       {nodes.map((n) => {
         const isActive = active !== null && active.length === n.path.length && n.path.every((v, i) => active[i] === v);
+        const leaf = n.children.length === 0;
+        const listable = !lowestOnly || leaf;
         return (
           <div key={n.path.join("¦")}>
-            <button type="button"
-              style={{ paddingLeft: 8 + depth * 14 }}
-              className={`w-full text-left pr-2 py-0.5 rounded text-[11px] flex items-center gap-1.5 ${
-                isActive ? "bg-blue-100 text-blue-900 font-medium" : "text-gray-600 hover:bg-gray-100"}`}
-              onClick={() => onPick(n.path)}>
-              <FolderIcon />
-              <span className="truncate">{n.value}</span>
-              <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{n.count}</span>
-            </button>
+            {listable ? (
+              <button type="button" data-testid="wv-group-folder"
+                style={{ paddingLeft: 8 + depth * 14 }}
+                className={`w-full text-left pr-2 py-0.5 rounded text-[11px] flex items-center gap-1.5 ${
+                  isActive ? "bg-blue-100 text-blue-900 font-medium" : "text-gray-600 hover:bg-gray-100"}`}
+                onClick={() => onPick(n.path)}>
+                <FolderIcon />
+                <span className="truncate">{n.value}</span>
+                <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{n.count}</span>
+              </button>
+            ) : (
+              <div style={{ paddingLeft: 8 + depth * 14 }}
+                className="pr-2 py-0.5 text-[11px] text-gray-500 flex items-center gap-1.5">
+                <FolderIcon />
+                <span className="truncate">{n.value}</span>
+                <span className="ml-auto text-[10px] text-gray-300 tabular-nums">{n.count}</span>
+              </div>
+            )}
             {n.children.length > 0 && (
-              <GroupFolders nodes={n.children} depth={depth + 1} active={active} onPick={onPick} />
+              <GroupFolders nodes={n.children} depth={depth + 1} active={active} onPick={onPick} lowestOnly={lowestOnly} />
             )}
           </div>
         );
@@ -526,13 +594,15 @@ function WellListProperties({ all, displayed, onApply, onClose }: {
 }
 
 /** §3.2 "Add and Edit a Well Group" — group by up to four header fields. */
-function GroupByProperties({ all, groups, onApply, onClose }: {
+function GroupByProperties({ all, groups, lowestOnly, onApply, onClose }: {
   all: WvHeaderColumn[];
   groups: GroupSpec[];
-  onApply: (groups: GroupSpec[]) => void;
+  lowestOnly: boolean;
+  onApply: (groups: GroupSpec[], lowestOnly: boolean) => void;
   onClose: () => void;
 }) {
   const [levels, setLevels] = useState<GroupSpec[]>(groups.length ? groups : []);
+  const [lowest, setLowest] = useState(lowestOnly);
   const setLevel = (i: number, spec: GroupSpec | null) =>
     setLevels((ls) => {
       const next = [...ls];
@@ -568,12 +638,16 @@ function GroupByProperties({ all, groups, onApply, onClose }: {
           </div>
         ))}
       </div>
-      <div className="mt-2">
+      <div className="mt-2 flex items-center justify-between">
+        <label className="flex items-center gap-1.5 text-[11px] text-gray-600">
+          <input type="checkbox" checked={lowest} onChange={(e) => setLowest(e.target.checked)} />
+          Show wells in lowest group only
+        </label>
         <button type="button" className="text-[11px] text-blue-600 hover:underline" onClick={() => setLevels([])}>
           Clear All
         </button>
       </div>
-      <DialogButtons onOk={() => onApply(levels)} onCancel={onClose} />
+      <DialogButtons onOk={() => onApply(levels, lowest)} onCancel={onClose} />
     </Dialog>
   );
 }

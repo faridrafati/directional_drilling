@@ -3,18 +3,22 @@
  *
  * Reports: the 181 original WellView layouts on the left, grouped by Peloton's
  * own categories; the selected one resolves against THIS database for THIS
- * well, block by block. Clicking a block's title bar opens the Edit Data window
- * at that subject area — the web equivalent of "double-click a report field to
- * open the corresponding record".
+ * well, block by block. The report toolbar carries the manual's subject-area
+ * list boxes — pick a Job, then a Daily Operation — which scope every block
+ * that hangs off that record (the server joins the IDRecParent chain), plus
+ * Refresh and a zoom control. Clicking a block's title bar or double-clicking
+ * a data row opens the Edit Data window at that subject area.
  *
  * Schematic: drawn from the downhole subject areas exactly as §3.8 lists them —
  * wellbore sizes, casing and tubing strings, rods, other-in-hole, perforations,
  * cement and zones — honestly to depth, with string widths from the components'
  * nominal ODs. The history player steps through every date on which the
- * downhole state changed (run/pull/perforation/cement dates found in the data).
+ * downhole state changed. The wellbore selector follows §10.4: items above the
+ * selected bore's kickoff point render regardless of which wellbore they belong
+ * to. Zoom In/Out/Full and a proposed-strings toggle (ch. 4 planning) included.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entryApi } from "../../entry/client.js";
 import { wvDbApi, type WvSchematic, type WvSchematicRow } from "../../entry/wellviewDb.js";
 
@@ -140,8 +144,22 @@ function ReportsTab({ db, idwell, onEditTable }: {
   );
 }
 
+/** Caption for a job/day record in the anchor selectors. */
+function anchorCaption(row: Record<string, string | number | null>): string {
+  for (const k of ["DtTmStart", "DtTm", "Des", "JobTyp1", "Com"]) {
+    const v = row[k];
+    if (v != null && v !== "") {
+      const s = String(v);
+      const m = s.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}Z$/);
+      if (m) return m[2] === "00:00" ? m[1] : `${m[1]} ${m[2]}`;
+      return s.slice(0, 42);
+    }
+  }
+  return String(row.IDRec ?? "record").slice(0, 12);
+}
+
 /** The template resolved against the chosen database — same block renderer
- *  contract as the sample browser, plus block-title → Edit Data. */
+ *  contract as the sample browser, plus the manual's report-toolbar controls. */
 function FilledTemplate({ db, html, idwell, onEditTable }: {
   db: string; html: string; idwell: string; onEditTable: (table: string) => void;
 }) {
@@ -151,10 +169,42 @@ function FilledTemplate({ db, html, idwell, onEditTable }: {
     rowCount?: number; truncated?: boolean; allNull?: boolean;
     rows?: (string | number | null)[][]; icons?: (string | null)[];
   }
+  const qc = useQueryClient();
+  const [jobId, setJobId] = useState<string>("");
+  const [dayId, setDayId] = useState<string>("");
+  const [zoom, setZoom] = useState(100);
+
+  // First resolve WITHOUT an anchor to learn which tables the template uses.
+  const probeQ = useQuery({
+    queryKey: ["wvdb", db, "template", html, idwell, "probe"],
+    queryFn: () => entryApi.get<{ blocks: BlockData[] }>(wvDbApi.templateDataPath(db, html, idwell)),
+    staleTime: 60_000,
+  });
+  const tables = (probeQ.data?.blocks ?? []).map((b) => (b.table ?? "").toLowerCase());
+  const usesJob = tables.some((t) => t.startsWith("wvjob"));
+  const usesDay = tables.some((t) => t.startsWith("wvjobreport"));
+
+  // §3.8 "Select a Report": the Jobs / Daily Operation Reports list boxes.
+  const jobsQ = useQuery({
+    queryKey: ["wvdb", db, "records", "wvJob", idwell, null, false],
+    queryFn: () => wvDbApi.records(db, "wvJob", { idwell }),
+    enabled: usesJob,
+  });
+  const daysQ = useQuery({
+    queryKey: ["wvdb", db, "records", "wvJobReport", idwell, jobId || null, false],
+    queryFn: () => wvDbApi.records(db, "wvJobReport", { idwell, parent: jobId || undefined }),
+    enabled: usesDay && !!jobId,
+  });
+  useEffect(() => { setDayId(""); }, [jobId]);
+
+  const anchor = dayId
+    ? { table: "wvJobReport", idrec: dayId }
+    : jobId ? { table: "wvJob", idrec: jobId } : null;
+
   const q = useQuery({
-    queryKey: ["wvdb", db, "template", html, idwell],
+    queryKey: ["wvdb", db, "template", html, idwell, anchor?.table ?? "", anchor?.idrec ?? ""],
     queryFn: () => entryApi.get<{ report: string; well: { name: string }; blocks: BlockData[] }>(
-      wvDbApi.templateDataPath(db, html, idwell)),
+      wvDbApi.templateDataPath(db, html, idwell, anchor)),
   });
 
   const fmt = (v: string | number | null): string => {
@@ -165,90 +215,142 @@ function FilledTemplate({ db, html, idwell, onEditTable }: {
     return v;
   };
 
-  if (q.isLoading) return <div className="p-4 text-sm text-gray-400">Filling the report…</div>;
-  if (q.error) {
-    return <div className="m-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-      {(q.error as Error).message}
-    </div>;
-  }
-  const data = q.data!;
-  const withRows = data.blocks.filter((b) => (b.rowCount ?? 0) > 0).length;
+  const data = q.data;
+  const withRows = (data?.blocks ?? []).filter((b) => (b.rowCount ?? 0) > 0).length;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50 p-3">
-      <div className="max-w-5xl mx-auto space-y-3">
-        <p className="text-[11px] text-gray-500">
-          <b>{data.report}</b> — {withRows} of {data.blocks.length} blocks have rows for this well.
-          Click a block's title bar to edit that subject area.
-        </p>
-        {data.blocks.map((b, i) => (
-          <section key={`${b.table}-${i}`} className="bg-white border border-gray-200 rounded">
-            <button type="button"
-              onClick={() => b.table && b.exists && onEditTable(b.table)}
-              disabled={!b.table || !b.exists}
-              title={b.exists ? "Open in Edit Data" : undefined}
-              className="w-full px-2 py-1 bg-gray-800 text-white text-[11px] font-semibold flex items-baseline gap-2 rounded-t disabled:cursor-default enabled:hover:bg-gray-700 text-left">
-              <span>{b.title || b.table}</span>
-              <span className="font-normal text-gray-300 font-mono text-[10px]">{b.table}</span>
-              {b.exists && (b.rowCount ?? 0) > 0 && (
-                <span className="ml-auto font-normal text-gray-300 tabular-nums">
-                  {b.truncated ? `first ${b.rows?.length} of ${b.rowCount} rows` : `n = ${b.rowCount}`}
-                </span>
-              )}
-            </button>
-            {b.computed ? (
-              <div className="px-3 py-2 text-[11px] text-amber-700 bg-amber-50">
-                Computed by WellView at print time — not stored in the database.
-              </div>
-            ) : !b.exists ? (
-              <div className="px-3 py-2 text-[11px] text-gray-400">Table not present in this database.</div>
-            ) : (b.columns?.length ?? 0) === 0 ? (
-              <div className="px-3 py-2 text-[11px] text-gray-400">
-                None of this block's columns exist in the stored table.
-              </div>
-            ) : (b.rowCount ?? 0) === 0 ? (
-              <div className="px-3 py-2 text-[11px] text-gray-400">No rows for this well.</div>
-            ) : b.allNull ? (
-              <div className="px-3 py-2 text-[11px] text-gray-400">
-                {b.rowCount} row{b.rowCount === 1 ? "" : "s"}, but every printed column is empty on all of them.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[11px] border-collapse">
-                  <thead>
-                    <tr className="bg-gray-100 text-gray-600">
-                      {b.icons && <th className="px-1 py-1 w-8" aria-label="icon" />}
-                      {b.columns!.map((c) => (
-                        <th key={c.column} className="px-2 py-1 text-left font-medium whitespace-nowrap"
-                          title={`${b.table}.${c.column}`}>{c.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {b.rows!.map((r, ri) => (
-                      <tr key={ri} className={ri % 2 ? "bg-gray-50" : ""}>
-                        {b.icons && (
-                          <td className="px-1 py-0.5 align-middle">
-                            {b.icons[ri] && (
-                              <img src={`/wellview-icons/${b.icons[ri]}`} alt=""
-                                className="w-5 h-5 object-contain" loading="lazy" />
-                            )}
-                          </td>
-                        )}
-                        {r.map((v, ci) => (
-                          <td key={ci} className="px-2 py-0.5 whitespace-nowrap text-gray-800">
-                            {fmt(v) || <span className="text-gray-300">—</span>}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        ))}
+    <div className="flex-1 min-h-0 flex flex-col">
+      {/* the report toolbar (§3.8 Table 3-2): anchors, refresh, zoom */}
+      <div className="px-2 py-1.5 border-b border-gray-100 flex items-center gap-2 flex-wrap shrink-0">
+        {usesJob && (
+          <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
+            Job
+            <select value={jobId} onChange={(e) => setJobId(e.target.value)}
+              className="h-7 border border-gray-300 rounded px-1 text-xs bg-white text-gray-800 normal-case tracking-normal max-w-[15rem]">
+              <option value="">All jobs</option>
+              {(jobsQ.data?.rows ?? []).map((r) => (
+                <option key={String(r.IDRec)} value={String(r.IDRec)}>{anchorCaption(r)}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {usesDay && jobId && (
+          <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
+            Daily operation
+            <select value={dayId} onChange={(e) => setDayId(e.target.value)}
+              className="h-7 border border-gray-300 rounded px-1 text-xs bg-white text-gray-800 normal-case tracking-normal max-w-[13rem]">
+              <option value="">All days</option>
+              {(daysQ.data?.rows ?? []).map((r) => (
+                <option key={String(r.IDRec)} value={String(r.IDRec)}>{anchorCaption(r)}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
+            Zoom
+            <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))}
+              className="h-7 border border-gray-300 rounded px-1 text-xs bg-white text-gray-800">
+              {[75, 90, 100, 110, 125, 150].map((z) => <option key={z} value={z}>{z}%</option>)}
+            </select>
+          </label>
+          <button type="button"
+            onClick={() => void qc.invalidateQueries({ queryKey: ["wvdb", db, "template", html] })}
+            title="Refresh — re-read this report from the database"
+            className="h-7 px-2 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {q.isLoading ? (
+        <div className="p-4 text-sm text-gray-400">Filling the report…</div>
+      ) : q.error ? (
+        <div className="m-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+          {(q.error as Error).message}
+        </div>
+      ) : data ? (
+        <div className="flex-1 overflow-y-auto bg-gray-50 p-3">
+          <div className="max-w-5xl mx-auto space-y-3" style={{ zoom: zoom / 100 }}>
+            <p className="text-[11px] text-gray-500">
+              <b>{data.report}</b> — {withRows} of {data.blocks.length} blocks have rows
+              {anchor ? " for this selection" : " for this well"}. Click a block&rsquo;s title bar, or
+              double-click a row, to edit that subject area.
+            </p>
+            {data.blocks.map((b, i) => (
+              <section key={`${b.table}-${i}`} className="bg-white border border-gray-200 rounded">
+                <button type="button"
+                  onClick={() => b.table && b.exists && onEditTable(b.table)}
+                  disabled={!b.table || !b.exists}
+                  title={b.exists ? "Open in Edit Data" : undefined}
+                  className="w-full px-2 py-1 bg-gray-800 text-white text-[11px] font-semibold flex items-baseline gap-2 rounded-t disabled:cursor-default enabled:hover:bg-gray-700 text-left">
+                  <span>{b.title || b.table}</span>
+                  <span className="font-normal text-gray-300 font-mono text-[10px]">{b.table}</span>
+                  {b.exists && (b.rowCount ?? 0) > 0 && (
+                    <span className="ml-auto font-normal text-gray-300 tabular-nums">
+                      {b.truncated ? `first ${b.rows?.length} of ${b.rowCount} rows` : `n = ${b.rowCount}`}
+                    </span>
+                  )}
+                </button>
+                {b.computed ? (
+                  <div className="px-3 py-2 text-[11px] text-amber-700 bg-amber-50">
+                    Computed by WellView at print time — not stored in the database.
+                  </div>
+                ) : !b.exists ? (
+                  <div className="px-3 py-2 text-[11px] text-gray-400">Table not present in this database.</div>
+                ) : (b.columns?.length ?? 0) === 0 ? (
+                  <div className="px-3 py-2 text-[11px] text-gray-400">
+                    None of this block's columns exist in the stored table.
+                  </div>
+                ) : (b.rowCount ?? 0) === 0 ? (
+                  <div className="px-3 py-2 text-[11px] text-gray-400">
+                    No rows {anchor ? "for this selection" : "for this well"}.
+                  </div>
+                ) : b.allNull ? (
+                  <div className="px-3 py-2 text-[11px] text-gray-400">
+                    {b.rowCount} row{b.rowCount === 1 ? "" : "s"}, but every printed column is empty on all of them.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px] border-collapse">
+                      <thead>
+                        <tr className="bg-gray-100 text-gray-600">
+                          {b.icons && <th className="px-1 py-1 w-8" aria-label="icon" />}
+                          {b.columns!.map((c) => (
+                            <th key={c.column} className="px-2 py-1 text-left font-medium whitespace-nowrap"
+                              title={`${b.table}.${c.column}`}>{c.label}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b.rows!.map((r, ri) => (
+                          <tr key={ri} className={`${ri % 2 ? "bg-gray-50" : ""} cursor-default`}
+                            title="Double-click to edit this subject area"
+                            onDoubleClick={() => b.table && onEditTable(b.table)}>
+                            {b.icons && (
+                              <td className="px-1 py-0.5 align-middle">
+                                {b.icons[ri] && (
+                                  <img src={`/wellview-icons/${b.icons[ri]}`} alt=""
+                                    className="w-5 h-5 object-contain" loading="lazy" />
+                                )}
+                              </td>
+                            )}
+                            {r.map((v, ci) => (
+                              <td key={ci} className="px-2 py-0.5 whitespace-nowrap text-gray-800">
+                                {fmt(v) || <span className="text-gray-300">—</span>}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -273,16 +375,22 @@ function inHole(row: WvSchematicRow, date: string): boolean {
   if (!run && String(row.ProposedRun ?? "") === "1") return false;   // proposed only
   return true;
 }
+const isProposed = (row: WvSchematicRow): boolean =>
+  !dstr(row.DtTmRun) && String(row.ProposedRun ?? "") === "1";
 
 function SchematicTab({ db, idwell, onEditTable }: {
   db: string; idwell: string; onEditTable: (table: string) => void;
 }) {
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["wvdb", db, "schematic", idwell],
     queryFn: () => wvDbApi.schematic(db, idwell),
   });
   const [dateIx, setDateIx] = useState<number | null>(null);   // null = latest
   const [playing, setPlaying] = useState(false);
+  const [boreId, setBoreId] = useState<string>("");            // "" = all wellbores
+  const [showProposed, setShowProposed] = useState(false);
+  const [scale, setScale] = useState(1);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const dates = useMemo(() => q.data?.dates ?? [], [q.data]);
@@ -309,10 +417,26 @@ function SchematicTab({ db, idwell, onEditTable }: {
   }
   const s = q.data!;
   const btn = "h-7 px-2 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40";
+  const bores = s.wellbores;
 
   return (
     <div className="flex-1 min-h-0 border border-gray-200 rounded-lg bg-white flex flex-col">
       <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-1.5 flex-wrap shrink-0">
+        {/* §10.4: pick the wellbore; items above its kickoff always render */}
+        {bores.length > 1 && (
+          <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400 mr-1">
+            Wellbore
+            <select value={boreId} onChange={(e) => setBoreId(e.target.value)}
+              className="h-7 border border-gray-300 rounded px-1 text-xs bg-white text-gray-800 normal-case tracking-normal max-w-[13rem]">
+              <option value="">All wellbores</option>
+              {bores.map((b) => (
+                <option key={String(b.IDRec)} value={String(b.IDRec)}>
+                  {String(b.Des ?? b.IDRec).slice(0, 40)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <span className="text-[10px] uppercase tracking-wide text-gray-400 mr-1">History player</span>
         <button type="button" className={btn} title="First date" disabled={!dates.length}
           onClick={() => { setPlaying(false); setDateIx(0); }}>⏮</button>
@@ -327,12 +451,26 @@ function SchematicTab({ db, idwell, onEditTable }: {
         <span className="text-xs text-gray-700 font-medium tabular-nums ml-1">
           {dates.length ? `${date} (${ix + 1}/${dates.length})` : "no dated items"}
         </span>
-        <span className="ml-auto text-[10px] text-gray-400">
-          Click an item to edit its subject area. Widths from component nominal OD, depths as stored.
-        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <label className="flex items-center gap-1 text-[11px] text-gray-600">
+            <input type="checkbox" checked={showProposed} onChange={(e) => setShowProposed(e.target.checked)} />
+            Proposed
+          </label>
+          <button type="button" className={btn} title="Zoom out" onClick={() => setScale((z) => Math.max(0.5, z / 1.25))}>−</button>
+          <button type="button" className={btn} title="Zoom full" onClick={() => setScale(1)}>Fit</button>
+          <button type="button" className={btn} title="Zoom in" onClick={() => setScale((z) => Math.min(4, z * 1.25))}>+</button>
+          <button type="button" className={btn} title="Refresh — re-read the downhole data"
+            onClick={() => void qc.invalidateQueries({ queryKey: ["wvdb", db, "schematic", idwell] })}>
+            Refresh
+          </button>
+        </div>
+      </div>
+      <div className="px-3 py-0.5 text-[10px] text-gray-400 border-b border-gray-50 shrink-0">
+        Click an item to edit its subject area. Widths from component nominal OD, depths as stored.
       </div>
       <div className="flex-1 overflow-auto">
-        <SchematicSvg s={s} date={date} onEditTable={onEditTable} />
+        <SchematicSvg s={s} date={date} boreId={boreId || null} showProposed={showProposed}
+          scale={scale} onEditTable={onEditTable} />
       </div>
     </div>
   );
@@ -343,21 +481,58 @@ function SchematicTab({ db, idwell, onEditTable }: {
  * grey profile, casing as black string pairs with shoe triangles, tubing blue,
  * rods thin grey, other-in-hole amber boxes, perforations as red ticks, cement
  * hatch beside the casing it belongs to, zones as green bands with names.
+ * Proposed strings (ch. 4 planning) draw dashed when the toggle is on.
  */
-function SchematicSvg({ s, date, onEditTable }: {
-  s: WvSchematic; date: string; onEditTable: (table: string) => void;
+function SchematicSvg({ s, date, boreId, showProposed, scale, onEditTable }: {
+  s: WvSchematic; date: string; boreId: string | null; showProposed: boolean;
+  scale: number; onEditTable: (table: string) => void;
 }) {
-  const casings = s.casings.filter((c) => inHole(c, date));
-  const tubings = s.tubings.filter((t) => inHole(t, date));
-  const rods = s.rods.filter((r) => inHole(r, date));
-  const other = s.otherInHole.filter((o) => inHole(o, date));
+  /**
+   * §10.4 wellbore filter. The selected bore's ancestor chain is kept (a bore
+   * whose IDRecParent equals its own IDRec — or is empty — is the original
+   * hole); an item on another bore still renders when it sits entirely above
+   * the selected bore's kickoff point.
+   */
+  const boreFilter = useMemo(() => {
+    if (!boreId) return () => true;
+    const byId = new Map(s.wellbores.map((b) => [String(b.IDRec), b]));
+    const chain = new Set<string>();
+    let cur = byId.get(boreId);
+    let kickoff: number | null = null;
+    for (let hops = 0; cur && hops < 10; hops++) {
+      chain.add(String(cur.IDRec));
+      const k = num(cur.KickOffDepth);
+      if (kickoff === null && k != null) kickoff = k;
+      const parent = String(cur.IDRecParent ?? "");
+      if (!parent || parent === String(cur.IDRec)) break;
+      cur = byId.get(parent);
+    }
+    const ko = num(byId.get(boreId)?.KickOffDepth);
+    return (row: WvSchematicRow): boolean => {
+      const link = String(row.IDRecWellBore ?? "");
+      if (!link || chain.has(link)) return true;
+      // above the kickoff point → always shown, per the manual
+      if (ko != null) {
+        const btm = num(row.DepthBtm) ?? num(row.DepthBtmActual);
+        if (btm != null && btm <= ko) return true;
+      }
+      return false;
+    };
+  }, [boreId, s.wellbores]);
+
+  const casings = s.casings.filter((c) => inHole(c, date) && boreFilter(c));
+  const tubings = s.tubings.filter((t) => inHole(t, date) && boreFilter(t));
+  const rods = s.rods.filter((r) => inHole(r, date) && boreFilter(r));
+  const other = s.otherInHole.filter((o) => inHole(o, date) && boreFilter(o));
+  const propCasings = showProposed ? s.casings.filter((c) => isProposed(c) && boreFilter(c)) : [];
+  const propTubings = showProposed ? s.tubings.filter((t) => isProposed(t) && boreFilter(t)) : [];
   const sizes = s.sizes.filter((z) => {
     const start = dstr(z.DtTmStart);
-    return !start || start <= date;
+    return (!start || start <= date);
   });
   const perfs = s.perforations.filter((p) => {
     const d = dstr(p.DtTm);
-    return (!d || d <= date) && String(p.Proposed ?? "") !== "1";
+    return (!d || d <= date) && String(p.Proposed ?? "") !== "1" && boreFilter(p);
   });
   const cement = s.cement.filter((c) => {
     const d = dstr(c.DtTmStart);
@@ -365,7 +540,7 @@ function SchematicSvg({ s, date, onEditTable }: {
   });
 
   const depths: number[] = [];
-  for (const set of [casings, tubings, rods, other]) for (const r of set) {
+  for (const set of [casings, tubings, rods, other, propCasings, propTubings]) for (const r of set) {
     const d = num(r.DepthBtm); if (d) depths.push(d);
   }
   for (const z of sizes) { const d = num(z.DepthBtmActual); if (d) depths.push(d); }
@@ -377,7 +552,7 @@ function SchematicSvg({ s, date, onEditTable }: {
   const y = (depth: number) => TOP + (depth / maxDepth) * (H - TOP - 16);
 
   const ods: number[] = [];
-  for (const c of casings) { const o = num(c.maxOd); if (o) ods.push(o); }
+  for (const c of [...casings, ...propCasings]) { const o = num(c.maxOd); if (o) ods.push(o); }
   for (const z of sizes) { const o = num(z.Sz); if (o) ods.push(o); }
   const maxOd = Math.max(4, ...ods);
   const halfW = (od: number | null) => (od ? Math.max(4, (od / maxOd) * 90) : 30);
@@ -415,24 +590,27 @@ function SchematicSvg({ s, date, onEditTable }: {
     );
   }
 
-  // casings: pair of verticals + shoe triangles, widest (shallowest shoe) outermost by OD
-  for (const [i, c] of casings.entries()) {
+  // casings: pair of verticals + shoe triangles; proposed variants dashed
+  const drawCasing = (c: WvSchematicRow & { maxOd?: number | null }, i: number, proposed: boolean) => {
     const btm = num(c.DepthBtm);
-    if (btm == null) continue;
-    const hw = halfW(num(c.maxOd));
+    if (btm == null) return;
+    const hw = halfW(num(c.maxOd ?? null));
     const yb = y(btm);
+    const stroke = proposed ? "#9ca3af" : "#111827";
+    const dash = proposed ? "6 3" : undefined;
     items.push(
-      <g key={`cas${i}`} className="cursor-pointer" onClick={() => onEditTable("wvCas")}>
-        <title>{`${c.Des ?? "Casing"} — shoe ${fmtDepth(btm)} (wvCas)`}</title>
-        <line x1={CX - hw} y1={TOP} x2={CX - hw} y2={yb} stroke="#111827" strokeWidth="2" />
-        <line x1={CX + hw} y1={TOP} x2={CX + hw} y2={yb} stroke="#111827" strokeWidth="2" />
-        <path d={`M ${CX - hw} ${yb} l -7 0 l 7 -9 z`} fill="#111827" />
-        <path d={`M ${CX + hw} ${yb} l 7 0 l -7 -9 z`} fill="#111827" />
-        <text x={CX - hw - 10} y={yb + 4} fontSize="9" fill="#374151" textAnchor="end">
-          {String(c.Des ?? "csg")} @ {fmtDepth(btm)}
+      <g key={`${proposed ? "pcas" : "cas"}${i}`} className="cursor-pointer" onClick={() => onEditTable("wvCas")}>
+        <title>{`${c.Des ?? "Casing"}${proposed ? " (proposed)" : ""} — shoe ${fmtDepth(btm)} (wvCas)`}</title>
+        <line x1={CX - hw} y1={TOP} x2={CX - hw} y2={yb} stroke={stroke} strokeWidth="2" strokeDasharray={dash} />
+        <line x1={CX + hw} y1={TOP} x2={CX + hw} y2={yb} stroke={stroke} strokeWidth="2" strokeDasharray={dash} />
+        <path d={`M ${CX - hw} ${yb} l -7 0 l 7 -9 z`} fill={stroke} />
+        <path d={`M ${CX + hw} ${yb} l 7 0 l -7 -9 z`} fill={stroke} />
+        <text x={CX - hw - 10} y={yb + 4} fontSize="9" fill={proposed ? "#9ca3af" : "#374151"} textAnchor="end">
+          {String(c.Des ?? "csg")}{proposed ? " (prop.)" : ""} @ {fmtDepth(btm)}
         </text>
       </g>,
     );
+    if (proposed) return;
     // cement for this string: hatch strip outside the casing lines
     const cem = cement.filter((m) => String(m.IDRecString ?? "") === String(c.IDRec ?? "-"));
     if (cem.length) {
@@ -444,21 +622,27 @@ function SchematicSvg({ s, date, onEditTable }: {
         </g>,
       );
     }
-  }
+  };
+  casings.forEach((c, i) => drawCasing(c, i, false));
+  propCasings.forEach((c, i) => drawCasing(c, i, true));
 
-  // tubing: blue pair, inside
-  for (const [i, t] of tubings.entries()) {
+  // tubing: blue pair, inside; proposed dashed
+  const drawTubing = (t: WvSchematicRow & { maxOd?: number | null }, i: number, proposed: boolean) => {
     const btm = num(t.DepthBtm);
-    if (btm == null) continue;
-    const hw = Math.max(3, halfW(num(t.maxOd)) * 0.55);
+    if (btm == null) return;
+    const hw = Math.max(3, halfW(num(t.maxOd ?? null)) * 0.55);
     items.push(
-      <g key={`tub${i}`} className="cursor-pointer" onClick={() => onEditTable("wvTub")}>
-        <title>{`${t.Des ?? "Tubing"} — ${btm} (wvTub)`}</title>
-        <line x1={CX - hw} y1={TOP} x2={CX - hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6" />
-        <line x1={CX + hw} y1={TOP} x2={CX + hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6" />
+      <g key={`${proposed ? "ptub" : "tub"}${i}`} className="cursor-pointer" onClick={() => onEditTable("wvTub")}>
+        <title>{`${t.Des ?? "Tubing"}${proposed ? " (proposed)" : ""} — ${btm} (wvTub)`}</title>
+        <line x1={CX - hw} y1={TOP} x2={CX - hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6"
+          strokeDasharray={proposed ? "5 3" : undefined} opacity={proposed ? 0.6 : 1} />
+        <line x1={CX + hw} y1={TOP} x2={CX + hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6"
+          strokeDasharray={proposed ? "5 3" : undefined} opacity={proposed ? 0.6 : 1} />
       </g>,
     );
-  }
+  };
+  tubings.forEach((t, i) => drawTubing(t, i, false));
+  propTubings.forEach((t, i) => drawTubing(t, i, true));
 
   // rods: single thin line down the middle
   for (const [i, r] of rods.entries()) {
@@ -516,7 +700,7 @@ function SchematicSvg({ s, date, onEditTable }: {
   }
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="mx-auto block max-w-full h-auto"
+    <svg viewBox={`0 0 ${W} ${H}`} width={W * scale} height={H * scale} className="mx-auto block"
       role="img" aria-label="Wellbore schematic">
       <defs>
         <pattern id="cemhatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">

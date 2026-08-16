@@ -33,6 +33,7 @@ let auth: { Authorization: string };
 function scrubTestRows() {
   if (!hasDb) return;
   const raw = new DatabaseSync(SAMPLE);
+  raw.exec("PRAGMA busy_timeout = 3000");
   try { raw.exec(`DELETE FROM wvNote WHERE idwell = '${TEST_IDWELL}'`); } finally { raw.close(); }
 }
 
