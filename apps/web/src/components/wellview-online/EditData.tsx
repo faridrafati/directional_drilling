@@ -418,8 +418,35 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   // TK companions are managed with their link column and never rendered.
   // Fields the data model marks hidden appear only under "Show All Fields",
   // which is what the desktop's toggle does.
-  const cols = data.columns.filter((c) =>
+  const visible = data.columns.filter((c) =>
     !c.tk && (showIds || !c.id) && (showIds || !c.hiddenByDefault));
+  /**
+   * Order the columns by WellView's own form SECTIONS — "Well Identifiers",
+   * "Well License", "Location", "Elevations" — which is the order the guide's
+   * exercises walk through. Ungrouped columns keep their schema order at the end.
+   */
+  const cols = useMemo(() => {
+    const order = data.fieldGroups ?? [];
+    if (!order.length) return visible;
+    const rank = (c: WvRecordColumn) => {
+      const i = c.group ? order.indexOf(c.group) : -1;
+      return i < 0 ? order.length : i;
+    };
+    return [...visible].sort((a, b) => rank(a) - rank(b));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.columns, data.fieldGroups, showIds]);
+
+  /** Contiguous runs of one section, for the grouped header row. */
+  const sections = useMemo(() => {
+    const out: { group: string | null; span: number }[] = [];
+    for (const c of cols) {
+      const g = c.group ?? null;
+      const last = out[out.length - 1];
+      if (last && last.group === g) last.span++;
+      else out.push({ group: g, span: 1 });
+    }
+    return out;
+  }, [cols]);
   const [edits, setEdits] = useState<Record<string, Row>>({});      // record key → changed fields
   const [ghost, setGhost] = useState<Row>({});
   const [busy, setBusy] = useState(false);
@@ -525,9 +552,23 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         });
         saved++;
       }
+      // §3.10: the Data Auditor "will issue a warning" when a required field is
+      // blank. Saving still happens — the desktop warns, it does not refuse.
+      const blanks = new Set<string>();
+      for (const c of cols) {
+        if (!c.required) continue;
+        for (const values of Object.values(edits)) {
+          if (c.column in values && String(values[c.column] ?? "").trim() === "") blanks.add(c.label);
+        }
+        if (Object.keys(ghost).length && String(ghost[c.column] ?? "").trim() === "") blanks.add(c.label);
+      }
       setEdits({});
       setGhost({});
       if (saved || unmatched) onSaved();
+      if (blanks.size) {
+        onStatus(`Saved ${saved}. Required field${blanks.size === 1 ? "" : "s"} still empty: ${[...blanks].join(", ")}.`);
+        return unmatched === 0;
+      }
       onStatus(unmatched
         ? `Saved ${saved}, but ${unmatched} record${unmatched === 1 ? "" : "s"} could not be matched — nothing was written for ${unmatched === 1 ? "it" : "them"}.`
         : saved ? `Saved ${saved} record${saved === 1 ? "" : "s"}.` : null);
@@ -613,6 +654,10 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   /** Calculated fields are WellView's print-time computations — the desktop
    *  paints them green and refuses edits, and so does the server. */
   const editable = (c: WvRecordColumn) => !c.id && !c.system && !c.calculated;
+  /** §4.3: "fields in yellow are required". Chevron's Data Entry Audit rules
+   *  say which; the cue shows while the field is still empty. */
+  const missingRequired = (c: WvRecordColumn, value: string) =>
+    !!c.required && value.trim() === "";
   const valueOf = (row: Row, key: string, col: string): string => {
     const e = edits[key];
     if (e && col in e) return String(e[col] ?? "");
@@ -635,6 +680,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   const focusHelp = (c: WvRecordColumn) => {
     const bits = [
       c.help,
+      c.required ? "Required." : null,
       c.calculated ? "Calculated by WellView — not editable." : null,
       c.unit ? `Base unit: ${c.unit}.` : null,
       c.link ? "Linked record." : null,
@@ -718,8 +764,10 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
             const iso = localInputToIso(e.target.value);
             if (isGhost) setGhostValue(c.column, iso); else setValue(key!, c.column, iso);
           }}
-          className={`w-full min-w-[10.5rem] px-1 py-0.5 text-[11px] bg-transparent border border-transparent rounded
-            focus:bg-white focus:border-blue-400 focus:outline-none ${isGhost ? "italic text-gray-600" : "text-gray-900"}`}
+          className={`w-full min-w-[10.5rem] px-1 py-0.5 text-[11px] border rounded
+            focus:bg-white focus:border-blue-400 focus:outline-none ${
+              missingRequired(c, val) ? "bg-amber-100 border-amber-300" : "bg-transparent border-transparent"
+            } ${isGhost ? "italic text-gray-600" : "text-gray-900"}`}
         />
       );
     }
@@ -737,8 +785,10 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           onChange={(e) => (isGhost
             ? setGhostValue(c.column, e.target.value)
             : setValue(key!, c.column, e.target.value))}
-          className={`w-full min-w-[7rem] px-1.5 py-0.5 text-[11px] bg-transparent border border-transparent rounded
-            focus:bg-white focus:border-blue-400 focus:outline-none ${isGhost ? "italic text-gray-600" : "text-gray-900"}`}
+          className={`w-full min-w-[7rem] px-1.5 py-0.5 text-[11px] border rounded
+            focus:bg-white focus:border-blue-400 focus:outline-none ${
+              missingRequired(c, val) ? "bg-amber-100 border-amber-300" : "bg-transparent border-transparent"
+            } ${isGhost ? "italic text-gray-600" : "text-gray-900"}`}
         />
         {lookup && (
           <>
@@ -868,6 +918,18 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           /* horizontal edit mode: records as rows */
           <table className="text-[11px] border-collapse min-w-full">
             <thead className="sticky top-0 bg-gray-100 z-10">
+              {sections.some((sec) => sec.group) && (
+                // WellView's own form sections, as the guide's exercises print them.
+                <tr>
+                  <th className="px-1 py-0.5 border-b border-gray-200 bg-gray-200/60" />
+                  {sections.map((sec, i) => (
+                    <th key={i} colSpan={sec.span}
+                      className="px-1.5 py-0.5 text-left text-[9px] uppercase tracking-wide font-semibold text-gray-500 bg-gray-200/60 border-b border-l border-gray-300 whitespace-nowrap">
+                      {sec.group ?? ""}
+                    </th>
+                  ))}
+                </tr>
+              )}
               <tr>
                 <th className="px-1 py-1 border-b border-gray-200 w-16" />
                 {cols.map((c) => (
@@ -877,6 +939,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                     title={[`${data.table}.${c.column}`, c.help, c.calculated ? "Calculated by WellView." : null]
                       .filter(Boolean).join(" — ")}>
                     {c.label}
+                    {c.required && <span className="text-amber-600" title="Required">&nbsp;*</span>}
                     {c.unit && <span className="ml-1 font-normal text-gray-400">({c.unit})</span>}
                   </th>
                 ))}

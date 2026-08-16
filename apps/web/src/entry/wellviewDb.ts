@@ -42,12 +42,20 @@ export interface WvRecordColumn {
   hiddenByDefault?: boolean;
   type?: WvFieldType;
   unit?: string;
+  /** The form section this field belongs to ("Well Identifiers", "Elevations"…). */
+  group?: string;
+  /** Required by Chevron's Data Entry Audit rules — the desktop's yellow fields. */
+  required?: boolean;
+  /** The rule only warns; it does not block. */
+  warnOnly?: boolean;
 }
 export interface WvRecords {
   table: string;
   label: string;
   /** Folder help from the data model (§3.11 Folder and Field Help). */
   help?: string;
+  /** Section order for the entry form. */
+  fieldGroups?: string[];
   /** Ordered folders (tallies, string components) — the manual's Move up/down,
    *  Add Records to Top and Invert Components commands apply to these. */
   sequenced?: boolean;

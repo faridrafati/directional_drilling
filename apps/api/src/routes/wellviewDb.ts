@@ -596,6 +596,8 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         table: t.name,
         label: folderLabel(t.name, t.parent),
         help: mt?.help,
+        /** Section order for the entry form (§4.3's Well Header sections). */
+        fieldGroups: mt?.fieldGroups,
         /** Ordered folders (tallies, string components) offer the manual's
          *  Move up/down, Add Records to Top and Invert Components commands. */
         sequenced: mt?.sequenced,
@@ -628,6 +630,11 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
             hiddenByDefault: mf?.hidden,
             type: mf?.type,
             unit: mf?.baseUnit,
+            /** The form section this field sits in, per WellView's own model. */
+            group: mf?.group,
+            /** Chevron's Data Entry Audit rules — the desktop's yellow fields. */
+            required: mf?.required,
+            warnOnly: mf?.warnOnly,
             link,
           };
         }),

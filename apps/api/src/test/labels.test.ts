@@ -157,6 +157,80 @@ d("column captions come from WellView's data model", () => {
   });
 
   /**
+   * A report printing a record-LINK column showed its 32-hex key. WellView
+   * prints the record instead, so the resolver renders the linked record's
+   * caption — "Rig Supervisor" reads "John Aslakson", not a GUID.
+   */
+  it("prints the linked record in a report, never its key", async () => {
+    const wells = ((await app.inject({ url: `/entry/wellview/dbs/${DB}/wells`, headers: auth })).json() as
+      { wells: { idwell: string; WellName: string }[] }).wells;
+    const reports = JSON.parse(readFileSync(
+      join(REPO, "apps", "web", "public", "wellview-templates", "reports.json"), "utf8")) as
+      { reports: { html: string }[] };
+
+    const guids: string[] = [];
+    let linkCellsSeen = 0;
+    for (const w of wells.slice(0, 6)) {
+      for (const r of reports.reports.filter((_, i) => i % 11 === 0)) {
+        const res = await app.inject({
+          url: `/entry/wellview/dbs/${DB}/template-data?html=${encodeURIComponent(r.html)}&well=${w.idwell}`,
+          headers: auth,
+        });
+        if (res.statusCode !== 200) continue;
+        const body = res.json() as {
+          blocks: { table: string | null; columns?: { column: string }[]; rows?: (string | number | null)[][] }[];
+        };
+        for (const b of body.blocks) {
+          const linkIx = (b.columns ?? [])
+            .map((c, i) => ({ c, i }))
+            .filter(({ c }) => /^idrec./i.test(c.column) && !/tk$/i.test(c.column)
+              && !["idrec", "idrecparent"].includes(c.column.toLowerCase()));
+          for (const row of b.rows ?? []) {
+            for (const { i } of linkIx) {
+              const v = row[i];
+              if (v == null || v === "") continue;
+              linkCellsSeen++;
+              if (/^[0-9A-F]{32}$/i.test(String(v))) guids.push(`${b.table}.${b.columns![i].column} = ${v}`);
+            }
+          }
+        }
+      }
+    }
+    expect(linkCellsSeen).toBeGreaterThan(0);
+    expect(guids, guids.slice(0, 10).join("\n")).toEqual([]);
+  }, 120_000);
+
+  /**
+   * §4.3: "Well information fields in yellow are required." Which ones is not a
+   * judgement call — Chevron ships the list as INI beside the application
+   * (Data Entry Audit / SimpleFieldDataEntryAuditRules.ini).
+   */
+  it("marks the fields Chevron's own rules require", async () => {
+    const cas = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvCas`, headers: auth }))
+      .json() as { columns: { column: string; required?: boolean }[] };
+    const required = cas.columns.filter((c) => c.required).map((c) => c.column.toLowerCase()).sort();
+    expect(required).toEqual(["depthbtm", "des", "dttmrun"]);
+
+    const hdr = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvWellHeader`, headers: auth }))
+      .json() as { columns: { column: string; required?: boolean }[] };
+    expect(hdr.columns.filter((c) => c.required).map((c) => c.column.toLowerCase()).sort())
+      .toEqual(["wellida", "wellname"]);
+  });
+
+  /** The entry form's sections, as the guide's Well Header exercise prints them. */
+  it("groups a table's fields into WellView's form sections", async () => {
+    const hdr = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvWellHeader`, headers: auth }))
+      .json() as { fieldGroups?: string[]; columns: { column: string; group?: string }[] };
+    expect(hdr.fieldGroups?.slice(0, 4))
+      .toEqual(["Well Identifiers", "Well License", "Well Classification", "Elevations"]);
+    expect(hdr.columns.find((c) => c.column === "WellName")?.group).toBe("Well Identifiers");
+    expect(hdr.columns.find((c) => c.column === "ElvOrigKB")?.group).toBe("Elevations");
+    // most user fields land in a section
+    const placed = hdr.columns.filter((c) => c.group).length;
+    expect(placed).toBeGreaterThan(hdr.columns.length / 2);
+  });
+
+  /**
    * The model marks 1,810 fields calculated (WellView's print-time TVD, NS/EW,
    * dogleg …). None of them are STORED — the converted databases do not carry
    * the columns at all, which is the same fact the app already reports for the

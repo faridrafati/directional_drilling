@@ -37,6 +37,14 @@ export interface ModelField {
   libTable?: string;
   libField?: string;
   baseUnit?: string;
+  /** The form SECTION this field belongs to ("Well Identifiers", "Elevations"…),
+   *  as the model groups them — the headings the guide's exercises use. */
+  group?: string;
+  /** Chevron's own field rules: required is what the desktop paints yellow. */
+  required?: boolean;
+  minValue?: string;
+  maxValue?: string;
+  warnOnly?: boolean;
 }
 
 export interface ModelTable {
@@ -53,6 +61,8 @@ export interface ModelTable {
   allowInsertTop?: boolean;
   allowSeqInvert?: boolean;
   carryForward?: boolean;
+  /** Section order for the entry form. */
+  fieldGroups?: string[];
   fields: Record<string, ModelField>;
 }
 

@@ -49,6 +49,50 @@ const bool = (v) => v === "True" || v === "true" || v === "1";
 /** Collapse the model's help text to one clean line. */
 const clean = (s) => (s ? s.replace(/\s*[\r\n]+\s*/g, " ").replace(/\s{2,}/g, " ").trim() : undefined);
 
+/**
+ * Chevron's own field rules, shipped beside the application as INI:
+ *   [wvcas.des]
+ *   required=True
+ * These are what the desktop paints YELLOW ("Well information fields in yellow
+ * are required", §4.3) and what the Data Entry Audit add-in enforces. There is
+ * no equivalent file for the guide's CYAN "required global metric" cue, so that
+ * one is deliberately not guessed at.
+ */
+const RULE_INIS = [
+  join(REPO, "WellView_files", "custom", "add-ins", "Data Entry Audit",
+    "Peloton.Addin.SimpleFieldDataEntryAuditRules.ini"),
+  join(REPO, "WellView_files", "custom", "add-ins", "Audit",
+    "Peloton.Addin.SimpleFieldAuditRules.ini"),
+];
+
+function fieldRules() {
+  const out = new Map();               // "table.field" -> { required, minValue, maxValue, warnOnly }
+  for (const path of RULE_INIS) {
+    let text;
+    try { text = readFileSync(path, "utf-8"); } catch { continue; }
+    let section = null;
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith(";")) continue;
+      const head = line.match(/^\[(.+)\]$/);
+      if (head) { section = head[1].toLowerCase(); continue; }
+      if (!section) continue;
+      const eq = line.indexOf("=");
+      if (eq < 0) continue;
+      const key = line.slice(0, eq).trim().toLowerCase();
+      const value = line.slice(eq + 1).trim();
+      if (!value) continue;
+      const entry = out.get(section) ?? {};
+      if (key === "required") entry.required = /^true$/i.test(value) || undefined;
+      else if (key === "minvalue") entry.minValue = value;
+      else if (key === "maxvalue") entry.maxValue = value;
+      else if (key === "warning") entry.warnOnly = /^true$/i.test(value) || undefined;
+      out.set(section, entry);
+    }
+  }
+  return out;
+}
+
 const xml = readFileSync(SRC, "utf-8");
 
 /**
@@ -60,10 +104,30 @@ const xml = readFileSync(SRC, "utf-8");
 const tables = {};
 let current = null;
 let fieldCount = 0;
+/** The field-group being read — the form SECTIONS the guide's exercises use
+ *  ("Well Identifiers", "Well License", "Location", "Elevations"…). */
+let currentGroup = null;
+const fieldGroup = new Map();          // "table.field" -> group name
+const groupOrder = new Map();          // table -> ordered group names
 
-for (const m of xml.matchAll(/<(afmtable|afmfield)\s([^>]*?)\/?>/g)) {
+for (const m of xml.matchAll(/<(afmtable|afmfield|afmtablegroupfield|afmtablegroupfieldlink)\s([^>]*?)\/?>/g)) {
   const a = attrs(m[2]);
+  if (m[1] === "afmtablegroupfield") {
+    currentGroup = a.groupname || null;
+    if (current && currentGroup) {
+      const list = groupOrder.get(current.table) ?? [];
+      if (!list.includes(currentGroup)) list.push(currentGroup);
+      groupOrder.set(current.table, list);
+    }
+    continue;
+  }
+  if (m[1] === "afmtablegroupfieldlink") {
+    // idrecfield is "wvWellHeader.WellName"
+    if (currentGroup && a.idrecfield) fieldGroup.set(a.idrecfield.toLowerCase(), currentGroup);
+    continue;
+  }
   if (m[1] === "afmtable") {
+    currentGroup = null;
     const name = a.keytbl;
     if (!name) { current = null; continue; }
     current = {
@@ -107,6 +171,25 @@ for (const m of xml.matchAll(/<(afmtable|afmfield)\s([^>]*?)\/?>/g)) {
   fieldCount++;
 }
 
+// Merge in the form sections and Chevron's required-field rules.
+const rules = fieldRules();
+let grouped = 0;
+let requiredCount = 0;
+for (const t of Object.values(tables)) {
+  const order = groupOrder.get(t.table);
+  if (order?.length) t.fieldGroups = order;
+  for (const [colLc, f] of Object.entries(t.fields)) {
+    const key = `${t.table.toLowerCase()}.${colLc}`;
+    const g = fieldGroup.get(key);
+    if (g) { f.group = g; grouped++; }
+    const r = rules.get(key);
+    if (r?.required) { f.required = true; requiredCount++; }
+    if (r?.minValue) f.minValue = r.minValue;
+    if (r?.maxValue) f.maxValue = r.maxValue;
+    if (r?.warnOnly) f.warnOnly = true;
+  }
+}
+
 // Drop the empty-table noise and report honestly on what was found.
 const kept = Object.fromEntries(Object.entries(tables).filter(([, t]) => Object.keys(t.fields).length > 0));
 
@@ -127,3 +210,9 @@ const withHelp = Object.values(kept).reduce(
 const calc = Object.values(kept).reduce(
   (n, t) => n + Object.values(t.fields).filter((f) => f.calculated).length, 0);
 console.log(`  ${withHelp} fields with help text, ${calc} calculated fields`);
+console.log(`  ${grouped} fields placed in form sections, ${requiredCount} marked required`);
+const unmatched = [...rules.keys()].filter((k) => {
+  const [t, c] = k.split(".");
+  return !kept[t]?.fields[c];
+});
+if (unmatched.length) console.log(`  NOTE: ${unmatched.length} rule(s) name a field the model lacks: ${unmatched.join(", ")}`);

@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance } from "fastify";
 import { requireUser } from "../entry/auth.js";
-import { columnLabel, modelField, modelTable } from "../wellview/model.js";
+import { columnLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
@@ -169,6 +169,91 @@ function orderColumn(cols: Map<string, string>): string | null {
   }
   return null;
 }
+
+/**
+ * Replace the GUIDs of record-LINK columns with the linked record's caption.
+ *
+ * A report printing `wvJobRig.IDRecJobContact` was showing a raw 32-hex key.
+ * WellView prints the linked record instead, so each link value is resolved
+ * through the target table's own record-caption template. The target table
+ * comes from the row's `…TK` companion where present (it stores the table
+ * name), else from the model's declared link targets.
+ *
+ * Resolution is BATCHED — one query per (target table) per block, not per row.
+ */
+function resolveLinkCaptions(
+  d: DatabaseSync,
+  sch: ReturnType<typeof schema>,
+  t: { name: string; cols: Map<string, string> },
+  rows: Record<string, unknown>[],
+  printed: { actual: string }[],
+): Map<string, string> {
+  const captions = new Map<string, string>();          // `${tableLc}|${idrec}` → caption
+  const wanted = new Map<string, Set<string>>();        // tableLc → idrecs
+
+  for (const p of printed) {
+    if (!/^idrec./i.test(p.actual) || /tk$/i.test(p.actual)) continue;
+    if (["idrec", "idrecparent"].includes(p.actual.toLowerCase())) continue;
+    const tkCol = t.cols.get(`${p.actual.toLowerCase()}tk`);
+    const targets = modelField(t.name, p.actual)?.lookupTyp === "foreignidrec"
+      ? LINK_TARGET_FALLBACK(p.actual, sch) : LINK_TARGET_FALLBACK(p.actual, sch);
+    for (const row of rows) {
+      const id = row[p.actual];
+      if (id == null || id === "") continue;
+      const tk = tkCol ? row[tkCol] : null;
+      const targetLc = (tk ? String(tk) : targets[0] ?? "").toLowerCase();
+      if (!targetLc || !sch.has(targetLc)) continue;
+      (wanted.get(targetLc) ?? wanted.set(targetLc, new Set()).get(targetLc)!).add(String(id));
+    }
+  }
+
+  for (const [targetLc, ids] of wanted) {
+    const target = sch.get(targetLc)!;
+    const idCol = target.cols.get("idrec");
+    if (!idCol || ids.size === 0) continue;
+    const list = [...ids];
+    try {
+      const found = d.prepare(
+        `SELECT * FROM "${target.name}" WHERE "${idCol}" IN (${list.map(() => "?").join(",")})`,
+      ).all(...list) as Record<string, unknown>[];
+      for (const r of found) {
+        const cap = renderRecordDes(target.name, (col) => {
+          const c = target.cols.get(col.toLowerCase());
+          const v = c ? r[c] : null;
+          return v == null ? null : String(v);
+        });
+        if (cap) captions.set(`${targetLc}|${String(r[idCol])}`, cap);
+      }
+    } catch { /* target table unreadable — leave the key as-is */ }
+  }
+  return captions;
+}
+
+/**
+ * Candidate target tables for a link column when the row carries no `…TK`.
+ *
+ * The column name states the target with a qualifier appended —
+ * `IDRecJobContactContractor` points at `wvJobContact` — so the suffix is
+ * shrunk from the right until it names a table that exists.
+ */
+const LINK_TARGET_FALLBACK = (col: string, sch?: ReturnType<typeof schema>): string[] => {
+  const suffix = col.replace(/^idrec/i, "").replace(/tk$/i, "").toLowerCase();
+  const map: Record<string, string[]> = {
+    wellbore: ["wvWellbore"], job: ["wvJob"], jobrun: ["wvJob"], jobpull: ["wvJob"],
+    string: ["wvCas", "wvTub", "wvOtherStr"], cas: ["wvCas"], tub: ["wvTub"],
+    nextcas: ["wvCas"], zone: ["wvZone"], bit: ["wvJobDrillBit"], log: ["wvLog"],
+    dirsrvyactual: ["wvWellboreDirSurvey"], dirsrvyprop: ["wvWellboreDirSurvey"],
+    jobcontact: ["wvJobContact"], problem: ["wvProblem"],
+  };
+  if (map[suffix]) return map[suffix];
+  if (sch) {
+    for (let i = suffix.length; i >= 2; i--) {
+      const cand = `wv${suffix.slice(0, i)}`;
+      if (sch.has(cand)) return [sch.get(cand)!.name];
+    }
+  }
+  return [`wv${suffix}`];
+};
 
 /**
  * A block's heading. The .afr often leaves it blank, which used to print the
@@ -319,12 +404,29 @@ export function resolveTemplateData(
     const idCol = t.cols.get("idrec");
     const withId = idCol && !present.some((p) => p.actual === idCol)
       ? `${withDes}, t0."${idCol}" AS __idrec` : withDes;
+    // …and so do the …TK companions of any printed link column: they name the
+    // table the link points at, which is what turns its key into a caption.
+    const tkCols = present
+      .map((p) => t.cols.get(`${p.actual!.toLowerCase()}tk`))
+      .filter((c): c is string => !!c && !present.some((p) => p.actual === c));
+    const withTk = tkCols.length
+      ? `${withId}, ${[...new Set(tkCols)].map((c) => `t0."${c}"`).join(", ")}` : withId;
     const rows = d.prepare(
-      `SELECT ${withId} FROM "${t.name}" t0${joins}${where}${ord ? ` ORDER BY t0."${ord}"` : ""} LIMIT ${ROW_CAP}`,
+      `SELECT ${withTk} FROM "${t.name}" t0${joins}${where}${ord ? ` ORDER BY t0."${ord}"` : ""} LIMIT ${ROW_CAP}`,
     ).all(...args) as Record<string, unknown>[];
 
     const decorate = desCol != null && COMPONENT_TABLE.test(t.name);
-    const shaped = rows.map((r) => present.map((p) => shapeValue(r[p.actual!])));
+    // A link column prints the record it points at, not its key.
+    const linkCaptions = resolveLinkCaptions(
+      d, sch, t, rows, present.map((p) => ({ actual: p.actual! })));
+    const shaped = rows.map((r) => present.map((p) => {
+      const raw = shapeValue(r[p.actual!]);
+      if (raw == null || !/^idrec./i.test(p.actual!) || /tk$/i.test(p.actual!)) return raw;
+      const tkCol = t.cols.get(`${p.actual!.toLowerCase()}tk`);
+      const tk = tkCol ? r[tkCol] : null;
+      const targetLc = (tk ? String(tk) : LINK_TARGET_FALLBACK(p.actual!, sch)[0] ?? "").toLowerCase();
+      return linkCaptions.get(`${targetLc}|${String(raw)}`) ?? raw;
+    }));
     // Rows whose every printed cell is null render as a page of dashes —
     // noise dressed as data. Collapse them into one honest sentence and let
     // the client say so; the count still tells the truth.
