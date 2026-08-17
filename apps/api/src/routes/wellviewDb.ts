@@ -37,6 +37,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { requireUser } from "../entry/auth.js";
 import { resolveTemplateData } from "./wellviewSample.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
+import { computeSurvey } from "@dd/shared";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
@@ -915,6 +916,113 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         t = table(d, t.parent);
       }
       return { path };
+    },
+  );
+
+  /**
+   * A directional survey with the values WellView computes at print time.
+   *
+   * The database stores only what the tool measured — MD, inclination, azimuth.
+   * TVD, N/S, E/W, dogleg and vertical section are `calculated` fields with no
+   * columns at all, so they are integrated here by minimum curvature rather
+   * than left blank. Stored per-station overrides win; stations flagged bad are
+   * excluded. Everything comes back in the model's base units, and each value
+   * is labelled `computed` so the client never presents it as stored.
+   */
+  app.get<{ Params: { db: string }; Querystring: { survey?: string; idwell?: string } }>(
+    "/entry/wellview/dbs/:db/survey",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const data = table(d, "wvWellboreDirSurveyData");
+      const head = table(d, "wvWellboreDirSurvey");
+      if (!data || !head) return reply.code(404).send({ error: "survey tables not in this database" });
+      const idrec = String(req.query.survey ?? "");
+      if (!idrec) return reply.code(400).send({ error: "survey (IDRec of the survey) is required" });
+
+      const col = (t: TableInfo, c: string) => t.colSet.get(c);
+      const numOf = (v: unknown): number | null => {
+        if (v == null || v === "") return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+
+      const rows = d.ro.prepare(
+        `SELECT * FROM "${data.name}" WHERE "${col(data, "idrecparent")}" = ?`).all(idrec) as Record<string, unknown>[];
+
+      const stations = rows.map((r) => ({
+        md: numOf(r[col(data, "md") ?? ""]) ?? NaN,
+        inclination: numOf(r[col(data, "inclination") ?? ""]) ?? NaN,
+        azimuth: numOf(r[col(data, "azimuth") ?? ""]) ?? NaN,
+        dontUse: String(r[col(data, "dontuse") ?? ""] ?? "") === "1",
+        tvdOverride: numOf(r[col(data, "tvdoverride") ?? ""]),
+        nsOverride: numOf(r[col(data, "nsoverride") ?? ""]),
+        ewOverride: numOf(r[col(data, "ewoverride") ?? ""]),
+        dlsOverride: numOf(r[col(data, "dlsoverride") ?? ""]),
+        vsOverride: numOf(r[col(data, "vsoverride") ?? ""]),
+      }));
+
+      // The survey header's tie-in, and the wellbore's vertical-section frame.
+      const hRow = d.ro.prepare(
+        `SELECT * FROM "${head.name}" WHERE "${col(head, "idrec")}" = ?`).get(idrec) as Record<string, unknown> | undefined;
+      const tieIn = hRow ? {
+        md: numOf(hRow[col(head, "mdtiein") ?? ""]),
+        tvd: numOf(hRow[col(head, "tvdtiein") ?? ""]),
+        ns: numOf(hRow[col(head, "nstiein") ?? ""]),
+        ew: numOf(hRow[col(head, "ewtiein") ?? ""]),
+        inclination: numOf(hRow[col(head, "inclinationtiein") ?? ""]),
+        azimuth: numOf(hRow[col(head, "azimuthtiein") ?? ""]),
+      } : null;
+
+      const bore = table(d, "wvWellbore");
+      let vs: { vsDirection: number | null; vsOriginNs: number | null; vsOriginEw: number | null } =
+        { vsDirection: null, vsOriginNs: null, vsOriginEw: null };
+      if (bore && hRow) {
+        // The wellbore that names this survey as its actual one owns the frame.
+        const bRow = d.ro.prepare(
+          `SELECT * FROM "${bore.name}" WHERE "${col(bore, "idrecdirsrvyactual")}" = ? LIMIT 1`)
+          .get(idrec) as Record<string, unknown> | undefined;
+        if (bRow) {
+          vs = {
+            vsDirection: numOf(bRow[col(bore, "vsdir") ?? ""]),
+            vsOriginNs: numOf(bRow[col(bore, "vsoriginns") ?? ""]),
+            vsOriginEw: numOf(bRow[col(bore, "vsoriginew") ?? ""]),
+          };
+        }
+      }
+
+      const results = computeSurvey(stations, { tieIn, ...vs });
+      const dropped = stations.length - results.length;
+      return {
+        survey: idrec,
+        method: "minimum curvature",
+        /** What each computed column is called and what it is measured in. */
+        columns: [
+          { key: "md", label: columnLabel(data.name, "md"), unit: modelField(data.name, "md")?.baseUnit, computed: false },
+          { key: "inclination", label: columnLabel(data.name, "inclination"), unit: modelField(data.name, "inclination")?.baseUnit, computed: false },
+          { key: "azimuth", label: columnLabel(data.name, "azimuth"), unit: modelField(data.name, "azimuth")?.baseUnit, computed: false },
+          { key: "tvd", label: columnLabel(data.name, "tvdcalc"), unit: modelField(data.name, "tvdcalc")?.baseUnit, computed: true },
+          { key: "ns", label: columnLabel(data.name, "nscalc"), unit: modelField(data.name, "nscalc")?.baseUnit, computed: true },
+          { key: "ew", label: columnLabel(data.name, "ewcalc"), unit: modelField(data.name, "ewcalc")?.baseUnit, computed: true },
+          { key: "vs", label: columnLabel(data.name, "vscalc"), unit: modelField(data.name, "vscalc")?.baseUnit, computed: true },
+          { key: "departure", label: columnLabel(data.name, "departcalc"), unit: modelField(data.name, "departcalc")?.baseUnit, computed: true },
+          { key: "dls", label: columnLabel(data.name, "dlscalc"), unit: modelField(data.name, "dlscalc")?.baseUnit, computed: true },
+          { key: "buildRate", label: columnLabel(data.name, "buildratecalc"), unit: modelField(data.name, "buildratecalc")?.baseUnit, computed: true },
+          { key: "turnRate", label: columnLabel(data.name, "turnratecalc"), unit: modelField(data.name, "turnratecalc")?.baseUnit, computed: true },
+        ],
+        stations: results,
+        /** Stated, not hidden: what was left out and what is not attempted. */
+        excludedBadStations: dropped,
+        verticalSection: vs.vsDirection == null
+          ? "no vertical section direction on the wellbore — VS not computed"
+          : null,
+        notes: [
+          "TVD, NS, EW, VS, departure, dogleg and the rates are computed here — WellView computes them at print time and stores none of them.",
+          "Declination and convergence are not applied: azimuths are used exactly as stored.",
+          "Unwrapped Displace is not computed — its definition is not stated in anything available.",
+        ],
+      };
     },
   );
 

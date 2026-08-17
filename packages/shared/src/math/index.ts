@@ -1,4 +1,5 @@
 export * from "./vector.js";
+export * from "./survey.js";
 export * from "./rotation.js";
 export * from "./plane.js";
 export * from "./solve.js";

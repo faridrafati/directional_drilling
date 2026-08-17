@@ -42,7 +42,7 @@ interface Props {
 }
 
 export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditRecord }: Props) {
-  const [tab, setTab] = useState<"reports" | "schematic">("reports");
+  const [tab, setTab] = useState<"reports" | "schematic" | "survey">("reports");
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -53,7 +53,7 @@ export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditR
         </button>
         <span className="text-sm font-semibold text-gray-900 truncate">{wellName}</span>
         <div className="ml-3 flex gap-1 border-b-0">
-          {([["reports", "Reports"], ["schematic", "Schematic"]] as const).map(([id, label]) => (
+          {([["reports", "Reports"], ["schematic", "Schematic"], ["survey", "Survey"]] as const).map(([id, label]) => (
             <button key={id} type="button" onClick={() => setTab(id)}
               className={`px-3 h-8 text-xs rounded-t-md border ${tab === id
                 ? "bg-white border-gray-300 border-b-white font-medium text-blue-700"
@@ -70,7 +70,9 @@ export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditR
 
       {tab === "reports"
         ? <ReportsTab db={db} idwell={idwell} onEditTable={onEditTable} onEditRecord={onEditRecord} />
-        : <SchematicTab db={db} idwell={idwell} onEditTable={onEditTable} />}
+        : tab === "schematic"
+          ? <SchematicTab db={db} idwell={idwell} onEditTable={onEditTable} />
+          : <SurveyTab db={db} idwell={idwell} onEditTable={onEditTable} />}
     </div>
   );
 }
@@ -836,4 +838,128 @@ function niceStep(max: number): number {
   const pow = 10 ** Math.floor(Math.log10(raw));
   for (const m of [1, 2, 5, 10]) if (raw <= m * pow) return m * pow;
   return 10 * pow;
+}
+
+// ── Survey tab ────────────────────────────────────────────────────────────────
+/**
+ * A directional survey with the values WellView computes at print time.
+ *
+ * The database holds MD, inclination and azimuth; TVD, N/S, E/W, vertical
+ * section, departure and the dogleg are `calculated` fields with no columns at
+ * all. They are integrated by minimum curvature on the server and marked as
+ * COMPUTED here — the same green the Edit Data grid gives a calculated field —
+ * so nothing on this page is mistaken for something the database stores.
+ */
+function SurveyTab({ db, idwell, onEditTable }: {
+  db: string; idwell: string; onEditTable: (table: string) => void;
+}) {
+  const [surveyId, setSurveyId] = useState<string>("");
+
+  const listQ = useQuery({
+    queryKey: ["wvdb", db, "records", "wvWellboreDirSurvey", idwell, null, false],
+    queryFn: () => wvDbApi.records(db, "wvWellboreDirSurvey", { idwell }),
+  });
+  const surveys = listQ.data?.rows ?? [];
+  useEffect(() => {
+    if (!surveyId && surveys.length) setSurveyId(String(surveys[0].IDRec));
+  }, [surveys, surveyId]);
+
+  const q = useQuery({
+    queryKey: ["wvdb", db, "survey", surveyId],
+    queryFn: () => wvDbApi.survey(db, surveyId),
+    enabled: !!surveyId,
+  });
+
+  const num = (v: number | null, dp = 2) =>
+    v == null ? <span className="text-gray-300">—</span> : Number(v.toFixed(dp)).toLocaleString();
+
+  if (listQ.isLoading) return <div className="p-4 text-sm text-gray-400">Reading surveys…</div>;
+  if (!surveys.length) {
+    return (
+      <div className="flex-1 grid place-items-center text-sm text-gray-400 px-6 text-center">
+        This well has no directional survey. Surveys are entered under
+        Wellbores → Deviation Surveys → Survey Data.
+      </div>
+    );
+  }
+
+  const data = q.data;
+  return (
+    <div className="flex-1 min-h-0 flex flex-col border border-gray-200 rounded-lg bg-white">
+      <div className="px-2 py-1.5 border-b border-gray-100 flex items-center gap-2 flex-wrap shrink-0">
+        <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
+          Survey
+          <select value={surveyId} onChange={(e) => setSurveyId(e.target.value)}
+            className="h-7 border border-gray-300 rounded px-1 text-xs bg-white text-gray-800 normal-case tracking-normal max-w-[22rem]">
+            {surveys.map((r) => (
+              <option key={String(r.IDRec)} value={String(r.IDRec)}>
+                {String(r.Des ?? r.IDRec)}{r.Definitive === "1" ? " · definitive" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="text-[11px] text-gray-500">
+          {data ? `${data.stations.length} stations · ${data.method}` : ""}
+        </span>
+        <button type="button" onClick={() => onEditTable("wvWellboreDirSurveyData")}
+          className="ml-auto h-7 px-2 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+          Edit stations
+        </button>
+      </div>
+
+      {q.isLoading ? (
+        <div className="p-4 text-sm text-gray-400">Computing…</div>
+      ) : q.error ? (
+        <div className="m-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+          {(q.error as Error).message}
+        </div>
+      ) : data ? (
+        <>
+          <div className="px-3 py-1.5 text-[11px] text-gray-500 border-b border-gray-100">
+            The shaded columns are <b>computed here</b> by minimum curvature — WellView calculates
+            them at print time and stores none of them.
+            {data.excludedBadStations > 0 && (
+              <> {data.excludedBadStations} station{data.excludedBadStations === 1 ? "" : "s"} flagged
+              &ldquo;bad survey data&rdquo; {data.excludedBadStations === 1 ? "was" : "were"} excluded.</>
+            )}
+            {data.verticalSection && <> {data.verticalSection}.</>}
+          </div>
+          <div className="flex-1 overflow-auto">
+            <table className="w-full text-[11px] border-collapse">
+              <thead className="sticky top-0 bg-gray-100">
+                <tr>
+                  {data.columns.map((c) => (
+                    <th key={c.key}
+                      className={`px-2 py-1 text-right font-medium whitespace-nowrap ${
+                        c.computed ? "text-green-700 bg-green-50" : "text-gray-600"}`}>
+                      {c.label}
+                      {c.unit && <span className="ml-1 font-normal text-gray-400">({c.unit})</span>}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.stations.map((s, i) => (
+                  <tr key={i} className={i % 2 ? "bg-gray-50" : ""}>
+                    {data.columns.map((c) => (
+                      <td key={c.key}
+                        className={`px-2 py-0.5 text-right tabular-nums whitespace-nowrap ${
+                          c.computed ? "bg-green-50/60 text-green-900" : "text-gray-800"}`}
+                        title={s.overridden && c.computed ? "A stored override supplied this value" : undefined}>
+                        {num(s[c.key as keyof typeof s] as number | null, c.key === "dls" || c.key === "buildRate" || c.key === "turnRate" ? 4 : 2)}
+                        {s.overridden && c.key === "tvd" && <span className="ml-1 text-amber-600" title="Override">*</span>}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-3 py-1 border-t border-gray-100 text-[10px] text-gray-400 leading-snug">
+            {data.notes.join(" ")}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
 }

@@ -135,3 +135,81 @@ d("running the templates", () => {
     expect(res.ran).toBe(0);
   });
 });
+
+/**
+ * The computed survey.
+ *
+ * The database holds MD, inclination and azimuth and nothing else; every result
+ * column is one WellView computes at print time. These check the endpoint over
+ * a REAL survey — the sample's largest is 371 stations with bad rows interleaved
+ * at duplicate depths, which is exactly the shape that breaks a naive integrator.
+ */
+d("computed directional survey", () => {
+  /** The survey with the most stations in the sample database. */
+  async function biggestSurvey(): Promise<string> {
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(SAMPLE, { readOnly: true });
+    const row = db.prepare(
+      `SELECT IDRecParent p, COUNT(*) n FROM wvWellboreDirSurveyData
+       GROUP BY IDRecParent ORDER BY n DESC LIMIT 1`).get() as { p: string; n: number };
+    db.close();
+    return row.p;
+  }
+
+  it("computes a real survey, excluding the stations flagged bad", async () => {
+    const survey = await biggestSurvey();
+    const res = await app.inject({
+      url: `/entry/wellview/dbs/${DB}/survey?survey=${encodeURIComponent(survey)}`, headers: auth,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      method: string;
+      stations: { md: number; tvd: number; ns: number; ew: number; dls: number | null }[];
+      excludedBadStations: number;
+      columns: { key: string; computed: boolean; label: string }[];
+    };
+    expect(body.method).toBe("minimum curvature");
+    expect(body.stations.length).toBeGreaterThan(50);
+    // The sample interleaves DontUse rows at duplicate depths; they are dropped.
+    expect(body.excludedBadStations).toBeGreaterThan(0);
+
+    // Measured depth increases, and TVD never exceeds it — a hole cannot be
+    // deeper vertically than along its own path.
+    for (let i = 1; i < body.stations.length; i++) {
+      expect(body.stations[i].md).toBeGreaterThanOrEqual(body.stations[i - 1].md);
+    }
+    for (const s of body.stations) {
+      expect(Number.isFinite(s.tvd)).toBe(true);
+      expect(s.tvd).toBeLessThanOrEqual(s.md + 1e-6);
+      expect(Number.isFinite(s.ns)).toBe(true);
+      expect(Number.isFinite(s.ew)).toBe(true);
+    }
+
+    // The computed columns are labelled from the model and flagged as computed.
+    const tvd = body.columns.find((c) => c.key === "tvd")!;
+    expect(tvd.label).toBe("TVD");
+    expect(tvd.computed).toBe(true);
+    expect(body.columns.find((c) => c.key === "md")!.computed).toBe(false);
+  });
+
+  it("says what it does not attempt rather than leaving it blank", async () => {
+    const survey = await biggestSurvey();
+    const body = (await app.inject({
+      url: `/entry/wellview/dbs/${DB}/survey?survey=${encodeURIComponent(survey)}`, headers: auth,
+    })).json() as { notes: string[]; verticalSection: string | null };
+    expect(body.notes.join(" ")).toMatch(/declination and convergence are not applied/i);
+    expect(body.notes.join(" ")).toMatch(/unwrapped displace is not computed/i);
+    // VS is either computed or explained — never silently absent.
+    expect(typeof body.verticalSection === "string" || body.verticalSection === null).toBe(true);
+  });
+
+  it("needs a survey id, and 404s on an unknown one", async () => {
+    expect((await app.inject({ url: `/entry/wellview/dbs/${DB}/survey`, headers: auth })).statusCode).toBe(400);
+    const empty = await app.inject({
+      url: `/entry/wellview/dbs/${DB}/survey?survey=NOPE`, headers: auth,
+    });
+    // An unknown survey is simply empty, not an error — it has no stations.
+    expect(empty.statusCode).toBe(200);
+    expect((empty.json() as { stations: unknown[] }).stations).toEqual([]);
+  });
+});

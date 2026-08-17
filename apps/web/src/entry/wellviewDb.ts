@@ -129,6 +129,26 @@ export interface WvQueryResult {
   note?: string;
 }
 
+/** A survey station: the three measured values, and the computed rest. */
+export interface WvSurveyStation {
+  md: number; inclination: number; azimuth: number;
+  tvd: number; ns: number; ew: number;
+  departure: number;
+  dls: number | null; vs: number | null;
+  buildRate: number | null; turnRate: number | null;
+  /** A stored override supplied one of these values. */
+  overridden: boolean;
+}
+export interface WvSurvey {
+  survey: string;
+  method: string;
+  columns: { key: string; label: string; unit?: string; computed: boolean }[];
+  stations: WvSurveyStation[];
+  excludedBadStations: number;
+  verticalSection: string | null;
+  notes: string[];
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
@@ -206,6 +226,10 @@ export const wvDbApi = {
   copyRecord: (db: string, table: string, idrec: string, target?: { idwell?: string; parent?: string }) =>
     entryApi.post<{ idrec: string; copied: number }>(
       `/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}/copy`, target ?? {}),
+
+  /** A directional survey with the values WellView computes at print time. */
+  survey: (db: string, surveyId: string) =>
+    entryApi.get<WvSurvey>(`/wellview/dbs/${enc(db)}/survey?survey=${enc(surveyId)}`),
 
   /** The saved Query Templates shipped with WellView (§8.1). */
   queries: (db: string) =>
