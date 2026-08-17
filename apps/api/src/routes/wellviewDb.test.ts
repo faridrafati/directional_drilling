@@ -364,6 +364,78 @@ d("WellView database routes", () => {
     expect(job.sequenced).toBeFalsy();
   });
 
+  /**
+   * §10.2's last two rules, and the one this schema can actually make.
+   *
+   * The guide lists 25 audit rules. Two of them describe fields this WellView
+   * version does not have — nothing in the whole model marks an item tangible,
+   * and the transfer detail carries a single Qty with no received/installed/
+   * transferred split. They are DECLARED anyway so the auditor reports them as
+   * skipped with the reason, because running 23 rules of 25 silently is the
+   * failure this guards against.
+   */
+  it("makes the supply-balance check the guide's checklist asks for", async () => {
+    const res = (await app.inject({ url: `/entry/wellview/dbs/${DB}/audit`, headers: auth }))
+      .json() as {
+        findings: { ruleId: string; detail: Record<string, number | null> }[];
+        skipped: { ruleId: string; reason: string }[];
+      };
+    const hits = res.findings.filter((f) => f.ruleId === "supply-balance");
+    expect(hits.length).toBeGreaterThan(0);
+    // Every hit really is out of balance: received ≠ consumed + returned.
+    for (const h of hits.slice(0, 25)) {
+      const r = Number(h.detail.Received ?? 0);
+      const c = Number(h.detail.Consumed ?? 0);
+      const t = Number(h.detail.Returned ?? 0);
+      expect(Math.abs(r - (c + t))).toBeGreaterThan(0.001);
+    }
+  }, 60_000);
+
+  it("declares the two rules this schema cannot run, and says why", async () => {
+    const res = (await app.inject({ url: `/entry/wellview/dbs/${DB}/audit`, headers: auth }))
+      .json() as { skipped: { ruleId: string; reason: string }[]; rulesRun: number };
+    const byId = new Map(res.skipped.map((s) => [s.ruleId, s.reason]));
+    expect(byId.get("cost-tangible-expense")).toMatch(/columns absent.*tangible/i);
+    expect(byId.get("mattrans-balance")).toMatch(/columns absent.*qtyreceived/i);
+    // …and they are skipped rather than silently dropped from the count.
+    expect(res.rulesRun).toBeGreaterThan(20);
+  }, 60_000);
+
+  it("tells the client which fields a new record carries forward", async () => {
+    const cols = ((await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvJobReport`, headers: auth }))
+      .json() as { columns: { column: string; carryForward?: boolean; carryForwardIncrement?: number }[] }).columns;
+    const carried = cols.filter((c) => c.carryForward).map((c) => c.column.toLowerCase()).sort();
+    // §5 "Set up Day Two": the daily report inherits its conditions and dates.
+    expect(carried).toContain("dttmstart");
+    expect(carried).toContain("dttmend");
+    expect(carried).toContain("durationsinceltinc");
+    // The stepped ones step: a day on the end date, one day on the incident count.
+    expect(cols.find((c) => c.column.toLowerCase() === "dttmend")?.carryForwardIncrement).toBe(1);
+    expect(cols.find((c) => c.column.toLowerCase() === "durationsinceltinc")?.carryForwardIncrement).toBe(1);
+    // A field that does not carry says nothing rather than false-ish noise.
+    expect(cols.find((c) => c.column.toLowerCase() === "com")?.carryForward).toBeFalsy();
+
+    // The one that makes "day two" right: a report's START comes from the
+    // previous report's END, not from its start. Carrying the start field into
+    // itself would produce a two-day reporting period every time.
+    const start = cols.find((c) => c.column.toLowerCase() === "dttmstart")!;
+    expect(start.carryForwardFrom?.toLowerCase()).toBe("wvjobreport.dttmend");
+    expect(start.carryForwardIncrement).toBeUndefined();
+    // The end date carries from the end date and steps a day.
+    const end = cols.find((c) => c.column.toLowerCase() === "dttmend")!;
+    expect(end.carryForwardFrom?.toLowerCase()).toBe("wvjobreport.dttmend");
+    expect(end.carryForwardIncrement).toBe(1);
+  });
+
+  it("carries an interval's top from the previous interval's bottom", async () => {
+    // The same "continue where the last one stopped" rule, on a depth interval.
+    const cols = ((await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvWellboreSize`, headers: auth }))
+      .json() as { columns: { column: string; carryForward?: boolean; carryForwardFrom?: string }[] }).columns;
+    const top = cols.find((c) => c.column.toLowerCase() === "depthtopactual");
+    expect(top?.carryForward).toBe(true);
+    expect(top?.carryForwardFrom?.toLowerCase()).toBe("wvwellboresize.depthbtmactual");
+  });
+
   it("refuses to edit identity or system columns", async () => {
     const create = await app.inject({
       method: "POST",

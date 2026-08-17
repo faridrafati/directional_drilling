@@ -533,6 +533,49 @@ const AUDIT_RULES: AuditRule[] = [
     needs: ["proposed", "dttmstart"], detail: ["Des", "DtTmStart"],
   },
   {
+    /**
+     * §10.3's End of Well Checklist, Job Supplies: "Confirm that consumed and
+     * returned quantities equal received quantities. This will cue an exception
+     * on select audit reports." That last sentence is why this belongs here.
+     */
+    id: "supply-balance", report: "Job Supplies", table: "wvJobSupplyAmt",
+    rule: "Job supply amounts do not balance: consumed plus returned is not what was received.",
+    where: "t.Received IS NOT NULL AND ABS(COALESCE(CAST(t.Received AS REAL),0) - (COALESCE(CAST(t.Consumed AS REAL),0) + COALESCE(CAST(t.Returned AS REAL),0))) > 0.001",
+    needs: ["received", "consumed", "returned"], detail: ["DtTm", "Received", "Consumed", "Returned"],
+  },
+  {
+    /**
+     * §10.2 Daily Fixed Costs: "tangible items with a cost greater than $5,000
+     * that have been classified as an expense instead of capital."
+     *
+     * DECLARED BUT NOT RUNNABLE HERE, on purpose. This WellView schema has no
+     * tangible classification anywhere — the whole model mentions capital or
+     * expense exactly once, on wvJobAFE.CostTyp, and nothing marks an item
+     * tangible. Chevron encodes that in their own cost coding, which is not in
+     * these files. Declaring the rule with the columns it needs makes the
+     * auditor report it as skipped, with the reason, on every run — which tells
+     * the truth about the database instead of quietly running 24 rules of 25.
+     */
+    id: "cost-tangible-expense", report: "Daily Fixed Costs", table: "wvJobReportCostGen",
+    rule: "Tangible item over 5,000 classified as expense rather than capital.",
+    where: "t.Tangible = '1' AND CAST(t.Cost AS REAL) > 5000 AND t.CostTyp LIKE 'Expense%'",
+    needs: ["tangible", "costtyp", "cost"], detail: ["Des", "Cost", "CostTyp"],
+  },
+  {
+    /**
+     * §10.2 Material Transfer / Physical Inventory: quantities that do not
+     * balance, and records missing a receiving or transferred document number.
+     * Also declared and not runnable — this schema's transfer detail carries a
+     * single Qty, with no received/installed/transferred split and no separate
+     * document numbers. See supply-balance above for the check this database
+     * CAN make.
+     */
+    id: "mattrans-balance", report: "Material Transfer / Physical Inventory", table: "wvJobMaterialTransDetail",
+    rule: "Physical inventory received, installed and transferred quantities do not balance.",
+    where: "ABS(COALESCE(CAST(t.QtyReceived AS REAL),0) - COALESCE(CAST(t.QtyInstalled AS REAL),0) - COALESCE(CAST(t.QtyTransferred AS REAL),0)) > 0.001",
+    needs: ["qtyreceived", "qtyinstalled", "qtytransferred"], detail: ["MaterialDes", "Qty"],
+  },
+  {
     id: "perf-depths", report: "Perforation Information", table: "wvPerforation",
     rule: "Actual perforation bottom depth is shallower than its top depth.",
     where: "(t.Proposed IS NULL OR t.Proposed IN ('0','false','False')) AND t.DepthTop IS NOT NULL AND t.DepthBtm IS NOT NULL AND CAST(t.DepthBtm AS REAL) < CAST(t.DepthTop AS REAL)",
@@ -724,6 +767,11 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
             required: mf?.required,
             /** Required global metric — the desktop's cyan fields. */
             globalMetric: mf?.globalMetric,
+            /** §5 "Set up Day Two": a new record inherits this field from the
+             *  previous one, some of them stepped by a fixed increment. */
+            carryForward: mf?.carryForward,
+            carryForwardIncrement: mf?.carryForwardIncrement,
+            carryForwardFrom: mf?.carryForwardFrom,
             /** The model binds this field to a Library list (§3.9 Lookup List
              *  Library). The list itself is not readable — the .lib files are
              *  encrypted — so the client offers values in use and says so. */

@@ -453,7 +453,60 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   const plQ = usePicklistCatalog();
   const [popover, setPopover] = useState<{ key: string | null; col: string } | null>(null);
 
-  useEffect(() => { setEdits({}); setGhost({}); setPopover(null); }, [data.table, parentIdrec]);
+  /**
+   * §5 "Set up Day Two": a new record inherits the previous one's carry-forward
+   * fields, and a few of them STEP — a daily report's end date moves on a day,
+   * days-since-incident goes up by one, a run number increments. The model says
+   * which fields and by how much, so the ghost row arrives pre-filled exactly as
+   * the desktop's new record does.
+   *
+   * Only the ghost is seeded. Existing records are never rewritten, and typing
+   * over a carried value is just an edit like any other.
+   */
+  const carrySeed = useMemo(() => {
+    const prev = data.rows[data.rows.length - 1];
+    if (!prev) return {} as Row;
+    const seed: Row = {};
+    for (const c of data.columns) {
+      if (!c.carryForward || c.tk || c.id || c.system) continue;
+      // "Continue where the last record stopped": the model names the SOURCE
+      // field when it is not this one — a daily report's start date comes from
+      // the previous report's END date, not from its start.
+      let source = c.column;
+      if (c.carryForwardFrom) {
+        const [srcTable, srcField] = c.carryForwardFrom.split(".");
+        if (srcTable?.toLowerCase() === data.table.toLowerCase() && srcField) {
+          const actual = data.columns.find(
+            (x) => x.column.toLowerCase() === srcField.toLowerCase());
+          if (actual) source = actual.column;
+        }
+      }
+      const v = prev[source];
+      if (v == null || v === "") continue;
+      const step = c.carryForwardIncrement;
+      if (!step) { seed[c.column] = v; continue; }
+      if (c.type === "datetime") {
+        // The increment is in DAYS for a date field.
+        const m = String(v).match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})Z$/);
+        if (!m) { seed[c.column] = v; continue; }
+        const d = new Date(`${m[1]}T${m[2]}Z`);
+        d.setTime(d.getTime() + step * 86_400_000);
+        seed[c.column] = `${d.toISOString().slice(0, 19)}Z`;
+      } else {
+        const n = Number(v);
+        seed[c.column] = Number.isFinite(n) ? String(n + step) : v;
+      }
+    }
+    return seed;
+  }, [data.rows, data.columns]);
+  const carriedCount = Object.keys(carrySeed).length;
+
+  useEffect(() => {
+    setEdits({});
+    setGhost(carrySeed);
+    setPopover(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.table, parentIdrec]);
 
   /**
    * Arriving from a report field: put the cursor in the same field of the same
@@ -530,8 +583,12 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     return v == null ? null : String(v);
   };
 
+  /** A ghost holding only carried values is not an edit — the user has not
+   *  typed anything yet, and saving it would add a record they never asked for. */
+  const ghostTouched = Object.entries(ghost).some(([k, v]) =>
+    v !== null && v !== "" && String(v) !== String(carrySeed[k] ?? ""));
   const dirtyCount = Object.keys(edits).filter((k) => Object.keys(edits[k]).length > 0).length
-    + (Object.values(ghost).some((v) => v !== null && v !== "") ? 1 : 0);
+    + (ghostTouched ? 1 : 0);
 
   async function saveAll(): Promise<boolean> {
     setBusy(true);
@@ -546,7 +603,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         const res = await wvDbApi.update(db, data.table, key, values);
         if (res.changed > 0) saved++; else unmatched++;
       }
-      if (!singleRecord && Object.values(ghost).some((v) => v !== null && v !== "")) {
+      if (!singleRecord && ghostTouched) {
         await wvDbApi.insert(db, data.table, {
           idwell, ...(parentIdrec ? { parent: parentIdrec } : {}), values: ghost,
         });
@@ -563,7 +620,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         if (Object.keys(ghost).length && String(ghost[c.column] ?? "").trim() === "") blanks.add(c.label);
       }
       setEdits({});
-      setGhost({});
+      setGhost(carrySeed);
       if (saved || unmatched) onSaved();
       if (blanks.size) {
         onStatus(`Saved ${saved}. Required field${blanks.size === 1 ? "" : "s"} still empty: ${[...blanks].join(", ")}.`);
@@ -911,6 +968,13 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         <span className="text-xs font-semibold text-gray-800" title={data.help}>{data.label}</span>
         <span className="text-[10px] text-gray-400 font-mono">{data.table}</span>
         <span className="text-[10px] text-gray-400 tabular-nums">{data.rows.length} record{data.rows.length === 1 ? "" : "s"}</span>
+        {carriedCount > 0 && !singleRecord && (
+          // The new row arrives pre-filled; say so, or a carried value reads as
+          // something the user typed and forgot.
+          <span className="text-[10px] text-blue-500" title="§5 Set up Day Two — the model says which fields inherit, and which of them step">
+            new row carries {carriedCount} field{carriedCount === 1 ? "" : "s"} forward
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           <button type="button" onClick={copyDataToClipboard} disabled={data.rows.length === 0}
             title="Copy Data to Clipboard — all records with headings, for Excel"
@@ -940,7 +1004,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
               Invert
             </button>
           )}
-          <button type="button" onClick={() => { setEdits({}); setGhost({}); onStatus("Pending changes undone — saved records are untouched."); }}
+          <button type="button" onClick={() => { setEdits({}); setGhost(carrySeed); onStatus("Pending changes undone — saved records are untouched."); }}
             disabled={busy || dirtyCount === 0}
             title="Undo All — cancel the changes made in this folder since the last save"
             className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">

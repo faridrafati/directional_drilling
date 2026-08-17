@@ -33,6 +33,11 @@ export interface ModelField {
   calculated?: boolean;
   hidden?: boolean;
   carryForward?: boolean;
+  carryForwardWithParent?: boolean;
+  /** A carried value that steps: run numbers +1, a daily report's end date +1 DAY. */
+  carryForwardIncrement?: number;
+  /** The field it is carried FROM, "wvTable.Field", when not this field itself. */
+  carryForwardFrom?: string;
   lookupTyp?: string;
   libTable?: string;
   libField?: string;

@@ -48,6 +48,13 @@ export interface WvRecordColumn {
   required?: boolean;
   /** A required GLOBAL METRIC — the desktop's cyan fields (§4.3). */
   globalMetric?: boolean;
+  /** §5: a new record inherits this field from the previous one. */
+  carryForward?: boolean;
+  /** …and some inherit it STEPPED — run numbers +1, a report's end date +1 day. */
+  carryForwardIncrement?: number;
+  /** …and some inherit it from a DIFFERENT field: a report's start date comes
+   *  from the previous report's end date. Written "wvTable.Field". */
+  carryForwardFrom?: string;
   /** The model binds this field to a WellView Library list. The approved list
    *  itself is NOT available — custom/library/*.lib are encrypted — so the
    *  lookup offers the values this database uses and says as much. */

@@ -161,6 +161,19 @@ for (const m of xml.matchAll(/<(afmtable|afmfield|afmtablegroupfield|afmtablegro
     calculated: bool(a.calculated) || undefined,
     hidden: bool(a.hidden) || undefined,
     carryForward: bool(a.carryfwd) || undefined,
+    /** Carries with the parent record rather than from the previous sibling. */
+    carryForwardWithParent: bool(a.carryfwdwithparent) || undefined,
+    /** A carried value that STEPS: run numbers +1, and a daily report's end
+     *  date +1 DAY — which is exactly the manual's "set up day two". */
+    carryForwardIncrement: a.carryfwdincrement != null && Number(a.carryfwdincrement) !== 0
+      ? Number(a.carryfwdincrement) : undefined,
+    /**
+     * The field the value is carried FROM, when it is not this one. The pattern
+     * is "continue where the last record stopped": a daily report's start date
+     * comes from the previous report's END date, a new interval's top from the
+     * previous interval's bottom. Stored as "wvTable.Field", as the model writes it.
+     */
+    carryForwardFrom: a.idrecfieldcarryfwdfrom || undefined,
     lookupTyp: a.lookuptyp || undefined,
     libTable: a.libtablename || undefined,
     libField: a.libfieldname || undefined,
