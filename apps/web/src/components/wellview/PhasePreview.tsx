@@ -49,8 +49,14 @@ export function Report10Preview({ payload }: { payload: Report10Payload }) {
   // different scales and read as if the plan and the actual met where they do
   // not. The end of whichever ran longer sets it.
   const maxDays = payload.chart.reduce(
-    (m, p) => Math.max(m, p.days ?? 0, p.planDays ?? 0), 0,
+    (m, p) => Math.max(m, p.days ?? 0, p.planDays ?? 0, p.planDaysMin ?? 0, p.planDaysMax ?? 0), 0,
   ) || 1;
+  // The envelope is only drawn when a plan actually carries a range; a plan with
+  // a most-likely value alone keeps the original four-series chart.
+  const hasEnvelope = payload.chart.some(
+    (p) => p.planDaysMin != null || p.planDaysMax != null
+      || p.plannedCumCostMin != null || p.plannedCumCostMax != null,
+  );
   return (
     <PreviewSheet>
       <PreviewTitle>{payload.title}</PreviewTitle>
@@ -79,6 +85,11 @@ export function Report10Preview({ payload }: { payload: Report10Payload }) {
               tick={{ fontSize: 10 }} label={{ value: "Days", position: "insideBottom", offset: -2, fontSize: 10 }}
             />
             <XAxis xAxisId="plan" type="number" dataKey="planDays" domain={[0, maxDays]} hide />
+            {/* The min and max plans reach each depth on their OWN day, so each
+                bound needs its own day axis for the same reason the likely plan
+                does — sharing one would draw the band at the wrong days. */}
+            <XAxis xAxisId="planMin" type="number" dataKey="planDaysMin" domain={[0, maxDays]} hide />
+            <XAxis xAxisId="planMax" type="number" dataKey="planDaysMax" domain={[0, maxDays]} hide />
             {/* Depth grows DOWNWARD on a drilling plot — the reversed axis is
                 the whole convention, not a styling choice. */}
             <YAxis
@@ -95,6 +106,26 @@ export function Report10Preview({ payload }: { payload: Report10Payload }) {
             <Line xAxisId="plan" yAxisId="depth" type="linear" dataKey="plannedEndDepth" name="Planned days vs planned end depth" stroke="#60a5fa" strokeDasharray="4 3" dot={{ r: 2 }} />
             <Line xAxisId="actual" yAxisId="cost" type="linear" dataKey="actualCumCost" name="Actual cum field est" stroke="#b45309" dot={{ r: 2 }} />
             <Line xAxisId="plan" yAxisId="cost" type="linear" dataKey="plannedCumCost" name="Planned cum phase cost" stroke="#fbbf24" strokeDasharray="4 3" dot={{ r: 2 }} />
+            {/* §4.5: "review the minimum, maximum and ML curves for depth and
+                cost versus days". The min/max bounds carry the colours Chevron's
+                own Days-vs-Depth templates assign them — min red, max magenta —
+                drawn thin so the likely case stays the readable line. */}
+            {hasEnvelope && (
+              <>
+                <Line xAxisId="planMin" yAxisId="depth" type="linear" dataKey="plannedEndDepth"
+                  name="Planned min days vs planned end depth" stroke="#ff3333" strokeWidth={1}
+                  strokeDasharray="2 3" dot={false} connectNulls />
+                <Line xAxisId="planMax" yAxisId="depth" type="linear" dataKey="plannedEndDepth"
+                  name="Planned max days vs planned end depth" stroke="#ff00ff" strokeWidth={1}
+                  strokeDasharray="2 3" dot={false} connectNulls />
+                <Line xAxisId="planMin" yAxisId="cost" type="linear" dataKey="plannedCumCostMin"
+                  name="Planned min cum phase cost" stroke="#ff3333" strokeWidth={1}
+                  strokeDasharray="1 3" dot={false} connectNulls />
+                <Line xAxisId="planMax" yAxisId="cost" type="linear" dataKey="plannedCumCostMax"
+                  name="Planned max cum phase cost" stroke="#ff00ff" strokeWidth={1}
+                  strokeDasharray="1 3" dot={false} connectNulls />
+              </>
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

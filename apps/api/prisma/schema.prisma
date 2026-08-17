@@ -1346,6 +1346,15 @@ model JobPhasePlan {
   durMostLikelyDays Float?
   /// Report 10 "Planned Likely Phase Cost".
   costMostLikely    Float?
+  /// The min/max half of the plan ENVELOPE. WellView plans a phase as a range,
+  /// and its Days-vs-Depth chart templates draw all three curves — the guide's
+  /// §4.5 has the user "review the minimum, maximum and ML curves for depth and
+  /// cost versus days". Nullable throughout: a plan with only a most-likely
+  /// value stays valid and simply contributes no band.
+  durMinDays        Float?
+  durMaxDays        Float?
+  costMin           Float?
+  costMax           Float?
 
   jobPhase JobPhase @relation(fields: [jobPhaseId], references: [id], onDelete: Cascade)
 }

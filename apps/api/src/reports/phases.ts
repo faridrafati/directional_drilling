@@ -61,6 +61,12 @@ export interface PhaseRow {
   plannedCost: number | null;
   cumPlannedCost: number | null;
   planCostPerDepth: number | null;
+  /** The plan ENVELOPE — cumulative min and max, null when not planned as a
+   *  range. §4.5: "review the minimum, maximum and ML curves". */
+  cumDurMinDays: number | null;
+  cumDurMaxDays: number | null;
+  cumPlannedCostMin: number | null;
+  cumPlannedCostMax: number | null;
   // ── actual ──
   actualStartDate: string | null;
   actualEndDate: string | null;
@@ -83,6 +89,12 @@ export interface PhaseChartPoint {
   actualCumCost: number | null;
   plannedCumCost: number | null;
   plannedEndDepth: number | null;
+  /** Envelope X axes — the min and max plans reach the same depth on different
+   *  days, so each band needs its own day axis. */
+  planDaysMin: number | null;
+  planDaysMax: number | null;
+  plannedCumCostMin: number | null;
+  plannedCumCostMax: number | null;
   label: string;
 }
 
@@ -132,6 +144,10 @@ async function phaseRows(prisma: PrismaClient, jobId: string) {
 
   let cumPlanDays = 0, cumPlanCost = 0, cumActDays = 0, cumActCost = 0;
   let anyPlanDays = false, anyPlanCost = false, anyActDays = false, anyActCost = false;
+  // The envelope accumulates exactly as the likely curve does, and each bound
+  // stays null until the plan actually carries one.
+  let cumDurMin = 0, cumDurMax = 0, cumCostMin = 0, cumCostMax = 0;
+  let anyDurMin = false, anyDurMax = false, anyCostMin = false, anyCostMax = false;
 
   const rows: PhaseRow[] = job.phases.map((p) => {
     const plan = p.plan;
@@ -148,6 +164,10 @@ async function phaseRows(prisma: PrismaClient, jobId: string) {
     if (plan?.costMostLikely != null) { cumPlanCost += plan.costMostLikely; anyPlanCost = true; }
     if (rawDurDays !== null) { cumActDays += rawDurDays; anyActDays = true; }
     if (actualCost !== null) { cumActCost += actualCost; anyActCost = true; }
+    if (plan?.durMinDays != null) { cumDurMin += plan.durMinDays; anyDurMin = true; }
+    if (plan?.durMaxDays != null) { cumDurMax += plan.durMaxDays; anyDurMax = true; }
+    if (plan?.costMin != null) { cumCostMin += plan.costMin; anyCostMin = true; }
+    if (plan?.costMax != null) { cumCostMax += plan.costMax; anyCostMax = true; }
 
     return {
       phaseType1: p.phaseType1,
@@ -159,6 +179,10 @@ async function phaseRows(prisma: PrismaClient, jobId: string) {
       plannedCost: plan?.costMostLikely ?? null,
       cumPlannedCost: anyPlanCost ? round(cumPlanCost) : null,
       planCostPerDepth: costPerDepth(plan?.costMostLikely ?? null, plan?.startDepth ?? null, plan?.endDepth ?? null),
+      cumDurMinDays: anyDurMin ? round(cumDurMin) : null,
+      cumDurMaxDays: anyDurMax ? round(cumDurMax) : null,
+      cumPlannedCostMin: anyCostMin ? round(cumCostMin) : null,
+      cumPlannedCostMax: anyCostMax ? round(cumCostMax) : null,
       actualStartDate: p.actualStartDate,
       actualEndDate: p.actualEndDate,
       actualDurDays: actualDur,
@@ -232,6 +256,10 @@ export async function buildReport10(
       actualCumCost: r.cumActualCost,
       plannedCumCost: r.cumPlannedCost,
       plannedEndDepth: r.plannedEndDepth,
+      planDaysMin: r.cumDurMinDays,
+      planDaysMax: r.cumDurMaxDays,
+      plannedCumCostMin: r.cumPlannedCostMin,
+      plannedCumCostMax: r.cumPlannedCostMax,
       label: phaseLabel(r, i),
     })),
   };

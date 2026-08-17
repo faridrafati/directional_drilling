@@ -96,6 +96,8 @@ const MUD_CODES = new Set(["2000/2010", "2000/2050"]);
  * plan half is deliberately not a copy of the actual, so plan-vs-actual has
  * something to show.
  */
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 const PHASES: {
   type1: string; type2: string;
   startDay: number; startTime: string; endDay: number; endTime: string;
@@ -274,6 +276,13 @@ async function main() {
           create: {
             startDepth: p.planStartDepth, endDepth: p.planEndDepth,
             durMostLikelyDays: p.planDays, costMostLikely: p.planCost,
+            // The plan ENVELOPE report 10 draws around the likely case. The
+            // sample report prints only the likely column, so the bounds are
+            // demo values like the rest of this file — a conventional -15%/+30%
+            // band, which is the shape a real phase plan has (downside is
+            // bounded by the operation itself, upside by trouble).
+            durMinDays: round2(p.planDays * 0.85), durMaxDays: round2(p.planDays * 1.3),
+            costMin: Math.round(p.planCost * 0.85), costMax: Math.round(p.planCost * 1.3),
           },
         },
       },

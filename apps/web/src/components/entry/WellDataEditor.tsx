@@ -66,7 +66,7 @@ const emptyPhase = (): JobPhaseRow => ({
   actualStartDate: null, actualEndDate: null,
   actualStartDepth: null, actualEndDepth: null,
   workingPhaseCode: null,
-  plan: { startDepth: null, endDepth: null, durMostLikelyDays: null, costMostLikely: null },
+  plan: { startDepth: null, endDepth: null, durMostLikelyDays: null, costMostLikely: null, durMinDays: null, durMaxDays: null, costMin: null, costMax: null },
 });
 const emptyCost = (): CostItemRow => ({
   id: newRowId("ci"), order: 0,
@@ -99,7 +99,10 @@ function toBody(j: JobDetail): JobBody {
       ...p,
       // Every phase edits a plan; a plan left blank is dropped again on save, so
       // the user never has to "create" one before typing into it.
-      plan: p.plan ?? { startDepth: null, endDepth: null, durMostLikelyDays: null, costMostLikely: null },
+      plan: p.plan ?? {
+        startDepth: null, endDepth: null, durMostLikelyDays: null, costMostLikely: null,
+        durMinDays: null, durMaxDays: null, costMin: null, costMax: null,
+      },
     })),
     afes: (j.afes ?? []).map((a) => ({ ...a, supplements: a.supplements ?? [], lines: a.lines ?? [] })),
     costItems: j.costItems ?? [],
@@ -644,19 +647,29 @@ function PhasesTab({ draft, set, codes }: { draft: JobBody; set: SetField; codes
   // The plan lives on a nested object, so it is edited through a flattened view
   // and folded back on change. Two tables side by side would make the reader
   // match rows by eye, which is exactly the mistake report 10 exists to prevent.
-  type PlanFlat = { order: number; startDepth: number | null; endDepth: number | null; durMostLikelyDays: number | null; costMostLikely: number | null };
+  type PlanFlat = { order: number; startDepth: number | null; endDepth: number | null;
+    durMostLikelyDays: number | null; costMostLikely: number | null;
+    durMinDays: number | null; durMaxDays: number | null; costMin: number | null; costMax: number | null };
   const planRows: PlanFlat[] = draft.phases.map((p, i) => ({
     order: i,
     startDepth: p.plan?.startDepth ?? null,
     endDepth: p.plan?.endDepth ?? null,
     durMostLikelyDays: p.plan?.durMostLikelyDays ?? null,
     costMostLikely: p.plan?.costMostLikely ?? null,
+    durMinDays: p.plan?.durMinDays ?? null,
+    durMaxDays: p.plan?.durMaxDays ?? null,
+    costMin: p.plan?.costMin ?? null,
+    costMax: p.plan?.costMax ?? null,
   }));
   const planCols: Col<PlanFlat>[] = [
     { key: "startDepth", label: "Planned start depth (mKB)", type: "num", width: "w-32" },
     { key: "endDepth", label: "Planned end depth (mKB)", type: "num", width: "w-32" },
+    { key: "durMinDays", label: "Dur min (days)", type: "num", width: "w-24" },
     { key: "durMostLikelyDays", label: "Dur ML (days)", type: "num", width: "w-24" },
+    { key: "durMaxDays", label: "Dur max (days)", type: "num", width: "w-24" },
+    { key: "costMin", label: "Planned min phase cost", type: "num", width: "w-36" },
     { key: "costMostLikely", label: "Planned likely phase cost", type: "num", width: "w-36" },
+    { key: "costMax", label: "Planned max phase cost", type: "num", width: "w-36" },
   ];
 
   return (
@@ -686,11 +699,18 @@ function PhasesTab({ draft, set, codes }: { draft: JobBody; set: SetField; codes
           set("phases", draft.phases.map((p, i) => {
             const r = rows[i];
             return r
-              ? { ...p, plan: { startDepth: r.startDepth, endDepth: r.endDepth, durMostLikelyDays: r.durMostLikelyDays, costMostLikely: r.costMostLikely } }
+              ? { ...p, plan: {
+                  startDepth: r.startDepth, endDepth: r.endDepth,
+                  durMostLikelyDays: r.durMostLikelyDays, costMostLikely: r.costMostLikely,
+                  durMinDays: r.durMinDays, durMaxDays: r.durMaxDays,
+                  costMin: r.costMin, costMax: r.costMax,
+                } }
               : p;
           }));
         }}
-        blank={() => ({ order: 0, startDepth: null, endDepth: null, durMostLikelyDays: null, costMostLikely: null })}
+        blank={() => ({ order: 0, startDepth: null, endDepth: null,
+          durMostLikelyDays: null, costMostLikely: null,
+          durMinDays: null, durMaxDays: null, costMin: null, costMax: null })}
         addLabel="Plan row"
         minRows={draft.phases.length || 3}
         testId="plan"

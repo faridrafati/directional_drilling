@@ -36,6 +36,11 @@ export interface JobPhasePlanRow {
   endDepth: number | null;
   durMostLikelyDays: number | null;
   costMostLikely: number | null;
+  /** The plan envelope — min/max around the most-likely case. */
+  durMinDays: number | null;
+  durMaxDays: number | null;
+  costMin: number | null;
+  costMax: number | null;
 }
 export interface JobPhaseRow {
   /** Client-minted for a new row, so a cost row can point at it before saving. */
@@ -370,6 +375,10 @@ export interface PhaseChartPoint {
   days: number | null; planDays: number | null;
   actualEndDepth: number | null; actualCumCost: number | null;
   plannedCumCost: number | null; plannedEndDepth: number | null;
+  /** The plan ENVELOPE: min and max reach each depth on their own day, so each
+   *  bound carries its own day axis as well as its own cost curve. */
+  planDaysMin: number | null; planDaysMax: number | null;
+  plannedCumCostMin: number | null; plannedCumCostMax: number | null;
   label: string;
 }
 export interface Report10Payload extends ReportEnvelope {

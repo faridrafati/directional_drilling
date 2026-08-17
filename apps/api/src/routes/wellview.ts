@@ -68,6 +68,10 @@ const jalaliish = str;
 
 const jobPhasePlanSchema = z.object({
   startDepth: num, endDepth: num, durMostLikelyDays: num, costMostLikely: num,
+  // The plan envelope. Declared here as well as in Prisma because this PUT
+  // recreates the row wholesale — a column zod does not know is DESTROYED on
+  // the next save (see entry-schema-parity.test.ts).
+  durMinDays: num, durMaxDays: num, costMin: num, costMax: num,
 }).nullable().default(null);
 
 const jobPhaseSchema = z.object({
