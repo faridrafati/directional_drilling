@@ -1,0 +1,580 @@
+{
+ "generated_from": "WellView_files/custom/queries/**/*.afq",
+ "query_count": 29,
+ "queries": [
+  {
+   "id": "Completions/Completions Report Today",
+   "category": "Completions",
+   "name": "Completions Report Today",
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "NOT LIKE",
+     "value": "drill",
+     "prompts": false
+    },
+    {
+     "table": "wvjobreport",
+     "field": "dttmend",
+     "op": ">=",
+     "value": "<today>-1.5",
+     "prompts": false
+    }
+   ]
+  },
+  {
+   "id": "Completions/Frac by Date",
+   "category": "Completions",
+   "name": "Frac by Date",
+   "criteria": [
+    {
+     "table": "wvstimtreat",
+     "field": "typ",
+     "op": "LIKE",
+     "value": "frac",
+     "prompts": false
+    },
+    {
+     "table": "wvstimtreat",
+     "field": "dttm",
+     "op": ">",
+     "value": null,
+     "prompts": true
+    },
+    {
+     "table": "wvstimtreat",
+     "field": "dttm",
+     "op": "<=",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Completions/Job Contact",
+   "category": "Completions",
+   "name": "Job Contact",
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "NOT LIKE",
+     "value": "drill",
+     "prompts": false
+    },
+    {
+     "table": "wvjobcontact",
+     "field": "contactname",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Completions/Packer Make",
+   "category": "Completions",
+   "name": "Packer Make",
+   "criteria": [
+    {
+     "table": "wvtubcomp",
+     "field": "des",
+     "op": "LIKE",
+     "value": "packer",
+     "prompts": false
+    },
+    {
+     "table": "wvtubcomp",
+     "field": "make",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Completions/Rig Contractor",
+   "category": "Completions",
+   "name": "Rig Contractor",
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "NOT LIKE",
+     "value": "drill",
+     "prompts": false
+    },
+    {
+     "table": "wvjobrig",
+     "field": "contractor",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Completions/Rod Pump Make and Model",
+   "category": "Completions",
+   "name": "Rod Pump Make and Model",
+   "criteria": [
+    {
+     "table": "wvrodcomp",
+     "field": "des",
+     "op": "LIKE",
+     "value": "pump",
+     "prompts": false
+    },
+    {
+     "table": "wvrodcomp",
+     "field": "make",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    },
+    {
+     "table": "wvrodcomp",
+     "field": "model",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Drilling/Bits",
+   "category": "Drilling",
+   "name": "Bits",
+   "criteria": [
+    {
+     "table": "wvjobdrillbit",
+     "field": "make",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Drilling/Drilling Report Today",
+   "category": "Drilling",
+   "name": "Drilling Report Today",
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "drill",
+     "prompts": false
+    },
+    {
+     "table": "wvjobreport",
+     "field": "dttmend",
+     "op": ">=",
+     "value": "<now>-1",
+     "prompts": false
+    }
+   ]
+  },
+  {
+   "id": "Drilling/Interval Problems",
+   "category": "Drilling",
+   "name": "Interval Problems",
+   "criteria": [
+    {
+     "table": "wvjobintervalproblem",
+     "field": "typ",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Drilling/Job Contact",
+   "category": "Drilling",
+   "name": "Job Contact",
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "drill",
+     "prompts": false
+    },
+    {
+     "table": "wvjobcontact",
+     "field": "contactname",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Drilling/Rig Contractor",
+   "category": "Drilling",
+   "name": "Rig Contractor",
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "drill",
+     "prompts": false
+    },
+    {
+     "table": "wvjobrig",
+     "field": "contractor",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "General/AFE",
+   "category": "General",
+   "name": "AFE",
+   "criteria": [
+    {
+     "table": "wvjobafe",
+     "field": "afenumber",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "General/Attachments",
+   "category": "General",
+   "name": "Attachments",
+   "criteria": [
+    {
+     "table": "wvattachment",
+     "field": "des",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "General/Material Transfer #",
+   "category": "General",
+   "name": "Material Transfer #",
+   "criteria": [
+    {
+     "table": "wvjobmaterialtrans",
+     "field": "materialtransno",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "General/Safety Incident",
+   "category": "General",
+   "name": "Safety Incident",
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    },
+    {
+     "table": "wvjobsafetyincident",
+     "field": "dttm",
+     "op": ">",
+     "value": null,
+     "prompts": true
+    },
+    {
+     "table": "wvjobsafetyincident",
+     "field": "dttm",
+     "op": "<=",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "General/Service Contractors",
+   "category": "General",
+   "name": "Service Contractors",
+   "criteria": [
+    {
+     "table": "wvjobservicecontract",
+     "field": "servicecompany",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "General/Wellbore Profile",
+   "category": "General",
+   "name": "Wellbore Profile",
+   "criteria": [
+    {
+     "table": "wvwellbore",
+     "field": "profiletyp",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Geology/Daily Geo Summary",
+   "category": "Geology",
+   "name": "Daily Geo Summary",
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "drill",
+     "prompts": false
+    },
+    {
+     "table": "wvjobreport",
+     "field": "summarygeo",
+     "op": "IS NOT NULL",
+     "value": null,
+     "prompts": false
+    },
+    {
+     "table": "wvjobreport",
+     "field": "dttmend",
+     "op": ">",
+     "value": null,
+     "prompts": true
+    },
+    {
+     "table": "wvjobreport",
+     "field": "dttmend",
+     "op": "<=",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Geology/Formation Name",
+   "category": "Geology",
+   "name": "Formation Name",
+   "criteria": [
+    {
+     "table": "wvwellboreformation",
+     "field": "formname",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Geology/Geo Eval - Geologist Name",
+   "category": "Geology",
+   "name": "Geo Eval - Geologist Name",
+   "criteria": [
+    {
+     "table": "wvgeoeval",
+     "field": "geologistname",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Geology/Geo Eval Date",
+   "category": "Geology",
+   "name": "Geo Eval Date",
+   "criteria": [
+    {
+     "table": "wvgeoeval",
+     "field": "dttm",
+     "op": ">",
+     "value": null,
+     "prompts": true
+    },
+    {
+     "table": "wvgeoeval",
+     "field": "dttm",
+     "op": "<=",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Geology/Logs by Type and Date",
+   "category": "Geology",
+   "name": "Logs by Type and Date",
+   "criteria": [
+    {
+     "table": "wvlog",
+     "field": "typ",
+     "op": "LIKE",
+     "value": "ait",
+     "prompts": false
+    },
+    {
+     "table": "wvlog",
+     "field": "dttm",
+     "op": ">",
+     "value": null,
+     "prompts": true
+    },
+    {
+     "table": "wvlog",
+     "field": "dttm",
+     "op": "<=",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Production/ESP by Run Date",
+   "category": "Production",
+   "name": "ESP by Run Date",
+   "criteria": [
+    {
+     "table": "wvtub",
+     "field": "dttmrun",
+     "op": ">",
+     "value": null,
+     "prompts": true
+    },
+    {
+     "table": "wvtub",
+     "field": "dttmrun",
+     "op": "<=",
+     "value": null,
+     "prompts": true
+    },
+    {
+     "table": "wvtubcomp",
+     "field": "compsubtyp",
+     "op": "LIKE",
+     "value": "esp",
+     "prompts": false
+    }
+   ]
+  },
+  {
+   "id": "Production/Failures by Cause",
+   "category": "Production",
+   "name": "Failures by Cause",
+   "criteria": [
+    {
+     "table": "wvproblem",
+     "field": "cause",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Production/Failures by Date Range",
+   "category": "Production",
+   "name": "Failures by Date Range",
+   "criteria": [
+    {
+     "table": "wvproblem",
+     "field": "dttmstart",
+     "op": ">",
+     "value": "01-Jan-00 12:00:00 AM",
+     "prompts": false
+    },
+    {
+     "table": "wvproblem",
+     "field": "dttmstart",
+     "op": "<=",
+     "value": "01-Jan-01 12:00:00 AM",
+     "prompts": false
+    }
+   ]
+  },
+  {
+   "id": "Production/Failures by Type",
+   "category": "Production",
+   "name": "Failures by Type",
+   "criteria": [
+    {
+     "table": "wvproblem",
+     "field": "des",
+     "op": "LIKE",
+     "value": "Failed packer",
+     "prompts": false
+    }
+   ]
+  },
+  {
+   "id": "Production/Rod String Component",
+   "category": "Production",
+   "name": "Rod String Component",
+   "criteria": [
+    {
+     "table": "wvrodcomp",
+     "field": "compsubtyp",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    },
+    {
+     "table": "wvrodcomp",
+     "field": "des",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Production/Tubing String Component",
+   "category": "Production",
+   "name": "Tubing String Component",
+   "criteria": [
+    {
+     "table": "wvtubcomp",
+     "field": "compsubtyp",
+     "op": "LIKE",
+     "value": "Tubing",
+     "prompts": false
+    },
+    {
+     "table": "wvtubcomp",
+     "field": "des",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  },
+  {
+   "id": "Production/Zone Name",
+   "category": "Production",
+   "name": "Zone Name",
+   "criteria": [
+    {
+     "table": "wvzone",
+     "field": "zonename",
+     "op": "LIKE",
+     "value": null,
+     "prompts": true
+    }
+   ]
+  }
+ ]
+}

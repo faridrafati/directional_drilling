@@ -18,7 +18,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { wvDbApi, type WvHeaderColumn } from "../../entry/wellviewDb.js";
+import { wvDbApi, type WvHeaderColumn, type WvQuery, type WvQueryResult } from "../../entry/wellviewDb.js";
 
 type WellRow = Record<string, string | number | null>;
 
@@ -51,6 +51,7 @@ type Folder =
   | { kind: "my" }
   | { kind: "all" }
   | { kind: "query" }
+  | { kind: "template"; queryId: string }   // a saved Query Template (§8.1)
   | { kind: "group"; path: (string | null)[] };   // value per group level, null = any
 
 interface GroupSpec { column: string; desc: boolean }
@@ -72,6 +73,10 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
   const [showGroupDlg, setShowGroupDlg] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  /** The saved Query Templates (§8.1), and the values a prompting one needs. */
+  const [queryValues, setQueryValues] = useState<Record<string, string>>({});
+  const [ranQuery, setRanQuery] = useState<{ id: string; values: Record<string, string> } | null>(null);
+
   // Quick Query state — applied on Refresh, like the desktop app.
   const [lookIn, setLookIn] = useState("WellName");
   const [lookFor, setLookFor] = useState("");
@@ -89,6 +94,18 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
     queryFn: () => wvDbApi.headerValues(db, lookIn),
     enabled: folder.kind === "query",
     staleTime: 60_000,
+  });
+
+  const templatesQ = useQuery({
+    queryKey: ["wvdb", db, "queries"],
+    queryFn: () => wvDbApi.queries(db),
+    staleTime: Infinity,
+  });
+  /** Runs only once the user asks — a template with prompts needs them first. */
+  const templateRunQ = useQuery({
+    queryKey: ["wvdb", db, "query-run", ranQuery?.id, JSON.stringify(ranQuery?.values ?? {})],
+    queryFn: () => wvDbApi.runQuery(db, ranQuery!.id, ranQuery!.values),
+    enabled: !!ranQuery,
   });
 
   const headerColsQ = useQuery({
@@ -127,10 +144,17 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
         return allWells.filter((w) =>
           folder.path.every((v, i) => v === null || String(w[groups[i]?.column] ?? "—") === v));
       }
+      case "template": {
+        const hits = templateRunQ.data?.wells;
+        if (!hits) return [];
+        const order = new Map(hits.map((h, i) => [h.idwell, i]));
+        return allWells.filter((w) => order.has(String(w.idwell)))
+          .sort((a, b) => order.get(String(a.idwell))! - order.get(String(b.idwell))!);
+      }
       default:
         return allWells;
     }
-  }, [folder, allWells, recent, myWells, groups]);
+  }, [folder, allWells, recent, myWells, groups, templateRunQ.data]);
 
   const rows = useMemo(() => {
     if (!sort) return folderRows;
@@ -294,6 +318,55 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
             </button>
           )}
 
+          {/* saved Query Templates (§8.1) — the manual's "My Queries" */}
+          <div className="mt-1 border-t border-gray-100 pt-1">
+            <div className="px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-400">
+              Queries
+              <span className="ml-1 font-normal normal-case tabular-nums">
+                {templatesQ.data?.queries.length ?? 0}
+              </span>
+            </div>
+            {Object.entries(
+              (templatesQ.data?.queries ?? []).reduce<Record<string, WvQuery[]>>((acc, q) => {
+                (acc[q.category] ??= []).push(q);
+                return acc;
+              }, {}),
+            ).map(([cat, list]) => (
+              <div key={cat}>
+                <div className="px-2 pt-1 text-[9px] uppercase tracking-wide text-gray-300">{cat}</div>
+                {list.map((q) => {
+                  const active = folder.kind === "template" && folder.queryId === q.id;
+                  return (
+                    <div key={q.id}>
+                      <button type="button" data-testid={`wv-query-${q.name}`}
+                        className={folderBtn(active)}
+                        style={{ paddingLeft: 16 }}
+                        onClick={() => {
+                          setFolder({ kind: "template", queryId: q.id });
+                          setQueryValues({});
+                          // No prompts: run it straight away, as the desktop does.
+                          if (!q.criteria.some((c) => c.prompts)) setRanQuery({ id: q.id, values: {} });
+                          else setRanQuery(null);
+                        }}>
+                        <SearchIcon /> <span className="truncate">{q.name}</span>
+                      </button>
+                      {active && (
+                        <QueryPrompts
+                          query={q}
+                          values={queryValues}
+                          onChange={setQueryValues}
+                          onRun={() => setRanQuery({ id: q.id, values: queryValues })}
+                          result={templateRunQ.data ?? null}
+                          running={templateRunQ.isFetching}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
           {/* quick query (§3.3) */}
           <div className="mt-1 border-t border-gray-100 pt-1">
             <button type="button" className={folderBtn(folder.kind === "query")}
@@ -385,6 +458,8 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
               <div className="p-4 text-sm text-gray-400">
                 {folder.kind === "my" ? "No wells in My Wells yet — right side of the manual: select wells and Add to My Wells."
                   : folder.kind === "recent" ? "No wells opened yet."
+                  : folder.kind === "template"
+                    ? (templateRunQ.data ? "No well matches this query." : "Fill in the values and click Run.")
                   : folder.kind === "query" ? (applied ? "No well matches that query." : "Set the query and click Refresh.")
                   : "No wells."}
               </div>
@@ -674,6 +749,68 @@ function DialogButtons({ onOk, onCancel }: { onOk: () => void; onCancel: () => v
         className="h-8 px-4 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700">
         OK
       </button>
+    </div>
+  );
+}
+
+/**
+ * The prompt panel for a saved query (§8.1 "Prompt for Value").
+ *
+ * A criterion the template already answers is shown as context, not as an input
+ * — "Job Category like drill" is part of what the query MEANS, and editing it
+ * would make the name a lie. Only the prompting criteria get a box.
+ *
+ * Anything the run could not apply is listed underneath: a query that quietly
+ * drops half its criteria returns too many wells and looks like it worked.
+ */
+function QueryPrompts({ query, values, onChange, onRun, result, running }: {
+  query: WvQuery;
+  values: Record<string, string>;
+  onChange: (v: Record<string, string>) => void;
+  onRun: () => void;
+  result: WvQueryResult | null;
+  running: boolean;
+}) {
+  const fixed = query.criteria.filter((c) => !c.prompts);
+  return (
+    <div className="px-2 pb-2 pt-1 space-y-1.5" style={{ paddingLeft: 16 }}>
+      {fixed.length > 0 && (
+        <div className="text-[10px] text-gray-400 leading-snug">
+          {fixed.map((c, i) => (
+            <div key={i} className="truncate">
+              {c.fieldLabel} {(c.op ?? "").toLowerCase()} {c.value ? `"${c.value}"` : ""}
+            </div>
+          ))}
+        </div>
+      )}
+      {query.criteria.map((c, i) => c.prompts && (
+        <label key={i} className="block text-[10px] uppercase tracking-wide text-gray-400">
+          {c.fieldLabel}
+          <span className="normal-case tracking-normal text-gray-300"> {(c.op ?? "").toLowerCase()}</span>
+          <input
+            type={c.isDate ? "date" : "text"}
+            value={values[String(i)] ?? ""}
+            onChange={(e) => onChange({ ...values, [String(i)]: e.target.value })}
+            onKeyDown={(e) => { if (e.key === "Enter") onRun(); }}
+            placeholder={c.isDate ? undefined : "full or partial value"}
+            className="mt-0.5 w-full h-7 border border-gray-300 rounded px-1.5 text-xs normal-case tracking-normal"
+          />
+        </label>
+      ))}
+      <button type="button" onClick={onRun} data-testid="wv-query-run"
+        className="h-7 px-2.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-150">
+        {running ? "Running…" : "Run"}
+      </button>
+      {result && (
+        <div className="text-[10px] text-gray-400 leading-snug">
+          {result.wells.length} well{result.wells.length === 1 ? "" : "s"} matched.
+          {result.skipped.length > 0 && (
+            <div className="mt-0.5 text-amber-600">
+              Not applied: {result.skipped.map((s) => `${s.criterion} (${s.reason})`).join("; ")}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

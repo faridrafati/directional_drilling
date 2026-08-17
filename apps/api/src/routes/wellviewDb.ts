@@ -28,7 +28,7 @@
  * as the .mdb was for desktop WellView. The conversion source `.mdb` files are
  * kept under WellView_files/db, so a database can always be regenerated.
  */
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -219,6 +219,77 @@ function captionOf(t: TableInfo, row: Record<string, unknown>): string {
   }
   const id = t.colSet.get("idrec");
   return id ? String(row[id] ?? "record").slice(0, 12) : "record";
+}
+
+// ── saved query templates (§8.1) ──────────────────────────────────────────────
+interface QueryCriterion {
+  table: string;
+  field: string;
+  op: string | null;
+  value: string | null;
+  prompts: boolean;
+}
+interface QueryTemplate { id: string; category: string; name: string; criteria: QueryCriterion[] }
+
+const QUERIES_JSON = join(REPO, "apps", "web", "public", "wellview-templates", "queries.json");
+let _queries: QueryTemplate[] | null = null;
+function queryTemplates(): QueryTemplate[] {
+  if (_queries) return _queries;
+  try {
+    _queries = (JSON.parse(readFileSync(QUERIES_JSON, "utf-8")) as { queries: QueryTemplate[] }).queries;
+  } catch {
+    _queries = [];
+  }
+  return _queries;
+}
+
+/**
+ * Turn a template's date value into the ISO stamp the databases store.
+ *
+ * WellView writes three shapes: its relative tokens (`<today>-1.5`, `<now>-1`,
+ * where the offset is in DAYS), its legacy display format
+ * (`01-Jan-00 12:00:00 AM`), and plain ISO. A value that matches none of them
+ * returns null so the caller can report the criterion as skipped rather than
+ * compare a date column against nonsense.
+ */
+export function resolveDateValue(raw: string, now = new Date()): string | null {
+  const iso = (d: Date) => `${d.toISOString().slice(0, 19)}Z`;
+  const s = raw.trim();
+
+  const rel = s.match(/^<(today|now)>\s*([+-]\s*[\d.]+)?$/i);
+  if (rel) {
+    const base = new Date(now);
+    if (rel[1].toLowerCase() === "today") base.setUTCHours(0, 0, 0, 0);
+    if (rel[2]) {
+      const days = Number(rel[2].replace(/\s+/g, ""));
+      if (!Number.isFinite(days)) return null;
+      base.setTime(base.getTime() + days * 86_400_000);
+    }
+    return iso(base);
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2})?/.test(s)) {
+    const d = new Date(s.replace(" ", "T").replace(/Z?$/, "Z"));
+    return Number.isNaN(d.getTime()) ? null : iso(d);
+  }
+
+  // 01-Jan-00 12:00:00 AM — two-digit years, WellView's own display format.
+  const legacy = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2}|\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i);
+  if (legacy) {
+    const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const m = months.indexOf(legacy[2].toLowerCase());
+    if (m < 0) return null;
+    let year = Number(legacy[3]);
+    if (legacy[3].length === 2) year += year < 50 ? 2000 : 1900;
+    let hour = legacy[4] ? Number(legacy[4]) : 0;
+    const ap = legacy[7]?.toUpperCase();
+    if (ap === "PM" && hour < 12) hour += 12;
+    if (ap === "AM" && hour === 12) hour = 0;
+    const d = new Date(Date.UTC(year, m, Number(legacy[1]), hour,
+      legacy[5] ? Number(legacy[5]) : 0, legacy[6] ? Number(legacy[6]) : 0));
+    return Number.isNaN(d.getTime()) ? null : iso(d);
+  }
+  return null;
 }
 
 // ── subject-area tree ─────────────────────────────────────────────────────────
@@ -958,6 +1029,117 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         removed += Number(res.changes);
       }
       return { removed };
+    },
+  );
+
+  /** The saved Query Templates (§8.1), with the model's captions for prompting. */
+  app.get("/entry/wellview/dbs/:db/queries", { preHandler: requireUser }, async () => {
+    return {
+      queries: queryTemplates().map((q) => ({
+        ...q,
+        criteria: q.criteria.map((c) => ({
+          ...c,
+          tableLabel: folderLabel(c.table, null),
+          fieldLabel: columnLabel(c.table, c.field),
+          /** A date field wants a date input, not a text box. */
+          isDate: modelField(c.table, c.field)?.type === "datetime",
+        })),
+      })),
+    };
+  });
+
+  /**
+   * Run a query template and return the wells it finds.
+   *
+   * SEMANTICS, and a deliberate divergence from the desktop. Criteria on the
+   * SAME table must hold on the SAME row — that is what makes a date range mean
+   * one report inside the window rather than any two reports either side of it.
+   * Across tables the well must satisfy every group (AND).
+   *
+   * The manual (§8.1) says WellView's own criteria builder degrades a cross-table
+   * And into an Or, and tells the user to write Custom SQL to get a real And. But
+   * these templates are plainly written expecting And — "Drilling Report Today"
+   * means a drilling job AND a report filed today, and Or would return nearly
+   * every well. Reproducing the quirk would be faithful to a limitation rather
+   * than to the query, so the And is honoured and the divergence stated here.
+   */
+  app.post<{
+    Params: { db: string };
+    Body: { id?: string; values?: Record<string, string> };
+  }>(
+    "/entry/wellview/dbs/:db/queries/run",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const q = queryTemplates().find((x) => x.id === req.body?.id);
+      if (!q) return reply.code(404).send({ error: `no query ${req.body?.id}` });
+      const hdr = table(d, "wvWellHeader");
+      if (!hdr) return reply.code(404).send({ error: "wvWellHeader missing" });
+
+      const supplied = req.body?.values ?? {};
+      const skipped: { criterion: string; reason: string }[] = [];
+      /** table → the WHERE fragments that must hold on ONE of its rows. */
+      const byTable = new Map<string, { preds: string[]; args: (string | number)[] }>();
+
+      q.criteria.forEach((c, i) => {
+        const label = `${c.table}.${c.field} ${c.op ?? ""}`.trim();
+        const t = table(d, c.table);
+        if (!t) { skipped.push({ criterion: label, reason: `table ${c.table} not in this database` }); return; }
+        const col = t.colSet.get(c.field);
+        if (!col) { skipped.push({ criterion: label, reason: `column ${c.field} not in ${t.name}` }); return; }
+        if (!c.op) { skipped.push({ criterion: label, reason: "no operator in the template" }); return; }
+        if (!t.hasIdwell) { skipped.push({ criterion: label, reason: `${t.name} is not per-well` }); return; }
+
+        const entry = byTable.get(t.name) ?? { preds: [], args: [] };
+        if (c.op === "IS NULL" || c.op === "IS NOT NULL") {
+          entry.preds.push(`x."${col}" ${c.op}`);
+        } else {
+          const raw = c.prompts ? supplied[String(i)] : c.value;
+          if (raw == null || raw === "") {
+            skipped.push({ criterion: label, reason: "no value supplied" });
+            return;
+          }
+          const isDate = modelField(c.table, c.field)?.type === "datetime";
+          const value = isDate ? resolveDateValue(raw) : raw;
+          if (isDate && value === null) {
+            skipped.push({ criterion: label, reason: `could not read "${raw}" as a date` });
+            return;
+          }
+          if (c.op === "LIKE" || c.op === "NOT LIKE") {
+            // §3.3: a partial string matches partially.
+            entry.preds.push(`x."${col}" ${c.op} ? COLLATE NOCASE`);
+            entry.args.push(`%${value}%`);
+          } else {
+            entry.preds.push(`x."${col}" ${c.op} ?`);
+            entry.args.push(value as string);
+          }
+        }
+        byTable.set(t.name, entry);
+      });
+
+      if (byTable.size === 0) {
+        return { wells: [], skipped, ran: 0, note: "No criterion could be applied to this database." };
+      }
+
+      const wheres: string[] = [];
+      const args: (string | number)[] = [];
+      for (const [tname, e] of byTable) {
+        wheres.push(
+          `EXISTS (SELECT 1 FROM "${tname}" x WHERE x.idwell = h.idwell AND ${e.preds.join(" AND ")})`);
+        args.push(...e.args);
+      }
+      const nameCol = hdr.colSet.get("wellname") ?? "WellName";
+      const rows = d.ro.prepare(
+        `SELECT h.idwell AS idwell, h."${nameCol}" AS name FROM "${hdr.name}" h
+         WHERE ${wheres.join(" AND ")} ORDER BY 2 LIMIT 1000`,
+      ).all(...args) as { idwell: string; name: string | null }[];
+
+      return {
+        wells: rows.map((r) => ({ idwell: r.idwell, name: r.name ?? r.idwell })),
+        skipped,
+        ran: byTable.size,
+      };
     },
   );
 

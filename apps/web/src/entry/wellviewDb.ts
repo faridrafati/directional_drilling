@@ -103,6 +103,32 @@ export interface WvSchematic {
   dates: string[];
 }
 
+/** A saved Query Template (§8.1) and one of its criteria. */
+export interface WvQueryCriterion {
+  table: string;
+  field: string;
+  op: string | null;
+  value: string | null;
+  /** §8.1 "Prompt for Value" — the user supplies it when the query runs. */
+  prompts: boolean;
+  tableLabel: string;
+  fieldLabel: string;
+  isDate: boolean;
+}
+export interface WvQuery {
+  id: string;
+  category: string;
+  name: string;
+  criteria: WvQueryCriterion[];
+}
+export interface WvQueryResult {
+  wells: { idwell: string; name: string }[];
+  /** Criteria that could not be applied, and why — never dropped silently. */
+  skipped: { criterion: string; reason: string }[];
+  ran: number;
+  note?: string;
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
@@ -180,6 +206,14 @@ export const wvDbApi = {
   copyRecord: (db: string, table: string, idrec: string, target?: { idwell?: string; parent?: string }) =>
     entryApi.post<{ idrec: string; copied: number }>(
       `/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}/copy`, target ?? {}),
+
+  /** The saved Query Templates shipped with WellView (§8.1). */
+  queries: (db: string) =>
+    entryApi.get<{ queries: WvQuery[] }>(`/wellview/dbs/${enc(db)}/queries`),
+
+  /** Run one, supplying any prompted values keyed by criterion index. */
+  runQuery: (db: string, id: string, values: Record<string, string>) =>
+    entryApi.post<WvQueryResult>(`/wellview/dbs/${enc(db)}/queries/run`, { id, values }),
 
   /** Delete an entire well — every table's rows for the idwell. */
   deleteWell: (db: string, idwell: string) =>
