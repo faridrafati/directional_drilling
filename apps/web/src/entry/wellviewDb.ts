@@ -4,6 +4,7 @@
  * schematic and data auditor. Same authenticated transport as every /entry/*
  * call.
  */
+import type { UnitFormat } from "@dd/shared";
 import { entryApi } from "./client.js";
 
 export interface WvDatabase { id: string; file: string; wells: number; sizeBytes: number }
@@ -42,6 +43,8 @@ export interface WvRecordColumn {
   hiddenByDefault?: boolean;
   type?: WvFieldType;
   unit?: string;
+  /** Per unit set: the unit to display in, and its decimals. */
+  units?: Record<string, UnitFormat>;
   /** The form section this field belongs to ("Well Identifiers", "Elevations"…). */
   group?: string;
   /** Required by Chevron's Data Entry Audit rules — the desktop's yellow fields. */
@@ -91,6 +94,8 @@ export interface WvAuditFinding {
 }
 export interface WvAuditResult {
   findings: WvAuditFinding[];
+  /** "<table>.<column>" → the unit that detail value is stored in. */
+  units?: Record<string, { unit?: string; units?: Record<string, UnitFormat> }>;
   skipped: { ruleId: string; reason: string }[];
   rulesRun: number;
 }
@@ -108,6 +113,10 @@ export interface WvSchematic {
   cement: WvSchematicRow[];
   zones: WvSchematicRow[];
   dates: string[];
+  /** The unit every depth on the diagram is stored in, and how to show it. */
+  depth?: { unit?: string; units?: Record<string, UnitFormat> };
+  /** The same for hole and pipe sizes, which read in inches as a fraction. */
+  size?: { unit?: string; units?: Record<string, UnitFormat> };
 }
 
 /** A saved Query Template (§8.1) and one of its criteria. */

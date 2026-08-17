@@ -38,6 +38,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { wvDbApi, type WvRecordColumn, type WvRecords, type WvTreeNode } from "../../entry/wellviewDb.js";
 import { usePicklistCatalog } from "../../entry/picklists.js";
+import { useUnitSet } from "../../entry/unitSet.js";
+import { toDisplay, fromDisplay, displayUnitFor, formatUnitValue } from "@dd/shared";
 
 type Row = Record<string, string | number | null>;
 
@@ -451,7 +453,10 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   const [ghost, setGhost] = useState<Row>({});
   const [busy, setBusy] = useState(false);
   const plQ = usePicklistCatalog();
+  const [unitSet] = useUnitSet();
   const [popover, setPopover] = useState<{ key: string | null; col: string } | null>(null);
+  /** What the model says about one column's units, for the conversion helpers. */
+  const unitOf = (c: WvRecordColumn) => ({ unit: c.unit, units: c.units });
 
   /**
    * §5 "Set up Day Two": a new record inherits the previous one's carry-forward
@@ -501,12 +506,65 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   }, [data.rows, data.columns]);
   const carriedCount = Object.keys(carrySeed).length;
 
+  /**
+   * The seed as the user will SEE it.
+   *
+   * `carrySeed` is copied from stored values, so it is in base units and its
+   * increments are too. The ghost row, like any pending edit, holds what the
+   * user sees and types — display units — and `toBaseUnits` converts it back on
+   * save. Seeding it with base values would send a carried depth through that
+   * conversion a second time and store a fraction of the real one.
+   */
+  const carrySeedShown = useMemo(() => {
+    const out: Row = {};
+    for (const [col, v] of Object.entries(carrySeed)) {
+      const c = data.columns.find((x) => x.column === col);
+      const n = c?.unit ? Number(v) : NaN;
+      const d = Number.isFinite(n) ? toDisplay(n, unitOf(c!), unitSet) : null;
+      out[col] = d ? formatUnitValue(d.value, d) : v;
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carrySeed, data.columns, unitSet]);
+
   useEffect(() => {
     setEdits({});
-    setGhost(carrySeed);
+    setGhost(carrySeedShown);
     setPopover(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.table, parentIdrec]);
+
+  /**
+   * The unit set changed with edits still pending.
+   *
+   * What the user typed was a number of feet; leaving the digits alone would
+   * silently turn it into that many metres on save. Re-express every pending
+   * value in the new set — the same move the saved rows make when they
+   * re-render, so the whole grid still reads in one unit.
+   */
+  const shownIn = useRef(unitSet);
+  useEffect(() => {
+    const from = shownIn.current;
+    if (from === unitSet) return;
+    shownIn.current = unitSet;
+    const restate = (row: Row): Row => {
+      const out: Row = { ...row };
+      for (const c of data.columns) {
+        if (!c.unit || !(c.column in out)) continue;
+        const v = out[c.column];
+        if (v == null || v === "") continue;
+        const base = fromDisplay(String(v), unitOf(c), from);
+        if (base === null) continue;
+        const d = toDisplay(base, unitOf(c), unitSet);
+        if (d) out[c.column] = formatUnitValue(d.value, d);
+      }
+      return out;
+    };
+    setEdits((es) => Object.fromEntries(
+      Object.entries(es).map(([k, row]) => [k, restate(row)])));
+    setGhost((g) => restate(g));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unitSet, data.columns]);
 
   /**
    * Arriving from a report field: put the cursor in the same field of the same
@@ -586,9 +644,20 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   /** A ghost holding only carried values is not an edit — the user has not
    *  typed anything yet, and saving it would add a record they never asked for. */
   const ghostTouched = Object.entries(ghost).some(([k, v]) =>
-    v !== null && v !== "" && String(v) !== String(carrySeed[k] ?? ""));
+    v !== null && v !== "" && String(v) !== String(carrySeedShown[k] ?? ""));
   const dirtyCount = Object.keys(edits).filter((k) => Object.keys(edits[k]).length > 0).length
     + (ghostTouched ? 1 : 0);
+
+  /** Rewrite a pending record's unit-bearing fields from display back to base. */
+  function toBaseUnits(values: Row): void {
+    for (const c of data.columns) {
+      if (!c.unit || !(c.column in values)) continue;
+      const v = values[c.column];
+      if (v == null || v === "") continue;
+      const base = fromDisplay(String(v), unitOf(c), unitSet);
+      if (base !== null) values[c.column] = base;
+    }
+  }
 
   async function saveAll(): Promise<boolean> {
     setBusy(true);
@@ -598,14 +667,17 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       let unmatched = 0;
       for (const [key, values] of Object.entries(edits)) {
         if (Object.keys(values).length === 0) continue;
+        toBaseUnits(values);
         // The server says how many rows the UPDATE matched — 0 means the key
         // did not address a record, and pretending that saved would lose data.
         const res = await wvDbApi.update(db, data.table, key, values);
         if (res.changed > 0) saved++; else unmatched++;
       }
       if (!singleRecord && ghostTouched) {
+        const newValues = { ...ghost };
+        toBaseUnits(newValues);
         await wvDbApi.insert(db, data.table, {
-          idwell, ...(parentIdrec ? { parent: parentIdrec } : {}), values: ghost,
+          idwell, ...(parentIdrec ? { parent: parentIdrec } : {}), values: newValues,
         });
         saved++;
       }
@@ -620,7 +692,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         if (Object.keys(ghost).length && String(ghost[c.column] ?? "").trim() === "") blanks.add(c.label);
       }
       setEdits({});
-      setGhost(carrySeed);
+      setGhost(carrySeedShown);
       if (saved || unmatched) onSaved();
       if (blanks.size) {
         onStatus(`Saved ${saved}. Required field${blanks.size === 1 ? "" : "s"} still empty: ${[...blanks].join(", ")}.`);
@@ -759,10 +831,26 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     if (missingRequired(c, value)) return "bg-amber-100 border-amber-300";
     return "bg-transparent border-transparent";
   };
+  /**
+   * Values are STORED in the model's base unit and shown in the user's set, so
+   * every read converts out and every write converts back. A pending edit is
+   * held in DISPLAY units — it is what the user typed — and only crosses back to
+   * base when it is saved.
+   */
   const valueOf = (row: Row, key: string, col: string): string => {
     const e = edits[key];
     if (e && col in e) return String(e[col] ?? "");
-    return row[col] == null ? "" : String(row[col]);
+    const raw = row[col];
+    if (raw == null) return "";
+    const c = data.columns.find((x) => x.column === col);
+    if (c?.unit) {
+      const n = Number(raw);
+      if (Number.isFinite(n)) {
+        const d = toDisplay(n, unitOf(c), unitSet);
+        if (d) return formatUnitValue(d.value, d);
+      }
+    }
+    return String(raw);
   };
   const setValue = (key: string, col: string, v: string | null) =>
     setEdits((es) => ({ ...es, [key]: { ...es[key], [col]: v } }));
@@ -1004,7 +1092,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
               Invert
             </button>
           )}
-          <button type="button" onClick={() => { setEdits({}); setGhost(carrySeed); onStatus("Pending changes undone — saved records are untouched."); }}
+          <button type="button" onClick={() => { setEdits({}); setGhost(carrySeedShown); onStatus("Pending changes undone — saved records are untouched."); }}
             disabled={busy || dirtyCount === 0}
             title="Undo All — cancel the changes made in this folder since the last save"
             className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
@@ -1041,7 +1129,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                     title={[`${data.table}.${c.column}`, c.help, c.calculated ? "Calculated by WellView." : null]
                       .filter(Boolean).join(" — ")}>
                     {c.label}
-                    {c.unit && <span className="ml-1 font-normal text-gray-400">({c.unit})</span>}
+                    {c.unit && <span className="ml-1 font-normal text-gray-400">({displayUnitFor(c, unitSet)?.unit ?? c.unit})</span>}
                   </td>
                   {data.rows.map((r, i) => {
                     const k = keyOf(r);
@@ -1089,7 +1177,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                     {c.globalMetric
                       ? <span className="text-cyan-600" title="Required global metric">&nbsp;◆</span>
                       : c.required ? <span className="text-amber-600" title="Required">&nbsp;*</span> : null}
-                    {c.unit && <span className="ml-1 font-normal text-gray-400">({c.unit})</span>}
+                    {c.unit && <span className="ml-1 font-normal text-gray-400">({displayUnitFor(c, unitSet)?.unit ?? c.unit})</span>}
                   </th>
                 ))}
               </tr>

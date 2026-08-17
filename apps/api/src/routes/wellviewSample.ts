@@ -436,7 +436,14 @@ export function resolveTemplateData(
       title: blockTitle(b),
       exists: true,
       computed: false,
-      columns: present.map((p) => ({ column: p.column, label: p.label })),
+      columns: present.map((p) => ({
+        column: p.column,
+        label: p.label,
+        // The client renders in the user's unit set, so it needs the base
+        // unit and the per-set target the model names.
+        unit: modelField(t.name, p.column)?.baseUnit,
+        units: modelField(t.name, p.column)?.units,
+      })),
       missing,
       rowCount: total,
       truncated: total > rows.length,

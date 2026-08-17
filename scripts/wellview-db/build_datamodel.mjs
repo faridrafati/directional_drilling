@@ -46,6 +46,38 @@ function attrs(body) {
 }
 
 const bool = (v) => v === "True" || v === "true" || v === "1";
+/**
+ * Read a .NET format string from <afmfieldunitformat format="...">.
+ *
+ *   {0:#,##0.00}   two decimals, thousands separators
+ *   {0:0.0}        one decimal, NO separators
+ *   {0:#,##0.0##}  one required decimal, up to three ('0' required, '#' optional)
+ *   fraction       an imperial size, printed as 9 5/8 — not 9.63
+ *
+ * The last is not a number format at all: 148 fields, all of them pipe, bit and
+ * hole sizes in inches, which the industry reads and writes as fractions. Taking
+ * the old `\.([0#]+)` route made those zero-decimal, so a 9 5/8" casing printed
+ * as "10". Anything unrecognised returns undefined so the value keeps its own
+ * precision rather than being rounded by a guess.
+ */
+function formatOf(format) {
+  if (!format) return undefined;
+  if (format.trim() === "fraction") return { fraction: true };
+  const m = format.match(/\{0:([^}]*)\}/);
+  const pattern = m ? m[1] : format;
+  if (!/[0#]/.test(pattern)) return undefined;
+  const [intPart, decPart = ""] = pattern.split(".");
+  const out = {};
+  // '0' is a digit that must be shown, '#' one that is dropped when zero.
+  const required = (decPart.match(/0/g) || []).length;
+  if (decPart) {
+    out.decimals = required;
+    if (decPart.length !== required) out.maxDecimals = decPart.length;
+  } else out.decimals = 0;
+  // `grouped`, not `group`: the field object already uses `group` for its form section.
+  if (intPart.includes(",")) out.grouped = true;
+  return out;
+}
 /** Collapse the model's help text to one clean line. */
 const clean = (s) => (s ? s.replace(/\s*[\r\n]+\s*/g, " ").replace(/\s{2,}/g, " ").trim() : undefined);
 
@@ -107,11 +139,27 @@ let fieldCount = 0;
 /** The field-group being read — the form SECTIONS the guide's exercises use
  *  ("Well Identifiers", "Well License", "Location", "Elevations"…). */
 let currentGroup = null;
+/** The afmfield whose <afmfieldunitformat> children are being read. */
+let currentField = null;
+/** Tools > Units: the sets a user can switch between. */
+const unitSets = [];
 const fieldGroup = new Map();          // "table.field" -> group name
 const groupOrder = new Map();          // table -> ordered group names
 
-for (const m of xml.matchAll(/<(afmtable|afmfield|afmtablegroupfield|afmtablegroupfieldlink)\s([^>]*?)\/?>/g)) {
+for (const m of xml.matchAll(/<(afmtable|afmfieldunitformat|afmunitset|afmfield|afmtablegroupfield|afmtablegroupfieldlink)\s([^>]*?)\/?>/g)) {
   const a = attrs(m[2]);
+  if (m[1] === "afmunitset") {
+    if (a.des) unitSets.push({ name: a.des, comment: a.comment || undefined });
+    continue;
+  }
+  if (m[1] === "afmfieldunitformat") {
+    // Belongs to the field last opened: the unit that set displays it in, and
+    // the .NET format string, which says how many decimals to show.
+    if (currentField && a.idrecunitset && a.keyunit) {
+      (currentField.units ??= {})[a.idrecunitset] = { unit: a.keyunit, ...formatOf(a.format) };
+    }
+    continue;
+  }
   if (m[1] === "afmtablegroupfield") {
     currentGroup = a.groupname || null;
     if (current && currentGroup) {
@@ -128,6 +176,7 @@ for (const m of xml.matchAll(/<(afmtable|afmfield|afmtablegroupfield|afmtablegro
   }
   if (m[1] === "afmtable") {
     currentGroup = null;
+    currentField = null;
     const name = a.keytbl;
     if (!name) { current = null; continue; }
     current = {
@@ -181,6 +230,7 @@ for (const m of xml.matchAll(/<(afmtable|afmfield|afmtablegroupfield|afmtablegro
   };
   for (const k of Object.keys(f)) if (f[k] === undefined) delete f[k];
   current.fields[a.keyfld.toLowerCase()] = f;
+  currentField = f;
   fieldCount++;
 }
 
@@ -231,6 +281,7 @@ const kept = Object.fromEntries(Object.entries(tables).filter(([, t]) => Object.
 
 const payload = {
   generated_from: "WellView_files/system/Peloton.WellView.mdl.xml",
+  unitSets,
   table_count: Object.keys(kept).length,
   field_count: fieldCount,
   tables: kept,

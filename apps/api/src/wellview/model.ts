@@ -18,6 +18,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { UnitFormat } from "@dd/shared";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
@@ -42,6 +43,8 @@ export interface ModelField {
   libTable?: string;
   libField?: string;
   baseUnit?: string;
+  /** Per unit set (US/Metric/EU/Mixed): display unit and decimals. */
+  units?: Record<string, UnitFormat>;
   /** The form SECTION this field belongs to ("Well Identifiers", "Elevations"…),
    *  as the model groups them — the headings the guide's exercises use. */
   group?: string;

@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EntryAuthProvider, useEntryAuth, SignInCard } from "../entry/auth.js";
 import { wvDbApi } from "../entry/wellviewDb.js";
+import { useUnitSet, UNIT_SETS, type UnitSet } from "../entry/unitSet.js";
 import { WellExplorer } from "../components/wellview-online/WellExplorer.js";
 import { WellWindow } from "../components/wellview-online/WellWindow.js";
 import { EditData, type WvClipboard } from "../components/wellview-online/EditData.js";
@@ -32,6 +33,7 @@ export function WellViewOnlinePage() {
 
 function Inner() {
   const { user, loading, signOut } = useEntryAuth();
+  const [unitSet, setUnitSet] = useUnitSet();
   const [db, setDb] = useState<string | null>(null);
   const [openWell, setOpenWell] = useState<string | null>(null);
   const [edit, setEdit] = useState<
@@ -65,6 +67,15 @@ function Inner() {
           </div>
           {user && (
             <div className="flex items-center gap-2 text-xs">
+              <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
+                Units
+                <select value={unitSet} onChange={(e) => setUnitSet(e.target.value as UnitSet)}
+                  data-testid="wv-unit-set"
+                  title="Tools > Units — the set every number on screen is shown in (§4.2)"
+                  className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white text-gray-800 normal-case tracking-normal">
+                  {UNIT_SETS.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </label>
               <span className="text-gray-600">
                 {user.fullName} <span className="text-gray-400">({user.username})</span>
               </span>

@@ -9,6 +9,8 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { wvDbApi } from "../../entry/wellviewDb.js";
+import { useUnitSet } from "../../entry/unitSet.js";
+import { toDisplay, formatUnitValue } from "@dd/shared";
 
 interface Props {
   db: string;
@@ -19,13 +21,29 @@ interface Props {
 
 /** Unit-converted floats from the .mdb conversion read as noise — round the
  *  DISPLAY to 3 decimals; the stored value is untouched. */
-function fmtDetail(v: string | number | null): string {
+/**
+ * One detail value from a finding.
+ *
+ * When the model gives the column a unit, it is shown in the reader's set with
+ * that unit named — the same conversion every other screen makes. Without one
+ * it stays as it came, trimmed to three decimals so a float does not run on.
+ */
+function fmtDetail(
+  v: string | number | null,
+  spec: { unit?: string; units?: Record<string, import("@dd/shared").UnitFormat> } | undefined,
+  unitSet: string,
+): string {
   const n = typeof v === "number" ? v : Number(v);
+  if (spec?.unit && v !== null && v !== "" && Number.isFinite(n)) {
+    const d = toDisplay(n, spec, unitSet);
+    if (d) return `${formatUnitValue(d.value, d)} ${d.unit}`;
+  }
   if (v !== null && v !== "" && Number.isFinite(n) && !Number.isInteger(n)) return String(Number(n.toFixed(3)));
   return String(v);
 }
 
 export function DataAudit({ db, wells, onClose, onOpenRecord }: Props) {
+  const [unitSet] = useUnitSet();
   const q = useQuery({
     queryKey: ["wvdb", db, "audit", wells.join(",")],
     queryFn: () => wvDbApi.audit(db, wells),
@@ -88,7 +106,7 @@ export function DataAudit({ db, wells, onClose, onOpenRecord }: Props) {
                     <span className="text-gray-400 font-mono text-[10px]">{f.table}</span>
                     {Object.entries(f.detail).filter(([, v]) => v != null).map(([k, v]) => (
                       <span key={k} className="text-gray-500">
-                        {k}=<b className="font-medium">{fmtDetail(v)}</b>
+                        {k}=<b className="font-medium">{fmtDetail(v, q.data?.units?.[`${f.table}.${k}`], unitSet)}</b>
                       </span>
                     ))}
                   </button>

@@ -761,6 +761,9 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
             hiddenByDefault: mf?.hidden,
             type: mf?.type,
             unit: mf?.baseUnit,
+            /** Per unit set, the unit to show it in and its decimals — the
+             *  client converts at the render boundary (Tools > Units). */
+            units: mf?.units,
             /** The form section this field sits in, per WellView's own model. */
             group: mf?.group,
             /** Chevron's Data Entry Audit rules — the desktop's yellow fields. */
@@ -1119,17 +1122,17 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         method: "minimum curvature",
         /** What each computed column is called and what it is measured in. */
         columns: [
-          { key: "md", label: columnLabel(data.name, "md"), unit: modelField(data.name, "md")?.baseUnit, computed: false },
-          { key: "inclination", label: columnLabel(data.name, "inclination"), unit: modelField(data.name, "inclination")?.baseUnit, computed: false },
-          { key: "azimuth", label: columnLabel(data.name, "azimuth"), unit: modelField(data.name, "azimuth")?.baseUnit, computed: false },
-          { key: "tvd", label: columnLabel(data.name, "tvdcalc"), unit: modelField(data.name, "tvdcalc")?.baseUnit, computed: true },
-          { key: "ns", label: columnLabel(data.name, "nscalc"), unit: modelField(data.name, "nscalc")?.baseUnit, computed: true },
-          { key: "ew", label: columnLabel(data.name, "ewcalc"), unit: modelField(data.name, "ewcalc")?.baseUnit, computed: true },
-          { key: "vs", label: columnLabel(data.name, "vscalc"), unit: modelField(data.name, "vscalc")?.baseUnit, computed: true },
-          { key: "departure", label: columnLabel(data.name, "departcalc"), unit: modelField(data.name, "departcalc")?.baseUnit, computed: true },
-          { key: "dls", label: columnLabel(data.name, "dlscalc"), unit: modelField(data.name, "dlscalc")?.baseUnit, computed: true },
-          { key: "buildRate", label: columnLabel(data.name, "buildratecalc"), unit: modelField(data.name, "buildratecalc")?.baseUnit, computed: true },
-          { key: "turnRate", label: columnLabel(data.name, "turnratecalc"), unit: modelField(data.name, "turnratecalc")?.baseUnit, computed: true },
+          { key: "md", label: columnLabel(data.name, "md"), unit: modelField(data.name, "md")?.baseUnit, units: modelField(data.name, "md")?.units, computed: false },
+          { key: "inclination", label: columnLabel(data.name, "inclination"), unit: modelField(data.name, "inclination")?.baseUnit, units: modelField(data.name, "inclination")?.units, computed: false },
+          { key: "azimuth", label: columnLabel(data.name, "azimuth"), unit: modelField(data.name, "azimuth")?.baseUnit, units: modelField(data.name, "azimuth")?.units, computed: false },
+          { key: "tvd", label: columnLabel(data.name, "tvdcalc"), unit: modelField(data.name, "tvdcalc")?.baseUnit, units: modelField(data.name, "tvdcalc")?.units, computed: true },
+          { key: "ns", label: columnLabel(data.name, "nscalc"), unit: modelField(data.name, "nscalc")?.baseUnit, units: modelField(data.name, "nscalc")?.units, computed: true },
+          { key: "ew", label: columnLabel(data.name, "ewcalc"), unit: modelField(data.name, "ewcalc")?.baseUnit, units: modelField(data.name, "ewcalc")?.units, computed: true },
+          { key: "vs", label: columnLabel(data.name, "vscalc"), unit: modelField(data.name, "vscalc")?.baseUnit, units: modelField(data.name, "vscalc")?.units, computed: true },
+          { key: "departure", label: columnLabel(data.name, "departcalc"), unit: modelField(data.name, "departcalc")?.baseUnit, units: modelField(data.name, "departcalc")?.units, computed: true },
+          { key: "dls", label: columnLabel(data.name, "dlscalc"), unit: modelField(data.name, "dlscalc")?.baseUnit, units: modelField(data.name, "dlscalc")?.units, computed: true },
+          { key: "buildRate", label: columnLabel(data.name, "buildratecalc"), unit: modelField(data.name, "buildratecalc")?.baseUnit, units: modelField(data.name, "buildratecalc")?.units, computed: true },
+          { key: "turnRate", label: columnLabel(data.name, "turnratecalc"), unit: modelField(data.name, "turnratecalc")?.baseUnit, units: modelField(data.name, "turnratecalc")?.units, computed: true },
         ],
         stations: results,
         /** Stated, not hidden: what was left out and what is not attempted. */
@@ -1413,7 +1416,19 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
           skipped.push({ ruleId: r.id, reason: e instanceof Error ? e.message : String(e) });
         }
       }
-      return { findings, skipped, rulesRun: AUDIT_RULES.length - skipped.length };
+      // The detail values are raw column values in base units. Say which unit
+      // each one is, so the auditor reads in the same units as every other
+      // screen rather than quietly showing metres to someone working in feet.
+      const units: Record<string, { unit?: string; units?: Record<string, unknown> }> = {};
+      for (const f of findings) {
+        for (const col of Object.keys(f.detail)) {
+          const key = `${f.table}.${col}`;
+          if (key in units) continue;
+          const mf = modelField(f.table, col);
+          if (mf?.baseUnit) units[key] = { unit: mf.baseUnit, units: mf.units };
+        }
+      }
+      return { findings, skipped, units, rulesRun: AUDIT_RULES.length - skipped.length };
     },
   );
 
@@ -1450,10 +1465,20 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       collect(perfs, ["DtTm"]);
       collect(cement, ["DtTmStart"]);
       collect(sizes, ["DtTmStart", "DtTmEnd"]);
+      // Every depth on the diagram — the axis, the shoe labels, the tooltips —
+      // is one measured depth in the model's base unit, so one spec converts
+      // the whole drawing. It is read from a real depth field rather than
+      // assumed, so a model that ever changed its base unit would follow.
+      const depthField = modelField("wvCas", "mdbtm") ?? modelField("wvPerforation", "depthtop");
+      // Hole and pipe sizes are a length too, but a different one: stored in
+      // metres and read in inches, as a fraction.
+      const sizeField = modelField("wvWellboreSize", "sz") ?? modelField("wvCasComp", "szodnom");
       return {
         wellbores: bores, sizes, casings, tubings, rods, otherInHole: other,
         perforations: perfs, cement, zones,
         dates: [...dates].sort(),
+        depth: { unit: depthField?.baseUnit, units: depthField?.units },
+        size: { unit: sizeField?.baseUnit, units: sizeField?.units },
       };
     },
   );

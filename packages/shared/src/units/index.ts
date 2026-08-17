@@ -1,3 +1,5 @@
+export * from "./wellview-display.js";
+export * from "./wellview.js";
 /**
  * Unit system and conversion.
  * Conversion factors ported from old_delphi_code/Unit23.pas:conversion.

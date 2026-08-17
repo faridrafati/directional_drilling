@@ -20,6 +20,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entryApi } from "../../entry/client.js";
+import { useUnitSet } from "../../entry/unitSet.js";
+import { toDisplay, fromDisplay, formatUnitValue, displayUnitFor } from "@dd/shared";
+import type { UnitFormat } from "@dd/shared";
 import { wvDbApi, type WvSchematic, type WvSchematicRow } from "../../entry/wellviewDb.js";
 
 interface TemplateEntry {
@@ -232,11 +235,13 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
 }) {
   interface BlockData {
     table: string | null; title: string | null; exists: boolean; computed: boolean;
-    columns?: { column: string; label: string }[]; missing?: string[];
+    columns?: { column: string; label: string; unit?: string;
+      units?: Record<string, UnitFormat> }[]; missing?: string[];
     rowCount?: number; truncated?: boolean; allNull?: boolean;
     rows?: (string | number | null)[][]; rowIds?: (string | null)[]; icons?: (string | null)[];
   }
   const qc = useQueryClient();
+  const [unitSet] = useUnitSet();
   const [jobId, setJobId] = useState<string>("");
   const [dayId, setDayId] = useState<string>("");
   const [zoom, setZoom] = useState(100);
@@ -409,7 +414,14 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                           {b.icons && <th className="px-1 py-1 w-8" aria-label="icon" />}
                           {b.columns!.map((c) => (
                             <th key={c.column} className="px-2 py-1 text-left font-medium whitespace-nowrap"
-                              title={`${b.table}.${c.column}`}>{c.label}</th>
+                              title={`${b.table}.${c.column}`}>
+                              {c.label}
+                              {c.unit && (
+                                <span className="ml-1 font-normal text-gray-400">
+                                  ({displayUnitFor(c, unitSet)?.unit ?? c.unit})
+                                </span>
+                              )}
+                            </th>
                           ))}
                         </tr>
                       </thead>
@@ -430,7 +442,20 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                                 </td>
                               )}
                               {r.map((v, ci) => {
-                                const col = b.columns?.[ci]?.column ?? null;
+                                const meta = b.columns?.[ci];
+                                const col = meta?.column ?? null;
+                                // A value whose column carries a unit is shown in
+                                // the user's set; the rest print as stored.
+                                const shown = (() => {
+                                  if (meta?.unit && v != null && v !== "") {
+                                    const n = Number(v);
+                                    if (Number.isFinite(n)) {
+                                      const d = toDisplay(n, meta, unitSet);
+                                      if (d) return formatUnitValue(d.value, d);
+                                    }
+                                  }
+                                  return fmt(v);
+                                })();
                                 // Clicking a value opens Edit Data on THAT record
                                 // with the cursor in THAT field (§3.8 / Table 3-2 M).
                                 return (
@@ -440,11 +465,11 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                                         onClick={() => onEditRecord(b.table!, rowId, col)}
                                         title={`Edit ${b.columns?.[ci]?.label ?? ""} on this record`}
                                         className="w-full text-left px-2 py-0.5 hover:bg-blue-50 hover:ring-1 hover:ring-inset hover:ring-blue-300 rounded-sm">
-                                        {fmt(v) || <span className="text-gray-300">—</span>}
+                                        {shown || <span className="text-gray-300">—</span>}
                                       </button>
                                     ) : (
                                       <span className="block px-2 py-0.5">
-                                        {fmt(v) || <span className="text-gray-300">—</span>}
+                                        {shown || <span className="text-gray-300">—</span>}
                                       </span>
                                     )}
                                   </td>
@@ -472,8 +497,6 @@ const num = (v: string | number | null | undefined): number | null => {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
-/** Depth labels: metres to one decimal — unit-converted floats are noise. */
-const fmtDepth = (n: number): string => String(Number(n.toFixed(1)));
 const dstr = (v: string | number | null | undefined): string | null =>
   typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null;
 
@@ -599,6 +622,31 @@ function SchematicSvg({ s, date, boreId, showProposed, scale, onEditTable }: {
   scale: number; onEditTable: (table: string) => void;
 }) {
   /**
+   * Every depth drawn here — the axis, the shoe labels, the tooltips — is one
+   * measured depth in the model's base unit, so the payload's one spec converts
+   * the whole diagram. One decimal: a converted depth's remaining digits are
+   * noise on a drawing.
+   */
+  const [unitSet] = useUnitSet();
+  const depthSpec = s.depth ?? {};
+  const depthUnit = displayUnitFor(depthSpec, unitSet)?.unit ?? depthSpec.unit ?? "";
+  const fmtDepth = (n: number): string => {
+    const d = toDisplay(n, depthSpec, unitSet);
+    return d ? formatUnitValue(d.value, { unit: d.unit, decimals: 1 }) : String(Number(n.toFixed(1)));
+  };
+  /**
+   * Hole and pipe SIZES are stored in metres too, and were being printed raw
+   * with an inch mark after them — a 12 1/4" hole read as 0.3111499845981598".
+   * The model shows them in inches as a fraction, so this says 12 1/4 in.
+   */
+  const sizeSpec = s.size ?? {};
+  const fmtSize = (v: string | number | null | undefined): string => {
+    const n = num(v);
+    if (n === null) return "?";
+    const d = toDisplay(n, sizeSpec, unitSet);
+    return d ? `${formatUnitValue(d.value, d)} ${d.unit}` : String(n);
+  };
+  /**
    * §10.4 wellbore filter. The selected bore's ancestor chain is kept (a bore
    * whose IDRecParent equals its own IDRec — or is empty — is the original
    * hole); an item on another bore still renders when it sits entirely above
@@ -681,7 +729,7 @@ function SchematicSvg({ s, date, boreId, showProposed, scale, onEditTable }: {
       <rect key={`size${i}`} x={CX - hw} y={y(top)} width={hw * 2} height={Math.max(1, y(btm) - y(top))}
         fill="#f3f4f6" stroke="#d1d5db" strokeWidth="1"
         className="cursor-pointer" onClick={() => onEditTable("wvWellboreSize")}>
-        <title>{`Hole ${z.Sz ?? "?"}" — ${fmtDepth(top)}–${fmtDepth(btm)} (wvWellboreSize)`}</title>
+        <title>{`Hole ${fmtSize(z.Sz)} — ${fmtDepth(top)}–${fmtDepth(btm)} (wvWellboreSize)`}</title>
       </rect>,
     );
   }
@@ -798,14 +846,20 @@ function SchematicSvg({ s, date, boreId, showProposed, scale, onEditTable }: {
     );
   }
 
-  // depth axis
+  // Depth axis. The ticks are chosen in the unit the reader SEES — 0, 2000,
+  // 4000 ft — not in stored metres converted after the fact, which would put
+  // them on 1,640.4 and 3,280.8. Each tick converts back to place its line.
   const axis: React.ReactNode[] = [];
-  const step = niceStep(maxDepth);
-  for (let d = 0; d <= maxDepth; d += step) {
+  const shownMax = toDisplay(maxDepth, depthSpec, unitSet)?.value ?? maxDepth;
+  const step = niceStep(shownMax);
+  for (let t = 0; t <= shownMax; t += step) {
+    const base = fromDisplay(String(t), depthSpec, unitSet) ?? t;
     axis.push(
-      <g key={`ax${d}`}>
-        <line x1={30} y1={y(d)} x2={36} y2={y(d)} stroke="#9ca3af" strokeWidth="1" />
-        <text x={26} y={y(d) + 3} fontSize="9" fill="#6b7280" textAnchor="end">{fmtDepth(d)}</text>
+      <g key={`ax${t}`}>
+        <line x1={30} y1={y(base)} x2={36} y2={y(base)} stroke="#9ca3af" strokeWidth="1" />
+        <text x={26} y={y(base) + 3} fontSize="9" fill="#6b7280" textAnchor="end">
+          {t.toLocaleString()}
+        </text>
       </g>,
     );
   }
@@ -820,6 +874,9 @@ function SchematicSvg({ s, date, boreId, showProposed, scale, onEditTable }: {
         </pattern>
       </defs>
       <line x1={36} y1={TOP} x2={36} y2={H - 16} stroke="#d1d5db" strokeWidth="1" />
+      {depthUnit && (
+        <text x={26} y={TOP - 8} fontSize="9" fill="#9ca3af" textAnchor="end">{depthUnit}</text>
+      )}
       {axis}
       {/* ground line */}
       <line x1={60} y1={TOP} x2={W - 20} y2={TOP} stroke="#92400e" strokeWidth="2" />
@@ -854,6 +911,7 @@ function SurveyTab({ db, idwell, onEditTable }: {
   db: string; idwell: string; onEditTable: (table: string) => void;
 }) {
   const [surveyId, setSurveyId] = useState<string>("");
+  const [unitSet] = useUnitSet();
 
   const listQ = useQuery({
     queryKey: ["wvdb", db, "records", "wvWellboreDirSurvey", idwell, null, false],
@@ -870,8 +928,12 @@ function SurveyTab({ db, idwell, onEditTable }: {
     enabled: !!surveyId,
   });
 
-  const num = (v: number | null, dp = 2) =>
-    v == null ? <span className="text-gray-300">—</span> : Number(v.toFixed(dp)).toLocaleString();
+  /** Every survey column carries a base unit; show it in the user's set. */
+  const cell = (v: number | null, col: { unit?: string; units?: Record<string, UnitFormat> }) => {
+    if (v == null) return <span className="text-gray-300">—</span>;
+    const d = toDisplay(v, col, unitSet);
+    return <>{d ? formatUnitValue(d.value, d) : Number(v.toFixed(2)).toLocaleString()}</>;
+  };
 
   if (listQ.isLoading) return <div className="p-4 text-sm text-gray-400">Reading surveys…</div>;
   if (!surveys.length) {
@@ -933,7 +995,11 @@ function SurveyTab({ db, idwell, onEditTable }: {
                       className={`px-2 py-1 text-right font-medium whitespace-nowrap ${
                         c.computed ? "text-green-700 bg-green-50" : "text-gray-600"}`}>
                       {c.label}
-                      {c.unit && <span className="ml-1 font-normal text-gray-400">({c.unit})</span>}
+                      {c.unit && (
+                        <span className="ml-1 font-normal text-gray-400">
+                          ({displayUnitFor(c, unitSet)?.unit ?? c.unit})
+                        </span>
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -946,7 +1012,7 @@ function SurveyTab({ db, idwell, onEditTable }: {
                         className={`px-2 py-0.5 text-right tabular-nums whitespace-nowrap ${
                           c.computed ? "bg-green-50/60 text-green-900" : "text-gray-800"}`}
                         title={s.overridden && c.computed ? "A stored override supplied this value" : undefined}>
-                        {num(s[c.key as keyof typeof s] as number | null, c.key === "dls" || c.key === "buildRate" || c.key === "turnRate" ? 4 : 2)}
+                        {cell(s[c.key as keyof typeof s] as number | null, c)}
                         {s.overridden && c.key === "tvd" && <span className="ml-1 text-amber-600" title="Override">*</span>}
                       </td>
                     ))}

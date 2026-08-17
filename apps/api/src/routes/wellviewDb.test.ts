@@ -403,7 +403,8 @@ d("WellView database routes", () => {
 
   it("tells the client which fields a new record carries forward", async () => {
     const cols = ((await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvJobReport`, headers: auth }))
-      .json() as { columns: { column: string; carryForward?: boolean; carryForwardIncrement?: number }[] }).columns;
+      .json() as { columns: { column: string; carryForward?: boolean; carryForwardIncrement?: number;
+        carryForwardFrom?: string }[] }).columns;
     const carried = cols.filter((c) => c.carryForward).map((c) => c.column.toLowerCase()).sort();
     // §5 "Set up Day Two": the daily report inherits its conditions and dates.
     expect(carried).toContain("dttmstart");
