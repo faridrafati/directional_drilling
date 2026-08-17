@@ -252,6 +252,118 @@ d("WellView database routes", () => {
     expect(bad.statusCode).toBe(404);
   });
 
+  /**
+   * §3.9's ordering commands, for the folders the model marks `sequenced`.
+   * WellView draws string components on the schematic in stored order, so a
+   * renumbering that half-applies would redraw the string wrongly — which is
+   * why the endpoint takes the WHOLE order and refuses a partial one.
+   */
+  it("reorders a sequenced folder and reads it back in the new order", async () => {
+    // A casing string with several components: the shape the manual describes.
+    const strings = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvCas`, headers: auth }))
+      .json() as { rows: { idwell: string; IDRec: string }[] };
+    let target: { idwell: string; IDRec: string } | null = null;
+    let comps: { IDRec: string }[] = [];
+    for (const s of strings.rows) {
+      const r = (await app.inject({
+        url: `/entry/wellview/dbs/${DB}/records/wvCasComp?idwell=${s.idwell}&parent=${s.IDRec}`, headers: auth,
+      })).json() as { rows: { IDRec: string }[] };
+      if (r.rows.length >= 3) { target = s; comps = r.rows; break; }
+    }
+    if (!target) return;                       // no multi-component string here
+
+    const original = comps.map((c) => String(c.IDRec));
+    const reversed = [...original].reverse();
+    const res = await app.inject({
+      method: "POST",
+      url: `/entry/wellview/dbs/${DB}/records/wvCasComp/reorder`,
+      headers: auth,
+      payload: { idwell: target.idwell, parent: target.IDRec, order: reversed },
+    });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { reordered: number }).reordered).toBe(reversed.length);
+
+    // Reading the folder back must give the NEW order — the grid sorts on the
+    // stored sequence, so this is what the user would see.
+    const after = ((await app.inject({
+      url: `/entry/wellview/dbs/${DB}/records/wvCasComp?idwell=${target.idwell}&parent=${target.IDRec}`,
+      headers: auth,
+    })).json() as { rows: { IDRec: string }[] }).rows.map((r) => String(r.IDRec));
+    expect(after).toEqual(reversed);
+
+    // Put it back, so the sample database is left as it was found.
+    await app.inject({
+      method: "POST",
+      url: `/entry/wellview/dbs/${DB}/records/wvCasComp/reorder`,
+      headers: auth,
+      payload: { idwell: target.idwell, parent: target.IDRec, order: original },
+    });
+    const restored = ((await app.inject({
+      url: `/entry/wellview/dbs/${DB}/records/wvCasComp?idwell=${target.idwell}&parent=${target.IDRec}`,
+      headers: auth,
+    })).json() as { rows: { IDRec: string }[] }).rows.map((r) => String(r.IDRec));
+    expect(restored).toEqual(original);
+  }, 60_000);
+
+  it("refuses a partial order, a foreign record, and an unsequenced folder", async () => {
+    const strings = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvCas`, headers: auth }))
+      .json() as { rows: { idwell: string; IDRec: string }[] };
+    let target: { idwell: string; IDRec: string } | null = null;
+    let comps: { IDRec: string }[] = [];
+    for (const s of strings.rows) {
+      const r = (await app.inject({
+        url: `/entry/wellview/dbs/${DB}/records/wvCasComp?idwell=${s.idwell}&parent=${s.IDRec}`, headers: auth,
+      })).json() as { rows: { IDRec: string }[] };
+      if (r.rows.length >= 2) { target = s; comps = r.rows; break; }
+    }
+    if (!target) return;
+    const ids = comps.map((c) => String(c.IDRec));
+
+    // Dropping a record from the order would renumber some rows and strand others.
+    const partial = await app.inject({
+      method: "POST", url: `/entry/wellview/dbs/${DB}/records/wvCasComp/reorder`, headers: auth,
+      payload: { idwell: target.idwell, parent: target.IDRec, order: ids.slice(1) },
+    });
+    expect(partial.statusCode).toBe(400);
+    expect(partial.json()).toHaveProperty("error");
+
+    // A record from another folder must not be renumbered into this one.
+    const foreign = await app.inject({
+      method: "POST", url: `/entry/wellview/dbs/${DB}/records/wvCasComp/reorder`, headers: auth,
+      payload: { idwell: target.idwell, parent: target.IDRec, order: [...ids.slice(1), "NOT_A_RECORD"] },
+    });
+    expect(foreign.statusCode).toBe(400);
+
+    // wvJob is not a sequenced folder, so it has no order to rewrite.
+    const jobs = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvJob`, headers: auth }))
+      .json() as { rows: { IDRec: string }[] };
+    const notSeq = await app.inject({
+      method: "POST", url: `/entry/wellview/dbs/${DB}/records/wvJob/reorder`, headers: auth,
+      payload: { order: [String(jobs.rows[0].IDRec)] },
+    });
+    expect(notSeq.statusCode).toBe(400);
+    expect((notSeq.json() as { error: string }).error).toMatch(/not a sequenced folder/i);
+  }, 60_000);
+
+  it("tells the client which folders are ordered, and how", async () => {
+    const comp = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvCasComp`, headers: auth }))
+      .json() as { sequenced?: boolean; allowInsertTop?: boolean; allowSeqInvert?: boolean };
+    expect(comp.sequenced).toBe(true);
+    expect(comp.allowInsertTop).toBe(true);
+    expect(comp.allowSeqInvert).toBe(true);
+
+    // A tally is ordered and takes new records at the top, but is not inverted.
+    const tally = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvCasCompTally`, headers: auth }))
+      .json() as { sequenced?: boolean; allowInsertTop?: boolean; allowSeqInvert?: boolean };
+    expect(tally.sequenced).toBe(true);
+    expect(tally.allowInsertTop).toBe(true);
+    expect(tally.allowSeqInvert).toBeFalsy();
+
+    const job = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvJob`, headers: auth }))
+      .json() as { sequenced?: boolean };
+    expect(job.sequenced).toBeFalsy();
+  });
+
   it("refuses to edit identity or system columns", async () => {
     const create = await app.inject({
       method: "POST",

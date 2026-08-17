@@ -227,6 +227,14 @@ export const wvDbApi = {
     entryApi.post<{ idrec: string; copied: number }>(
       `/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}/copy`, target ?? {}),
 
+  /**
+   * Rewrite a sequenced folder's order (§3.9). The whole order is sent, so
+   * Move up/down, Add Records to Top and Invert Components are all one call.
+   */
+  reorder: (db: string, table: string, body: { idwell?: string; parent?: string; order: string[] }) =>
+    entryApi.post<{ reordered: number }>(
+      `/wellview/dbs/${enc(db)}/records/${enc(table)}/reorder`, body),
+
   /** A directional survey with the values WellView computes at print time. */
   survey: (db: string, surveyId: string) =>
     entryApi.get<WvSurvey>(`/wellview/dbs/${enc(db)}/survey?survey=${enc(surveyId)}`),

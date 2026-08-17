@@ -640,6 +640,37 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     }
   }
 
+  /**
+   * §3.9's ordering commands, for the folders the model marks `sequenced` —
+   * the string components and tallies. The whole intended order is sent, so
+   * every command is one call and the stored sequence cannot drift from what
+   * is on screen. WellView draws string components on the schematic in this
+   * order, which is why Invert exists at all.
+   */
+  const ordered = !!data.sequenced && data.rows.every((r) => r.IDRec != null);
+  async function reorder(order: string[], what: string) {
+    setBusy(true);
+    try {
+      const res = await wvDbApi.reorder(db, data.table, {
+        idwell, ...(parentIdrec ? { parent: parentIdrec } : {}), order,
+      });
+      onSaved();
+      onStatus(`${what} — ${res.reordered} records renumbered.`);
+    } catch (e) {
+      onStatus(`${what} failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const ids = () => data.rows.map((r) => String(r.IDRec));
+  const moveRow = (index: number, by: -1 | 1) => {
+    const next = ids();
+    const to = index + by;
+    if (to < 0 || to >= next.length) return;
+    [next[index], next[to]] = [next[to], next[index]];
+    void reorder(next, by < 0 ? "Moved up" : "Moved down");
+  };
+
   /** §3.9 Copy Data to Clipboard: the folder's records, headings included. */
   function copyDataToClipboard() {
     const head = cols.map((c) => c.label).join("\t");
@@ -841,10 +872,20 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     );
   };
 
-  const rowActions = (row: Row) => {
+  const rowActions = (row: Row, index?: number) => {
     const idrec = String(row.IDRec ?? "");
     return (
       <div className="flex gap-1 px-1">
+        {ordered && index !== undefined && (
+          <>
+            <button type="button" title="Move up" disabled={busy || index === 0}
+              onClick={() => moveRow(index, -1)}
+              className="text-gray-400 hover:text-blue-600 text-[11px] disabled:opacity-25">▲</button>
+            <button type="button" title="Move down" disabled={busy || index === data.rows.length - 1}
+              onClick={() => moveRow(index, 1)}
+              className="text-gray-400 hover:text-blue-600 text-[11px] disabled:opacity-25">▼</button>
+          </>
+        )}
         <button type="button" title="Copy Record (with subfolders) — paste into this folder on any well" disabled={busy || !idrec}
           onClick={() => {
             onClipboard({ db, table: data.table, idrec, caption: recordCaption(row), label: data.label });
@@ -883,6 +924,22 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
               Paste Record
             </button>
           )}
+          {ordered && data.allowInsertTop && (
+            <button type="button" disabled={busy || data.rows.length < 2}
+              onClick={() => void reorder([...ids()].reverse(), "Newest record put at the top")}
+              title="Add Records to Top — number the list from the bottom up, so the newest record is first"
+              className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+              Records to Top
+            </button>
+          )}
+          {ordered && data.allowSeqInvert && (
+            <button type="button" disabled={busy || data.rows.length < 2}
+              onClick={() => void reorder([...ids()].reverse(), "Components inverted")}
+              title="Invert Components — reverse the string, so an as-run order draws correctly on the schematic"
+              className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+              Invert
+            </button>
+          )}
           <button type="button" onClick={() => { setEdits({}); setGhost({}); onStatus("Pending changes undone — saved records are untouched."); }}
             disabled={busy || dirtyCount === 0}
             title="Undo All — cancel the changes made in this folder since the last save"
@@ -906,7 +963,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                 <td className="sticky left-0 bg-gray-100 px-2 py-1 border-b border-gray-200" />
                 {data.rows.map((r, i) => (
                   <td key={i} className="px-2 py-1 border-b border-l border-gray-200 text-center text-gray-400">
-                    #{i + 1}{rowActions(r)}
+                    #{i + 1}{rowActions(r, i)}
                   </td>
                 ))}
                 {!singleRecord && (
@@ -981,7 +1038,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                   <tr key={k ?? i} data-row={k ?? undefined}
                     className={`${i % 2 ? "bg-gray-50" : ""} ${dirty ? "outline outline-1 outline-blue-300" : ""} ${
                       k && k === focusRecord ? "bg-amber-50" : ""}`}>
-                    <td className="align-middle">{rowActions(r)}</td>
+                    <td className="align-middle">{rowActions(r, i)}</td>
                     {cols.map((c) => (
                       <td key={c.column} className="border-b border-gray-100 align-top"
                         data-cell={k ? `${k}|${c.column.toLowerCase()}` : undefined}>

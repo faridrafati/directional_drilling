@@ -341,6 +341,13 @@ const newIdRec = () => randomUUID().replace(/-/g, "").toUpperCase();
 
 /** The column to order a folder's records by — dates first, then sequence/depth. */
 function orderColumn(t: TableInfo): string | null {
+  // A SEQUENCED folder is ordered by the user, and that order is the point —
+  // a casing string reads shoe-up or shoe-down because someone arranged it. Its
+  // stored sequence therefore beats any date the table also happens to carry.
+  if (modelTable(t.name)?.sequenced) {
+    const seq = t.colSet.get("sysseq");
+    if (seq) return seq;
+  }
   for (const k of ["dttm", "dttmstart", "dttmspud", "dttmrun", "sysseq", "seqno", "depthtop", "depth", "md"]) {
     const c = t.colSet.get(k);
     if (c) return c;
@@ -837,6 +844,71 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       const res = writable(d).prepare(`UPDATE "${t.name}" SET ${sets.join(", ")} WHERE "${keyCol}" = ?`)
         .run(...args, req.params.idrec);
       return { changed: Number(res.changes) };
+    },
+  );
+
+  /**
+   * Rewrite the order of a sequenced folder (§3.9 Change the Order of Records,
+   * Add Records to the Top, Invert Components).
+   *
+   * The client sends the whole intended order rather than a move instruction, so
+   * every command — up, down, to-top, invert — is the same operation here and
+   * the stored sequence cannot drift out of step with what is on screen. Only
+   * records of the given parent may appear, and every one of them must: a
+   * partial order would renumber some rows and leave others stranded.
+   */
+  app.post<{
+    Params: { db: string; table: string };
+    Body: { idwell?: string; parent?: string; order?: string[] };
+  }>(
+    "/entry/wellview/dbs/:db/records/:table/reorder",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, req.params.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
+      if (!modelTable(t.name)?.sequenced) {
+        return reply.code(400).send({ error: `${t.name} is not a sequenced folder` });
+      }
+      const seqCol = t.colSet.get("sysseq");
+      const idCol = t.colSet.get("idrec");
+      if (!seqCol || !idCol) return reply.code(400).send({ error: `${t.name} has no sequence column` });
+
+      const order = req.body?.order ?? [];
+      if (!order.length) return reply.code(400).send({ error: "order is required" });
+
+      // The rows this folder actually holds, under the same scope the grid used.
+      const where: string[] = [];
+      const args: string[] = [];
+      if (req.body?.idwell && t.hasIdwell) { where.push(`"${t.colSet.get("idwell")}" = ?`); args.push(req.body.idwell); }
+      if (req.body?.parent && t.hasParent) { where.push(`"${t.colSet.get("idrecparent")}" = ?`); args.push(req.body.parent); }
+      const existing = (d.ro.prepare(
+        `SELECT "${idCol}" AS id FROM "${t.name}"${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`,
+      ).all(...args) as { id: string }[]).map((r) => String(r.id));
+
+      const known = new Set(existing);
+      const unknown = order.filter((id) => !known.has(id));
+      if (unknown.length) {
+        return reply.code(400).send({ error: `not in this folder: ${unknown.slice(0, 3).join(", ")}` });
+      }
+      if (order.length !== existing.length) {
+        return reply.code(400).send({
+          error: `the order must list all ${existing.length} records; ${order.length} given`,
+        });
+      }
+
+      const w = writable(d);
+      const stmt = w.prepare(`UPDATE "${t.name}" SET "${seqCol}" = ? WHERE "${idCol}" = ?`);
+      w.exec("BEGIN");
+      try {
+        order.forEach((id, i) => stmt.run(i + 1, id));
+        w.exec("COMMIT");
+      } catch (e) {
+        w.exec("ROLLBACK");
+        throw e;
+      }
+      return { reordered: order.length };
     },
   );
 
