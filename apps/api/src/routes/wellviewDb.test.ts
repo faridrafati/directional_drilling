@@ -200,6 +200,58 @@ d("WellView database routes", () => {
     expect(after.rows.length).toBe(0);
   });
 
+  /**
+   * WellView binds many fields to a Library list, but the lists themselves ship
+   * as `custom/library/*.lib` — 754 encrypted ZIP archives, unreadable here, and
+   * absent from the databases (no lib* tables in either). So a library field is
+   * MARKED as one, and its lookup offers the values the database actually holds.
+   * The distinction matters: an in-use list must never pass as the approved one.
+   */
+  it("marks library-bound fields with the list the model names", async () => {
+    const cas = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvCasComp`, headers: auth }))
+      .json() as { columns: { column: string; library?: { table: string; field: string | null } }[] };
+    const grade = cas.columns.find((c) => c.column.toLowerCase() === "grade");
+    expect(grade?.library?.table).toBe("libCasComp");
+    expect(grade?.library?.field).toBe("Grade");
+
+    // Not every column is library-bound — a free-text field must stay unmarked.
+    const com = cas.columns.find((c) => c.column.toLowerCase() === "com");
+    expect(com?.library).toBeUndefined();
+
+    // The marking is widespread, which is the point of doing it from the model.
+    const job = (await app.inject({ url: `/entry/wellview/dbs/${DB}/records/wvJob`, headers: auth }))
+      .json() as { columns: { column: string; library?: unknown }[] };
+    expect(job.columns.filter((c) => c.library).length).toBeGreaterThan(3);
+  });
+
+  it("serves the values a column actually holds, for any table", async () => {
+    const res = await app.inject({
+      url: `/entry/wellview/dbs/${DB}/column-values?table=wvCasComp&column=Grade`, headers: auth,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { table: string; column: string; values: string[] };
+    expect(body.table).toBe("wvCasComp");
+    expect(body.values.length).toBeGreaterThan(3);
+    expect(body.values).toContain("K-55");
+    // Distinct, non-empty, sorted — it is offered as a pick list.
+    expect(new Set(body.values).size).toBe(body.values.length);
+    expect(body.values.every((v) => v.trim() !== "")).toBe(true);
+    expect([...body.values].sort()).toEqual(body.values);
+
+    // The well-header case Quick Query uses still works through the same route.
+    const hdr = await app.inject({
+      url: `/entry/wellview/dbs/${DB}/column-values?table=wvWellHeader&column=Country`, headers: auth,
+    });
+    expect(hdr.statusCode).toBe(200);
+    expect((hdr.json() as { values: string[] }).values.length).toBeGreaterThan(0);
+
+    // An unknown column is a 404, not an empty list that looks like "no values".
+    const bad = await app.inject({
+      url: `/entry/wellview/dbs/${DB}/column-values?table=wvCasComp&column=NoSuchColumn`, headers: auth,
+    });
+    expect(bad.statusCode).toBe(404);
+  });
+
   it("refuses to edit identity or system columns", async () => {
     const create = await app.inject({
       method: "POST",

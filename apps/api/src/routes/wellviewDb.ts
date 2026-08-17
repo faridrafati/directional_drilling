@@ -645,6 +645,12 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
             required: mf?.required,
             /** Required global metric — the desktop's cyan fields. */
             globalMetric: mf?.globalMetric,
+            /** The model binds this field to a Library list (§3.9 Lookup List
+             *  Library). The list itself is not readable — the .lib files are
+             *  encrypted — so the client offers values in use and says so. */
+            library: mf?.lookupTyp === "library" && mf.libTable
+              ? { table: mf.libTable, field: mf.libField ?? null }
+              : undefined,
             warnOnly: mf?.warnOnly,
             link,
           };
@@ -841,21 +847,33 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
     },
   );
 
-  /** Distinct stored values of one well-header column — the Quick Query lookup. */
-  app.get<{ Params: { db: string }; Querystring: { column?: string } }>(
-    "/entry/wellview/dbs/:db/header-values",
+  /**
+   * Distinct values a column actually holds in this database.
+   *
+   * Serves two callers: Quick Query's Look-for lookup (§3.3), and the library
+   * lookup in Edit Data. For the latter this is NOT the approved library —
+   * WellView keeps those in custom/library/*.lib, which are encrypted ZIPs and
+   * unreadable here — so the client captions it as values in use and never as
+   * the sanctioned list.
+   */
+  app.get<{ Params: { db: string }; Querystring: { table?: string; column?: string } }>(
+    "/entry/wellview/dbs/:db/column-values",
     { preHandler: requireUser },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
-      const t = table(d, "wvWellHeader");
-      if (!t) return reply.code(404).send({ error: "wvWellHeader missing" });
+      // Defaults to the well header, which is what Quick Query's Look-for asks
+      // for; any table works, which is what the library-field lookup needs.
+      const t = table(d, String(req.query.table ?? "wvWellHeader"));
+      if (!t) return reply.code(404).send({ error: `no table ${req.query.table}` });
       const col = t.colSet.get(String(req.query.column ?? "").toLowerCase());
-      if (!col) return reply.code(404).send({ error: `no header column ${req.query.column}` });
+      if (!col) return reply.code(404).send({ error: `no column ${req.query.column} on ${t.name}` });
+      // Values in use across the WHOLE database, not just one well: a grade
+      // typed on another well is still a value this database uses.
       const rows = d.ro.prepare(
         `SELECT DISTINCT "${col}" v FROM "${t.name}" WHERE "${col}" IS NOT NULL AND "${col}" <> '' ORDER BY 1 LIMIT 500`,
       ).all() as { v: unknown }[];
-      return { values: rows.map((r) => String(r.v)) };
+      return { table: t.name, column: col, values: rows.map((r) => String(r.v)) };
     },
   );
 

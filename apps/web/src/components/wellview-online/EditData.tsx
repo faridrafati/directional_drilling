@@ -694,10 +694,11 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     const bits = [
       c.help,
       c.globalMetric ? "Required global metric." : c.required ? "Required." : null,
+      c.library ? `Library field (${c.library.table}) — the approved list is not readable here.` : null,
       c.calculated ? "Calculated by WellView — not editable." : null,
       c.unit ? `Base unit: ${c.unit}.` : null,
       c.link ? "Linked record." : null,
-      lookupFor.has(c.column.toLowerCase()) ? "Library lookup available." : null,
+      !c.library && lookupFor.has(c.column.toLowerCase()) ? "Lookup list available." : null,
     ].filter(Boolean);
     onStatus(`${c.label} (${data.table}.${c.column})${bits.length ? " — " + bits.join(" ") : ""}`);
   };
@@ -785,11 +786,15 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       );
     }
 
-    const lookup = lookupFor.get(c.column.toLowerCase());
-    const listId = lookup ? `wv-lu-${data.table}-${c.column}` : undefined;
-    const open = lookup && popover?.key === (key ?? "__ghost__") && popover.col === c.column;
+    // A lookup exists when the sample-derived catalogue has values OR the model
+    // says the field is Library-bound — in the latter case the values come from
+    // what this database actually uses, fetched when the list is opened.
+    const seeded = lookupFor.get(c.column.toLowerCase());
+    const hasLookup = !!seeded || !!c.library;
+    const listId = seeded ? `wv-lu-${data.table}-${c.column}` : undefined;
+    const open = hasLookup && popover?.key === (key ?? "__ghost__") && popover.col === c.column;
     return (
-      <div className={lookup ? "relative flex items-center" : undefined}>
+      <div className={hasLookup ? "relative flex items-center" : undefined}>
         <input
           value={val}
           list={listId}
@@ -803,18 +808,26 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
               fieldTone(c, val)
             } ${isGhost ? "italic text-gray-600" : "text-gray-900"}`}
         />
-        {lookup && (
+        {hasLookup && (
           <>
             {/* Table 3-6 item J: the ellipsis button marks a lookup list. */}
-            <button type="button" tabIndex={-1} title="Library lookup list"
+            <button type="button" tabIndex={-1} data-testid="wv-lookup-button"
+              title={c.library
+                ? `Library field — ${c.library.table}. The approved list is not readable here; this offers the values in use.`
+                : "Lookup list"}
               onClick={() => setPopover(open ? null : { key: key ?? "__ghost__", col: c.column })}
-              className="shrink-0 px-1 text-[10px] text-gray-400 hover:text-blue-600">…</button>
-            <datalist id={listId}>
-              {lookup.map((v) => <option key={v} value={v} />)}
-            </datalist>
+              className={`shrink-0 px-1 text-[10px] hover:text-blue-600 ${
+                c.library ? "text-blue-400" : "text-gray-400"}`}>…</button>
+            {seeded && (
+              <datalist id={listId}>
+                {seeded.map((v) => <option key={v} value={v} />)}
+              </datalist>
+            )}
             {open && (
-              <ValuesPopover
-                values={lookup}
+              <LibraryPopover
+                db={db} table={data.table} column={c.column}
+                library={c.library ?? null}
+                seeded={seeded ?? null}
                 onPick={(v) => {
                   if (isGhost) setGhostValue(c.column, v); else setValue(key!, c.column, v);
                   setPopover(null);
@@ -998,9 +1011,60 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   );
 }
 
+/**
+ * The lookup window for a field bound to a WellView Library.
+ *
+ * The APPROVED list is not available: WellView keeps its libraries in
+ * `custom/library/*.lib`, and all 754 of them are encrypted ZIP archives. So
+ * this offers the values the open database actually holds for the column, and
+ * says exactly that — a list of values in use must never be mistaken for the
+ * sanctioned list, or a typo already in the data becomes a recommendation.
+ *
+ * Values are fetched when the list is opened, not with the grid: a folder can
+ * carry dozens of library-bound columns and almost none get opened.
+ */
+function LibraryPopover({ db, table, column, library, seeded, onPick, onClose }: {
+  db: string;
+  table: string;
+  column: string;
+  library: { table: string; field: string | null } | null;
+  /** Values the sample-derived catalogue already knows, if any. */
+  seeded: string[] | null;
+  onPick: (v: string) => void;
+  onClose: () => void;
+}) {
+  const q = useQuery({
+    queryKey: ["wvdb", db, "column-values", table, column],
+    queryFn: () => wvDbApi.columnValues(db, table, column),
+    staleTime: 60_000,
+  });
+  // In-use values first, then anything the catalogue knows that the database
+  // has not used yet — both are offers, neither is authority.
+  const values = useMemo(() => {
+    const inUse = q.data?.values ?? [];
+    const extra = (seeded ?? []).filter((v) => !inUse.includes(v));
+    return [...inUse, ...extra];
+  }, [q.data, seeded]);
+
+  return (
+    <ValuesPopover
+      values={values}
+      loading={q.isLoading}
+      note={library
+        ? `Values in use in this database. The approved library (${library.table}) ships encrypted and cannot be read here.`
+        : "Values in use in this database."}
+      onPick={onPick}
+      onClose={onClose}
+    />
+  );
+}
+
 /** The library lookup window: filter row on top, sortable values, click to pick. */
-function ValuesPopover({ values, onPick, onClose }: {
+function ValuesPopover({ values, onPick, onClose, note, loading }: {
   values: string[]; onPick: (v: string) => void; onClose: () => void;
+  /** What this list IS — shown under it, because provenance matters here. */
+  note?: string;
+  loading?: boolean;
 }) {
   const [filter, setFilter] = useState("");
   const [desc, setDesc] = useState(false);
@@ -1026,8 +1090,18 @@ function ValuesPopover({ values, onPick, onClose }: {
           <button key={v} type="button" onClick={() => onPick(v)}
             className="block w-full text-left px-2 py-0.5 text-[11px] hover:bg-blue-50 truncate">{v}</button>
         ))}
-        {shown.length === 0 && <div className="px-2 py-1.5 text-[11px] text-gray-400">No match.</div>}
+        {loading && <div className="px-2 py-1.5 text-[11px] text-gray-400">Reading the database…</div>}
+        {!loading && shown.length === 0 && (
+          <div className="px-2 py-1.5 text-[11px] text-gray-400">
+            {values.length === 0 ? "No value has been used for this field yet — type one." : "No match."}
+          </div>
+        )}
       </div>
+      {note && (
+        <div className="px-2 py-1 border-t border-gray-100 text-[10px] leading-snug text-gray-400">
+          {note}
+        </div>
+      )}
     </div>
   );
 }

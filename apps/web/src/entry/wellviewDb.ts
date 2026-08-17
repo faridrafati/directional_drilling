@@ -48,6 +48,10 @@ export interface WvRecordColumn {
   required?: boolean;
   /** A required GLOBAL METRIC — the desktop's cyan fields (§4.3). */
   globalMetric?: boolean;
+  /** The model binds this field to a WellView Library list. The approved list
+   *  itself is NOT available — custom/library/*.lib are encrypted — so the
+   *  lookup offers the values this database uses and says as much. */
+  library?: { table: string; field: string | null };
   /** The rule only warns; it does not block. */
   warnOnly?: boolean;
 }
@@ -159,9 +163,18 @@ export const wvDbApi = {
     entryApi.get<{ path: { table: string; idrec: string }[] }>(
       `/wellview/dbs/${enc(db)}/record-path?table=${enc(table)}&idrec=${enc(idrec)}`),
 
-  /** Distinct stored values of a well-header column — the Quick Query lookup. */
+  /**
+   * Distinct values a column actually holds in this database — Quick Query's
+   * Look-for lookup, and the library lookup in Edit Data.
+   */
+  columnValues: (db: string, table: string, column: string) =>
+    entryApi.get<{ table: string; column: string; values: string[] }>(
+      `/wellview/dbs/${enc(db)}/column-values?table=${enc(table)}&column=${enc(column)}`),
+
+  /** The well-header case, which is what Quick Query asks for. */
   headerValues: (db: string, column: string) =>
-    entryApi.get<{ values: string[] }>(`/wellview/dbs/${enc(db)}/header-values?column=${enc(column)}`),
+    entryApi.get<{ values: string[] }>(
+      `/wellview/dbs/${enc(db)}/column-values?table=wvWellHeader&column=${enc(column)}`),
 
   /** Deep-copy a record (subfolder records included) into a well/parent. */
   copyRecord: (db: string, table: string, idrec: string, target?: { idwell?: string; parent?: string }) =>
