@@ -11,7 +11,7 @@
  */
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { wvDbApi, type WvMultiReport } from "../../entry/wellviewDb.js";
+import { wvDbApi, type WvMultiReport, type WvXlReport } from "../../entry/wellviewDb.js";
 import { useUnitSet } from "../../entry/unitSet.js";
 import { toDisplay, formatUnitValue, displayUnitFor } from "@dd/shared";
 
@@ -26,6 +26,8 @@ export function MultiReports({ db, wells, wellName, onClose }: Props) {
   const [unitSet] = useUnitSet();
   const [html, setHtml] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  /** WellView ships two kinds here: .afm reports and .afmxl Excel extracts. */
+  const [kind, setKind] = useState<"report" | "extract">("report");
 
   const listQ = useQuery({
     queryKey: ["wvdb", db, "reports-multi"],
@@ -49,10 +51,53 @@ export function MultiReports({ db, wells, wellName, onClose }: Props) {
     return [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [listQ.data, filter]);
 
+  const xlListQ = useQuery({
+    queryKey: ["wvdb", db, "reports-xl"],
+    queryFn: () => wvDbApi.xlReports(db),
+    staleTime: Infinity,
+  });
+
+  const xlGroups = useMemo(() => {
+    const all = xlListQ.data?.reports ?? [];
+    const needle = filter.trim().toLowerCase();
+    const shown = needle ? all.filter((r) => `${r.folder} ${r.name}`.toLowerCase().includes(needle)) : all;
+    const by = new Map<string, WvXlReport[]>();
+    for (const r of shown) {
+      const k = r.folder || "(root)";
+      if (!by.has(k)) by.set(k, []);
+      by.get(k)!.push(r);
+    }
+    return [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [xlListQ.data, filter]);
+
+  const xlQ = useQuery({
+    queryKey: ["wvdb", db, "xl-extract", html, wells.join(",")],
+    queryFn: () => wvDbApi.xlExtract(db, html!, wells),
+    enabled: kind === "extract" && !!html && wells.length > 0,
+  });
+
+  /** The extract as CSV — the file WellView would have handed to Excel. */
+  const downloadCsv = () => {
+    const r = xlQ.data;
+    if (!r) return;
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const body = [r.columns.map((c) => esc(c.label)).join(","),
+      ...r.rows.map((row) => row.map(esc).join(","))].join("\n");
+    const url = URL.createObjectURL(new Blob([body], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${r.name.replace(/[^\w.-]+/g, "_")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const runQ = useQuery({
     queryKey: ["wvdb", db, "multi-report", html, wells.join(",")],
     queryFn: () => wvDbApi.multiReport(db, html!, wells),
-    enabled: !!html && wells.length > 0,
+    enabled: kind === "report" && !!html && wells.length > 0,
   });
 
   const total = (listQ.data?.reports ?? []).filter((r) => r.blocks.length > 0).length;
@@ -95,13 +140,43 @@ export function MultiReports({ db, wells, wellName, onClose }: Props) {
             {/* ── template list ── */}
             <div className="w-72 shrink-0 border-r border-gray-200 flex flex-col min-h-0">
               <div className="p-2 border-b border-gray-100">
+                <div className="flex gap-1 mb-1.5">
+                  {(["report", "extract"] as const).map((k) => (
+                    <button key={k} type="button" data-testid={`wv-multi-kind-${k}`}
+                      onClick={() => { setKind(k); setHtml(null); }}
+                      className={`flex-1 h-6 text-[11px] rounded border ${
+                        kind === k ? "bg-blue-600 text-white border-blue-600"
+                                   : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"}`}>
+                      {k === "report" ? "Reports" : "Excel extracts"}
+                    </button>
+                  ))}
+                </div>
                 <input value={filter} onChange={(e) => setFilter(e.target.value)}
                   placeholder="Search multi-well reports…" data-testid="wv-multi-search"
                   className="w-full h-7 border border-gray-300 rounded px-2 text-xs" />
-                <div className="mt-1 text-[10px] text-gray-400">{total} templates</div>
+                <div className="mt-1 text-[10px] text-gray-400">
+                  {kind === "report" ? `${total} templates`
+                    : `${xlListQ.data?.reports.length ?? 0} extracts · data only`}
+                </div>
               </div>
               <div className="flex-1 overflow-auto p-1">
-                {groups.map(([folder, rs]) => (
+                {kind === "extract" && xlGroups.map(([folder, rs]) => (
+                  <div key={folder} className="mb-2">
+                    <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400">{folder}</div>
+                    {rs.map((r) => (
+                      <button key={r.html} type="button" data-testid="wv-xl-report"
+                        onClick={() => setHtml(r.html)}
+                        className={`w-full text-left px-2 py-1 rounded text-xs ${
+                          html === r.html ? "bg-blue-100 text-blue-900 font-medium" : "text-gray-700 hover:bg-gray-100"}`}>
+                        {r.name}
+                        {r.filterUnread && (
+                          <span className="ml-1 text-[9px] text-amber-600" title="Carries a filter this reader cannot decode">filter?</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                {kind === "report" && groups.map(([folder, rs]) => (
                   <div key={folder} className="mb-2">
                     <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400">{folder}</div>
                     {rs.map((r) => (
@@ -122,7 +197,79 @@ export function MultiReports({ db, wells, wellName, onClose }: Props) {
 
             {/* ── output ── */}
             <div className="flex-1 min-h-0 overflow-auto p-3">
-              {!html ? (
+              {kind === "extract" ? (
+                !html ? (
+                  <p className="text-sm text-gray-500">Choose an Excel extract on the left.</p>
+                ) : xlQ.isLoading ? (
+                  <p className="text-sm text-gray-400">Extracting over {wells.length} wells…</p>
+                ) : xlQ.error ? (
+                  <div className="px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                    {(xlQ.error as Error).message}
+                  </div>
+                ) : xlQ.data ? (
+                  <>
+                    <div className="flex items-baseline gap-3">
+                      <h2 className="text-sm font-semibold text-gray-800">{xlQ.data.name}</h2>
+                      <span className="text-[11px] text-gray-400 font-mono">{xlQ.data.table}</span>
+                      <button type="button" onClick={downloadCsv} data-testid="wv-xl-csv"
+                        disabled={!xlQ.data.rowCount}
+                        className="ml-auto h-7 px-3 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40">
+                        Download CSV
+                      </button>
+                    </div>
+                    {xlQ.data.notes.map((n, i) => (
+                      <div key={i} className="mt-1.5 px-3 py-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded">
+                        {n}
+                      </div>
+                    ))}
+                    {xlQ.data.applied.length > 0 && (
+                      <p className="mt-1.5 text-[11px] text-gray-500">
+                        Filter applied: {xlQ.data.applied.map((c) => `${c.field} starts with “${c.value}”`).join("; ")}.
+                      </p>
+                    )}
+                    <p className="text-[11px] text-gray-500 mt-1.5 mb-2">
+                      {xlQ.data.rowCount} row{xlQ.data.rowCount === 1 ? "" : "s"} over {xlQ.data.wells} well
+                      {xlQ.data.wells === 1 ? "" : "s"}
+                      {xlQ.data.truncated ? ` · showing the first ${xlQ.data.rows.length}` : ""}
+                      {xlQ.data.missing.length ? ` · not in this database: ${xlQ.data.missing.join(", ")}` : ""}
+                    </p>
+                    {xlQ.data.rowCount === 0 ? (
+                      <p className="text-sm text-gray-400">No rows for the selected wells.</p>
+                    ) : (
+                      <div className="overflow-x-auto border border-gray-200 rounded">
+                        <table className="w-full text-[11px] border-collapse">
+                          <thead>
+                            <tr className="bg-gray-100 text-gray-600">
+                              {xlQ.data.columns.map((c) => (
+                                <th key={c.column} className={`px-2 py-1 text-left font-medium whitespace-nowrap ${
+                                  c.computed ? "text-green-700 bg-green-50" : ""}`}>
+                                  {c.label}
+                                  {c.unit && (
+                                    <span className="ml-1 font-normal text-gray-400">
+                                      ({displayUnitFor(c, unitSet)?.unit ?? c.unit})
+                                    </span>
+                                  )}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {xlQ.data.rows.map((row, ri) => (
+                              <tr key={ri} className={ri % 2 ? "bg-gray-50" : ""}>
+                                {row.map((v, ci) => (
+                                  <td key={ci} className="px-2 py-0.5 whitespace-nowrap text-gray-800">
+                                    {cell(v, xlQ.data!.columns[ci])}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                ) : null
+              ) : !html ? (
                 <p className="text-sm text-gray-500">Choose a report on the left.</p>
               ) : runQ.isLoading ? (
                 <p className="text-sm text-gray-400">Running over {wells.length} wells…</p>

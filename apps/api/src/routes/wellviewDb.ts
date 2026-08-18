@@ -39,6 +39,7 @@ import { resolveTemplateData } from "./wellviewSample.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
+import { resolveXlExtract, type XlTemplate } from "../wellview/xlExtract.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
@@ -641,6 +642,24 @@ function multiTemplates(): MultiTemplate[] {
     _multi = [];
   }
   return _multi;
+}
+
+/**
+ * The Excel-report data extracts (`custom/reports multi/*.afmxl`).
+ *
+ * Built by `scripts/wellview-afr/afmxl_export.py`. These carry the extract
+ * only; the paired .xlt workbook is not reproduced, and the app says so.
+ */
+let _xl: XlTemplate[] | null = null;
+function xlTemplates(): XlTemplate[] {
+  if (_xl) return _xl;
+  try {
+    const path = join(REPO, "apps", "web", "public", "wellview-templates", "reports-xl.json");
+    _xl = (JSON.parse(readFileSync(path, "utf-8")).reports ?? []) as XlTemplate[];
+  } catch {
+    _xl = [];
+  }
+  return _xl;
 }
 
 export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<void> {
@@ -1334,6 +1353,39 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       // A bounded set: the query binds one parameter per well.
       if (wells.length > 500) return reply.code(400).send({ error: "at most 500 wells at a time" });
       return resolveMultiTemplate(d.ro, tpl, wells);
+    },
+  );
+
+  /** The Excel-report extracts this database can run. */
+  app.get("/entry/wellview/dbs/:db/reports-xl", { preHandler: requireUser }, async () => {
+    return {
+      reports: xlTemplates().filter((t) => !t.empty).map((t) => ({
+        html: t.html, name: t.name, folder: t.folder, table: t.table, title: t.title,
+        fields: t.fields.length, hasWorkbook: t.hasWorkbook,
+        filtered: t.criteria.length > 0, filterUnread: t.filterUnread,
+      })),
+    };
+  });
+
+  /**
+   * Run one Excel-report extract over the selected wells.
+   *
+   * Same rule as the multi-well reports: an explicit well list, and an empty
+   * one returns nothing rather than the whole database.
+   */
+  app.get<{ Params: { db: string }; Querystring: { html?: string; wells?: string } }>(
+    "/entry/wellview/dbs/:db/xl-extract",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const html = String(req.query.html ?? "");
+      if (!html) return reply.code(400).send({ error: "html (template id) is required" });
+      const tpl = xlTemplates().find((t) => t.html === html);
+      if (!tpl) return reply.code(404).send({ error: `no Excel extract with html=${html}` });
+      const wells = String(req.query.wells ?? "").split(",").map((w) => w.trim()).filter(Boolean);
+      if (wells.length > 500) return reply.code(400).send({ error: "at most 500 wells at a time" });
+      return resolveXlExtract(d.ro, tpl, wells);
     },
   );
 

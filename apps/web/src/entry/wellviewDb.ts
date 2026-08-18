@@ -199,6 +199,24 @@ export interface WvMultiResult {
   blocks: WvMultiBlock[];
 }
 
+
+/** An Excel-report data extract (`custom/reports multi/*.afmxl`). */
+export interface WvXlReport {
+  html: string; name: string; folder: string; table: string; title: string;
+  fields: number; hasWorkbook: boolean; filtered: boolean; filterUnread: boolean;
+}
+export interface WvXlResult {
+  report: string; name: string; table: string; wells: number;
+  columns: { column: string; label: string; unit?: string; units?: Record<string, UnitFormat>;
+             fromWell?: boolean; computed?: boolean }[];
+  rows: (string | number | null)[][];
+  rowCount: number;
+  truncated: boolean;
+  missing: string[];
+  applied: { table: string; field: string; value: string }[];
+  notes: string[];
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
@@ -212,6 +230,14 @@ export const wvDbApi = {
   multiReport: (db: string, html: string, wells: string[]) =>
     entryApi.get<WvMultiResult>(
       `/wellview/dbs/${enc(db)}/multi-report?html=${enc(html)}&wells=${enc(wells.join(","))}`),
+
+  /** The Excel-report extracts (data half only — the .xlt workbook is not rebuilt). */
+  xlReports: (db: string) =>
+    entryApi.get<{ reports: WvXlReport[] }>(`/wellview/dbs/${enc(db)}/reports-xl`),
+
+  xlExtract: (db: string, html: string, wells: string[]) =>
+    entryApi.get<WvXlResult>(
+      `/wellview/dbs/${enc(db)}/xl-extract?html=${enc(html)}&wells=${enc(wells.join(","))}`),
 
   headerColumns: (db: string) =>
     entryApi.get<WvHeaderColumn[]>(`/wellview/dbs/${enc(db)}/header-columns`),

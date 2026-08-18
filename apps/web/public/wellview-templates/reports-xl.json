@@ -1,0 +1,3267 @@
+{
+ "source_root": "WellView_files/custom/reports multi",
+ "generated_from": "WellView .afmxl Excel-report data extracts",
+ "note": "The EXTRACT only. The paired .xlt workbook (pivots, charts, formatting) is not reproduced; templates say so in the app.",
+ "report_count": 25,
+ "failures": [],
+ "reports": [
+  {
+   "html": "Completion/Completion KPIs.xl",
+   "name": "Completion KPIs",
+   "folder": "Completion",
+   "table": "wvjob",
+   "title": "Job",
+   "fields": [
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "afetotalcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Total"
+    },
+    {
+     "column": "costtotalcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Daily Cost Total"
+    },
+    {
+     "column": "variancefieldcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Variancefield (computed)"
+    },
+    {
+     "column": "costperdepthcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Costperdepth (computed)"
+    },
+    {
+     "column": "totaldepthcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Total Aldepth (computed)"
+    },
+    {
+     "column": "durationtimelogtotalcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Time Log Total (hr)"
+    },
+    {
+     "column": "durationspudtimelogcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Duration Spudtimelog (computed)"
+    },
+    {
+     "column": "durationproblemtimecalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Problem Time (hr)"
+    },
+    {
+     "column": "pctproblemtimecalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Problem Time (%)"
+    },
+    {
+     "column": "tmdrillcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Tmdrill (computed)"
+    },
+    {
+     "column": "ropcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "ROP"
+    },
+    {
+     "column": "durationpersonneltotcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Personnel Hours"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    }
+   ],
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "value": "drill"
+    }
+   ],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Drilling/Bit Performance Pivot.xl",
+   "name": "Bit Performance Pivot",
+   "folder": "Drilling",
+   "table": "wvjobdrillbit",
+   "title": "Jobdrillbit",
+   "fields": [
+    {
+     "column": "typ",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Type"
+    },
+    {
+     "column": "szoddrill",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Szoddrill"
+    },
+    {
+     "column": "make",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Make"
+    },
+    {
+     "column": "model",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Model"
+    },
+    {
+     "column": "iadccodescalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Iadccodes (computed)"
+    },
+    {
+     "column": "depthincalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Depth In (computed)"
+    },
+    {
+     "column": "depthoutcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Depth Out (computed)"
+    },
+    {
+     "column": "depthdrilledjobcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Depth Drilledjob (computed)"
+    },
+    {
+     "column": "tmdrilledjobcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Tmdrilledjob (computed)"
+    },
+    {
+     "column": "ropjobcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Ropjob (computed)"
+    },
+    {
+     "column": "dttmincalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Date/Time In (computed)"
+    },
+    {
+     "column": "dttmoutcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Date/Time Out (computed)"
+    },
+    {
+     "column": "bitrevscalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Bitrevs (computed)"
+    },
+    {
+     "column": "tmrotatingcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Tmrotating (computed)"
+    },
+    {
+     "column": "tmslidingcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Tmsliding (computed)"
+    },
+    {
+     "column": "roprotatingcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Roprotating (computed)"
+    },
+    {
+     "column": "ropslidingcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Ropsliding (computed)"
+    },
+    {
+     "column": "wobmincalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Wobmin (computed)"
+    },
+    {
+     "column": "wobmaxcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Wobmax (computed)"
+    },
+    {
+     "column": "rpmmincalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Rpmmin (computed)"
+    },
+    {
+     "column": "rpmmaxcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Rpmmax (computed)"
+    },
+    {
+     "column": "liquidinjratemincalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Liquidinjratemin (computed)"
+    },
+    {
+     "column": "liquidinjratemaxcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Liquidinjratemax (computed)"
+    },
+    {
+     "column": "sppdrillmincalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Sppdrillmin (computed)"
+    },
+    {
+     "column": "sppdrillmaxcalc",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Sppdrillmax (computed)"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Drilling/Drilling KPIs.xl",
+   "name": "Drilling KPIs",
+   "folder": "Drilling",
+   "table": "wvjob",
+   "title": "Job",
+   "fields": [
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "afetotalcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Total"
+    },
+    {
+     "column": "costtotalcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Daily Cost Total"
+    },
+    {
+     "column": "variancefieldcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Variancefield (computed)"
+    },
+    {
+     "column": "costperdepthcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Costperdepth (computed)"
+    },
+    {
+     "column": "totaldepthcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Total Aldepth (computed)"
+    },
+    {
+     "column": "durationtimelogtotalcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Time Log Total (hr)"
+    },
+    {
+     "column": "durationspudtimelogcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Duration Spudtimelog (computed)"
+    },
+    {
+     "column": "durationproblemtimecalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Problem Time (hr)"
+    },
+    {
+     "column": "pctproblemtimecalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Problem Time (%)"
+    },
+    {
+     "column": "tmdrillcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Tmdrill (computed)"
+    },
+    {
+     "column": "ropcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "ROP"
+    },
+    {
+     "column": "durationpersonneltotcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Personnel Hours"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    }
+   ],
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "value": "drill"
+    }
+   ],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Drilling/Drilling Offsets.xl",
+   "name": "Drilling Offsets",
+   "folder": "Drilling",
+   "table": "wvjob",
+   "title": "Job",
+   "fields": [
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "wellida",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "county",
+     "source_table": "wvwellheader",
+     "label_interpreted": "County"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "welllicenseno",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welllicenseno"
+    },
+    {
+     "column": "elvground",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Elvground"
+    },
+    {
+     "column": "elvorigkb",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Elvorigkb"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "currencycode",
+     "source_table": "wvjob",
+     "label_interpreted": "Currencycode"
+    },
+    {
+     "column": "idrec",
+     "source_table": "wvjob",
+     "label_interpreted": "Record ID"
+    },
+    {
+     "column": "idwell",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Record"
+    }
+   ],
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "value": "Drilling"
+    }
+   ],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Drilling/Mud Density Pivot.xl",
+   "name": "Mud Density Pivot",
+   "folder": "Drilling",
+   "table": "wvjobreportmudchk",
+   "title": "Mud Check",
+   "fields": [
+    {
+     "column": "dttm",
+     "source_table": "wvjobreportmudchk",
+     "label_interpreted": "Dttm"
+    },
+    {
+     "column": "mudtyp",
+     "source_table": "wvjobreportmudchk",
+     "label_interpreted": "Mudtyp"
+    },
+    {
+     "column": "contractor",
+     "source_table": "wvjobreportmudchk",
+     "label_interpreted": "Contractor"
+    },
+    {
+     "column": "depth",
+     "source_table": "wvjobreportmudchk",
+     "label_interpreted": "Depth"
+    },
+    {
+     "column": "tvdcalc",
+     "source_table": "wvjobreportmudchk",
+     "label_interpreted": "Tvd (computed)"
+    },
+    {
+     "column": "density",
+     "source_table": "wvjobreportmudchk",
+     "label_interpreted": "Density"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "wellida",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID"
+    },
+    {
+     "column": "operator",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Operator"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    },
+    {
+     "column": "des",
+     "source_table": "wvwellbore",
+     "label_interpreted": "Description"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Drilling/New template 2.xl",
+   "name": "New template 2",
+   "folder": "Drilling",
+   "table": "wvjobdrillbit",
+   "title": "Jobdrillbit",
+   "fields": [
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "szoddrill",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Szoddrill"
+    },
+    {
+     "column": "make",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Make"
+    },
+    {
+     "column": "model",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Model"
+    },
+    {
+     "column": "sn",
+     "source_table": "wvjobdrillbit",
+     "label_interpreted": "Serial Number"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.2,
+   "empty": false,
+   "hasWorkbook": false
+  },
+  {
+   "html": "Drilling/New template.xl",
+   "name": "New template",
+   "folder": "Drilling",
+   "table": "",
+   "title": "",
+   "fields": [],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.2,
+   "empty": true,
+   "hasWorkbook": false
+  },
+  {
+   "html": "Drilling/Rushmore Drilling 2011.xl",
+   "name": "Rushmore Drilling 2011",
+   "folder": "Drilling",
+   "table": "wvjob",
+   "title": "Job",
+   "fields": [
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "wellida",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "currentwellstatus1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Currentwellstatus1"
+    },
+    {
+     "column": "waterdepth",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Waterdepth"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "latitude",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Latitude"
+    },
+    {
+     "column": "longitude",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Longitude"
+    },
+    {
+     "column": "platform",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Platform"
+    },
+    {
+     "column": "idwell",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Record"
+    },
+    {
+     "column": "area",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Area"
+    },
+    {
+     "column": "hisitp",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Hisitp"
+    },
+    {
+     "column": "wellidd",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellidd"
+    },
+    {
+     "column": "idrec",
+     "source_table": "wvjob",
+     "label_interpreted": "Record ID"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjob",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "dttmspud",
+     "source_table": "wvjob",
+     "label_interpreted": "Spud Date/Time"
+    },
+    {
+     "column": "currencycode",
+     "source_table": "wvjob",
+     "label_interpreted": "Currencycode"
+    },
+    {
+     "column": "totaldepthcalc",
+     "source_table": "wvwellbore",
+     "label_interpreted": "Total Aldepth (computed)"
+    },
+    {
+     "column": "tvdmaxcalc",
+     "source_table": "wvwellbore",
+     "label_interpreted": "Tvdmax (computed)"
+    },
+    {
+     "column": "durationspudtotdcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Duration Spudtotd (computed)"
+    },
+    {
+     "column": "dttmtotaldepthcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Date/Time Total Aldepth (computed)"
+    },
+    {
+     "column": "targetdepth",
+     "source_table": "wvjob",
+     "label_interpreted": "Target Depth"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": true,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Geology/Formation ROP.xl",
+   "name": "Formation ROP",
+   "folder": "Geology",
+   "table": "wvwellboreformation",
+   "title": "Wellboreformation",
+   "fields": [
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "formname",
+     "source_table": "wvwellboreformation",
+     "label_interpreted": "Formname"
+    },
+    {
+     "column": "depthdrillingtop",
+     "source_table": "wvwellboreformation",
+     "label_interpreted": "Depth Drillingtop"
+    },
+    {
+     "column": "ropcalc",
+     "source_table": "wvwellboreformation",
+     "label_interpreted": "ROP"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Phase Analysis, Lessons & Problems/Interval Problem Pivot.xl",
+   "name": "Interval Problem Pivot",
+   "folder": "Phase Analysis, Lessons & Problems",
+   "table": "wvjobintervalproblem",
+   "title": "Interval Problem (NPT)",
+   "fields": [
+    {
+     "column": "typ",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Type"
+    },
+    {
+     "column": "typdetail",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Typdetail"
+    },
+    {
+     "column": "des",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Description"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "depthstart",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Depth Start"
+    },
+    {
+     "column": "depthend",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Depth End"
+    },
+    {
+     "column": "severity",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Severity"
+    },
+    {
+     "column": "opscondition",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Opscondition"
+    },
+    {
+     "column": "status",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Status"
+    },
+    {
+     "column": "durationnetcalc",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Duration Net (computed)"
+    },
+    {
+     "column": "estlosttime",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Estimate Losttime"
+    },
+    {
+     "column": "estcostoverride",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Estimate Costoverride"
+    },
+    {
+     "column": "accountablepty",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Accountablepty"
+    },
+    {
+     "column": "idreclastrigcalc",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Idreclastrig (computed)"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Phase Analysis, Lessons & Problems/Phase Analysis Cost Pivot.xl",
+   "name": "Phase Analysis Cost Pivot",
+   "folder": "Phase Analysis, Lessons & Problems",
+   "table": "wvjppcostcalc",
+   "title": "Jppcostcalc",
+   "fields": [
+    {
+     "column": "des",
+     "source_table": "wvjppcostcalc",
+     "label_interpreted": "Description"
+    },
+    {
+     "column": "code1",
+     "source_table": "wvjppcostcalc",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjppcostcalc",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjppcostcalc",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code5",
+     "source_table": "wvjppcostcalc",
+     "label_interpreted": "Code5"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjppcostcalc",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code6",
+     "source_table": "wvjppcostcalc",
+     "label_interpreted": "Code6"
+    },
+    {
+     "column": "opscategory",
+     "source_table": "wvjppcostcalc",
+     "label_interpreted": "Opscategory"
+    },
+    {
+     "column": "costfieldestphase",
+     "source_table": "wvjppcostcalc",
+     "label_interpreted": "Costfieldestphase"
+    },
+    {
+     "column": "code1",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "costml",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costml"
+    },
+    {
+     "column": "costmin",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costmin"
+    },
+    {
+     "column": "costmax",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costmax"
+    },
+    {
+     "column": "dttmstartactual",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Date/Time Startactual"
+    },
+    {
+     "column": "dttmendactual",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Date/Time Endactual"
+    },
+    {
+     "column": "costperdepthplancalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costperdepthplan (computed)"
+    },
+    {
+     "column": "costactualcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costactual (computed)"
+    },
+    {
+     "column": "costvariancecalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costvariance (computed)"
+    },
+    {
+     "column": "costvariancemincalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costvariancemin (computed)"
+    },
+    {
+     "column": "costvariancemaxcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costvariancemax (computed)"
+    },
+    {
+     "column": "costperdepthcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costperdepth (computed)"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Phase Analysis, Lessons & Problems/Phase Analysis Time Log Pivot.xl",
+   "name": "Phase Analysis Time Log Pivot",
+   "folder": "Phase Analysis, Lessons & Problems",
+   "table": "wvjpptlcalc",
+   "title": "Jpptlcalc",
+   "fields": [
+    {
+     "column": "code1",
+     "source_table": "wvjpptlcalc",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjpptlcalc",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjpptlcalc",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjpptlcalc",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "opscategory",
+     "source_table": "wvjpptlcalc",
+     "label_interpreted": "Opscategory"
+    },
+    {
+     "column": "unschedtyp",
+     "source_table": "wvjpptlcalc",
+     "label_interpreted": "Unschedtyp"
+    },
+    {
+     "column": "duration",
+     "source_table": "wvjpptlcalc",
+     "label_interpreted": "Duration Ation"
+    },
+    {
+     "column": "code1",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "durationml",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Duration Ml"
+    },
+    {
+     "column": "durationmin",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Duration Min"
+    },
+    {
+     "column": "durationmax",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Duration Max"
+    },
+    {
+     "column": "dttmstartactual",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Date/Time Startactual"
+    },
+    {
+     "column": "dttmendactual",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Date/Time Endactual"
+    },
+    {
+     "column": "durationactualcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Duration Actual Ual (computed)"
+    },
+    {
+     "column": "durationvariancecalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Duration Variance (computed)"
+    },
+    {
+     "column": "durationvariancecumcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Duration Variance (cumulative) (computed)"
+    },
+    {
+     "column": "durationtimelogtotalcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Time Log Total (hr)"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Phase Analysis, Lessons & Problems/Phase Interval Problem Pivot.xl",
+   "name": "Phase Interval Problem Pivot",
+   "folder": "Phase Analysis, Lessons & Problems",
+   "table": "wvjppintervalproblemcalc",
+   "title": "Jppintervalproblemcalc",
+   "fields": [
+    {
+     "column": "problemdurationcalc",
+     "source_table": "wvjppintervalproblemcalc",
+     "label_interpreted": "Problemduration (computed)"
+    },
+    {
+     "column": "problemdurationcumcalc",
+     "source_table": "wvjppintervalproblemcalc",
+     "label_interpreted": "Problemduration (cumulative) (computed)"
+    },
+    {
+     "column": "excludefromproblemtime",
+     "source_table": "wvjppintervalproblemcalc",
+     "label_interpreted": "Excludefromproblemtime"
+    },
+    {
+     "column": "code1",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "dttmstartactual",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Date/Time Startactual"
+    },
+    {
+     "column": "dttmendactual",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Date/Time Endactual"
+    },
+    {
+     "column": "durationproblemtimecalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Problem Time (hr)"
+    },
+    {
+     "column": "durationnoprobtimecalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Duration Number Probtime (computed)"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    },
+    {
+     "column": "typ",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Type"
+    },
+    {
+     "column": "typdetail",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Typdetail"
+    },
+    {
+     "column": "des",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Description"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "depthstart",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Depth Start"
+    },
+    {
+     "column": "depthend",
+     "source_table": "wvjobintervalproblem",
+     "label_interpreted": "Depth End"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Phase Analysis, Lessons & Problems/Phase Summary Pivot.xl",
+   "name": "Phase Summary Pivot",
+   "folder": "Phase Analysis, Lessons & Problems",
+   "table": "wvjobprogramphase",
+   "title": "Jobprogramphase",
+   "fields": [
+    {
+     "column": "code1",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "dttmstartactual",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Date/Time Startactual"
+    },
+    {
+     "column": "dttmendactual",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Date/Time Endactual"
+    },
+    {
+     "column": "depthstartactualcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Depth Startactual (computed)"
+    },
+    {
+     "column": "depthendactualcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Depth Endactual (computed)"
+    },
+    {
+     "column": "durationactualcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Duration Actual Ual (computed)"
+    },
+    {
+     "column": "costactualcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costactual (computed)"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjob",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    },
+    {
+     "column": "sysseq",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Sysseq"
+    },
+    {
+     "column": "durationvariancecalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Duration Variance (computed)"
+    },
+    {
+     "column": "costvariancecalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costvariance (computed)"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Phase Analysis, Lessons & Problems/Phase Vendor Cost Pivot.xl",
+   "name": "Phase Vendor Cost Pivot",
+   "folder": "Phase Analysis, Lessons & Problems",
+   "table": "wvjppvendorcalc",
+   "title": "Jppvendorcalc",
+   "fields": [
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "wellida",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjob",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "code1",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "costactualcalc",
+     "source_table": "wvjobprogramphase",
+     "label_interpreted": "Costactual (computed)"
+    },
+    {
+     "column": "vendor",
+     "source_table": "wvjppvendorcalc",
+     "label_interpreted": "Vendor"
+    },
+    {
+     "column": "cost",
+     "source_table": "wvjppvendorcalc",
+     "label_interpreted": "Cost"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.2,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Production/Failure Analysis Pivot and Graphs.xl",
+   "name": "Failure Analysis Pivot and Graphs",
+   "folder": "Production",
+   "table": "wvproblem",
+   "title": "Problem",
+   "fields": [
+    {
+     "column": "dttmstart",
+     "source_table": "wvproblem",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "des",
+     "source_table": "wvproblem",
+     "label_interpreted": "Description"
+    },
+    {
+     "column": "priority",
+     "source_table": "wvproblem",
+     "label_interpreted": "Priority"
+    },
+    {
+     "column": "status",
+     "source_table": "wvproblem",
+     "label_interpreted": "Status"
+    },
+    {
+     "column": "typ",
+     "source_table": "wvproblem",
+     "label_interpreted": "Type"
+    },
+    {
+     "column": "cause",
+     "source_table": "wvproblem",
+     "label_interpreted": "Cause"
+    },
+    {
+     "column": "estcost",
+     "source_table": "wvproblem",
+     "label_interpreted": "Estimate Cost"
+    },
+    {
+     "column": "durequipinservice",
+     "source_table": "wvproblem",
+     "label_interpreted": "Duration Equipinservice"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "operator",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Operator"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Production/Fracs by Qtr.xl",
+   "name": "Fracs by Qtr",
+   "folder": "Production",
+   "table": "wvstimtreat",
+   "title": "Stimtreat",
+   "fields": [
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "dttm",
+     "source_table": "wvstimtreat",
+     "label_interpreted": "Dttm"
+    },
+    {
+     "column": "typ",
+     "source_table": "wvstimtreat",
+     "label_interpreted": "Type"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": true,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Production/Rushmore Production 2009.xl",
+   "name": "Rushmore Production 2009",
+   "folder": "Production",
+   "table": "wvjob",
+   "title": "Job",
+   "fields": [
+    {
+     "column": "idwell",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Record"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "wellida",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID"
+    },
+    {
+     "column": "welllicensee",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welllicensee"
+    },
+    {
+     "column": "basin",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Basin"
+    },
+    {
+     "column": "platform",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Platform"
+    },
+    {
+     "column": "tdallcalc",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Tdall (computed)"
+    },
+    {
+     "column": "tdtvdallcalc",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Tdtvdall (computed)"
+    },
+    {
+     "column": "currentwellstatus1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Currentwellstatus1"
+    },
+    {
+     "column": "waterdepth",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Waterdepth"
+    },
+    {
+     "column": "hih2s",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Hih2S"
+    },
+    {
+     "column": "idrec",
+     "source_table": "wvjob",
+     "label_interpreted": "Record ID"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjob",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "currencycode",
+     "source_table": "wvjob",
+     "label_interpreted": "Currencycode"
+    },
+    {
+     "column": "summary",
+     "source_table": "wvjob",
+     "label_interpreted": "Summary"
+    }
+   ],
+   "criteria": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "value": "comp"
+    }
+   ],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Summary/AFE vs Field Est vs Final Pivot.xl",
+   "name": "AFE vs Field Est vs Final Pivot",
+   "folder": "Summary",
+   "table": "wvjcostcumcalc",
+   "title": "Jcostcumcalc",
+   "fields": [
+    {
+     "column": "des",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Description"
+    },
+    {
+     "column": "code1",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "code5",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Code5"
+    },
+    {
+     "column": "code6",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Code6"
+    },
+    {
+     "column": "costafe",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Costafe"
+    },
+    {
+     "column": "costafesup",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Costafesup"
+    },
+    {
+     "column": "costafetotal",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Costafetotal"
+    },
+    {
+     "column": "costfieldest",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Costfieldest"
+    },
+    {
+     "column": "costvar",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Costvar"
+    },
+    {
+     "column": "costfinalinvoice",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Costfinalinvoice"
+    },
+    {
+     "column": "costafefinalvar",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Costafefinalvar"
+    },
+    {
+     "column": "costfieldfinalvar",
+     "source_table": "wvjcostcumcalc",
+     "label_interpreted": "Costfieldfinalvar"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjob",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "wellida",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "area",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Area"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Summary/Cost by Vendor Detail.xl",
+   "name": "Cost by Vendor Detail",
+   "folder": "Summary",
+   "table": "wvjrcostcalc",
+   "title": "Jrcostcalc",
+   "fields": [
+    {
+     "column": "des",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Description"
+    },
+    {
+     "column": "code1",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "code5",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code5"
+    },
+    {
+     "column": "code6",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code6"
+    },
+    {
+     "column": "cost",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Cost"
+    },
+    {
+     "column": "vendor",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Vendor"
+    },
+    {
+     "column": "ticketno",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Ticket Number"
+    },
+    {
+     "column": "pono",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "PO Number"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjobreport",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjob",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "afenumbersuppcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Afenumbersupp (computed)"
+    },
+    {
+     "column": "currencycode",
+     "source_table": "wvjob",
+     "label_interpreted": "Currencycode"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "wellida",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID"
+    },
+    {
+     "column": "wellidb",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID (alt)"
+    },
+    {
+     "column": "lease",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Lease"
+    },
+    {
+     "column": "operator",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Operator"
+    },
+    {
+     "column": "welllicenseno",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welllicenseno"
+    },
+    {
+     "column": "welllicensee",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welllicensee"
+    },
+    {
+     "column": "basin",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Basin"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "fieldcode",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Fieldcode"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "currentwellstatus1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Currentwellstatus1"
+    },
+    {
+     "column": "wellclass",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellclass"
+    },
+    {
+     "column": "dttmwelllic",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Date/Time Welllic"
+    },
+    {
+     "column": "dttmspud",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Spud Date/Time"
+    },
+    {
+     "column": "dttmrr",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Date/Time Rr"
+    },
+    {
+     "column": "dttmabandon",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Date/Time Abandon"
+    },
+    {
+     "column": "legalsurveytyp",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Legalsurveytyp"
+    },
+    {
+     "column": "legalsurveyloc",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Legalsurveyloc"
+    },
+    {
+     "column": "area",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Area"
+    },
+    {
+     "column": "county",
+     "source_table": "wvwellheader",
+     "label_interpreted": "County"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    },
+    {
+     "column": "platform",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Platform"
+    },
+    {
+     "column": "slot",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Slot"
+    },
+    {
+     "column": "operated",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Operated"
+    },
+    {
+     "column": "costtyp",
+     "source_table": "wvjobafe",
+     "label_interpreted": "Costtyp"
+    },
+    {
+     "column": "workingint",
+     "source_table": "wvjobafe",
+     "label_interpreted": "Workingint"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Summary/Cost by Vendor Summary.xl",
+   "name": "Cost by Vendor Summary",
+   "folder": "Summary",
+   "table": "wvjvendorcalc",
+   "title": "Jvendorcalc",
+   "fields": [
+    {
+     "column": "vendor",
+     "source_table": "wvjvendorcalc",
+     "label_interpreted": "Vendor"
+    },
+    {
+     "column": "cost",
+     "source_table": "wvjvendorcalc",
+     "label_interpreted": "Cost"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjob",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Summary/Equipment Rental.xl",
+   "name": "Equipment Rental",
+   "folder": "Summary",
+   "table": "wvjrcostcalc",
+   "title": "Jrcostcalc",
+   "fields": [
+    {
+     "column": "des",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Description"
+    },
+    {
+     "column": "code1",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "code5",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code5"
+    },
+    {
+     "column": "code6",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Code6"
+    },
+    {
+     "column": "cost",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Cost"
+    },
+    {
+     "column": "vendor",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Vendor"
+    },
+    {
+     "column": "ticketno",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "Ticket Number"
+    },
+    {
+     "column": "pono",
+     "source_table": "wvjrcostcalc",
+     "label_interpreted": "PO Number"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjobreport",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjob",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "afenumbersuppcalc",
+     "source_table": "wvjob",
+     "label_interpreted": "Afenumbersupp (computed)"
+    },
+    {
+     "column": "currencycode",
+     "source_table": "wvjob",
+     "label_interpreted": "Currencycode"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "wellida",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID"
+    },
+    {
+     "column": "wellidb",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID (alt)"
+    },
+    {
+     "column": "lease",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Lease"
+    },
+    {
+     "column": "operator",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Operator"
+    },
+    {
+     "column": "welllicenseno",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welllicenseno"
+    },
+    {
+     "column": "welllicensee",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welllicensee"
+    },
+    {
+     "column": "basin",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Basin"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "fieldcode",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Fieldcode"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "currentwellstatus1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Currentwellstatus1"
+    },
+    {
+     "column": "wellclass",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellclass"
+    },
+    {
+     "column": "dttmwelllic",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Date/Time Welllic"
+    },
+    {
+     "column": "dttmspud",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Spud Date/Time"
+    },
+    {
+     "column": "dttmrr",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Date/Time Rr"
+    },
+    {
+     "column": "dttmabandon",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Date/Time Abandon"
+    },
+    {
+     "column": "legalsurveytyp",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Legalsurveytyp"
+    },
+    {
+     "column": "legalsurveyloc",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Legalsurveyloc"
+    },
+    {
+     "column": "area",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Area"
+    },
+    {
+     "column": "county",
+     "source_table": "wvwellheader",
+     "label_interpreted": "County"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    },
+    {
+     "column": "platform",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Platform"
+    },
+    {
+     "column": "slot",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Slot"
+    },
+    {
+     "column": "operated",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Operated"
+    },
+    {
+     "column": "costtyp",
+     "source_table": "wvjobafe",
+     "label_interpreted": "Costtyp"
+    },
+    {
+     "column": "workingint",
+     "source_table": "wvjobafe",
+     "label_interpreted": "Workingint"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Summary/Service Contractor Performance Pivot.xl",
+   "name": "Service Contractor Performance Pivot",
+   "folder": "Summary",
+   "table": "wvjobservicecontract",
+   "title": "Jobservicecontract",
+   "fields": [
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "servicecompanyparent",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Servicecompanyparent"
+    },
+    {
+     "column": "servicecompany",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Servicecompany"
+    },
+    {
+     "column": "servicecontracttyp",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Servicecontracttyp"
+    },
+    {
+     "column": "servicetyp",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Servicetyp"
+    },
+    {
+     "column": "contractref",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Contractref"
+    },
+    {
+     "column": "dttmeval",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Date/Time Eval"
+    },
+    {
+     "column": "evalstatus",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Evalstatus"
+    },
+    {
+     "column": "scorecalc",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Score (computed)"
+    },
+    {
+     "column": "scoremaxcalc",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Scoremax (computed)"
+    },
+    {
+     "column": "percentscorecalc",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Percentscore (computed)"
+    },
+    {
+     "column": "wellida",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well ID"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.2,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Summary/Service Contractor Summary.xl",
+   "name": "Service Contractor Summary",
+   "folder": "Summary",
+   "table": "wvjobservicecontract",
+   "title": "Jobservicecontract",
+   "fields": [
+    {
+     "column": "servicecompanyparent",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Servicecompanyparent"
+    },
+    {
+     "column": "servicecompany",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Servicecompany"
+    },
+    {
+     "column": "servicecontracttyp",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Servicecontracttyp"
+    },
+    {
+     "column": "servicetyp",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Servicetyp"
+    },
+    {
+     "column": "des",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Description"
+    },
+    {
+     "column": "contractref",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Contractref"
+    },
+    {
+     "column": "dttmeval",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Date/Time Eval"
+    },
+    {
+     "column": "evalperformedby",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Evalperformedby"
+    },
+    {
+     "column": "evalstatus",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Evalstatus"
+    },
+    {
+     "column": "opscondition",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Opscondition"
+    },
+    {
+     "column": "dttmapproved",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Date/Time Approved"
+    },
+    {
+     "column": "approvedby",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Approvedby"
+    },
+    {
+     "column": "scorecalc",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Score (computed)"
+    },
+    {
+     "column": "scoremaxcalc",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Scoremax (computed)"
+    },
+    {
+     "column": "percentscorecalc",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Percentscore (computed)"
+    },
+    {
+     "column": "operatorcom",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Operatorcom"
+    },
+    {
+     "column": "servicecompanycom",
+     "source_table": "wvjobservicecontract",
+     "label_interpreted": "Servicecompanycom"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjob",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  },
+  {
+   "html": "Summary/Time Breakdown Pivot.xl",
+   "name": "Time Breakdown Pivot",
+   "folder": "Summary",
+   "table": "wvjtlsumcalc",
+   "title": "Jtlsumcalc",
+   "fields": [
+    {
+     "column": "code1",
+     "source_table": "wvjtlsumcalc",
+     "label_interpreted": "Code 1"
+    },
+    {
+     "column": "code2",
+     "source_table": "wvjtlsumcalc",
+     "label_interpreted": "Code 2"
+    },
+    {
+     "column": "code3",
+     "source_table": "wvjtlsumcalc",
+     "label_interpreted": "Code3"
+    },
+    {
+     "column": "code4",
+     "source_table": "wvjtlsumcalc",
+     "label_interpreted": "Code4"
+    },
+    {
+     "column": "duration",
+     "source_table": "wvjtlsumcalc",
+     "label_interpreted": "Duration Ation"
+    },
+    {
+     "column": "fractiontotaltime",
+     "source_table": "wvjtlsumcalc",
+     "label_interpreted": "Fractiontotaltime"
+    },
+    {
+     "column": "opscategory",
+     "source_table": "wvjtlsumcalc",
+     "label_interpreted": "Opscategory"
+    },
+    {
+     "column": "unschedtyp",
+     "source_table": "wvjtlsumcalc",
+     "label_interpreted": "Unschedtyp"
+    },
+    {
+     "column": "wvtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Wvtyp"
+    },
+    {
+     "column": "jobtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobtyp"
+    },
+    {
+     "column": "jobsubtyp",
+     "source_table": "wvjob",
+     "label_interpreted": "Jobsubtyp"
+    },
+    {
+     "column": "dttmstart",
+     "source_table": "wvjob",
+     "label_interpreted": "Start Date/Time"
+    },
+    {
+     "column": "dttmend",
+     "source_table": "wvjob",
+     "label_interpreted": "End Date/Time"
+    },
+    {
+     "column": "afenumbercalc",
+     "source_table": "wvjob",
+     "label_interpreted": "AFE Number"
+    },
+    {
+     "column": "wellname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Well Name"
+    },
+    {
+     "column": "fieldname",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Field"
+    },
+    {
+     "column": "welltyp1",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Welltyp1"
+    },
+    {
+     "column": "wellconfig",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Wellconfig"
+    },
+    {
+     "column": "stateprov",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Stateprov"
+    },
+    {
+     "column": "country",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Country"
+    },
+    {
+     "column": "district",
+     "source_table": "wvwellheader",
+     "label_interpreted": "District"
+    },
+    {
+     "column": "division",
+     "source_table": "wvwellheader",
+     "label_interpreted": "Division"
+    }
+   ],
+   "criteria": [],
+   "filterUnread": false,
+   "formatVersion": 1.1,
+   "empty": false,
+   "hasWorkbook": true
+  }
+ ]
+}
