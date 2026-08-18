@@ -169,10 +169,49 @@ export interface WvSurvey {
   notes: string[];
 }
 
+
+/** A multi-well report template (`custom/reports multi/*.afm`). */
+export interface WvMultiReport {
+  html: string;
+  name: string;
+  folder: string;
+  formatVersion: number;
+  blocks: { table: string | null; title: string | null; fields: number }[];
+}
+export interface WvMultiBlock {
+  table: string | null;
+  title: string | null;
+  exists: boolean;
+  columns: { column: string; label: string; unit?: string; units?: Record<string, UnitFormat>; fromWell?: boolean }[];
+  missing: string[];
+  rows: (string | number | null)[][];
+  rowCount: number;
+  truncated: boolean;
+  /** Set when the template predates this database's schema. */
+  schemaDrift?: string;
+  /** Set when columns are blank because WellView computes them at print time. */
+  printTimeNote?: string;
+}
+export interface WvMultiResult {
+  report: string;
+  name: string;
+  wells: number;
+  blocks: WvMultiBlock[];
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
   databases: () => entryApi.get<WvDatabase[]>("/wellview/dbs"),
+
+  /** The multi-well templates this database can run. */
+  multiReports: (db: string) =>
+    entryApi.get<{ reports: WvMultiReport[] }>(`/wellview/dbs/${enc(db)}/reports-multi`),
+
+  /** Run one across an explicit set of wells — never an implicit "all". */
+  multiReport: (db: string, html: string, wells: string[]) =>
+    entryApi.get<WvMultiResult>(
+      `/wellview/dbs/${enc(db)}/multi-report?html=${enc(html)}&wells=${enc(wells.join(","))}`),
 
   headerColumns: (db: string) =>
     entryApi.get<WvHeaderColumn[]>(`/wellview/dbs/${enc(db)}/header-columns`),

@@ -1,0 +1,4279 @@
+{
+ "source_root": "WellView_files/custom/reports multi",
+ "generated_from": "WellView .afm multi-well report templates",
+ "note": "One table printed across a SET of wells. Templates that failed to parse are listed in `failures`, not omitted.",
+ "report_count": 57,
+ "failures": [],
+ "reports": [
+  {
+   "html": "Completion/Completion Rigs with query.html",
+   "name": "Completion Rigs with query",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobrig",
+     "title": "Rig",
+     "fields": [
+      {
+       "column": "contractor",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Contractor"
+      },
+      {
+       "column": "rigno",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Rigno"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjobrig",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "typ1",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Typ1"
+      },
+      {
+       "column": "contracttyp",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Contracttyp"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Daily Completions Summary 1.html",
+   "name": "Daily Completions Summary 1",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobreport",
+     "title": "Daily Report",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "afeamtcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Afeamt (computed)"
+      },
+      {
+       "column": "costtodatecalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Cost To Date"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "reportnocalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Report #"
+      },
+      {
+       "column": "contactcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Contact (computed)"
+      },
+      {
+       "column": "durationsinceltinc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Days Since LTI"
+      },
+      {
+       "column": "durationsincerptinc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Days Since Recordable"
+      },
+      {
+       "column": "summaryops",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Summaryops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Daily Completions Summary 2.html",
+   "name": "Daily Completions Summary 2",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template portrait.afm",
+   "blocks": [
+    {
+     "table": "wvwellheader",
+     "title": "Well Header",
+     "fields": [
+      {
+       "column": "wellida",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well ID"
+      },
+      {
+       "column": "welllicenseno",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Welllicenseno"
+      },
+      {
+       "column": "fieldname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Field"
+      }
+     ]
+    },
+    {
+     "table": "wvjob",
+     "title": "Job",
+     "fields": [
+      {
+       "column": "wvtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Wvtyp"
+      },
+      {
+       "column": "afenumbercalc",
+       "source_table": "wvjob",
+       "label_interpreted": "AFE Number"
+      },
+      {
+       "column": "afetotalcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "AFE Total"
+      },
+      {
+       "column": "objective",
+       "source_table": "wvjob",
+       "label_interpreted": "Objective"
+      }
+     ]
+    },
+    {
+     "table": "wvjobreport",
+     "title": "Daily Report",
+     "fields": [
+      {
+       "column": "reportnocalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Report #"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjobreport",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "summaryops",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Summaryops"
+      },
+      {
+       "column": "contactcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Contact (computed)"
+      },
+      {
+       "column": "plannextrptops",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Plannextrptops"
+      }
+     ]
+    },
+    {
+     "table": "wvjobreporttimelog",
+     "title": "Time Log",
+     "fields": [
+      {
+       "column": "dttmstartcalc",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Start Date/Time (computed)"
+      },
+      {
+       "column": "duration",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Duration Ation"
+      },
+      {
+       "column": "sumofdurationcalc",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Sumofduration (computed)"
+      },
+      {
+       "column": "dttmendcalc",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "End Date/Time (computed)"
+      },
+      {
+       "column": "code1",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Code 1"
+      },
+      {
+       "column": "code2",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Code 2"
+      },
+      {
+       "column": "com",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Comment"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Fluid Transfer.html",
+   "name": "Fluid Transfer",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobreportfluidslease",
+     "title": "Jobreportfluidslease",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "fluidtyp",
+       "source_table": "wvjobreportfluidslease",
+       "label_interpreted": "Fluidtyp"
+      },
+      {
+       "column": "tolease",
+       "source_table": "wvjobreportfluidslease",
+       "label_interpreted": "Tolease"
+      },
+      {
+       "column": "source",
+       "source_table": "wvjobreportfluidslease",
+       "label_interpreted": "Source"
+      },
+      {
+       "column": "fromlease",
+       "source_table": "wvjobreportfluidslease",
+       "label_interpreted": "Fromlease"
+      },
+      {
+       "column": "dest",
+       "source_table": "wvjobreportfluidslease",
+       "label_interpreted": "Description T"
+      },
+      {
+       "column": "carrier",
+       "source_table": "wvjobreportfluidslease",
+       "label_interpreted": "Carrier"
+      },
+      {
+       "column": "refnocarrier",
+       "source_table": "wvjobreportfluidslease",
+       "label_interpreted": "Refnocarrier"
+      },
+      {
+       "column": "bsw",
+       "source_table": "wvjobreportfluidslease",
+       "label_interpreted": "Bsw"
+      },
+      {
+       "column": "note",
+       "source_table": "wvjobreportfluidslease",
+       "label_interpreted": "Note"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Frac Summary.html",
+   "name": "Frac Summary",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape legal.afm",
+   "blocks": [
+    {
+     "table": "wvstimtreat",
+     "title": "Stimtreat",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "typ",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "deliverymode",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Deliverymode"
+      },
+      {
+       "column": "idreczone",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Idreczone"
+      },
+      {
+       "column": "resulttechnical",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Resulttechnical"
+      },
+      {
+       "column": "resulttechnicaldetail",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Resulttechnicaldetail"
+      },
+      {
+       "column": "fracdiagnosticmethod",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Fracdiagnosticmethod"
+      },
+      {
+       "column": "contractor",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Contractor"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "propantdesign",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Propantdesign"
+      },
+      {
+       "column": "propantinfrm",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Propantinfrm"
+      },
+      {
+       "column": "propantinwellbore",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Propantinwellbore"
+      },
+      {
+       "column": "presbreakdown",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Presbreakdown"
+      },
+      {
+       "column": "fracgradient",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Fracgradient"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Other in Hole.html",
+   "name": "Other in Hole",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvotherinhole",
+     "title": "Otherinhole",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "des",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "depthtop",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Top Depth"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "make",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Make"
+      },
+      {
+       "column": "szodnom",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Szodnom"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "dttmpull",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Date/Time Pull"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Perf Summary.html",
+   "name": "Perf Summary",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvperforation",
+     "title": "Perforation",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvperforation",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "depthtop",
+       "source_table": "wvperforation",
+       "label_interpreted": "Top Depth"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvperforation",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "idreczone",
+       "source_table": "wvperforation",
+       "label_interpreted": "Idreczone"
+      },
+      {
+       "column": "shotdensity",
+       "source_table": "wvperforation",
+       "label_interpreted": "Shotdensity"
+      },
+      {
+       "column": "shotstotalcalc",
+       "source_table": "wvperforation",
+       "label_interpreted": "Shotstotal (computed)"
+      },
+      {
+       "column": "currentstatuscalc",
+       "source_table": "wvperforation",
+       "label_interpreted": "Currentstatus (computed)"
+      },
+      {
+       "column": "contractor",
+       "source_table": "wvperforation",
+       "label_interpreted": "Contractor"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Petronas Perforation Summary.html",
+   "name": "Petronas Perforation Summary",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvperforation",
+     "title": "Perforation",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvperforation",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "depthtop",
+       "source_table": "wvperforation",
+       "label_interpreted": "Top Depth"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvperforation",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "com",
+       "source_table": "wvperforation",
+       "label_interpreted": "Comment"
+      },
+      {
+       "column": "idreczone",
+       "source_table": "wvperforation",
+       "label_interpreted": "Idreczone"
+      },
+      {
+       "column": "shotdensity",
+       "source_table": "wvperforation",
+       "label_interpreted": "Shotdensity"
+      },
+      {
+       "column": "shotstotalcalc",
+       "source_table": "wvperforation",
+       "label_interpreted": "Shotstotal (computed)"
+      },
+      {
+       "column": "currentstatuscalc",
+       "source_table": "wvperforation",
+       "label_interpreted": "Currentstatus (computed)"
+      },
+      {
+       "column": "contractor",
+       "source_table": "wvperforation",
+       "label_interpreted": "Contractor"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Pumps.html",
+   "name": "Pumps",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvtubcomp",
+     "title": "Tubcomp",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvtub",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "des",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "szodnom",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Szodnom"
+      },
+      {
+       "column": "szodmax",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Szodmax"
+      },
+      {
+       "column": "make",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Make"
+      },
+      {
+       "column": "model",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Model"
+      },
+      {
+       "column": "sn",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Serial Number"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Rod Strings.html",
+   "name": "Rod Strings",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvrod",
+     "title": "Rod String",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "des",
+       "source_table": "wvrod",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvrod",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "dttmpull",
+       "source_table": "wvrod",
+       "label_interpreted": "Date/Time Pull"
+      },
+      {
+       "column": "szodnommaxcalc",
+       "source_table": "wvrod",
+       "label_interpreted": "Szodnommax (computed)"
+      },
+      {
+       "column": "wtperlengthcalc",
+       "source_table": "wvrod",
+       "label_interpreted": "Wtperlength (computed)"
+      },
+      {
+       "column": "gradecalc",
+       "source_table": "wvrod",
+       "label_interpreted": "Grade (computed)"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvrod",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "depthtvdbtmcalc",
+       "source_table": "wvrod",
+       "label_interpreted": "Depth TVD Btm (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Stimulation and Treatment Summary.html",
+   "name": "Stimulation and Treatment Summary",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvstimtreat",
+     "title": "Stimtreat",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "typ",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "depthtopmincalc",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Depth Topmin (computed)"
+      },
+      {
+       "column": "depthbtmmaxcalc",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Depth Btmmax (computed)"
+      },
+      {
+       "column": "idreczone",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Idreczone"
+      },
+      {
+       "column": "contractor",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Contractor"
+      },
+      {
+       "column": "volpumpedtotalcalc",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Volpumpedtotal (computed)"
+      },
+      {
+       "column": "volrecoveredtotalcalc",
+       "source_table": "wvstimtreat",
+       "label_interpreted": "Volrecoveredtotal (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Completion/Tubing Strings.html",
+   "name": "Tubing Strings",
+   "folder": "Completion",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvtub",
+     "title": "Tub",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "des",
+       "source_table": "wvtub",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvtub",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "dttmpull",
+       "source_table": "wvtub",
+       "label_interpreted": "Date/Time Pull"
+      },
+      {
+       "column": "szodnommaxcalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Szodnommax (computed)"
+      },
+      {
+       "column": "szidnommincalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Szidnommin (computed)"
+      },
+      {
+       "column": "wtperlengthcalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Wtperlength (computed)"
+      },
+      {
+       "column": "gradecalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Grade (computed)"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvtub",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "depthtvdbtmcalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Depth TVD Btm (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Bit Performance.html",
+   "name": "Bit Performance",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape legal.afm",
+   "blocks": [
+    {
+     "table": "wvjobdrillstring",
+     "title": "Drill String / BHA",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "szoddrill",
+       "source_table": "wvjobdrillbit",
+       "label_interpreted": "Szoddrill"
+      },
+      {
+       "column": "make",
+       "source_table": "wvjobdrillbit",
+       "label_interpreted": "Make"
+      },
+      {
+       "column": "model",
+       "source_table": "wvjobdrillbit",
+       "label_interpreted": "Model"
+      },
+      {
+       "column": "sn",
+       "source_table": "wvjobdrillbit",
+       "label_interpreted": "Serial Number"
+      },
+      {
+       "column": "iadccodescalc",
+       "source_table": "wvjobdrillbit",
+       "label_interpreted": "Iadccodes (computed)"
+      },
+      {
+       "column": "bitnozzlecalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Bitnozzle (computed)"
+      },
+      {
+       "column": "depthdrilledcalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Depth Drilled (computed)"
+      },
+      {
+       "column": "depthincalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Depth In (computed)"
+      },
+      {
+       "column": "depthoutcalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Depth Out (computed)"
+      },
+      {
+       "column": "tmdrilledcalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Tmdrilled (computed)"
+      },
+      {
+       "column": "ropcalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "ROP"
+      },
+      {
+       "column": "wobmincalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Wobmin (computed)"
+      },
+      {
+       "column": "wobmaxcalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Wobmax (computed)"
+      },
+      {
+       "column": "rpmmincalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Rpmmin (computed)"
+      },
+      {
+       "column": "rpmmaxcalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Rpmmax (computed)"
+      },
+      {
+       "column": "liquidinjratemincalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Liquidinjratemin (computed)"
+      },
+      {
+       "column": "liquidinjratemaxcalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Liquidinjratemax (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Casing Summary.html",
+   "name": "Casing Summary",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvcas",
+     "title": "Cas",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "des",
+       "source_table": "wvcas",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvcas",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvcas",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "szodnommaxcalc",
+       "source_table": "wvcas",
+       "label_interpreted": "Szodnommax (computed)"
+      },
+      {
+       "column": "wtperlengthcalc",
+       "source_table": "wvcas",
+       "label_interpreted": "Wtperlength (computed)"
+      },
+      {
+       "column": "gradecalc",
+       "source_table": "wvcas",
+       "label_interpreted": "Grade (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Cost Summary by Vendor.html",
+   "name": "Cost Summary by Vendor",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjvendorcalc",
+     "title": "Jvendorcalc",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "jobtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobtyp"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjob",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjob",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "vendor",
+       "source_table": "wvjvendorcalc",
+       "label_interpreted": "Vendor"
+      },
+      {
+       "column": "cost",
+       "source_table": "wvjvendorcalc",
+       "label_interpreted": "Cost"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Daily Drilling Summary 1.html",
+   "name": "Daily Drilling Summary 1",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobreport",
+     "title": "Daily Report",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "afeamtcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Afeamt (computed)"
+      },
+      {
+       "column": "costtodatecalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Cost To Date"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "daysfromspudcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Days From Spud"
+      },
+      {
+       "column": "reportnocalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Report #"
+      },
+      {
+       "column": "depthprogressdpcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Depth Progressdp (computed)"
+      },
+      {
+       "column": "depthenddpcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Depth End (MD)"
+      },
+      {
+       "column": "tmdrillcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Tmdrill (computed)"
+      },
+      {
+       "column": "headcountcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Headcount (computed)"
+      },
+      {
+       "column": "condroad",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Condroad"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Daily Drilling Summary 2.html",
+   "name": "Daily Drilling Summary 2",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template portrait.afm",
+   "blocks": [
+    {
+     "table": "wvjobreport",
+     "title": "Daily Report",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "wellida",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well ID"
+      },
+      {
+       "column": "welllicenseno",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Welllicenseno"
+      },
+      {
+       "column": "afenumbercalc",
+       "source_table": "wvjob",
+       "label_interpreted": "AFE Number"
+      },
+      {
+       "column": "costtotalcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Daily Cost Total"
+      },
+      {
+       "column": "costtodatecalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Cost To Date"
+      },
+      {
+       "column": "reportnocalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Report #"
+      },
+      {
+       "column": "daysfromspudcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Days From Spud"
+      },
+      {
+       "column": "depthenddpcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Depth End (MD)"
+      },
+      {
+       "column": "idrecjobprogramphasecalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Idrecjobprogramphase (computed)"
+      },
+      {
+       "column": "timeaheadmlphasecalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Timeaheadmlphase (computed)"
+      },
+      {
+       "column": "timeaheadmljobcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Timeaheadmljob (computed)"
+      },
+      {
+       "column": "contactcalc",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Contact (computed)"
+      },
+      {
+       "column": "summaryops",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Summaryops"
+      },
+      {
+       "column": "plannextrptops",
+       "source_table": "wvjobreport",
+       "label_interpreted": "Plannextrptops"
+      }
+     ]
+    },
+    {
+     "table": "wvjobreporttimelog",
+     "title": "Time Log",
+     "fields": [
+      {
+       "column": "dttmstartcalc",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Start Date/Time (computed)"
+      },
+      {
+       "column": "duration",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Duration Ation"
+      },
+      {
+       "column": "sumofdurationcalc",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Sumofduration (computed)"
+      },
+      {
+       "column": "dttmendcalc",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "End Date/Time (computed)"
+      },
+      {
+       "column": "code1",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Code 1"
+      },
+      {
+       "column": "code2",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Code 2"
+      },
+      {
+       "column": "com",
+       "source_table": "wvjobreporttimelog",
+       "label_interpreted": "Comment"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Drill String Equipment with Query.html",
+   "name": "Drill String Equipment with Query",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobdrillstringcomp",
+     "title": "Drill String Component",
+     "fields": [
+      {
+       "column": "idreclastrigcalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Idreclastrig (computed)"
+      },
+      {
+       "column": "des",
+       "source_table": "wvjobdrillstringcomp",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "szodnom",
+       "source_table": "wvjobdrillstringcomp",
+       "label_interpreted": "Szodnom"
+      },
+      {
+       "column": "make",
+       "source_table": "wvjobdrillstringcomp",
+       "label_interpreted": "Make"
+      },
+      {
+       "column": "model",
+       "source_table": "wvjobdrillstringcomp",
+       "label_interpreted": "Model"
+      },
+      {
+       "column": "sn",
+       "source_table": "wvjobdrillstringcomp",
+       "label_interpreted": "Serial Number"
+      },
+      {
+       "column": "dttmincalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Date/Time In (computed)"
+      },
+      {
+       "column": "dttmoutcalc",
+       "source_table": "wvjobdrillstring",
+       "label_interpreted": "Date/Time Out (computed)"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Drilling Job Summary.html",
+   "name": "Drilling Job Summary",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjob",
+     "title": "Job",
+     "fields": [
+      {
+       "column": "wvtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Wvtyp"
+      },
+      {
+       "column": "jobtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobtyp"
+      },
+      {
+       "column": "afenumbercalc",
+       "source_table": "wvjob",
+       "label_interpreted": "AFE Number"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjob",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjob",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "afetotalcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "AFE Total"
+      },
+      {
+       "column": "costtotalcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Daily Cost Total"
+      },
+      {
+       "column": "variancefieldcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Variancefield (computed)"
+      },
+      {
+       "column": "durationpersonneltotcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Personnel Hours"
+      },
+      {
+       "column": "ropcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "ROP"
+      },
+      {
+       "column": "costperdepthcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Costperdepth (computed)"
+      },
+      {
+       "column": "objective",
+       "source_table": "wvjob",
+       "label_interpreted": "Objective"
+      },
+      {
+       "column": "summary",
+       "source_table": "wvjob",
+       "label_interpreted": "Summary"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Drilling Lessons.html",
+   "name": "Drilling Lessons",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobintervallesson",
+     "title": "Interval Lesson",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "typ",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "typdetail",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Typdetail"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "depthstart",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Depth Start"
+      },
+      {
+       "column": "depthend",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Depth End"
+      },
+      {
+       "column": "estcostsaving",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Estimate Costsaving"
+      },
+      {
+       "column": "esttimesaving",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Estimate Timesaving"
+      },
+      {
+       "column": "com",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Comment"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Drilling Problems.html",
+   "name": "Drilling Problems",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobintervalproblem",
+     "title": "Interval Problem (NPT)",
+     "fields": [
+      {
+       "column": "typ",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "typdetail",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Typdetail"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "depthstart",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Depth Start"
+      },
+      {
+       "column": "depthend",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Depth End"
+      },
+      {
+       "column": "accountablepty",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Accountablepty"
+      },
+      {
+       "column": "actiontaken",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Actual Iontaken"
+      },
+      {
+       "column": "costrecov",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Costrecov"
+      },
+      {
+       "column": "estcostoverride",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Estimate Costoverride"
+      },
+      {
+       "column": "estlosttime",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Estimate Losttime"
+      },
+      {
+       "column": "status",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Status"
+      },
+      {
+       "column": "com",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Comment"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Drilling Rigs with query.html",
+   "name": "Drilling Rigs with query",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobrig",
+     "title": "Rig",
+     "fields": [
+      {
+       "column": "contractor",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Contractor"
+      },
+      {
+       "column": "rigno",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Rigno"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjobrig",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "typ1",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Typ1"
+      },
+      {
+       "column": "contracttyp",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Contracttyp"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Leak-Off Tests.html",
+   "name": "Leak-Off Tests",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvtestleakoff",
+     "title": "Testleakoff",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "fieldname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Field"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvtestleakoff",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "densityfluid",
+       "source_table": "wvtestleakoff",
+       "label_interpreted": "Densityfluid"
+      },
+      {
+       "column": "leakoffdensityfluidcalc",
+       "source_table": "wvtestleakoff",
+       "label_interpreted": "Leakoffdensityfluid (computed)"
+      },
+      {
+       "column": "idrecfrm",
+       "source_table": "wvtestleakoff",
+       "label_interpreted": "Idrecfrm"
+      },
+      {
+       "column": "leakoffoccurred",
+       "source_table": "wvtestleakoff",
+       "label_interpreted": "Leakoffoccurred"
+      },
+      {
+       "column": "leakoffprescalc",
+       "source_table": "wvtestleakoff",
+       "label_interpreted": "Leakoffpres (computed)"
+      },
+      {
+       "column": "tvdcalc",
+       "source_table": "wvtestleakoff",
+       "label_interpreted": "Tvd (computed)"
+      },
+      {
+       "column": "des",
+       "source_table": "wvcas",
+       "label_interpreted": "Description"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Mud Product Usage.html",
+   "name": "Mud Product Usage",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template portrait.afm",
+   "blocks": [
+    {
+     "table": "wvjobmudadd",
+     "title": "Jobmudadd",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "des",
+       "source_table": "wvjobmudadd",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "unitsz",
+       "source_table": "wvjobmudadd",
+       "label_interpreted": "Unitsz"
+      },
+      {
+       "column": "unitlabel",
+       "source_table": "wvjobmudadd",
+       "label_interpreted": "Unitlabel"
+      },
+      {
+       "column": "vendor",
+       "source_table": "wvjobmudadd",
+       "label_interpreted": "Vendor"
+      },
+      {
+       "column": "cost",
+       "source_table": "wvjobmudadd",
+       "label_interpreted": "Cost"
+      },
+      {
+       "column": "consumedcalc",
+       "source_table": "wvjobmudadd",
+       "label_interpreted": "Consumed (computed)"
+      },
+      {
+       "column": "costcalc",
+       "source_table": "wvjobmudadd",
+       "label_interpreted": "Cost (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Mud Properties.html",
+   "name": "Mud Properties",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape legal.afm",
+   "blocks": [
+    {
+     "table": "wvjobreportmudchk",
+     "title": "Mud Check",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "mudtyp",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Mudtyp"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "depth",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Depth"
+      },
+      {
+       "column": "tvdcalc",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Tvd (computed)"
+      },
+      {
+       "column": "density",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Density"
+      },
+      {
+       "column": "funnelviscosity",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Funnelviscosity"
+      },
+      {
+       "column": "plasticviscalc",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Plasticvis (computed)"
+      },
+      {
+       "column": "yieldptcalc",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Yieldpt (computed)"
+      },
+      {
+       "column": "gel10sec",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Gel10Sec"
+      },
+      {
+       "column": "gel10min",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Gel10Min"
+      },
+      {
+       "column": "filtrate",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Filtrate"
+      },
+      {
+       "column": "ph",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "pH"
+      },
+      {
+       "column": "alkalinity",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Alkalinity"
+      },
+      {
+       "column": "barite",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Barite"
+      },
+      {
+       "column": "cacl",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Cacl"
+      },
+      {
+       "column": "kcalc",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "K (computed)"
+      },
+      {
+       "column": "lcm",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Lcm"
+      },
+      {
+       "column": "lime",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Lime"
+      },
+      {
+       "column": "mf",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Mf"
+      },
+      {
+       "column": "mbt",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Mbt"
+      },
+      {
+       "column": "ncalc",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "N (computed)"
+      },
+      {
+       "column": "oilwaterratiocalc",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Oilwaterratio (computed)"
+      },
+      {
+       "column": "pf",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Pf"
+      },
+      {
+       "column": "pm",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Pm"
+      },
+      {
+       "column": "potassium",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Potassium"
+      },
+      {
+       "column": "sands",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Sands"
+      },
+      {
+       "column": "solids",
+       "source_table": "wvjobreportmudchk",
+       "label_interpreted": "Solids"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Drilling/Phase Summary.html",
+   "name": "Phase Summary",
+   "folder": "Drilling",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobprogramphase",
+     "title": "Jobprogramphase",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "jobtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobtyp"
+      },
+      {
+       "column": "code1",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Code 1"
+      },
+      {
+       "column": "dayjobactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Dayjobactual (computed)"
+      },
+      {
+       "column": "dayjobmlplancalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Dayjobmlplan (computed)"
+      },
+      {
+       "column": "durationactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Duration Actual Ual (computed)"
+      },
+      {
+       "column": "durcumactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Duration Cumulative Actual Ual (computed)"
+      },
+      {
+       "column": "costml",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costml"
+      },
+      {
+       "column": "costactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costactual (computed)"
+      },
+      {
+       "column": "costactualcumcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costactual (cumulative) (computed)"
+      },
+      {
+       "column": "costvariancecalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costvariance (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Geology/Cores_Bottom Hole and SideWall.html",
+   "name": "Cores_Bottom Hole and SideWall",
+   "folder": "Geology",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvcoresidewall",
+     "title": "Coresidewall",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvcoresidewall",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "typ",
+       "source_table": "wvcoresidewall",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "runno",
+       "source_table": "wvcoresidewall",
+       "label_interpreted": "Runno"
+      },
+      {
+       "column": "depthtopcalc",
+       "source_table": "wvcoresidewall",
+       "label_interpreted": "Top Depth (computed)"
+      },
+      {
+       "column": "depthbtmcalc",
+       "source_table": "wvcoresidewall",
+       "label_interpreted": "Bottom Depth (computed)"
+      },
+      {
+       "column": "samplesplan",
+       "source_table": "wvcoresidewall",
+       "label_interpreted": "Samplesplan"
+      },
+      {
+       "column": "samplesrecover",
+       "source_table": "wvcoresidewall",
+       "label_interpreted": "Samplesrecover"
+      },
+      {
+       "column": "bulletsfire",
+       "source_table": "wvcoresidewall",
+       "label_interpreted": "Bulletsfire"
+      },
+      {
+       "column": "bulletsmisfire",
+       "source_table": "wvcoresidewall",
+       "label_interpreted": "Bulletsmisfire"
+      },
+      {
+       "column": "contractor",
+       "source_table": "wvcoresidewall",
+       "label_interpreted": "Contractor"
+      }
+     ]
+    },
+    {
+     "table": "wvcore",
+     "title": "Core",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvcore",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "coreno",
+       "source_table": "wvcore",
+       "label_interpreted": "Coreno"
+      },
+      {
+       "column": "typ",
+       "source_table": "wvcore",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "purpose",
+       "source_table": "wvcore",
+       "label_interpreted": "Purpose"
+      },
+      {
+       "column": "depthtop",
+       "source_table": "wvcore",
+       "label_interpreted": "Top Depth"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvcore",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "contractor",
+       "source_table": "wvcore",
+       "label_interpreted": "Contractor"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Geology/Formations.html",
+   "name": "Formations",
+   "folder": "Geology",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvwellboreformation",
+     "title": "Wellboreformation",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "formname",
+       "source_table": "wvwellboreformation",
+       "label_interpreted": "Formname"
+      },
+      {
+       "column": "geologicage",
+       "source_table": "wvwellboreformation",
+       "label_interpreted": "Geologicage"
+      },
+      {
+       "column": "deslithology",
+       "source_table": "wvwellboreformation",
+       "label_interpreted": "Description Lithology"
+      },
+      {
+       "column": "elementtyp",
+       "source_table": "wvwellboreformation",
+       "label_interpreted": "Elementtyp"
+      },
+      {
+       "column": "depthtvdprogtopcalc",
+       "source_table": "wvwellboreformation",
+       "label_interpreted": "Depth TVD Progtop (computed)"
+      },
+      {
+       "column": "depthtvdprogbtmcalc",
+       "source_table": "wvwellboreformation",
+       "label_interpreted": "Depth TVD Progbtm (computed)"
+      },
+      {
+       "column": "depthtvddrilltopcalc",
+       "source_table": "wvwellboreformation",
+       "label_interpreted": "Depth TVD Drilltop (computed)"
+      },
+      {
+       "column": "depthtvddrillbtmcalc",
+       "source_table": "wvwellboreformation",
+       "label_interpreted": "Depth TVD Drillbtm (computed)"
+      },
+      {
+       "column": "ropcalc",
+       "source_table": "wvwellboreformation",
+       "label_interpreted": "ROP"
+      },
+      {
+       "column": "h2sconc",
+       "source_table": "wvwellboreformation",
+       "label_interpreted": "H2Sconc"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Geology/Logs.html",
+   "name": "Logs",
+   "folder": "Geology",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvlog",
+     "title": "Log",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "runno",
+       "source_table": "wvlog",
+       "label_interpreted": "Runno"
+      },
+      {
+       "column": "typ",
+       "source_table": "wvlog",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvlog",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "depthtop",
+       "source_table": "wvlog",
+       "label_interpreted": "Top Depth"
+      },
+      {
+       "column": "depthtvdtopcalc",
+       "source_table": "wvlog",
+       "label_interpreted": "Depth TVD Top (computed)"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvlog",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "depthtvdbtmcalc",
+       "source_table": "wvlog",
+       "label_interpreted": "Depth TVD Btm (computed)"
+      },
+      {
+       "column": "contractor",
+       "source_table": "wvlog",
+       "label_interpreted": "Contractor"
+      },
+      {
+       "column": "analyst",
+       "source_table": "wvlog",
+       "label_interpreted": "Analyst"
+      },
+      {
+       "column": "idrecwellbore",
+       "source_table": "wvlog",
+       "label_interpreted": "Idrecwellbore"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Master Templates/multi template landscape legal.html",
+   "name": "multi template landscape legal",
+   "folder": "Master Templates",
+   "multi": true,
+   "master": true,
+   "format_version": 3.0,
+   "paper": "legal",
+   "parent_template": "",
+   "blocks": []
+  },
+  {
+   "html": "Master Templates/multi template landscape.html",
+   "name": "multi template landscape",
+   "folder": "Master Templates",
+   "multi": true,
+   "master": true,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "",
+   "blocks": []
+  },
+  {
+   "html": "Master Templates/multi template portrait.html",
+   "name": "multi template portrait",
+   "folder": "Master Templates",
+   "multi": true,
+   "master": true,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "",
+   "blocks": []
+  },
+  {
+   "html": "Phase Analysis, Lessons & Problems/Lessons.html",
+   "name": "Lessons",
+   "folder": "Phase Analysis, Lessons & Problems",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobintervallesson",
+     "title": "Interval Lesson",
+     "fields": [
+      {
+       "column": "typ",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "typdetail",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Typdetail"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "depthstart",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Depth Start"
+      },
+      {
+       "column": "depthend",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Depth End"
+      },
+      {
+       "column": "estcostsaving",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Estimate Costsaving"
+      },
+      {
+       "column": "esttimesaving",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Estimate Timesaving"
+      },
+      {
+       "column": "com",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Comment"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Phase Analysis, Lessons & Problems/Phase Summary.html",
+   "name": "Phase Summary",
+   "folder": "Phase Analysis, Lessons & Problems",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobprogramphase",
+     "title": "Jobprogramphase",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "jobtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobtyp"
+      },
+      {
+       "column": "code1",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Code 1"
+      },
+      {
+       "column": "code2",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Code 2"
+      },
+      {
+       "column": "dayjobactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Dayjobactual (computed)"
+      },
+      {
+       "column": "dayjobmlplancalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Dayjobmlplan (computed)"
+      },
+      {
+       "column": "durationactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Duration Actual Ual (computed)"
+      },
+      {
+       "column": "durcumactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Duration Cumulative Actual Ual (computed)"
+      },
+      {
+       "column": "costml",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costml"
+      },
+      {
+       "column": "costactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costactual (computed)"
+      },
+      {
+       "column": "costactualcumcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costactual (cumulative) (computed)"
+      },
+      {
+       "column": "costvariancecalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costvariance (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Phase Analysis, Lessons & Problems/Problems.html",
+   "name": "Problems",
+   "folder": "Phase Analysis, Lessons & Problems",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobintervalproblem",
+     "title": "Interval Problem (NPT)",
+     "fields": [
+      {
+       "column": "typ",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "typdetail",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Typdetail"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "depthstart",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Depth Start"
+      },
+      {
+       "column": "depthend",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Depth End"
+      },
+      {
+       "column": "accountablepty",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Accountablepty"
+      },
+      {
+       "column": "actiontaken",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Actual Iontaken"
+      },
+      {
+       "column": "costrecov",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Costrecov"
+      },
+      {
+       "column": "estcostoverride",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Estimate Costoverride"
+      },
+      {
+       "column": "estlosttime",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Estimate Losttime"
+      },
+      {
+       "column": "status",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Status"
+      },
+      {
+       "column": "com",
+       "source_table": "wvjobintervalproblem",
+       "label_interpreted": "Comment"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Production/Continous Chemical Injection.html",
+   "name": "Continous Chemical Injection",
+   "folder": "Production",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvchemicalinjection",
+     "title": "Chemicalinjection",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "typ",
+       "source_table": "wvchemicalinjection",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "purpose",
+       "source_table": "wvchemicalinjection",
+       "label_interpreted": "Purpose"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvchemicalinjection",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvchemicalinjection",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "productname",
+       "source_table": "wvchemicalinjection",
+       "label_interpreted": "Productname"
+      },
+      {
+       "column": "amount",
+       "source_table": "wvchemicalinjection",
+       "label_interpreted": "Amount"
+      },
+      {
+       "column": "com",
+       "source_table": "wvchemicalinjection",
+       "label_interpreted": "Comment"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Production/Downhole Equipment.html",
+   "name": "Downhole Equipment",
+   "folder": "Production",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template portrait.afm",
+   "blocks": [
+    {
+     "table": "wvwellheader",
+     "title": "Well Header",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "wellida",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well ID"
+      }
+     ]
+    },
+    {
+     "table": "wvcas",
+     "title": "Cas",
+     "fields": [
+      {
+       "column": "des",
+       "source_table": "wvcas",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvcas",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvcas",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "szodnommaxcalc",
+       "source_table": "wvcas",
+       "label_interpreted": "Szodnommax (computed)"
+      },
+      {
+       "column": "wtperlengthcalc",
+       "source_table": "wvcas",
+       "label_interpreted": "Wtperlength (computed)"
+      },
+      {
+       "column": "gradecalc",
+       "source_table": "wvcas",
+       "label_interpreted": "Grade (computed)"
+      }
+     ]
+    },
+    {
+     "table": "wvtub",
+     "title": "Tub",
+     "fields": [
+      {
+       "column": "des",
+       "source_table": "wvtub",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvtub",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvtub",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "szodnommaxcalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Szodnommax (computed)"
+      },
+      {
+       "column": "wtperlengthcalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Wtperlength (computed)"
+      },
+      {
+       "column": "gradecalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Grade (computed)"
+      }
+     ]
+    },
+    {
+     "table": "wvrod",
+     "title": "Rod String",
+     "fields": [
+      {
+       "column": "des",
+       "source_table": "wvrod",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvrod",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvrod",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "szodnommaxcalc",
+       "source_table": "wvrod",
+       "label_interpreted": "Szodnommax (computed)"
+      },
+      {
+       "column": "wtperlengthcalc",
+       "source_table": "wvrod",
+       "label_interpreted": "Wtperlength (computed)"
+      },
+      {
+       "column": "gradecalc",
+       "source_table": "wvrod",
+       "label_interpreted": "Grade (computed)"
+      }
+     ]
+    },
+    {
+     "table": "wvotherinhole",
+     "title": "Otherinhole",
+     "fields": [
+      {
+       "column": "des",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "depthtop",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Top Depth"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "szodnom",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Szodnom"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Date/Time Run"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Production/Equipment Tests.html",
+   "name": "Equipment Tests",
+   "folder": "Production",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template portrait.afm",
+   "blocks": [
+    {
+     "table": "wvtestequip",
+     "title": "Testequip",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "testtyp",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Testtyp"
+      },
+      {
+       "column": "failflag",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Failflag"
+      },
+      {
+       "column": "idrectestitem",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Idrectestitem"
+      },
+      {
+       "column": "testfluidtyp",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Testfluidtyp"
+      },
+      {
+       "column": "wellpresused",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Wellpresused"
+      },
+      {
+       "column": "operator",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Operator"
+      },
+      {
+       "column": "com",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Comment"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Production/Failures.html",
+   "name": "Failures",
+   "folder": "Production",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvproblem",
+     "title": "Problem",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "typ",
+       "source_table": "wvproblem",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "des",
+       "source_table": "wvproblem",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvproblem",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "cause",
+       "source_table": "wvproblem",
+       "label_interpreted": "Cause"
+      },
+      {
+       "column": "idrecfaileditem",
+       "source_table": "wvproblem",
+       "label_interpreted": "Idrecfaileditem"
+      },
+      {
+       "column": "estcost",
+       "source_table": "wvproblem",
+       "label_interpreted": "Estimate Cost"
+      },
+      {
+       "column": "priority",
+       "source_table": "wvproblem",
+       "label_interpreted": "Priority"
+      },
+      {
+       "column": "dttmaction",
+       "source_table": "wvproblem",
+       "label_interpreted": "Date/Time Actual Ion"
+      },
+      {
+       "column": "actiontaken",
+       "source_table": "wvproblem",
+       "label_interpreted": "Actual Iontaken"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvproblem",
+       "label_interpreted": "End Date/Time"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Production/Packers.html",
+   "name": "Packers",
+   "folder": "Production",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvtubcomp",
+     "title": "Tubcomp",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvtub",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "des",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "szodnom",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Szodnom"
+      },
+      {
+       "column": "szodmax",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Szodmax"
+      },
+      {
+       "column": "szidnom",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Szidnom"
+      },
+      {
+       "column": "make",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Make"
+      },
+      {
+       "column": "model",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Model"
+      },
+      {
+       "column": "connectcalc",
+       "source_table": "wvtubcomp",
+       "label_interpreted": "Connect (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Production/Production Settings, Rod Pumps.html",
+   "name": "Production Settings, Rod Pumps",
+   "folder": "Production",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template portrait.afm",
+   "blocks": [
+    {
+     "table": "wvprodsettingrodpump",
+     "title": "Prodsettingrodpump",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvprodsetting",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvprodsetting",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "pitmanpos",
+       "source_table": "wvprodsettingrodpump",
+       "label_interpreted": "Pitmanpos"
+      },
+      {
+       "column": "spm",
+       "source_table": "wvprodsettingrodpump",
+       "label_interpreted": "Spm"
+      },
+      {
+       "column": "rotationdir",
+       "source_table": "wvprodsettingrodpump",
+       "label_interpreted": "Rotationdir"
+      },
+      {
+       "column": "strokelength",
+       "source_table": "wvprodsettingrodpump",
+       "label_interpreted": "Strokelength"
+      },
+      {
+       "column": "loadpolishrodmax",
+       "source_table": "wvprodsettingrodpump",
+       "label_interpreted": "Loadpolishrodmax"
+      },
+      {
+       "column": "prestub",
+       "source_table": "wvprodsetting",
+       "label_interpreted": "Prestub"
+      },
+      {
+       "column": "prescas",
+       "source_table": "wvprodsetting",
+       "label_interpreted": "Prescas"
+      },
+      {
+       "column": "settingobjective",
+       "source_table": "wvprodsetting",
+       "label_interpreted": "Settingobjective"
+      },
+      {
+       "column": "settingresult",
+       "source_table": "wvprodsetting",
+       "label_interpreted": "Settingresult"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Production/SCVF.html",
+   "name": "SCVF",
+   "folder": "Production",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template portrait.afm",
+   "blocks": [
+    {
+     "table": "wvtestequip",
+     "title": "Last SCVF Test",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "fieldname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Field"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "testtyp",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Testtyp"
+      },
+      {
+       "column": "operator",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Operator"
+      },
+      {
+       "column": "com",
+       "source_table": "wvtestequip",
+       "label_interpreted": "Comment"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Production/Well Reviews.html",
+   "name": "Well Reviews",
+   "folder": "Production",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvwellreview",
+     "title": "Wellreview",
+     "fields": [
+      {
+       "column": "fieldname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Field"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "typ",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "reviewedby",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Reviewedby"
+      },
+      {
+       "column": "proposedprojtyp",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Proposedprojtyp"
+      },
+      {
+       "column": "proposedprojdes",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Proposedprojdes"
+      },
+      {
+       "column": "proposedprojpriority",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Proposedprojpriority"
+      },
+      {
+       "column": "proposedprojcost",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Proposedprojcost"
+      },
+      {
+       "column": "proposedprojstatus",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Proposedprojstatus"
+      },
+      {
+       "column": "prestargetline",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Prestargetline"
+      },
+      {
+       "column": "ratetargetoil",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Ratetargetoil"
+      },
+      {
+       "column": "ratetargetgas",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Ratetargetgas"
+      },
+      {
+       "column": "ratetargetcond",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Ratetargetcond"
+      },
+      {
+       "column": "ratetargetwater",
+       "source_table": "wvwellreview",
+       "label_interpreted": "Ratetargetwater"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Production/Zone Status.html",
+   "name": "Zone Status",
+   "folder": "Production",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvzone",
+     "title": "Zone",
+     "fields": [
+      {
+       "column": "zonename",
+       "source_table": "wvzone",
+       "label_interpreted": "Zonename"
+      },
+      {
+       "column": "zoneida",
+       "source_table": "wvzone",
+       "label_interpreted": "Zoneida"
+      },
+      {
+       "column": "currentstatuscalc",
+       "source_table": "wvzone",
+       "label_interpreted": "Currentstatus (computed)"
+      },
+      {
+       "column": "dttmstatuscalc",
+       "source_table": "wvzone",
+       "label_interpreted": "Date/Time Status (computed)"
+      },
+      {
+       "column": "dttmzonelic",
+       "source_table": "wvzone",
+       "label_interpreted": "Date/Time Zonelic"
+      },
+      {
+       "column": "dttmzoneonprod",
+       "source_table": "wvzone",
+       "label_interpreted": "Date/Time Zoneonprod"
+      },
+      {
+       "column": "depthtop",
+       "source_table": "wvzone",
+       "label_interpreted": "Top Depth"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvzone",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "commingled",
+       "source_table": "wvzone",
+       "label_interpreted": "Commingled"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/AFE vs Field Est.html",
+   "name": "AFE vs Field Est",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjob",
+     "title": "Job",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "afenumbercalc",
+       "source_table": "wvjob",
+       "label_interpreted": "AFE Number"
+      },
+      {
+       "column": "jobtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobtyp"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjob",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjob",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "afeamtcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Afeamt (computed)"
+      },
+      {
+       "column": "costtotalcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Daily Cost Total"
+      },
+      {
+       "column": "variancefieldcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Variancefield (computed)"
+      },
+      {
+       "column": "depthdrilledcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Depth Drilled (computed)"
+      },
+      {
+       "column": "tmdrillcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Tmdrill (computed)"
+      },
+      {
+       "column": "costperdepthcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Costperdepth (computed)"
+      },
+      {
+       "column": "mudcostcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Mudcost (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/Cost Summary by Vendor.html",
+   "name": "Cost Summary by Vendor",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjvendorcalc",
+     "title": "Jvendorcalc",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "jobtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobtyp"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjob",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjob",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "vendor",
+       "source_table": "wvjvendorcalc",
+       "label_interpreted": "Vendor"
+      },
+      {
+       "column": "cost",
+       "source_table": "wvjvendorcalc",
+       "label_interpreted": "Cost"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/Downhole Equipment.html",
+   "name": "Downhole Equipment",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template portrait.afm",
+   "blocks": [
+    {
+     "table": "wvwellheader",
+     "title": "Well Header",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "wellida",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well ID"
+      }
+     ]
+    },
+    {
+     "table": "wvcas",
+     "title": "Cas",
+     "fields": [
+      {
+       "column": "des",
+       "source_table": "wvcas",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvcas",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvcas",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "szodnommaxcalc",
+       "source_table": "wvcas",
+       "label_interpreted": "Szodnommax (computed)"
+      },
+      {
+       "column": "wtperlengthcalc",
+       "source_table": "wvcas",
+       "label_interpreted": "Wtperlength (computed)"
+      },
+      {
+       "column": "gradecalc",
+       "source_table": "wvcas",
+       "label_interpreted": "Grade (computed)"
+      }
+     ]
+    },
+    {
+     "table": "wvtub",
+     "title": "Tub",
+     "fields": [
+      {
+       "column": "des",
+       "source_table": "wvtub",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvtub",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvtub",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "szodnommaxcalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Szodnommax (computed)"
+      },
+      {
+       "column": "wtperlengthcalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Wtperlength (computed)"
+      },
+      {
+       "column": "gradecalc",
+       "source_table": "wvtub",
+       "label_interpreted": "Grade (computed)"
+      }
+     ]
+    },
+    {
+     "table": "wvrod",
+     "title": "Rod String",
+     "fields": [
+      {
+       "column": "des",
+       "source_table": "wvrod",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvrod",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvrod",
+       "label_interpreted": "Date/Time Run"
+      },
+      {
+       "column": "szodnommaxcalc",
+       "source_table": "wvrod",
+       "label_interpreted": "Szodnommax (computed)"
+      },
+      {
+       "column": "wtperlengthcalc",
+       "source_table": "wvrod",
+       "label_interpreted": "Wtperlength (computed)"
+      },
+      {
+       "column": "gradecalc",
+       "source_table": "wvrod",
+       "label_interpreted": "Grade (computed)"
+      }
+     ]
+    },
+    {
+     "table": "wvotherinhole",
+     "title": "Otherinhole",
+     "fields": [
+      {
+       "column": "des",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Description"
+      },
+      {
+       "column": "depthtop",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Top Depth"
+      },
+      {
+       "column": "depthbtm",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Bottom Depth"
+      },
+      {
+       "column": "szodnom",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Szodnom"
+      },
+      {
+       "column": "dttmrun",
+       "source_table": "wvotherinhole",
+       "label_interpreted": "Date/Time Run"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/Job Summary.html",
+   "name": "Job Summary",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjob",
+     "title": "Job",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "jobtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobtyp"
+      },
+      {
+       "column": "jobsubtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobsubtyp"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjob",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjob",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "summary",
+       "source_table": "wvjob",
+       "label_interpreted": "Summary"
+      },
+      {
+       "column": "afetotalcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "AFE Total"
+      },
+      {
+       "column": "costtotalcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Daily Cost Total"
+      },
+      {
+       "column": "variancefieldcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Variancefield (computed)"
+      },
+      {
+       "column": "durationpersonneltotcalc",
+       "source_table": "wvjob",
+       "label_interpreted": "Personnel Hours"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/Lessons.html",
+   "name": "Lessons",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobintervallesson",
+     "title": "Interval Lesson",
+     "fields": [
+      {
+       "column": "typ",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Type"
+      },
+      {
+       "column": "typdetail",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Typdetail"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "depthstart",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Depth Start"
+      },
+      {
+       "column": "depthend",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Depth End"
+      },
+      {
+       "column": "estcostsaving",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Estimate Costsaving"
+      },
+      {
+       "column": "esttimesaving",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Estimate Timesaving"
+      },
+      {
+       "column": "com",
+       "source_table": "wvjobintervallesson",
+       "label_interpreted": "Comment"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/Material Transfer.html",
+   "name": "Material Transfer",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobmaterialtrans",
+     "title": "Jobmaterialtrans",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "materialtransno",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": "Materialtransno"
+      },
+      {
+       "column": "tofrom",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": "Tofrom"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "locationdes",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": "Locationdes"
+      },
+      {
+       "column": "carrier",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": "Carrier"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/Phase Summary.html",
+   "name": "Phase Summary",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobprogramphase",
+     "title": "Jobprogramphase",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "jobtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobtyp"
+      },
+      {
+       "column": "code1",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Code 1"
+      },
+      {
+       "column": "dayjobactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Dayjobactual (computed)"
+      },
+      {
+       "column": "dayjobmlplancalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Dayjobmlplan (computed)"
+      },
+      {
+       "column": "durationactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Duration Actual Ual (computed)"
+      },
+      {
+       "column": "durcumactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Duration Cumulative Actual Ual (computed)"
+      },
+      {
+       "column": "costml",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costml"
+      },
+      {
+       "column": "costactualcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costactual (computed)"
+      },
+      {
+       "column": "costactualcumcalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costactual (cumulative) (computed)"
+      },
+      {
+       "column": "costvariancecalc",
+       "source_table": "wvjobprogramphase",
+       "label_interpreted": "Costvariance (computed)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/Rigs with query.html",
+   "name": "Rigs with query",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobrig",
+     "title": "Rig",
+     "fields": [
+      {
+       "column": "contractor",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Contractor"
+      },
+      {
+       "column": "rigno",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Rigno"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjobrig",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "typ1",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Typ1"
+      },
+      {
+       "column": "contracttyp",
+       "source_table": "wvjobrig",
+       "label_interpreted": "Contracttyp"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/Safety Incidents.html",
+   "name": "Safety Incidents",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobsafetyincident",
+     "title": "Jobsafetyincident",
+     "fields": [
+      {
+       "column": "typ1",
+       "source_table": "wvjobsafetyincident",
+       "label_interpreted": "Typ1"
+      },
+      {
+       "column": "typ2",
+       "source_table": "wvjobsafetyincident",
+       "label_interpreted": "Typ2"
+      },
+      {
+       "column": "dttm",
+       "source_table": "wvjobsafetyincident",
+       "label_interpreted": "Dttm"
+      },
+      {
+       "column": "severity",
+       "source_table": "wvjobsafetyincident",
+       "label_interpreted": "Severity"
+      },
+      {
+       "column": "cause",
+       "source_table": "wvjobsafetyincident",
+       "label_interpreted": "Cause"
+      },
+      {
+       "column": "losttime",
+       "source_table": "wvjobsafetyincident",
+       "label_interpreted": "Losttime"
+      },
+      {
+       "column": "com",
+       "source_table": "wvjobsafetyincident",
+       "label_interpreted": "Comment"
+      },
+      {
+       "column": "jobtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobtyp"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/Service Contractor Evaluation.html",
+   "name": "Service Contractor Evaluation",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvjobservicecontract",
+     "title": "Jobservicecontract",
+     "fields": [
+      {
+       "column": "servicecompany",
+       "source_table": "wvjobservicecontract",
+       "label_interpreted": "Servicecompany"
+      },
+      {
+       "column": "servicecontracttyp",
+       "source_table": "wvjobservicecontract",
+       "label_interpreted": "Servicecontracttyp"
+      },
+      {
+       "column": "servicetyp",
+       "source_table": "wvjobservicecontract",
+       "label_interpreted": "Servicetyp"
+      },
+      {
+       "column": "dttmeval",
+       "source_table": "wvjobservicecontract",
+       "label_interpreted": "Date/Time Eval"
+      },
+      {
+       "column": "scorecalc",
+       "source_table": "wvjobservicecontract",
+       "label_interpreted": "Score (computed)"
+      },
+      {
+       "column": "scoremaxcalc",
+       "source_table": "wvjobservicecontract",
+       "label_interpreted": "Scoremax (computed)"
+      },
+      {
+       "column": "percentscorecalc",
+       "source_table": "wvjobservicecontract",
+       "label_interpreted": "Percentscore (computed)"
+      },
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": "Well Name"
+      },
+      {
+       "column": "wvtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Wvtyp"
+      },
+      {
+       "column": "jobtyp",
+       "source_table": "wvjob",
+       "label_interpreted": "Jobtyp"
+      },
+      {
+       "column": "dttmstart",
+       "source_table": "wvjob",
+       "label_interpreted": "Start Date/Time"
+      },
+      {
+       "column": "dttmend",
+       "source_table": "wvjob",
+       "label_interpreted": "End Date/Time"
+      },
+      {
+       "column": "afenumbercalc",
+       "source_table": "wvjob",
+       "label_interpreted": "AFE Number"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Summary/Tasks.html",
+   "name": "Tasks",
+   "folder": "Summary",
+   "multi": true,
+   "master": false,
+   "format_version": 3.0,
+   "paper": "letter",
+   "parent_template": "multi template landscape.afm",
+   "blocks": [
+    {
+     "table": "wvtask",
+     "title": "Task",
+     "fields": [
+      {
+       "column": "typ1",
+       "source_table": "wvtask",
+       "label_interpreted": "Typ1"
+      },
+      {
+       "column": "typ2",
+       "source_table": "wvtask",
+       "label_interpreted": "Typ2"
+      },
+      {
+       "column": "des",
+       "source_table": "wvtask",
+       "label_interpreted": "Description"
+      }
+     ]
+    },
+    {
+     "table": "wvtaskdetail",
+     "title": "Taskdetail",
+     "fields": [
+      {
+       "column": "typ1",
+       "source_table": "wvtaskdetail",
+       "label_interpreted": "Typ1"
+      },
+      {
+       "column": "typ2",
+       "source_table": "wvtaskdetail",
+       "label_interpreted": "Typ2"
+      },
+      {
+       "column": "priority",
+       "source_table": "wvtaskdetail",
+       "label_interpreted": "Priority"
+      },
+      {
+       "column": "status",
+       "source_table": "wvtaskdetail",
+       "label_interpreted": "Status"
+      },
+      {
+       "column": "dttmrequest",
+       "source_table": "wvtaskdetail",
+       "label_interpreted": "Date/Time Request"
+      },
+      {
+       "column": "requestbyname",
+       "source_table": "wvtaskdetail",
+       "label_interpreted": "Requestbyname"
+      },
+      {
+       "column": "dttmactionrqd",
+       "source_table": "wvtaskdetail",
+       "label_interpreted": "Date/Time Actual Ionrqd"
+      },
+      {
+       "column": "actioncomplete",
+       "source_table": "wvtaskdetail",
+       "label_interpreted": "Actual Ioncomplete"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Tasks/Task Summary.html",
+   "name": "Task Summary",
+   "folder": "Tasks",
+   "multi": true,
+   "master": false,
+   "format_version": 2.0,
+   "paper": null,
+   "parent_template": "multi template landscape.afr",
+   "blocks": [
+    {
+     "table": "wvtask",
+     "title": "Task",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": ""
+      },
+      {
+       "column": "wellida",
+       "source_table": "wvwellheader",
+       "label_interpreted": ""
+      },
+      {
+       "column": "typ1",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "status",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "dttmrequest",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "requestcom",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "requestbyname",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "dttmactionrqd",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "dttmassigned",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "assigntodept",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "assigntoname",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "dttmcomplete",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      }
+     ]
+    },
+    {
+     "table": "wvjobmaterialtrans",
+     "title": "Jobmaterialtrans",
+     "fields": [
+      {
+       "column": "lengthsent",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      },
+      {
+       "column": "lengthused",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      },
+      {
+       "column": "des",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      },
+      {
+       "column": "typ",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      },
+      {
+       "column": "qtyreceived",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      },
+      {
+       "column": "qtysent",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      },
+      {
+       "column": "qtyused",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      },
+      {
+       "column": "condreceived",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      },
+      {
+       "column": "condsent",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      },
+      {
+       "column": "dttmsent",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      },
+      {
+       "column": "lengthreceived",
+       "source_table": "wvjobmaterialtrans",
+       "label_interpreted": ""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "html": "Tasks/Tasks - Incomplete.html",
+   "name": "Tasks - Incomplete",
+   "folder": "Tasks",
+   "multi": true,
+   "master": false,
+   "format_version": 2.0,
+   "paper": null,
+   "parent_template": "multi template landscape.afr",
+   "blocks": [
+    {
+     "table": "wvtask",
+     "title": "Task",
+     "fields": [
+      {
+       "column": "wellname",
+       "source_table": "wvwellheader",
+       "label_interpreted": ""
+      },
+      {
+       "column": "wellida",
+       "source_table": "wvwellheader",
+       "label_interpreted": ""
+      },
+      {
+       "column": "typ1",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "status",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "dttmrequest",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "requestcom",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "requestbyname",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "dttmactionrqd",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "dttmassigned",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "assigntodept",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "assigntoname",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      },
+      {
+       "column": "dttmcomplete",
+       "source_table": "wvtask",
+       "label_interpreted": ""
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

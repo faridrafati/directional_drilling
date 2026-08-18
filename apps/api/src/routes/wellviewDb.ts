@@ -38,6 +38,7 @@ import { requireUser } from "../entry/auth.js";
 import { resolveTemplateData } from "./wellviewSample.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
+import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
@@ -620,6 +621,26 @@ function need(reply: FastifyReply, id: string): Db | null {
   const d = db(id);
   if (!d) void reply.code(404).send({ error: `no database named ${id}` });
   return d;
+}
+
+/**
+ * The multi-well templates, read once from the generated JSON.
+ *
+ * Built by `scripts/wellview-afr/afm_export.py` from `custom/reports multi`.
+ * Three of the 57 are the older v2.0 container; they are included and marked
+ * rather than dropped, because a template that exists but predates the current
+ * schema is a different fact from one that does not exist.
+ */
+let _multi: MultiTemplate[] | null = null;
+function multiTemplates(): MultiTemplate[] {
+  if (_multi) return _multi;
+  try {
+    const path = join(REPO, "apps", "web", "public", "wellview-templates", "reports-multi.json");
+    _multi = (JSON.parse(readFileSync(path, "utf-8")).reports ?? []) as MultiTemplate[];
+  } catch {
+    _multi = [];
+  }
+  return _multi;
 }
 
 export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<void> {
@@ -1270,6 +1291,49 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         removed += Number(res.changes);
       }
       return { removed };
+    },
+  );
+
+  /**
+   * The multi-well report templates (`custom/reports multi/*.afm`).
+   *
+   * WellView's other reporting mode: one table printed across a SET of wells
+   * rather than one well's whole report. Listed separately from the single-well
+   * templates because they are chosen and run differently.
+   */
+  app.get("/entry/wellview/dbs/:db/reports-multi", { preHandler: requireUser }, async () => {
+    return {
+      reports: multiTemplates().map((t) => ({
+        html: t.html,
+        name: t.name,
+        folder: t.folder ?? "",
+        formatVersion: t.format_version ?? 3,
+        blocks: t.blocks.map((b) => ({ table: b.table, title: b.title, fields: b.fields.length })),
+      })),
+    };
+  });
+
+  /**
+   * Run a multi-well template over the wells the user selected.
+   *
+   * `wells` is an explicit list. An empty list returns no rows — "nothing
+   * selected" must never quietly mean "every well in the database", which on a
+   * real asset would be a very expensive way to be wrong.
+   */
+  app.get<{ Params: { db: string }; Querystring: { html?: string; wells?: string } }>(
+    "/entry/wellview/dbs/:db/multi-report",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const html = String(req.query.html ?? "");
+      if (!html) return reply.code(400).send({ error: "html (template id) is required" });
+      const tpl = multiTemplates().find((t) => t.html === html);
+      if (!tpl) return reply.code(404).send({ error: `no multi-well template with html=${html}` });
+      const wells = String(req.query.wells ?? "").split(",").map((w) => w.trim()).filter(Boolean);
+      // A bounded set: the query binds one parameter per well.
+      if (wells.length > 500) return reply.code(400).send({ error: "at most 500 wells at a time" });
+      return resolveMultiTemplate(d.ro, tpl, wells);
     },
   );
 

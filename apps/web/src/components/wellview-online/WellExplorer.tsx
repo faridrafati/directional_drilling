@@ -28,6 +28,8 @@ interface Props {
   onOpen: (idwell: string) => void;
   /** Open the Edit Data window on a well. */
   onEdit: (idwell: string) => void;
+  /** Run a WellView multi-well report over the selected wells. */
+  onMultiReport: (idwells: string[]) => void;
   /** Run the Data Auditor over the selected wells. */
   onAudit: (idwells: string[]) => void;
   /** Back to the Open Database window. */
@@ -56,7 +58,7 @@ type Folder =
 
 interface GroupSpec { column: string; desc: boolean }
 
-export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: Props) {
+export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onChangeDatabase }: Props) {
   const K = (s: string) => `wv.online.${db}.${s}`;
 
   const [folder, setFolder] = useState<Folder>({ kind: "all" });
@@ -268,8 +270,10 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onChangeDatabase }: 
           onClick={() => void newWell()} />
         <ToolButton label="Data Audit" hint="Check that fields meet the §10.2 business rules"
           onClick={() => onAudit(selected)} />
-        <ToolButton label="Multi Well Reports" hint="The 30-report suite runs from the Well Reports page"
-          onClick={() => { window.location.href = "/well-reports"; }} />
+        <ToolButton label="Multi Well Reports"
+          hint="Print one table across the selected wells (custom/reports multi)"
+          disabled={!selected.length}
+          onClick={() => onMultiReport(selected)} />
         <span className="mx-1 h-5 w-px bg-gray-300" />
         <ToolButton label="Change Database" hint="Back to the Open Database window" onClick={onChangeDatabase} />
         <span className="ml-auto text-[11px] text-gray-400 tabular-nums">

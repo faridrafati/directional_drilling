@@ -20,6 +20,7 @@ import { wvDbApi } from "../entry/wellviewDb.js";
 import { useUnitSet, UNIT_SETS, type UnitSet } from "../entry/unitSet.js";
 import { WellExplorer } from "../components/wellview-online/WellExplorer.js";
 import { WellWindow } from "../components/wellview-online/WellWindow.js";
+import { MultiReports } from "../components/wellview-online/MultiReports.js";
 import { EditData, type WvClipboard } from "../components/wellview-online/EditData.js";
 import { DataAudit } from "../components/wellview-online/DataAudit.js";
 
@@ -39,6 +40,7 @@ function Inner() {
   const [edit, setEdit] = useState<
     { idwell: string; table: string | null; idrec?: string; column?: string | null } | null>(null);
   const [audit, setAudit] = useState<string[] | null>(null);
+  const [multi, setMulti] = useState<string[] | null>(null);
   /** Copy Record / Paste Record buffer — survives closing one well and opening
    *  another, which is exactly what the manual's between-wells copy needs. */
   const [clipboard, setClipboard] = useState<WvClipboard | null>(null);
@@ -98,6 +100,7 @@ function Inner() {
             onOpen={setOpenWell}
             onEdit={(idwell) => setEdit({ idwell, table: null })}
             onAudit={(idwells) => setAudit(idwells)}
+            onMultiReport={(idwells) => setMulti(idwells)}
             onChangeDatabase={() => { setDb(null); setOpenWell(null); }}
           />
         )}
@@ -134,6 +137,15 @@ function Inner() {
             wells={audit}
             onClose={() => setAudit(null)}
             onOpenRecord={(idwell, table) => { setAudit(null); setEdit({ idwell, table }); }}
+          />
+        )}
+
+        {user && db && multi && (
+          <MultiReports
+            db={db}
+            wells={multi}
+            wellName={nameOf}
+            onClose={() => setMulti(null)}
           />
         )}
       </div>
