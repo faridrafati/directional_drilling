@@ -235,6 +235,11 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
 }) {
   interface BlockData {
     table: string | null; title: string | null; exists: boolean; computed: boolean;
+    /** Computed HERE from stored rows, rather than merely absent (see below). */
+    derived?: boolean;
+    unsupported?: { field: string; reason: string }[];
+    /** Derivable, but waiting on a job/day selection in the toolbar. */
+    needsScope?: string[];
     columns?: { column: string; label: string; unit?: string;
       units?: Record<string, UnitFormat> }[]; missing?: string[];
     rowCount?: number; truncated?: boolean; allNull?: boolean;
@@ -388,9 +393,19 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                     </span>
                   )}
                 </button>
-                {b.computed ? (
+                {b.computed && !b.derived ? (
                   <div className="px-3 py-2 text-[11px] text-amber-700 bg-amber-50">
-                    Computed by WellView at print time — not stored in the database.
+                    {b.needsScope?.length ? (
+                      <>
+                        This summary can be computed here — pick{" "}
+                        {b.needsScope.includes("idjob") ? "a Job" : ""}
+                        {b.needsScope.includes("idjob") && b.needsScope.includes("idreport") ? " and " : ""}
+                        {b.needsScope.includes("idreport") ? "a Day" : ""}
+                        {b.needsScope.includes("idphase") ? "a Phase" : ""} in the toolbar above to see it.
+                      </>
+                    ) : (
+                      <>Computed by WellView at print time — not stored in the database.</>
+                    )}
                   </div>
                 ) : !b.exists ? (
                   <div className="px-3 py-2 text-[11px] text-gray-400">Table not present in this database.</div>
@@ -408,9 +423,24 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
+                    {/* A derived block must never read as stored data. WellView
+                        builds these when a report prints; the numbers here were
+                        aggregated from the records this database does hold. */}
+                    {b.derived && (
+                      <div className="px-3 py-2 text-[11px] text-green-800 bg-green-50 border-b border-green-100">
+                        <b>Computed here</b> from the stored records — WellView builds this table at
+                        print time and does not save it.
+                        {!!b.unsupported?.length && (
+                          <span className="text-green-900/70">
+                            {" "}Not derivable from this database:{" "}
+                            {b.unsupported.map((u) => u.field).join(", ")}.
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <table className="w-full text-[11px] border-collapse">
                       <thead>
-                        <tr className="bg-gray-100 text-gray-600">
+                        <tr className={b.derived ? "bg-green-100/70 text-green-900" : "bg-gray-100 text-gray-600"}>
                           {b.icons && <th className="px-1 py-1 w-8" aria-label="icon" />}
                           {b.columns!.map((c) => (
                             <th key={c.column} className="px-2 py-1 text-left font-medium whitespace-nowrap"

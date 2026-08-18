@@ -31,6 +31,9 @@ import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance } from "fastify";
 import { requireUser } from "../entry/auth.js";
 import { columnLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
+import { computeCalc, calcMissingScope } from "../wellview/calc.js";
+// Importing the registry is what registers it; nothing else references the module.
+import "../wellview/calcDerivations.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
@@ -327,13 +330,62 @@ export function resolveTemplateData(
     if (!tname) return { table: b.table, title: blockTitle(b), exists: false, computed: false };
     const t = sch.get(tname);
     if (!t) {
+      // wv*calc tables are WellView print-time computations — there is nothing
+      // to READ. Most of them are aggregations over rows that ARE stored, so
+      // where the derivation has been worked out and its totals reconciled, it
+      // is computed here and the block says plainly that the numbers were
+      // derived. Everything else keeps the honest "WellView builds this at
+      // print time" note; every other miss is simply not in this database.
+      const isCalc = /calc$/.test(tname);
+      const derived = isCalc
+        ? computeCalc(d, b.table!, {
+            idwell: well,
+            idjob: anchorIds.get("wvjob") ?? null,
+            idreport: anchorIds.get("wvjobreport") ?? null,
+            idphase: anchorIds.get("wvjobprogramphase") ?? null,
+          })
+        : null;
+      if (derived) {
+        // The template names which columns to print, and in what order; a
+        // derived block honours that just as a stored one does.
+        const byName = new Map(derived.columns.map((c) => [c.column.toLowerCase(), c]));
+        const asked = b.fields.map((f) => byName.get(f.column.toLowerCase())).filter((c) => c != null);
+        const columns = asked.length ? asked : derived.columns;
+        const keys = columns.map((c) => c!.column);
+        return {
+          table: derived.table,
+          title: blockTitle(b),
+          exists: true,
+          computed: true,
+          derived: true,
+          columns,
+          // Rows travel as ARRAYS aligned to `columns`, exactly as a stored
+          // block's do — the client renders both through the same path.
+          rows: derived.rows.map((r) => keys.map((k) => (r[k] ?? null) as string | number | null)),
+          rowCount: derived.rowCount,
+          missing: b.fields
+            .filter((f) => !byName.has(f.column.toLowerCase()))
+            .map((f) => f.column),
+          unsupported: derived.unsupported,
+          verifiedBy: derived.verifiedBy,
+        };
+      }
+      // Derivable, but the report toolbar has not been given the job or day
+      // this summary is OF. Name it, so the block is a prompt and not a wall.
+      const needs = isCalc
+        ? calcMissingScope(b.table!, {
+            idwell: well,
+            idjob: anchorIds.get("wvjob") ?? null,
+            idreport: anchorIds.get("wvjobreport") ?? null,
+            idphase: anchorIds.get("wvjobprogramphase") ?? null,
+          }).filter((p) => p !== "idwell")
+        : [];
       return {
         table: b.table,
         title: blockTitle(b),
         exists: false,
-        // wv*calc tables are WellView print-time computations — there is
-        // nothing to read; every other miss is simply not in this database.
-        computed: /calc$/.test(tname),
+        computed: isCalc,
+        ...(needs.length ? { needsScope: needs } : {}),
       };
     }
     const wanted = b.fields.map((f) => ({
