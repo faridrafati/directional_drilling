@@ -20,6 +20,7 @@ from urllib.parse import quote
 
 from afr_labels import field_label, table_label
 from afr_parse import AfrError, Report, parse, parse_template_order, to_dict
+from afr_v2 import AfrV2Error, parse_v2
 
 PAPER_CSS = {
     "letter": "8.5in 11in",
@@ -307,7 +308,38 @@ def main(source_root: Path, out_dir: Path, repo_root: Path) -> int:
         try:
             rep = parse(path)
         except AfrError as e:
-            failures.append({"path": rel, "error": str(e)})
+            # One shipped template (Depth vs Cost Graph, 2006) is the older
+            # v2.0 container. Read what it actually prints rather than counting
+            # it as a failure — see afr_v2.py. It carries no v3.0 styling, so it
+            # gets an entry but no standalone HTML render.
+            try:
+                legacy = parse_v2(path)
+            except (AfrV2Error, Exception):               # noqa: BLE001
+                failures.append({"path": rel, "error": str(e)})
+                continue
+            folder_rel = path.parent.relative_to(source_root)
+            entries.append({
+                "path": str(path),
+                "name": path.stem,
+                "source_relative": rel,
+                "folder_relative": str(folder_rel),
+                "format_version": 2.0,
+                "html": (str(folder_rel / f"{path.stem}.html")
+                         if str(folder_rel) != "." else f"{path.stem}.html"),
+                "parent_template": legacy.parent_template,
+                "blocks": [
+                    {
+                        "table": b.table,
+                        "title": None,
+                        "fields": [
+                            {"column": f.column, "source_table": f.table,
+                             "label_interpreted": field_label(f"{f.table}.{f.column}")}
+                            for f in b.fields
+                        ],
+                    }
+                    for b in legacy.blocks
+                ],
+            })
             continue
         except Exception as e:  # noqa: BLE001 - reported, never swallowed
             failures.append({"path": rel, "error": f"{type(e).__name__}: {e}"})
