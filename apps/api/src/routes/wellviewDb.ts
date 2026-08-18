@@ -802,6 +802,8 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
             hiddenByDefault: mf?.hidden,
             type: mf?.type,
             unit: mf?.baseUnit,
+            applyDatum: mf?.applyDatum || undefined,
+            datumMode: mf?.datumMode,
             /** Per unit set, the unit to show it in and its decimals — the
              *  client converts at the render boundary (Tools > Units). */
             units: mf?.units,
@@ -1167,17 +1169,17 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         method: "minimum curvature",
         /** What each computed column is called and what it is measured in. */
         columns: [
-          { key: "md", label: columnLabel(data.name, "md"), unit: modelField(data.name, "md")?.baseUnit, units: modelField(data.name, "md")?.units, computed: false },
-          { key: "inclination", label: columnLabel(data.name, "inclination"), unit: modelField(data.name, "inclination")?.baseUnit, units: modelField(data.name, "inclination")?.units, computed: false },
-          { key: "azimuth", label: columnLabel(data.name, "azimuth"), unit: modelField(data.name, "azimuth")?.baseUnit, units: modelField(data.name, "azimuth")?.units, computed: false },
-          { key: "tvd", label: columnLabel(data.name, "tvdcalc"), unit: modelField(data.name, "tvdcalc")?.baseUnit, units: modelField(data.name, "tvdcalc")?.units, computed: true },
-          { key: "ns", label: columnLabel(data.name, "nscalc"), unit: modelField(data.name, "nscalc")?.baseUnit, units: modelField(data.name, "nscalc")?.units, computed: true },
-          { key: "ew", label: columnLabel(data.name, "ewcalc"), unit: modelField(data.name, "ewcalc")?.baseUnit, units: modelField(data.name, "ewcalc")?.units, computed: true },
-          { key: "vs", label: columnLabel(data.name, "vscalc"), unit: modelField(data.name, "vscalc")?.baseUnit, units: modelField(data.name, "vscalc")?.units, computed: true },
-          { key: "departure", label: columnLabel(data.name, "departcalc"), unit: modelField(data.name, "departcalc")?.baseUnit, units: modelField(data.name, "departcalc")?.units, computed: true },
-          { key: "dls", label: columnLabel(data.name, "dlscalc"), unit: modelField(data.name, "dlscalc")?.baseUnit, units: modelField(data.name, "dlscalc")?.units, computed: true },
-          { key: "buildRate", label: columnLabel(data.name, "buildratecalc"), unit: modelField(data.name, "buildratecalc")?.baseUnit, units: modelField(data.name, "buildratecalc")?.units, computed: true },
-          { key: "turnRate", label: columnLabel(data.name, "turnratecalc"), unit: modelField(data.name, "turnratecalc")?.baseUnit, units: modelField(data.name, "turnratecalc")?.units, computed: true },
+          { key: "md", label: columnLabel(data.name, "md"), unit: modelField(data.name, "md")?.baseUnit, units: modelField(data.name, "md")?.units, computed: false, applyDatum: modelField(data.name, "md")?.applyDatum || undefined },
+          { key: "inclination", label: columnLabel(data.name, "inclination"), unit: modelField(data.name, "inclination")?.baseUnit, units: modelField(data.name, "inclination")?.units, computed: false, applyDatum: modelField(data.name, "inclination")?.applyDatum || undefined },
+          { key: "azimuth", label: columnLabel(data.name, "azimuth"), unit: modelField(data.name, "azimuth")?.baseUnit, units: modelField(data.name, "azimuth")?.units, computed: false, applyDatum: modelField(data.name, "azimuth")?.applyDatum || undefined },
+          { key: "tvd", label: columnLabel(data.name, "tvdcalc"), unit: modelField(data.name, "tvdcalc")?.baseUnit, units: modelField(data.name, "tvdcalc")?.units, computed: true, applyDatum: modelField(data.name, "tvdcalc")?.applyDatum || undefined },
+          { key: "ns", label: columnLabel(data.name, "nscalc"), unit: modelField(data.name, "nscalc")?.baseUnit, units: modelField(data.name, "nscalc")?.units, computed: true, applyDatum: modelField(data.name, "nscalc")?.applyDatum || undefined },
+          { key: "ew", label: columnLabel(data.name, "ewcalc"), unit: modelField(data.name, "ewcalc")?.baseUnit, units: modelField(data.name, "ewcalc")?.units, computed: true, applyDatum: modelField(data.name, "ewcalc")?.applyDatum || undefined },
+          { key: "vs", label: columnLabel(data.name, "vscalc"), unit: modelField(data.name, "vscalc")?.baseUnit, units: modelField(data.name, "vscalc")?.units, computed: true, applyDatum: modelField(data.name, "vscalc")?.applyDatum || undefined },
+          { key: "departure", label: columnLabel(data.name, "departcalc"), unit: modelField(data.name, "departcalc")?.baseUnit, units: modelField(data.name, "departcalc")?.units, computed: true, applyDatum: modelField(data.name, "departcalc")?.applyDatum || undefined },
+          { key: "dls", label: columnLabel(data.name, "dlscalc"), unit: modelField(data.name, "dlscalc")?.baseUnit, units: modelField(data.name, "dlscalc")?.units, computed: true, applyDatum: modelField(data.name, "dlscalc")?.applyDatum || undefined },
+          { key: "buildRate", label: columnLabel(data.name, "buildratecalc"), unit: modelField(data.name, "buildratecalc")?.baseUnit, units: modelField(data.name, "buildratecalc")?.units, computed: true, applyDatum: modelField(data.name, "buildratecalc")?.applyDatum || undefined },
+          { key: "turnRate", label: columnLabel(data.name, "turnratecalc"), unit: modelField(data.name, "turnratecalc")?.baseUnit, units: modelField(data.name, "turnratecalc")?.units, computed: true, applyDatum: modelField(data.name, "turnratecalc")?.applyDatum || undefined },
         ],
         stations: results,
         /** Stated, not hidden: what was left out and what is not attempted. */
@@ -1537,6 +1539,53 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       return reply.code(201).send({
         idrec, bytes: buf.length, mime: s.mime, kind: s.label, inline: s.inline,
       });
+    },
+  );
+
+  /**
+   * A well's reference elevations (Tools > Reference Datum).
+   *
+   * ElvOrigKB's own help settles what the stored depths mean: "Original KB
+   * Elevation. All depths stored in the database relative to this elevation."
+   * Everything else here is a point the user may re-reference TO, and a well
+   * that lacks one cannot be re-referenced to it — which the client says,
+   * rather than shifting by zero and looking like it worked.
+   */
+  app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
+    "/entry/wellview/dbs/:db/elevations",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const idwell = String(req.query.idwell ?? "");
+      if (!idwell) return reply.code(400).send({ error: "idwell is required" });
+      const t = table(d, "wvWellHeader");
+      if (!t) return reply.code(404).send({ error: "no well header in this database" });
+
+      const pick = (c: string) => t.colSet.get(c);
+      const wanted: [string, string][] = [
+        ["OrigKB", "elvorigkb"], ["Ground", "elvground"], ["MudLine", "elvmudline"],
+        ["CasFlange", "elvcasflange"], ["TubHead", "elvtubhead"],
+      ];
+      const cols = wanted.filter(([, c]) => pick(c));
+      const elevations: Record<string, number | null> = {};
+      if (cols.length) {
+        const row = d.ro.prepare(
+          `SELECT ${cols.map(([, c]) => `"${pick(c)}"`).join(", ")}
+             FROM "${t.name}" WHERE "${t.colSet.get("idwell")}" = ?`,
+        ).get(idwell) as Record<string, unknown> | undefined;
+        for (const [key, c] of cols) {
+          const v = row?.[pick(c)!];
+          const n = v == null || v === "" ? null : Number(v);
+          elevations[key] = n != null && Number.isFinite(n) ? n : null;
+        }
+      }
+      return {
+        idwell,
+        elevations,
+        /** Elevations are heights, in the model's base length unit. */
+        unit: modelField("wvWellHeader", "elvorigkb")?.baseUnit,
+      };
     },
   );
 

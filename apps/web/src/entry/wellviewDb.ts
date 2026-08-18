@@ -45,6 +45,9 @@ export interface WvRecordColumn {
   unit?: string;
   /** Per unit set: the unit to display in, and its decimals. */
   units?: Record<string, UnitFormat>;
+  /** Measured from the reference datum, and how it responds to a change. */
+  applyDatum?: boolean;
+  datumMode?: "up" | "invariant";
   /** The form section this field belongs to ("Well Identifiers", "Elevations"…). */
   group?: string;
   /** Required by Chevron's Data Entry Audit rules — the desktop's yellow fields. */
@@ -239,10 +242,21 @@ export interface WvAttachment {
   inline: boolean;
 }
 
+/** A well's reference elevations, for Tools > Reference Datum. */
+export interface WvElevations {
+  idwell: string;
+  elevations: Partial<Record<"OrigKB" | "Ground" | "MudLine" | "CasFlange" | "TubHead", number | null>>;
+  unit?: string;
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
   databases: () => entryApi.get<WvDatabase[]>("/wellview/dbs"),
+
+  /** The elevations a well can be re-referenced to. */
+  elevations: (db: string, idwell: string) =>
+    entryApi.get<WvElevations>(`/wellview/dbs/${enc(db)}/elevations?idwell=${enc(idwell)}`),
 
   /** Attachment metadata for a well, or for one record of one table. */
   attachments: (db: string, q: { idwell?: string; table?: string; idrec?: string }) => {

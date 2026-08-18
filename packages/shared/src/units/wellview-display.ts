@@ -13,6 +13,7 @@
  * label it honestly instead of printing a mis-scaled number.
  */
 import { convertUnit } from "./wellview.js";
+import { applyDatumShift, type DatumShift, type DatumMode } from "./datum.js";
 
 /** How one unit set shows one field: the unit, and the model's format for it. */
 export interface UnitFormat {
@@ -33,6 +34,10 @@ export interface FieldUnitSpec {
   unit?: string;
   /** Per unit-set: the unit to show and how to format it. */
   units?: Record<string, UnitFormat>;
+  /** Measured from the reference datum (Tools > Reference Datum). */
+  applyDatum?: boolean;
+  /** How it responds: "up" and "invariant" are not a plain subtraction. */
+  datumMode?: DatumMode;
 }
 
 export interface DisplayedValue extends Omit<UnitFormat, "unit"> {
@@ -53,10 +58,25 @@ export function displayUnitFor(spec: FieldUnitSpec, unitSet: string): UnitFormat
   return target;
 }
 
-/** Stored (base) → displayed, in the user's set. */
-export function toDisplay(value: number, spec: FieldUnitSpec, unitSet: string): DisplayedValue | null {
+/**
+ * Stored (base) → displayed, in the user's set and from the chosen datum.
+ *
+ * ORDER MATTERS. The datum offset is a number of metres in the model's base
+ * unit, so it is applied to the stored value FIRST and the unit conversion runs
+ * on the result. Converting first and then subtracting a metre offset from a
+ * value now in feet would be wrong by the conversion factor.
+ */
+export function toDisplay(
+  value: number,
+  spec: FieldUnitSpec,
+  unitSet: string,
+  datum?: DatumShift | null,
+): DisplayedValue | null {
   const base = spec.unit;
   if (base == null || !Number.isFinite(value)) return null;
+  if (datum && spec.applyDatum) {
+    value = applyDatumShift(value, datum, spec.datumMode ?? "depth");
+  }
   const target = displayUnitFor(spec, unitSet);
   if (!target || target.unit === base) {
     return { ...target, value, unit: base, converted: true };
@@ -77,15 +97,29 @@ export function toDisplay(value: number, spec: FieldUnitSpec, unitSet: string): 
  * when the field could not be converted for display — because in that case what
  * the user saw, and therefore typed, was already the base unit.
  */
-export function fromDisplay(text: string, spec: FieldUnitSpec, unitSet: string): number | null {
+export function fromDisplay(
+  text: string,
+  spec: FieldUnitSpec,
+  unitSet: string,
+  datum?: DatumShift | null,
+): number | null {
   const n = parseNumber(text);
   if (n === null) return null;
   const base = spec.unit;
   if (!base) return n;
   const target = displayUnitFor(spec, unitSet);
-  if (!target || target.unit === base) return n;
-  const back = convertUnit(n, target.unit, base);
-  return back === null ? n : back;
+  let v = n;
+  if (target && target.unit !== base) {
+    const back = convertUnit(n, target.unit, base);
+    if (back !== null) v = back;
+  }
+  // Undo the datum offset the user was shown, in the base unit, so what lands
+  // in the database stays referenced to the original KB.
+  if (datum && spec.applyDatum) {
+    const mode = spec.datumMode ?? "depth";
+    v = applyDatumShift(v, datum, mode === "up" ? "depth" : mode === "invariant" ? "invariant" : "up");
+  }
+  return v;
 }
 
 /** The whole render in one call: "1,234.57" plus the unit it is in. */

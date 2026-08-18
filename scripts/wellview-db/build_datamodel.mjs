@@ -78,6 +78,71 @@ function formatOf(format) {
   if (intPart.includes(",")) out.grouped = true;
   return out;
 }
+
+/**
+ * HOW a datum-referenced field moves, which is not the same for all of them.
+ *
+ * The flag `applydatum` says a field is measured from the reference elevation.
+ * It does NOT say in which direction, and for six of the 355 fields a plain
+ * subtraction is wrong:
+ *
+ *  • "Stick Up" is `EQN: <lengthcalc> - <depthbtm>` — the length a string
+ *    stands ABOVE the reference. Lower the reference by Δ and the stickup grows
+ *    by Δ, so it moves the opposite way to a depth. Subtracting would be out
+ *    by 2Δ.
+ *  • Two fields are a DIFFERENCE of two depths ("Difference between Prog TVD
+ *    and Actual TVD"). Both operands shift together, so the difference does not
+ *    move at all; shifting it invents a discrepancy that is not there.
+ *
+ * Both are read off the model's own help text rather than kept as a hand list,
+ * so a future model revision reclassifies itself.
+ */
+function datumModeOf(a) {
+  const help = (a.help || "").replace(/\s+/g, " ");
+  const type = (a.physicaltype || "").toLowerCase();
+  // A flagged field that is not a number cannot be shifted at all. Three are
+  // strings; arithmetic on them would be a type error, not a datum change.
+  if (type && type !== "double" && type !== "integer") return "invariant";
+  // A DIFFERENCE of two datum-referenced depths does not move: both operands
+  // shift together. Two say so in prose ("Difference between Prog TVD and
+  // Actual TVD"); two more only reveal it in the equation —
+  // `EQN: <wvZone.DepthBtm>-<wvZone.DepthTop>` is an interval THICKNESS, and
+  // shifting it shortens a perforation that never changed.
+  if (/^\s*difference between/i.test(help)) return "invariant";
+  if (/sticks?\s+up\s+above/i.test(help) || /stickup/i.test(a.keyfld || "")) return "up";
+  return undefined;                       // the default: a depth, shifts down
+}
+
+/**
+ * A second pass over the finished model, for the differences only prose hides.
+ *
+ * `EQN: <wvZone.DepthBtm>-<wvZone.DepthTop>` is an interval THICKNESS: both
+ * operands are datum-referenced, they move together, and the thickness does
+ * not move at all. Shifting it shortens a perforation that never changed.
+ *
+ * BOTH operands must be datum-referenced for that to hold, which is why this
+ * runs after every field is known rather than inline. `wvJob.TDtoMudCalc` is
+ * `<wvJob.TotalDepthCalc>-<wvWellHeader.ElvMudLine>` — a depth minus a fixed
+ * ELEVATION. Only the depth moves, so that difference genuinely does shift, and
+ * a rule that just saw two depth-ish names would have frozen it wrongly.
+ */
+function markInvariantDifferences(tables) {
+  const flagged = (ref) => {
+    const [t, f] = String(ref).split(".");
+    if (!t || !f) return false;
+    return tables[t.toLowerCase()]?.fields?.[f.toLowerCase()]?.applyDatum === true;
+  };
+  let n = 0;
+  for (const t of Object.values(tables)) {
+    for (const f of Object.values(t.fields)) {
+      if (!f.applyDatum || f.datumMode) continue;
+      const m = (f.help || "").replace(/\s+/g, " ").match(/EQN:\s*<([^>]+)>\s*-\s*<([^>]+)>/i);
+      if (m && flagged(m[1]) && flagged(m[2])) { f.datumMode = "invariant"; n++; }
+    }
+  }
+  return n;
+}
+
 /** Collapse the model's help text to one clean line. */
 const clean = (s) => (s ? s.replace(/\s*[\r\n]+\s*/g, " ").replace(/\s{2,}/g, " ").trim() : undefined);
 
@@ -227,6 +292,11 @@ for (const m of xml.matchAll(/<(afmtable|afmfieldunitformat|afmunitset|afmfield|
     libTable: a.libtablename || undefined,
     libField: a.libfieldname || undefined,
     baseUnit: a.baseunit || undefined,
+    // Tools > Reference Datum: the depths that move when the user re-references
+    // the well to ground, mudline or the casing flange instead of the KB.
+    // 363 fields across 93 tables carry it; everything else stays put.
+    applyDatum: bool(a.applydatum) || undefined,
+    datumMode: bool(a.applydatum) ? datumModeOf(a) : undefined,
   };
   for (const k of Object.keys(f)) if (f[k] === undefined) delete f[k];
   current.fields[a.keyfld.toLowerCase()] = f;
@@ -288,6 +358,8 @@ const payload = {
 };
 
 mkdirSync(dirname(OUT), { recursive: true });
+const frozenDiffs = markInvariantDifferences(tables);
+
 writeFileSync(OUT, JSON.stringify(payload));
 const bytes = JSON.stringify(payload).length;
 console.log(`data model → ${OUT}`);

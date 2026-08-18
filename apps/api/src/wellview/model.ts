@@ -45,6 +45,10 @@ export interface ModelField {
   baseUnit?: string;
   /** Per unit set (US/Metric/EU/Mixed): display unit and decimals. */
   units?: Record<string, UnitFormat>;
+  /** Tools > Reference Datum: this value is measured from the reference. */
+  applyDatum?: boolean;
+  /** How it responds — "up" and "invariant" are NOT a plain subtraction. */
+  datumMode?: "up" | "invariant";
   /** The form SECTION this field belongs to ("Well Identifiers", "Elevations"…),
    *  as the model groups them — the headings the guide's exercises use. */
   group?: string;

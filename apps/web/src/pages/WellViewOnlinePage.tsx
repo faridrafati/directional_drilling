@@ -18,6 +18,8 @@ import { useQuery } from "@tanstack/react-query";
 import { EntryAuthProvider, useEntryAuth, SignInCard } from "../entry/auth.js";
 import { wvDbApi } from "../entry/wellviewDb.js";
 import { useUnitSet, UNIT_SETS, type UnitSet } from "../entry/unitSet.js";
+import { useDatum } from "../entry/datum.js";
+import { DATUMS, DATUM_LABELS, type Datum } from "@dd/shared";
 import { WellExplorer } from "../components/wellview-online/WellExplorer.js";
 import { WellWindow } from "../components/wellview-online/WellWindow.js";
 import { MultiReports } from "../components/wellview-online/MultiReports.js";
@@ -35,6 +37,7 @@ export function WellViewOnlinePage() {
 function Inner() {
   const { user, loading, signOut } = useEntryAuth();
   const [unitSet, setUnitSet] = useUnitSet();
+  const [datum, setDatum] = useDatum();
   const [db, setDb] = useState<string | null>(null);
   const [openWell, setOpenWell] = useState<string | null>(null);
   const [edit, setEdit] = useState<
@@ -76,6 +79,15 @@ function Inner() {
                   title="Tools > Units — the set every number on screen is shown in (§4.2)"
                   className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white text-gray-800 normal-case tracking-normal">
                   {UNIT_SETS.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
+                Datum
+                <select value={datum} onChange={(e) => setDatum(e.target.value as Datum)}
+                  data-testid="wv-datum"
+                  title="Tools > Reference Datum — the point every depth is measured from. Stored depths are relative to the original KB."
+                  className="h-8 border border-gray-300 rounded-md px-1.5 text-xs bg-white text-gray-800 normal-case tracking-normal">
+                  {DATUMS.map((d) => <option key={d} value={d}>{DATUM_LABELS[d]}</option>)}
                 </select>
               </label>
               <span className="text-gray-600">

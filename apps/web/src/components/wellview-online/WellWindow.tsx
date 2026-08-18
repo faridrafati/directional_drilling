@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entryApi } from "../../entry/client.js";
 import { useUnitSet } from "../../entry/unitSet.js";
+import { useDatumShift } from "../../entry/datum.js";
 import { toDisplay, fromDisplay, formatUnitValue, displayUnitFor } from "@dd/shared";
 import type { UnitFormat } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
@@ -251,6 +252,7 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
   }
   const qc = useQueryClient();
   const [unitSet] = useUnitSet();
+  const { shift: datumShiftFor } = useDatumShift(db, idwell);
   const [jobId, setJobId] = useState<string>("");
   const [dayId, setDayId] = useState<string>("");
   const [zoom, setZoom] = useState(100);
@@ -501,7 +503,7 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                                   if (meta?.unit && v != null && v !== "") {
                                     const n = Number(v);
                                     if (Number.isFinite(n)) {
-                                      const d = toDisplay(n, meta, unitSet);
+                                      const d = toDisplay(n, meta, unitSet, datumShiftFor);
                                       if (d) return formatUnitValue(d.value, d);
                                     }
                                   }
@@ -963,6 +965,7 @@ function SurveyTab({ db, idwell, onEditTable }: {
 }) {
   const [surveyId, setSurveyId] = useState<string>("");
   const [unitSet] = useUnitSet();
+  const { shift: datumShift } = useDatumShift(db, idwell);
 
   const listQ = useQuery({
     queryKey: ["wvdb", db, "records", "wvWellboreDirSurvey", idwell, null, false],
@@ -982,7 +985,7 @@ function SurveyTab({ db, idwell, onEditTable }: {
   /** Every survey column carries a base unit; show it in the user's set. */
   const cell = (v: number | null, col: { unit?: string; units?: Record<string, UnitFormat> }) => {
     if (v == null) return <span className="text-gray-300">—</span>;
-    const d = toDisplay(v, col, unitSet);
+    const d = toDisplay(v, col, unitSet, datumShift);
     return <>{d ? formatUnitValue(d.value, d) : Number(v.toFixed(2)).toLocaleString()}</>;
   };
 

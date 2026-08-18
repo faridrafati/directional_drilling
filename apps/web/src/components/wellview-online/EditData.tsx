@@ -39,6 +39,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { wvDbApi, type WvRecordColumn, type WvRecords, type WvTreeNode } from "../../entry/wellviewDb.js";
 import { usePicklistCatalog } from "../../entry/picklists.js";
 import { useUnitSet } from "../../entry/unitSet.js";
+import { useDatumShift } from "../../entry/datum.js";
 import { toDisplay, fromDisplay, displayUnitFor, formatUnitValue } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
 
@@ -474,9 +475,11 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   const [busy, setBusy] = useState(false);
   const plQ = usePicklistCatalog();
   const [unitSet] = useUnitSet();
+  const { shift: datumShift } = useDatumShift(db, idwell);
   const [popover, setPopover] = useState<{ key: string | null; col: string } | null>(null);
   /** What the model says about one column's units, for the conversion helpers. */
-  const unitOf = (c: WvRecordColumn) => ({ unit: c.unit, units: c.units });
+  const unitOf = (c: WvRecordColumn) =>
+    ({ unit: c.unit, units: c.units, applyDatum: c.applyDatum, datumMode: c.datumMode });
 
   /**
    * §5 "Set up Day Two": a new record inherits the previous one's carry-forward
@@ -540,7 +543,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     for (const [col, v] of Object.entries(carrySeed)) {
       const c = data.columns.find((x) => x.column === col);
       const n = c?.unit ? Number(v) : NaN;
-      const d = Number.isFinite(n) ? toDisplay(n, unitOf(c!), unitSet) : null;
+      const d = Number.isFinite(n) ? toDisplay(n, unitOf(c!), unitSet, datumShift) : null;
       out[col] = d ? formatUnitValue(d.value, d) : v;
     }
     return out;
@@ -573,9 +576,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         if (!c.unit || !(c.column in out)) continue;
         const v = out[c.column];
         if (v == null || v === "") continue;
-        const base = fromDisplay(String(v), unitOf(c), from);
+        const base = fromDisplay(String(v), unitOf(c), from, datumShift);
         if (base === null) continue;
-        const d = toDisplay(base, unitOf(c), unitSet);
+        const d = toDisplay(base, unitOf(c), unitSet, datumShift);
         if (d) out[c.column] = formatUnitValue(d.value, d);
       }
       return out;
@@ -674,7 +677,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       if (!c.unit || !(c.column in values)) continue;
       const v = values[c.column];
       if (v == null || v === "") continue;
-      const base = fromDisplay(String(v), unitOf(c), unitSet);
+      const base = fromDisplay(String(v), unitOf(c), unitSet, datumShift);
       if (base !== null) values[c.column] = base;
     }
   }
@@ -866,7 +869,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     if (c?.unit) {
       const n = Number(raw);
       if (Number.isFinite(n)) {
-        const d = toDisplay(n, unitOf(c), unitSet);
+        const d = toDisplay(n, unitOf(c), unitSet, datumShift);
         if (d) return formatUnitValue(d.value, d);
       }
     }

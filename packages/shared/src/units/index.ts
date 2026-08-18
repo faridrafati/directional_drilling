@@ -84,3 +84,4 @@ export const UNIT_PRESETS: Record<string, UnitSystem> = {
   US:       { length: "ft", angle: "deg", dls: "deg/100ft" },
   Imperial: { length: "yd", angle: "deg", dls: "deg/100ft" },
 };
+export * from "./datum.js";
