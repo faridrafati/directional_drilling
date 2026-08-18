@@ -154,7 +154,9 @@ d("registered calc derivations", () => {
       expect(calcDerivation(u.table), u.table).toBeUndefined();
       expect(computeCalc(db, u.table, { idwell, idjob, idreport }), u.table).toBeNull();
     }
-    expect(UNDERIVED.map((u) => u.table)).toContain("wvJRMudAddCalc");
+    // What remains is genuinely not an aggregation: drilling hydraulics and the
+    // annular velocities that depend on it.
+    expect(UNDERIVED.map((u) => u.table)).toEqual(["wvJDSDPHydCalc", "wvJDSDPAVCalc"]);
   });
 
   it("projects the survey table from the tested engine, not a second one", () => {
@@ -214,5 +216,76 @@ d("registered calc derivations", () => {
     // fabricated one, so this must be strictly fewer than the row count.
     expect(tvdTop).toBeGreaterThan(0);
     expect(tvdTop).toBeLessThan(rows);
+  });
+
+  it("allocates a phase cost WHOLE, never apportioned across two phases", () => {
+    // The first derivation split a cost pro-rata by how much of the daily
+    // report's window overlapped each phase. Nothing in the model or the guide
+    // describes that, and 11.4% of all cost sits in reports that straddle a
+    // boundary. The rule is: explicit IDRecPhaseCustom wins, else the phase the
+    // report STARTS in, whole.
+    for (const t of ["wvJPPCostCalc", "wvJPPVendorCalc"]) {
+      const sql = calcDerivation(t)!.sql!;
+      expect(sql, `${t} must not apportion`).not.toMatch(/jdRE\s*-\s*r\.jdRS/);
+      expect(sql, `${t} must not apportion`).not.toMatch(/MIN\s*\(\s*r\.jdRE/);
+    }
+
+    // It is only safe because nothing overlaps: prove that here rather than
+    // trusting it, since an overlapping phase would silently double-count.
+    const jd = (c: string) => `julianday(replace(replace(${c},'T',' '),'Z',''))`;
+    const overlaps = (db.prepare(`
+      SELECT COUNT(*) n FROM wvJobProgramPhase a JOIN wvJobProgramPhase b
+        ON a.IDRecParent = b.IDRecParent AND a.IDRec <> b.IDRec
+       WHERE a.DtTmStartActual IS NOT NULL AND a.DtTmEndActual IS NOT NULL
+         AND b.DtTmStartActual IS NOT NULL AND b.DtTmEndActual IS NOT NULL
+         AND ${jd("a.DtTmStartActual")} < ${jd("b.DtTmEndActual")}
+         AND ${jd("a.DtTmEndActual")}   > ${jd("b.DtTmStartActual")}`).get() as { n: number }).n;
+    expect(overlaps).toBe(0);
+  });
+
+  it("phase cost reconciles to a total accumulated without SQL", () => {
+    const num = (v: unknown) => (v == null || v === "" ? 0 : Number(v) || 0);
+    const jdOf = (s: string | null) => (s ? Date.parse(s) / 86_400_000 : null);
+
+    let viaDerivation = 0;
+    for (const w of db.prepare("SELECT DISTINCT idwell FROM wvJobProgramPhase").all() as { idwell: string }[]) {
+      const r = computeCalc(db, "wvJPPCostCalc", { idwell: w.idwell });
+      for (const x of r?.rows ?? []) viaDerivation += num(x.CostFieldEstPhase);
+    }
+
+    // Independent: map each report to its phase in JS, then sum the raw rows.
+    const phases = (db.prepare("SELECT IDRec, IDRecParent, DtTmStartActual, DtTmEndActual FROM wvJobProgramPhase").all() as
+      { IDRec: string; IDRecParent: string; DtTmStartActual: string | null; DtTmEndActual: string | null }[])
+      .filter((p) => p.DtTmStartActual && p.DtTmEndActual);
+    const phaseIds = new Set(phases.map((p) => p.IDRec));
+    const phaseOf = new Map<string, string>();
+    for (const r of db.prepare("SELECT IDRec, IDRecParent, DtTmStart FROM wvJobReport").all() as
+      { IDRec: string; IDRecParent: string; DtTmStart: string | null }[]) {
+      const rs = jdOf(r.DtTmStart); if (rs == null) continue;
+      const p = phases.find((p) => p.IDRecParent === r.IDRecParent
+        && rs >= jdOf(p.DtTmStartActual)! && rs < jdOf(p.DtTmEndActual)!);
+      if (p) phaseOf.set(r.IDRec, p.IDRec);
+    }
+    let manual = 0;
+    for (const g of db.prepare("SELECT IDRecParent, Cost, IDRecPhaseCustom FROM wvJobReportCostGen").all() as
+      { IDRecParent: string; Cost: number | null; IDRecPhaseCustom: string | null }[]) {
+      const explicit = g.IDRecPhaseCustom && phaseIds.has(g.IDRecPhaseCustom);
+      if (explicit || phaseOf.has(g.IDRecParent)) manual += num(g.Cost);
+    }
+    const items = new Map((db.prepare("SELECT IDRec, RateDay, RateStandby, RateDepth, RateHour, RateOther FROM wvJobRentalItem").all() as
+      Record<string, unknown>[]).map((i) => [String(i.IDRec), i]));
+    for (const c of db.prepare(`SELECT IDRecParent, IDRecJobRentalItem, IDRecPhaseCustom, UseDay, UseStandby,
+                                       UseDepth, UseHour, UseOther, CostOneTime, Qty
+                                  FROM wvJobReportCostRental`).all() as Record<string, unknown>[]) {
+      const i = items.get(String(c.IDRecJobRentalItem)); if (!i) continue;
+      const explicit = c.IDRecPhaseCustom && phaseIds.has(String(c.IDRecPhaseCustom));
+      if (!explicit && !phaseOf.has(String(c.IDRecParent))) continue;
+      manual += ((c.UseDay === 1 ? num(i.RateDay) : 0) + (c.UseStandby === 1 ? num(i.RateStandby) : 0)
+        + num(i.RateDepth) * num(c.UseDepth) + num(i.RateHour) * num(c.UseHour)
+        + num(i.RateOther) * num(c.UseOther) + num(c.CostOneTime)) * (c.Qty == null ? 1 : num(c.Qty));
+    }
+
+    expect(manual).toBeGreaterThan(0);
+    expect(viaDerivation).toBeCloseTo(manual, 2);
   });
 });

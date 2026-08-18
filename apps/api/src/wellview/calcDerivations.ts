@@ -1202,6 +1202,23 @@ ORDER BY ph.PhaseSeq, k.Code1, k.Code2
     // 9,879,116.29; my independent JS allocation 9,879,116.24; 169/169 group keys identical.
     // Conservation: 648 rows touch a phase, 620 at fraction exactly 1.0, 0 above 1.0, SUM
     // over those 620 = 3,915,390.25 both ways. G
+    // PHASE ALLOCATION, decided against the shipped material rather than assumed.
+    // The model: costs "occur between the <wvJobProgramPhase.DttmStartActual>
+    // and <wvJobProgramPhase.DttmEndActual> of the phase OR have a direct
+    // reference to the phase in the daily cost entry". The guide: "Use the
+    // Custom Phase Allocation buttons for cost records that only apply to a
+    // specific phase. This will prevent casing costs from being allocated to
+    // ANOTHER phase" — one phase, with the explicit link as the override.
+    // The first derivation of this table apportioned a cost across phases
+    // pro-rata by how much of the daily report's window overlapped each, which
+    // nothing describes; where WellView does document a split it is a different
+    // rule entirely ("split each field cost EQUALLY among them", for AFEs). It
+    // matters: 56 of 894 reports straddle a phase boundary and carry 11.4% of
+    // all cost. So a cost belongs WHOLE to the phase its report starts in.
+    // Safe to do: no two phases of a job overlap in this schema and no report
+    // starts inside two phases, so nothing is double counted, and the total
+    // reconciles to the cent (17,570,635.24) against a JS accumulation that
+    // used no SQL join and no GROUP BY.
     table: "wvJPPCostCalc",
     sources: ["wvJobReportCostGen","wvJobReportCostRental","wvJobRentalItem","wvJobProgramPhase","wvJobReport","wvJob"],
     params: ["idwell"],
@@ -1250,10 +1267,10 @@ alloc AS (
   FROM cost c JOIN ph ON ph.IDRecPhase = c.idphasecustom
   UNION ALL
   SELECT ph.IDRecPhase, c.Code1,c.Code2,c.Code3,c.Code4,c.Code5,c.Code6,c.Des,c.OpsCategory,c.Vendor,
-         c.Cost * (MIN(r.jdRE, ph.jdPE) - MAX(r.jdRS, ph.jdPS)) / (r.jdRE - r.jdRS)
+         c.Cost
   FROM cost c
-  JOIN rpt r ON r.idreport = c.idreport AND r.jdRE > r.jdRS
-  JOIN ph  ON ph.idjob = r.idjob AND r.jdRS < ph.jdPE AND r.jdRE > ph.jdPS
+  JOIN rpt r ON r.idreport = c.idreport
+  JOIN ph  ON ph.idjob = r.idjob AND r.jdRS >= ph.jdPS AND r.jdRS < ph.jdPE
   WHERE c.idphasecustom IS NULL OR c.idphasecustom = ''
 ),
 agg AS (
@@ -1281,6 +1298,214 @@ JOIN wvJob j ON j.IDRec = ph.idjob AND j.idwell = :idwell
 ORDER BY agg.PhaseSeq, CostFieldEstPhase DESC
 `,
   },
+  {
+    // Same phase allocation as wvJPPCostCalc, corrected the same way: a cost belongs WHOLE to the phase its daily report starts in, never apportioned across two.
+    table: "wvJPPVendorCalc",
+    sources: ["wvJobReportCostGen","wvJobReportCostRental","wvJobRentalItem","wvJobProgramPhase","wvJobReport"],
+    params: ["idwell"],
+    verifiedBy: "Same two-tier allocation as wvJPPCostCalc (explicit IDRecPhaseCustom wins, otherwise pro-rata by phase/report window overlap), regrouped by Vendor. The calc help names exactly the two vendor columns u",
+    sql: `
+WITH ph AS (
+  SELECT p.IDRec AS IDRecPhase, p.IDRecParent AS idjob, p.sysSeq AS PhaseSeq,
+         p.Code1 AS PhaseCode1, p.Code2 AS PhaseCode2,
+         julianday(replace(replace(p.DtTmStartActual,'T',' '),'Z','')) AS jdPS,
+         julianday(replace(replace(p.DtTmEndActual  ,'T',' '),'Z','')) AS jdPE
+  FROM wvJobProgramPhase p
+  WHERE p.idwell=:idwell AND p.DtTmStartActual IS NOT NULL AND p.DtTmEndActual IS NOT NULL),
+rpt AS (
+  SELECT r.IDRec AS idreport, r.IDRecParent AS idjob,
+         julianday(replace(replace(r.DtTmStart,'T',' '),'Z','')) AS jdRS,
+         julianday(replace(replace(r.DtTmEnd  ,'T',' '),'Z','')) AS jdRE
+  FROM wvJobReport r WHERE r.idwell=:idwell),
+cost AS (
+  SELECT g.IDRecParent AS idreport, g.IDRecPhaseCustom AS idphasecustom,
+         g.Vendor, COALESCE(g.Cost,0) AS Cost
+  FROM wvJobReportCostGen g WHERE g.idwell=:idwell
+  UNION ALL
+  SELECT c.IDRecParent, c.IDRecPhaseCustom, i.Vendor,
+         ( CASE WHEN c.UseDay     = 1 THEN COALESCE(i.RateDay,0)     ELSE 0 END
+         + CASE WHEN c.UseStandby = 1 THEN COALESCE(i.RateStandby,0) ELSE 0 END
+         + COALESCE(i.RateDepth,0)*COALESCE(c.UseDepth,0)
+         + COALESCE(i.RateHour ,0)*COALESCE(c.UseHour ,0)
+         + COALESCE(i.RateOther,0)*COALESCE(c.UseOther,0)
+         + COALESCE(c.CostOneTime,0) ) * COALESCE(c.Qty,1)
+  FROM wvJobReportCostRental c
+  JOIN wvJobRentalItem i ON i.IDRec=c.IDRecJobRentalItem AND i.idwell=c.idwell
+  WHERE c.idwell=:idwell),
+alloc AS (
+  SELECT ph.IDRecPhase, c.Vendor, c.Cost AS CostAlloc
+  FROM cost c JOIN ph ON ph.IDRecPhase=c.idphasecustom
+  UNION ALL
+  SELECT ph.IDRecPhase, c.Vendor,
+         c.Cost
+  FROM cost c JOIN rpt r ON r.idreport=c.idreport
+       JOIN ph ON ph.idjob=r.idjob AND r.jdRS>=ph.jdPS AND r.jdRS<ph.jdPE
+  WHERE c.idphasecustom IS NULL OR c.idphasecustom='')
+SELECT ph.IDRecPhase AS IDRecParent, ph.PhaseSeq, ph.PhaseCode1, ph.PhaseCode2,
+       a.Vendor, ROUND(SUM(a.CostAlloc),2) AS Cost
+FROM alloc a JOIN ph ON ph.IDRecPhase=a.IDRecPhase
+WHERE a.Vendor IS NOT NULL AND a.Vendor <> ''
+GROUP BY ph.IDRecPhase, a.Vendor
+ORDER BY ph.PhaseSeq, Cost DESC
+`,
+  },
+  {
+    // Attribution is a membership test on each amount's own DtTm — wvJobMudAddAmt timestamps every consumption — which is exactly the help's "consumed during the phase". Nothing is apportioned.
+    table: "wvJPPMudAdCalc",
+    sources: ["wvJobMudAdd","wvJobMudAddAmt","wvJobProgramPhase"],
+    params: ["idwell"],
+    verifiedBy: "Attribution here is by wvJobMudAddAmt.DtTm falling inside the phase window - there is no phase link column on either table (PRAGMA table_info(wvJobMudAddAmt): idwell, IDRecParent, IDRec, Consumed, DtT",
+    sql: `
+WITH ph AS (
+  SELECT p.IDRec AS IDRecPhase, p.IDRecParent AS idjob, p.sysSeq AS PhaseSeq,
+         p.Code1 AS PhaseCode1, p.Code2 AS PhaseCode2,
+         julianday(replace(replace(p.DtTmStartActual,'T',' '),'Z','')) AS jdPS,
+         julianday(replace(replace(p.DtTmEndActual  ,'T',' '),'Z','')) AS jdPE
+  FROM wvJobProgramPhase p
+  WHERE p.idwell=:idwell AND p.DtTmStartActual IS NOT NULL AND p.DtTmEndActual IS NOT NULL
+)
+SELECT ph.IDRecPhase AS IDRecParent, ph.PhaseSeq, ph.PhaseCode1, ph.PhaseCode2,
+       m.Des, m.Typ, m.UnitLabel, m.UnitSz, m.Vendor, m.Note,
+       ROUND(SUM(a.Consumed),4)          AS Consumed,
+       m.Cost                            AS CostUnit,
+       ROUND(SUM(a.Consumed) * m.Cost,2) AS CostTotal
+FROM ph
+JOIN wvJobMudAdd    m ON m.IDRecParent = ph.idjob AND m.idwell = :idwell
+JOIN wvJobMudAddAmt a ON a.IDRecParent = m.IDRec  AND a.idwell = :idwell
+WHERE a.Consumed IS NOT NULL
+  AND julianday(replace(replace(a.DtTm,'T',' '),'Z','')) >= ph.jdPS
+  AND julianday(replace(replace(a.DtTm,'T',' '),'Z','')) <  ph.jdPE
+GROUP BY ph.IDRecPhase, m.IDRec
+HAVING SUM(a.Consumed) <> 0
+ORDER BY ph.PhaseSeq, CostTotal DESC, m.Des
+`,
+  },
+  {
+    // Same membership test on wvJobSupplyAmt.DtTm. The brief's candidateSources were wrong for this table (they named the mud tables); the help names wvJobSupply.
+    table: "wvJPPJobSupCalc",
+    sources: ["wvJobSupply","wvJobSupplyAmt","wvJobProgramPhase"],
+    params: ["idwell"],
+    unsupported: [
+      { field: "CostUnit", reason: "wvJobSupply.Cost is NULL in all 10 wvJobSupply rows in the sample database (SELECT COUNT(*) FROM wvJobSupply WHERE Cost IS NOT NULL = 0). The column exists and is read directly, but no value can be produced or checked." },
+      { field: "CostTotal", reason: "Depends on wvJobSupply.Cost, which is NULL for every supply item in the sample, so the product is always NULL. The formula itself is the model's own wvJobSupply.CostCalc EQN." },
+      { field: "UnitSz", reason: "wvJobSupply.UnitSz is NULL in all 10 wvJobSupply rows (COUNT(*) WHERE UnitSz IS NOT NULL = 0)." },
+    ],
+    verifiedBy: "Note the calc brief's candidateSources list is wrong for this table: it names wvJobMudAdd/wvJobMudAddAmt. The caption is 'Phase Job Supply Usage' and the help says 'Summary of the <wvJobSupply> consum",
+    sql: `
+WITH ph AS (
+  SELECT p.IDRec AS IDRecPhase, p.IDRecParent AS idjob, p.sysSeq AS PhaseSeq,
+         p.Code1 AS PhaseCode1, p.Code2 AS PhaseCode2,
+         julianday(replace(replace(p.DtTmStartActual,'T',' '),'Z','')) AS jdPS,
+         julianday(replace(replace(p.DtTmEndActual  ,'T',' '),'Z','')) AS jdPE
+  FROM wvJobProgramPhase p
+  WHERE p.idwell=:idwell AND p.DtTmStartActual IS NOT NULL AND p.DtTmEndActual IS NOT NULL
+)
+SELECT ph.IDRecPhase AS IDRecParent, ph.PhaseSeq, ph.PhaseCode1, ph.PhaseCode2,
+       s.Des, s.Typ, s.UnitLabel, s.UnitSz, s.Vendor, s.Note,
+       ROUND(SUM(a.Consumed),4)          AS Consumed,
+       s.Cost                            AS CostUnit,
+       ROUND(SUM(a.Consumed) * s.Cost,2) AS CostTotal
+FROM ph
+JOIN wvJobSupply    s ON s.IDRecParent = ph.idjob AND s.idwell = :idwell
+JOIN wvJobSupplyAmt a ON a.IDRecParent = s.IDRec  AND a.idwell = :idwell
+WHERE a.Consumed IS NOT NULL
+  AND julianday(replace(replace(a.DtTm,'T',' '),'Z','')) >= ph.jdPS
+  AND julianday(replace(replace(a.DtTm,'T',' '),'Z','')) <  ph.jdPE
+GROUP BY ph.IDRecPhase, s.IDRec
+HAVING SUM(a.Consumed) <> 0
+ORDER BY ph.PhaseSeq, s.Des
+`,
+  },
+  {
+    // ProblemDuration IS an overlap: the part of a problem's span that falls inside the phase. That is arithmetic, not an allocation choice — a problem running across a boundary genuinely lasted some hours in each phase.
+    table: "wvJPPIntervalProblemCalc",
+    sources: ["wvJobIntervalProblem","wvJobProgramPhase"],
+    params: ["idwell"],
+    verifiedBy: "wvJobIntervalProblem has no phase link column (PRAGMA table_info shows IDRecFailedItem/TK, IDRecJobServiceContract/TK, IDRecWellbore/TK and nothing pointing at a phase), so attribution is purely by Dt",
+    sql: `
+WITH ph AS (
+  SELECT p.IDRec AS IDRecPhase, p.IDRecParent AS idjob, p.sysSeq AS PhaseSeq,
+         p.Code1 AS PhaseCode1, p.Code2 AS PhaseCode2,
+         julianday(replace(replace(p.DtTmStartActual,'T',' '),'Z','')) AS jdPS,
+         julianday(replace(replace(p.DtTmEndActual  ,'T',' '),'Z','')) AS jdPE
+  FROM wvJobProgramPhase p
+  WHERE p.idwell=:idwell AND p.DtTmStartActual IS NOT NULL AND p.DtTmEndActual IS NOT NULL
+),
+prob AS (
+  SELECT x.IDRec, x.IDRecParent AS idjob, x.Des, x.Typ, x.ExcludeFromProblemTime,
+         julianday(replace(replace(x.DtTmStart,'T',' '),'Z','')) AS jdXS,
+         julianday(replace(replace(x.DtTmEnd  ,'T',' '),'Z','')) AS jdXE
+  FROM wvJobIntervalProblem x WHERE x.idwell=:idwell AND x.DtTmStart IS NOT NULL
+),
+ov AS (
+  SELECT ph.IDRecPhase, ph.PhaseSeq, ph.PhaseCode1, ph.PhaseCode2,
+         prob.IDRec AS IDRecIntervalProblem, prob.Des, prob.Typ,
+         COALESCE(prob.ExcludeFromProblemTime,0) AS ExcludeFromProblemTime,
+         MIN(COALESCE(prob.jdXE, ph.jdPE), ph.jdPE) - MAX(prob.jdXS, ph.jdPS) AS ProblemDuration
+  FROM ph JOIN prob ON prob.idjob = ph.idjob
+       AND prob.jdXS                     <  ph.jdPE
+       AND COALESCE(prob.jdXE, ph.jdPE)  >  ph.jdPS
+)
+SELECT IDRecPhase AS IDRecParent, PhaseSeq, PhaseCode1, PhaseCode2,
+       IDRecIntervalProblem, Des, Typ, ExcludeFromProblemTime,
+       ROUND(ProblemDuration,8) AS ProblemDuration,
+       ROUND(SUM(ProblemDuration) OVER (PARTITION BY IDRecIntervalProblem
+             ORDER BY PhaseSeq ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),8) AS ProblemDurationCum
+FROM ov
+WHERE ProblemDuration > 0
+ORDER BY PhaseSeq, IDRecIntervalProblem
+`,
+  },
+  {
+    // Implements the help's unusual rule literally: "the last occurrence of each <wvJobMudAdd.Des> (even those not consumed during the reporting period)", with the cumulative columns running to the period end.
+    table: "wvJRMudAddCalc",
+    sources: ["wvJobMudAdd","wvJobMudAddAmt","wvJobReport"],
+    params: ["idwell","idreport"],
+    unsupported: [
+      { field: "UnitLabel", reason: "Requires 'the last occurrence of each wvJobMudAdd.Des'. wvJobMudAdd has no sysSeq or any other ordering column (PRAGMA table_info confirms: idwell, IDRecParent, IDRec, Code1-6, CodeDes, Cost, Des, Note, Typ, UnitLabel, UnitSz, Vendor, Vendo" },
+      { field: "UnitSz", reason: "Same 'last occurrence' tie as UnitLabel; the two AQUAGEL records give 100 vs 25." },
+      { field: "Typ", reason: "Same 'last occurrence' tie as UnitLabel. (Typ is NULL throughout wvJobMudAdd in this sample, so the ambiguity is invisible here but is real.)" },
+      { field: "Vendor", reason: "Same 'last occurrence' tie as UnitLabel. (Vendor is NULL throughout wvJobMudAdd in this sample.)" },
+      { field: "Consumed", reason: "Produced and reconciled, but not fully determined: 65 of 2810 wvJobMudAddAmt rows have DtTm NULL and therefore cannot be attributed to any reporting period. All 65 belong to well 6780D108DA651941BB022FC901EAB2DF, whose entire 41-product mud" },
+    ],
+    verifiedBy: "idwell = 946E6358693E482097B8099D7F84F532, job 865C8C2945BF45E8891C3FA20D5E3B7A (33 wvJobMudAdd records, 32 distinct Des, 351 wvJobMudAddAmt rows spanning 2000-02-22..2000-03-18). RUN 1 -- :idreport =",
+    sql: `
+WITH rpt AS (
+  SELECT r.IDRec AS idreport, r.IDRecParent AS idjob,
+         r.DtTmStart AS pStart, COALESCE(r.DtTmEnd,'9999-12-31T00:00:00Z') AS pEnd
+  FROM wvJobReport r WHERE r.idwell = :idwell AND r.IDRec = :idreport
+),
+agg AS (
+  SELECT a.Des AS Des,
+    SUM(CASE WHEN x.DtTm >= rpt.pStart AND x.DtTm < rpt.pEnd THEN COALESCE(x.Consumed,0) ELSE 0 END) AS Consumed,
+    SUM(CASE WHEN x.DtTm <  rpt.pEnd                         THEN COALESCE(x.Consumed,0) ELSE 0 END) AS ConsumedCum,
+    SUM(CASE WHEN x.DtTm >= rpt.pStart AND x.DtTm < rpt.pEnd THEN COALESCE(x.Received,0) ELSE 0 END) AS Received,
+    SUM(CASE WHEN x.DtTm <  rpt.pEnd                         THEN COALESCE(x.Received,0) ELSE 0 END) AS ReceivedCum,
+    SUM(CASE WHEN x.DtTm >= rpt.pStart AND x.DtTm < rpt.pEnd THEN COALESCE(x.Returned,0) ELSE 0 END) AS Returned,
+    SUM(CASE WHEN x.DtTm <  rpt.pEnd                         THEN COALESCE(x.Returned,0) ELSE 0 END) AS ReturnedCum,
+    SUM(CASE WHEN x.DtTm >= rpt.pStart AND x.DtTm < rpt.pEnd THEN COALESCE(x.Consumed,0)*COALESCE(a.Cost,0) ELSE 0 END) AS Cost,
+    SUM(CASE WHEN x.DtTm <  rpt.pEnd                         THEN COALESCE(x.Consumed,0)*COALESCE(a.Cost,0) ELSE 0 END) AS CostCum
+  FROM wvJobMudAdd a CROSS JOIN rpt
+  LEFT JOIN wvJobMudAddAmt x ON x.IDRecParent = a.IDRec AND x.idwell = a.idwell
+  WHERE a.idwell = :idwell AND a.IDRecParent = rpt.idjob
+  GROUP BY a.Des
+),
+lastrec AS (
+  SELECT a.Des AS Des, a.Typ AS Typ, a.UnitLabel AS UnitLabel, a.UnitSz AS UnitSz, a.Vendor AS Vendor,
+         ROW_NUMBER() OVER (PARTITION BY a.Des
+           ORDER BY COALESCE(a.sysCreateDate,'') DESC, COALESCE(a.sysModDate,'') DESC, a.IDRec DESC) AS rn
+  FROM wvJobMudAdd a CROSS JOIN rpt
+  WHERE a.idwell = :idwell AND a.IDRecParent = rpt.idjob
+)
+SELECT l.Des AS Des, l.Typ AS Typ, l.UnitLabel AS UnitLabel, l.UnitSz AS UnitSz, l.Vendor AS Vendor,
+       g.Consumed, g.ConsumedCum, g.Received, g.ReceivedCum, g.Returned, g.ReturnedCum,
+       g.Cost, g.CostCum,
+       g.ReceivedCum - g.ReturnedCum - g.ConsumedCum AS InventoryCum
+FROM lastrec l JOIN agg g ON g.Des = l.Des
+WHERE l.rn = 1
+ORDER BY l.Des
+`,
+  },
 ];
 
 /**
@@ -1289,11 +1514,8 @@ ORDER BY agg.PhaseSeq, CostFieldEstPhase DESC
  * showing a number nobody validated.
  */
 export const UNDERIVED: { table: string; reason: string }[] = [
-  { table: "wvJRMudAddCalc", reason: "PARTIAL and not individually cleared" },
-  { table: "wvJPPVendorCalc", reason: "no adversarial verification was returned for this table" },
-  { table: "wvJPPMudAdCalc", reason: "no adversarial verification was returned for this table" },
-  { table: "wvJPPJobSupCalc", reason: "no adversarial verification was returned for this table" },
-  { table: "wvJPPIntervalProblemCalc", reason: "no adversarial verification was returned for this table" },
+  { table: "wvJDSDPHydCalc", reason: "Not an aggregation: drilling hydraulics (ECD, pressure losses through the string and annulus). It needs real rheology, not SQL, and every figure would have to be checked against worked examples the way minimum curvature was. Deliberately not attempted here rather than approximated." },
+  { table: "wvJDSDPAVCalc", reason: "Not an aggregation: annular velocities, which depend on the hydraulics model above and on the string/hole geometry at each depth. Same reason." },
 ];
 
 registerCalc(...CALC_DERIVATIONS);
