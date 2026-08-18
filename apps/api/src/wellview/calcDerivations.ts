@@ -27,8 +27,41 @@
  * A computed figure must never be mistakable for one the database stored.
  */
 import { registerCalc, type CalcDerivation } from "./calc.js";
+import { surveyVsRows } from "./calcSurvey.js";
+import { wellboreSummaryRows } from "./calcWellbore.js";
 
 export const CALC_DERIVATIONS: CalcDerivation[] = [
+  {
+    // Also a projection, for the same reason: its TVD columns need the survey.
+    // The SQL attempt was rejected for cross-well leakage — its fallback guard
+    // asked whether the QUERIED WELL had size rows for a wellbore, never
+    // whether the wellbore belonged to that well, so ten drill-param rows
+    // naming another well's wellbore were the only rows it ever emitted.
+    // Output here is 96 rows against 96 wvWellboreSize source rows, and the
+    // model's drill-param fallback correctly yields nothing: no own-well
+    // wellbore in this database lacks a size record.
+    table: "wvWellboreSummaryCalc",
+    sources: ["wvWellbore", "wvWellboreSize"],
+    params: ["idwell"],
+    compute: wellboreSummaryRows,
+    unsupported: [
+      { field: "IDRecJobDrillString", reason: "Only the wvJobDrillStringDrillParam fallback fills this, and no wellbore in this database triggers that branch — every one has wvWellboreSize records. The branch is implemented per the model's stated rule but is unexercised here." },
+      { field: "DepthTVDTopActual", reason: "Null where the section top lies outside the wellbore's surveyed interval. It cannot be interpolated there, and extrapolating — TVD := MD above the first station, or a held-attitude tangent below the last — would print an assumption as a measurement. 35 of 96 sections have a TVD top." },
+    ],
+    verifiedBy: "96 output rows against 96 wvWellboreSize source rows; MudDensityMax non-null on 11, matching an independent count over wvJobReportMudChk; drill-param fallback emits 0 rows once wellbore ownership is enforced.",
+  },
+  {
+    // NOT a query: a projection of the minimum-curvature engine in
+    // packages/shared/src/math/survey.ts, which is tested there and already
+    // handles the override carry-forward and inclination-only stations. The
+    // SQL attempt at this table was rejected for filtering `Azimuth IS NOT
+    // NULL`, which deleted 370 legal stations and blanked five surveys.
+    table: "wvWDSVSDataCalc",
+    sources: ["wvWellbore", "wvWellboreDirSurvey", "wvWellboreDirSurveyData"],
+    params: ["idwell"],
+    compute: surveyVsRows,
+    verifiedBy: "Projects computeSurvey(), whose figures are pinned in packages/shared/src/math/survey.test.ts against a hand-worked minimum-curvature example.",
+  },
   {
     // Confirmed: the checker re-derived the totals independently and they matched.
     // Their SQL vs my from-scratch JavaScript reimplementation over all 894 reports: 548
@@ -1257,8 +1290,6 @@ ORDER BY agg.PhaseSeq, CostFieldEstPhase DESC
  */
 export const UNDERIVED: { table: string; reason: string }[] = [
   { table: "wvJRMudAddCalc", reason: "PARTIAL and not individually cleared" },
-  { table: "wvWDSVSDataCalc", reason: "verification found a real defect: WHAT SURVIVED THE ATTACK - The SQL prepares and runs. 59 rows on 462C2607F3BA4FE9846197C58" },
-  { table: "wvWellboreSummaryCalc", reason: "verification found a real defect: WHAT SURVIVED THE ATTACK - The SQL prepares and runs on all 42 wells: 104 rows, 40 wells," },
   { table: "wvJPPVendorCalc", reason: "no adversarial verification was returned for this table" },
   { table: "wvJPPMudAdCalc", reason: "no adversarial verification was returned for this table" },
   { table: "wvJPPJobSupCalc", reason: "no adversarial verification was returned for this table" },

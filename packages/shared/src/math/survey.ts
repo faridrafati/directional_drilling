@@ -90,6 +90,13 @@ export interface SurveyResult {
   turnRate: number | null;
   /** True where a stored override supplied the value instead of the maths. */
   overridden: boolean;
+  /**
+   * True when this station carried NO azimuth and the previous bearing was
+   * assumed. TVD, DLS and build rate are still right — with a constant bearing
+   * the dogleg is just the inclination change — but NS, EW, VS and departure
+   * direction rest on an assumption, so a reader has to be told.
+   */
+  azimuthAssumed: boolean;
 }
 
 /** Signed smallest angle between two azimuths, in degrees, within ±180. */
@@ -112,11 +119,20 @@ export function computeSurvey(
   stations: SurveyStation[],
   options: SurveyOptions = {},
 ): SurveyResult[] {
+  // An inclination-only survey is legal — the model's own Azimuth help says
+  // "For inclination only surveys, leave this field empty" — and 370 stations
+  // in the sample database have no azimuth, four wells having none at all.
+  // Requiring one here deleted those wells' surveys outright, so only MD and
+  // inclination are required; the bearing is carried forward below.
   const used = stations
-    .filter((s) => !s.dontUse && Number.isFinite(s.md)
-      && Number.isFinite(s.inclination) && Number.isFinite(s.azimuth))
+    .filter((s) => !s.dontUse && Number.isFinite(s.md) && Number.isFinite(s.inclination))
     .sort((a, b) => a.md - b.md);
   if (used.length === 0) return [];
+
+  /** The station's own bearing, or null when it was left empty. */
+  const aziOf = (s: SurveyStation): number | null =>
+    Number.isFinite(s.azimuth) ? s.azimuth : null;
+
 
   const t = options.tieIn ?? null;
   const hasTieIn = t != null && t.md != null && Number.isFinite(t.md);
@@ -135,7 +151,7 @@ export function computeSurvey(
     ns = t!.ns ?? 0;
     ew = t!.ew ?? 0;
     prevInc = t!.inclination ?? used[0].inclination;
-    prevAzi = t!.azimuth ?? used[0].azimuth;
+    prevAzi = t!.azimuth ?? aziOf(used[0]) ?? 0;
   } else {
     const first = used[0];
     prevMd = first.md;
@@ -143,7 +159,9 @@ export function computeSurvey(
     ns = 0;
     ew = 0;
     prevInc = first.inclination;
-    prevAzi = first.azimuth;
+    // Never NaN: with no bearing anywhere, north is the arbitrary but stated
+    // reference, and every station it touches is flagged azimuthAssumed.
+    prevAzi = aziOf(first) ?? 0;
   }
 
   const vsDir = options.vsDirection;
@@ -159,6 +177,9 @@ export function computeSurvey(
 
   for (let i = 0; i < used.length; i++) {
     const s = used[i];
+    const ownAzi = aziOf(s);
+    const azimuthAssumed = ownAzi === null;
+    const azi = ownAzi ?? prevAzi;
     const dmd = s.md - prevMd;
     let dls: number | null = null;
     let buildRate: number | null = null;
@@ -169,7 +190,7 @@ export function computeSurvey(
     const isOrigin = !hasTieIn && i === 0;
     if (!isOrigin && dmd > 0) {
       const i1 = prevInc * RAD, i2 = s.inclination * RAD;
-      const dAzi = azimuthDelta(prevAzi, s.azimuth) * RAD;
+      const dAzi = azimuthDelta(prevAzi, azi) * RAD;
       // Dogleg angle, clamped: floating error can push the cosine past ±1.
       const cosB = Math.cos(i2 - i1) - Math.sin(i1) * Math.sin(i2) * (1 - Math.cos(dAzi));
       const beta = Math.acos(Math.min(1, Math.max(-1, cosB)));
@@ -177,12 +198,12 @@ export function computeSurvey(
       const half = dmd / 2;
 
       tvd += half * (Math.cos(i1) + Math.cos(i2)) * rf;
-      ns += half * (Math.sin(i1) * Math.cos(prevAzi * RAD) + Math.sin(i2) * Math.cos(s.azimuth * RAD)) * rf;
-      ew += half * (Math.sin(i1) * Math.sin(prevAzi * RAD) + Math.sin(i2) * Math.sin(s.azimuth * RAD)) * rf;
+      ns += half * (Math.sin(i1) * Math.cos(prevAzi * RAD) + Math.sin(i2) * Math.cos(azi * RAD)) * rf;
+      ew += half * (Math.sin(i1) * Math.sin(prevAzi * RAD) + Math.sin(i2) * Math.sin(azi * RAD)) * rf;
 
       dls = (beta / RAD) / dmd;
       buildRate = (s.inclination - prevInc) / dmd;
-      turnRate = azimuthDelta(prevAzi, s.azimuth) / dmd;
+      turnRate = azimuthDelta(prevAzi, azi) / dmd;
     }
 
     // A stored override replaces the computed value AND becomes the position the
@@ -201,7 +222,8 @@ export function computeSurvey(
     out.push({
       md: s.md,
       inclination: s.inclination,
-      azimuth: s.azimuth,
+      azimuth: azi,
+      azimuthAssumed,
       tvd,
       ns,
       ew,
@@ -215,7 +237,7 @@ export function computeSurvey(
 
     prevMd = s.md;
     prevInc = s.inclination;
-    prevAzi = s.azimuth;
+    prevAzi = azi;
   }
 
   return out;

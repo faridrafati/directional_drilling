@@ -39,7 +39,16 @@ export interface CalcDerivation {
    */
   params: CalcParam[];
   /** SQLite SQL whose output aliases are the calc table's own field names. */
-  sql: string;
+  sql?: string;
+  /**
+   * For a table that is a PROJECTION of a computation this app already has,
+   * rather than an aggregation expressible in SQL. The directional survey is
+   * the case in point: its minimum-curvature integration lives in
+   * `packages/shared/src/math/survey.ts`, is tested there, and handles the
+   * override carry-forward and inclination-only stations. Re-expressing that in
+   * a query would be a second implementation to keep right.
+   */
+  compute?: (d: DatabaseSync, anchor: CalcAnchor) => Record<string, unknown>[];
   /** Fields of the calc table this query deliberately does not fill. */
   unsupported?: UnsupportedField[];
   /** How the figures were checked, for the record. */
@@ -148,7 +157,9 @@ export function computeCalc(
 
   let rows: Record<string, unknown>[];
   try {
-    rows = d.prepare(`${derivation.sql} LIMIT ${rowCap}`).all(args) as Record<string, unknown>[];
+    rows = derivation.compute
+      ? derivation.compute(d, anchor).slice(0, rowCap)
+      : d.prepare(`${derivation.sql} LIMIT ${rowCap}`).all(args) as Record<string, unknown>[];
   } catch {
     // A derivation that does not run against this database is not a crash:
     // fall back to the honest "computed by WellView at print time" block.

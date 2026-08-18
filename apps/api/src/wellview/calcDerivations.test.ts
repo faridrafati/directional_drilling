@@ -42,7 +42,9 @@ d("registered calc derivations", () => {
     expect(CALC_DERIVATIONS.length).toBeGreaterThanOrEqual(22);
     for (const der of CALC_DERIVATIONS) {
       expect(calcDerivation(der.table), der.table).toBeTruthy();
-      expect(der.sql.trim(), der.table).not.toBe("");
+      // Every derivation is EITHER a query or a projection of a computation
+      // this app already has — never neither, which would silently return [].
+      expect(Boolean(der.sql?.trim()) || Boolean(der.compute), der.table).toBe(true);
       expect(der.params.length, der.table).toBeGreaterThan(0);
     }
     expect(derivableCalcTables()).toContain("wvJCostCumCalc");
@@ -56,8 +58,10 @@ d("registered calc derivations", () => {
         args[p] = p === "idjob" ? idjob : p === "idreport" ? idreport : idwell;
       }
       if (der.params.includes("idphase")) continue;   // needs a phase anchor
-      try { db.prepare(`${der.sql} LIMIT 5`).all(args); }
-      catch (e) { failures.push(`${der.table}: ${(e as Error).message}`); }
+      try {
+        if (der.compute) der.compute(db, { idwell, idjob, idreport });
+        else db.prepare(`${der.sql} LIMIT 5`).all(args);
+      } catch (e) { failures.push(`${der.table}: ${(e as Error).message}`); }
     }
     expect(failures).toEqual([]);
   });
@@ -150,7 +154,65 @@ d("registered calc derivations", () => {
       expect(calcDerivation(u.table), u.table).toBeUndefined();
       expect(computeCalc(db, u.table, { idwell, idjob, idreport }), u.table).toBeNull();
     }
-    expect(UNDERIVED.map((u) => u.table)).toContain("wvWDSVSDataCalc");
-    expect(UNDERIVED.map((u) => u.table)).toContain("wvWellboreSummaryCalc");
+    expect(UNDERIVED.map((u) => u.table)).toContain("wvJRMudAddCalc");
+  });
+
+  it("projects the survey table from the tested engine, not a second one", () => {
+    // The rejected SQL for this table dropped inclination-only stations. The
+    // projection must keep them, so a well whose survey has NO azimuth at all
+    // still plots.
+    const der = calcDerivation("wvWDSVSDataCalc")!;
+    expect(der.compute, "must be a projection, not SQL").toBeTruthy();
+    expect(der.sql).toBeUndefined();
+
+    const incOnly = (db.prepare(`
+      SELECT d.idwell, COUNT(*) n FROM wvWellboreDirSurveyData d
+       WHERE COALESCE(d.DontUse,0) <> 1 AND d.MD IS NOT NULL
+         AND d.Inclination IS NOT NULL AND d.Azimuth IS NULL
+       GROUP BY d.idwell ORDER BY n DESC LIMIT 1`).get() as { idwell: string; n: number });
+    expect(incOnly.n).toBeGreaterThan(0);
+
+    const r = computeCalc(db, "wvWDSVSDataCalc", { idwell: incOnly.idwell });
+    expect(r, "an inclination-only well must still produce rows").not.toBeNull();
+    expect(r!.rowCount).toBeGreaterThan(0);
+    // TVD must be present on every row — it does not need a bearing.
+    expect(r!.rows.every((x) => Number.isFinite(Number(x.TVD)))).toBe(true);
+  });
+
+  it("wellbore summary never emits another well's wellbore", () => {
+    // The defect that got the SQL version rejected: ten wvJobDrillStringDrillParam
+    // rows name a wellbore owned by a DIFFERENT well, and a guard that asked
+    // "does the queried well have size rows for this wellbore" let all ten
+    // through. Ownership is now resolved via wvWellbore, so they cannot appear.
+    const leak = db.prepare(`
+      SELECT dp.idwell AS querying, wb.idwell AS owner, COUNT(*) AS n
+        FROM wvJobDrillStringDrillParam dp
+        JOIN wvWellbore wb ON wb.IDRec = dp.IDRecWellbore
+       WHERE wb.idwell <> dp.idwell
+       GROUP BY dp.idwell, wb.idwell LIMIT 1`).get() as
+      { querying: string; owner: string; n: number } | undefined;
+    expect(leak, "the sample database should still contain the foreign-wellbore rows").toBeTruthy();
+
+    const r = computeCalc(db, "wvWellboreSummaryCalc", { idwell: leak!.querying });
+    // Whatever it returns, none of it may come from the foreign wellbore's
+    // drill params — those rows carry an IDRecJobDrillString.
+    const fromParams = (r?.rows ?? []).filter((x) => x.IDRecJobDrillString != null);
+    expect(fromParams).toEqual([]);
+  });
+
+  it("wellbore summary reproduces its source rows exactly, and does not invent TVD", () => {
+    let rows = 0;
+    let tvdTop = 0;
+    for (const w of db.prepare("SELECT DISTINCT idwell FROM wvWellbore").all() as { idwell: string }[]) {
+      const r = computeCalc(db, "wvWellboreSummaryCalc", { idwell: w.idwell });
+      rows += r?.rowCount ?? 0;
+      tvdTop += (r?.rows ?? []).filter((x) => x.DepthTVDTopActual != null).length;
+    }
+    const src = (db.prepare("SELECT COUNT(*) n FROM wvWellboreSize").get() as { n: number }).n;
+    expect(rows).toBe(src);
+    // Sections outside the surveyed interval keep a null TVD rather than a
+    // fabricated one, so this must be strictly fewer than the row count.
+    expect(tvdTop).toBeGreaterThan(0);
+    expect(tvdTop).toBeLessThan(rows);
   });
 });

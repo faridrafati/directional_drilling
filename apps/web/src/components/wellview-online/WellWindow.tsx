@@ -1014,6 +1014,12 @@ function SurveyTab({ db, idwell, onEditTable }: {
               <> {data.excludedBadStations} station{data.excludedBadStations === 1 ? "" : "s"} flagged
               &ldquo;bad survey data&rdquo; {data.excludedBadStations === 1 ? "was" : "were"} excluded.</>
             )}
+            {data.assumedAzimuth > 0 && (
+              <> {data.assumedAzimuth} station{data.assumedAzimuth === 1 ? "" : "s"} record no azimuth
+              (an inclination-only survey); their bearing is carried from the last stated one, marked
+              &deg;<sup>?</sup>. TVD, dogleg and build rate are unaffected — NS, EW and VS rest on that
+              carry.</>
+            )}
             {data.verticalSection && <> {data.verticalSection}.</>}
           </div>
           <div className="flex-1 overflow-auto">
@@ -1041,9 +1047,14 @@ function SurveyTab({ db, idwell, onEditTable }: {
                       <td key={c.key}
                         className={`px-2 py-0.5 text-right tabular-nums whitespace-nowrap ${
                           c.computed ? "bg-green-50/60 text-green-900" : "text-gray-800"}`}
-                        title={s.overridden && c.computed ? "A stored override supplied this value" : undefined}>
+                        title={s.azimuthAssumed && c.key === "azimuth"
+                          ? "No azimuth recorded at this station — the last stated bearing is carried"
+                          : s.overridden && c.computed ? "A stored override supplied this value" : undefined}>
                         {cell(s[c.key as keyof typeof s] as number | null, c)}
                         {s.overridden && c.key === "tvd" && <span className="ml-1 text-amber-600" title="Override">*</span>}
+                        {s.azimuthAssumed && c.key === "azimuth" && (
+                          <sup className="ml-0.5 text-amber-600" title="Assumed — carried from the last stated bearing">?</sup>
+                        )}
                       </td>
                     ))}
                   </tr>

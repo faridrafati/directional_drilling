@@ -141,4 +141,60 @@ describe("computeSurvey", () => {
     expect(Number.isFinite(flip[1].tvd)).toBe(true);
     expect(flip[1].dls! * 30).toBeCloseTo(180, 3);
   });
+
+  it("KEEPS inclination-only stations instead of deleting the survey", () => {
+    // The model's Azimuth help: "For inclination only surveys, leave this field
+    // empty." 370 stations in the sample database do exactly that, and four
+    // wells have no azimuth at all — requiring one used to return NOTHING for
+    // them, which is how a whole well's survey disappears without an error.
+    const incOnly = [
+      { md: 0, inclination: 0, azimuth: NaN },
+      { md: 100, inclination: 2, azimuth: NaN },
+      { md: 200, inclination: 4, azimuth: NaN },
+    ];
+    const r = computeSurvey(incOnly, {});
+    expect(r).toHaveLength(3);
+    // TVD is fully determined without a bearing, and must be right.
+    const withNorth = computeSurvey(
+      incOnly.map((s) => ({ ...s, azimuth: 0 })), {});
+    expect(r[2].tvd).toBeCloseTo(withNorth[2].tvd, 12);
+    // A constant bearing means the dogleg IS the inclination change.
+    expect(r[2].dls! * 100).toBeCloseTo(2, 9);
+    // …and every station says its bearing was assumed, so nobody reads the
+    // NS/EW as surveyed direction.
+    expect(r.every((x) => x.azimuthAssumed)).toBe(true);
+  });
+
+  it("carries the last known bearing across a gap, and flags only the gap", () => {
+    const mixed = [
+      { md: 0, inclination: 0, azimuth: 0 },
+      { md: 100, inclination: 3, azimuth: 90 },
+      { md: 200, inclination: 6, azimuth: NaN },   // inclination-only station
+      { md: 300, inclination: 9, azimuth: 90 },
+    ];
+    const r = computeSurvey(mixed, {});
+    expect(r).toHaveLength(4);
+    expect(r.map((x) => x.azimuthAssumed)).toEqual([false, false, true, false]);
+    // The carried bearing is the previous one, not north.
+    expect(r[2].azimuth).toBe(90);
+    // Carrying it forward must equal having stated it — no turn, so no
+    // turn rate and a dogleg of pure build.
+    const stated = computeSurvey(mixed.map((s) => ({ ...s, azimuth: 90 })).map((s, i) => i === 0 ? { ...s, azimuth: 0 } : s), {});
+    expect(r[3].tvd).toBeCloseTo(stated[3].tvd, 9);
+    expect(r[3].ns).toBeCloseTo(stated[3].ns, 9);
+    expect(r[2].turnRate).toBeCloseTo(0, 12);
+  });
+
+  it("still drops what it should: dontUse and unusable depths", () => {
+    const r = computeSurvey([
+      { md: 0, inclination: 0, azimuth: 0 },
+      { md: 100, inclination: 2, azimuth: 0, dontUse: true },
+      { md: NaN, inclination: 3, azimuth: 0 },
+      { md: 300, inclination: NaN, azimuth: 0 },
+      { md: 400, inclination: 8, azimuth: 0 },
+    ], {});
+    // Only the two usable stations survive — a missing INCLINATION is still
+    // fatal, because nothing can be integrated without it.
+    expect(r.map((x) => x.md)).toEqual([0, 400]);
+  });
 });

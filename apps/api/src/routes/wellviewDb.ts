@@ -1117,6 +1117,10 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
 
       const results = computeSurvey(stations, { tieIn, ...vs });
       const dropped = stations.length - results.length;
+      // Inclination-only stations are legal and are kept, with the previous
+      // bearing carried. Their TVD is sound; their NS/EW rest on that carry,
+      // so the count is reported rather than left for the reader to notice.
+      const assumedAzimuth = results.filter((r) => r.azimuthAssumed).length;
       return {
         survey: idrec,
         method: "minimum curvature",
@@ -1137,6 +1141,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         stations: results,
         /** Stated, not hidden: what was left out and what is not attempted. */
         excludedBadStations: dropped,
+        assumedAzimuth,
         verticalSection: vs.vsDirection == null
           ? "no vertical section direction on the wellbore — VS not computed"
           : null,
@@ -1144,6 +1149,11 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
           "TVD, NS, EW, VS, departure, dogleg and the rates are computed here — WellView computes them at print time and stores none of them.",
           "Declination and convergence are not applied: azimuths are used exactly as stored.",
           "Unwrapped Displace is not computed — its definition is not stated in anything available.",
+          ...(assumedAzimuth
+            ? [`${assumedAzimuth} of ${results.length} stations carry no azimuth (an inclination-only survey). `
+               + "Their TVD, dogleg and build rate are unaffected, but NS, EW and VS assume the hole held the "
+               + "last stated bearing."]
+            : []),
         ],
       };
     },

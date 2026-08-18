@@ -154,6 +154,8 @@ export interface WvSurveyStation {
   buildRate: number | null; turnRate: number | null;
   /** A stored override supplied one of these values. */
   overridden: boolean;
+  /** No azimuth was recorded here; the previous bearing was carried. */
+  azimuthAssumed: boolean;
 }
 export interface WvSurvey {
   survey: string;
@@ -161,6 +163,8 @@ export interface WvSurvey {
   columns: { key: string; label: string; unit?: string; computed: boolean }[];
   stations: WvSurveyStation[];
   excludedBadStations: number;
+  /** How many stations carry an assumed bearing (inclination-only survey). */
+  assumedAzimuth: number;
   verticalSection: string | null;
   notes: string[];
 }
