@@ -346,6 +346,20 @@ def main(source_root: Path, out_dir: Path, repo_root: Path) -> int:
             continue
 
         d = to_dict(rep)
+        # A template can name a table and print NO columns from it. Two shipped
+        # ones do — "Attached Image Files" is a wvAttachment block whose content
+        # IS the files, so there is nothing to put in a column list. The block
+        # detector needs a field to open a block, and rightly so across the
+        # other 180; rather than loosen it, a report that ended up with no
+        # blocks at all gets the table it named, with an empty field list.
+        if not d["blocks"] and rep.root_table:
+            d["blocks"] = [{
+                "table": rep.root_table,
+                "title": None,
+                "fields": [],
+                "printed_field_count": 0,
+                "contentOnly": True,
+            }]
         d["source_relative"] = rel
         # The output MIRRORS the category folders rather than flattening them.
         # 31 report names are reused across categories — "Daily Costs" exists in
@@ -355,7 +369,7 @@ def main(source_root: Path, out_dir: Path, repo_root: Path) -> int:
         d["folder_relative"] = str(folder_rel)
         d["html"] = str(folder_rel / f"{path.stem}.html") if str(folder_rel) != "." \
             else f"{path.stem}.html"
-        for b, src in zip(d["blocks"], rep.blocks):
+        for b, src in zip(d["blocks"], rep.blocks):   # empty when synthesised above
             b["printed_field_count"] = len(src.printed_fields)
             for f, sf in zip(b["fields"], src.fields):
                 f["label_interpreted"] = field_label(sf.qualified)

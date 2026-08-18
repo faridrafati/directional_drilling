@@ -63,6 +63,45 @@ export const entryApi = {
   patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+
+  /**
+   * Fetch binary content (an attachment's bytes).
+   *
+   * Not an <img src> URL: this API authenticates with a bearer token, and an
+   * <img> tag cannot send one. Putting the token in the query string instead
+   * would leak it into server logs, browser history and any Referer — so the
+   * bytes are fetched here and the caller wraps them in an object URL.
+   */
+  blob: async (path: string): Promise<Blob> => {
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    if (res.status === 401) {
+      setToken(null);
+      throw new EntryError(401, "Your session has expired — please sign in again.");
+    }
+    if (!res.ok) throw new EntryError(res.status, `${res.status} ${res.statusText}`);
+    return res.blob();
+  },
+
+  /** Multipart upload. The browser sets the boundary, so no Content-Type here. */
+  postForm: async <T>(path: string, form: FormData): Promise<T> => {
+    const res = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      body: form,
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    if (res.status === 401) {
+      setToken(null);
+      throw new EntryError(401, "Your session has expired — please sign in again.");
+    }
+    if (!res.ok) {
+      let message = `${res.status} ${res.statusText}`;
+      try { const b = await res.json() as { error?: string }; if (b?.error) message = b.error; } catch { /* keep status */ }
+      throw new EntryError(res.status, message);
+    }
+    return (await res.json()) as T;
+  },
 };
 
 // ── shapes returned by the API ──────────────────────────────────────────────

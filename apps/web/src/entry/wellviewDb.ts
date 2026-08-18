@@ -217,10 +217,50 @@ export interface WvXlResult {
   notes: string[];
 }
 
+
+/** A file stored inside the WellView database (wvAttachment). */
+export interface WvAttachment {
+  idrec: string;
+  idwell: string | null;
+  parent: string | null;
+  parentTable: string | null;
+  des: string | null;
+  typ1: string | null;
+  typ2: string | null;
+  dttm: string | null;
+  com: string | null;
+  /** Where the file came from when it was attached — provenance, not a link. */
+  sourceUrl: string | null;
+  extension: string | null;
+  bytes: number;
+  mime: string;
+  kind: string;
+  /** True only for raster images the server is willing to render in place. */
+  inline: boolean;
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
   databases: () => entryApi.get<WvDatabase[]>("/wellview/dbs"),
+
+  /** Attachment metadata for a well, or for one record of one table. */
+  attachments: (db: string, q: { idwell?: string; table?: string; idrec?: string }) => {
+    const p = new URLSearchParams();
+    if (q.idwell) p.set("idwell", q.idwell);
+    if (q.table) p.set("table", q.table);
+    if (q.idrec) p.set("idrec", q.idrec);
+    return entryApi.get<{ supported: boolean; attachments: WvAttachment[] }>(
+      `/wellview/dbs/${enc(db)}/attachments?${p.toString()}`);
+  },
+
+  /** The bytes, fetched with the bearer token (see entryApi.blob). */
+  attachmentBlob: (db: string, idrec: string) =>
+    entryApi.blob(`/wellview/dbs/${enc(db)}/attachments/${enc(idrec)}/content`),
+
+  uploadAttachment: (db: string, form: FormData) =>
+    entryApi.postForm<{ idrec: string; bytes: number; mime: string; kind: string; inline: boolean }>(
+      `/wellview/dbs/${enc(db)}/attachments`, form),
 
   /** The multi-well templates this database can run. */
   multiReports: (db: string) =>

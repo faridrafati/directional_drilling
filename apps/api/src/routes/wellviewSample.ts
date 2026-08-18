@@ -388,6 +388,7 @@ export function resolveTemplateData(
         ...(needs.length ? { needsScope: needs } : {}),
       };
     }
+    const contentOnly = (b as { contentOnly?: boolean }).contentOnly === true;
     const wanted = b.fields.map((f) => ({
       column: f.column,
       // WellView's own caption for the field, not the .afr's capitalised
@@ -400,7 +401,7 @@ export function resolveTemplateData(
     const present = wanted.filter((w) => w.actual != null);
     const missing = wanted.filter((w) => w.actual == null).map((w) => w.column);
     if (present.length === 0) {
-      return { table: t.name, title: blockTitle(b), exists: true, computed: false, columns: [], missing, rowCount: 0, rows: [] };
+      return { table: t.name, title: blockTitle(b), exists: true, computed: false, contentOnly, columns: [], missing, rowCount: 0, rows: [] };
     }
 
     const hasIdwell = t.cols.has("idwell");

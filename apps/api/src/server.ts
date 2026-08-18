@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import { PrismaClient } from "@prisma/client";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerCountryRoutes } from "./routes/countries.js";
@@ -23,6 +24,14 @@ async function main() {
   const app = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 });
 
   await app.register(cors, { origin: true });
+
+  // Attachment uploads (WellView stores files as blobs inside the database).
+  // Additive: it only claims multipart/form-data, so every existing JSON route
+  // is untouched. The per-file ceiling is enforced again at the route, because
+  // this limit is the transport's and the route's is the product's.
+  await app.register(multipart, {
+    limits: { fileSize: 25 * 1024 * 1024, files: 1, fields: 12 },
+  });
 
   // Raw text body for .grd uploads (POST /fields/:id/grids).
   app.addContentTypeParser(

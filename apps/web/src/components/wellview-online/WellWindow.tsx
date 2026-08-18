@@ -23,6 +23,7 @@ import { entryApi } from "../../entry/client.js";
 import { useUnitSet } from "../../entry/unitSet.js";
 import { toDisplay, fromDisplay, formatUnitValue, displayUnitFor } from "@dd/shared";
 import type { UnitFormat } from "@dd/shared";
+import { Attachments } from "./Attachments.js";
 import { wvDbApi, type WvSchematic, type WvSchematicRow } from "../../entry/wellviewDb.js";
 
 interface TemplateEntry {
@@ -237,6 +238,9 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
     table: string | null; title: string | null; exists: boolean; computed: boolean;
     /** Computed HERE from stored rows, rather than merely absent (see below). */
     derived?: boolean;
+    /** The template names a table but prints no columns from it: the block's
+     *  CONTENT is the thing (attached files, a chart), not a table of values. */
+    contentOnly?: boolean;
     unsupported?: { field: string; reason: string }[];
     /** Derivable, but waiting on a job/day selection in the toolbar. */
     needsScope?: string[];
@@ -393,7 +397,19 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                     </span>
                   )}
                 </button>
-                {b.computed && !b.derived ? (
+                {String(b.table).toLowerCase() === "wvattachment" ? (
+                  /* The shipped "Attached Image Files" template extracts no
+                     columns at all — the images ARE the content. Render the
+                     files rather than an empty grid. */
+                  <div className="p-2">
+                    <Attachments db={db} idwell={idwell} canUpload={false} />
+                  </div>
+                ) : b.contentOnly ? (
+                  <div className="px-3 py-2 text-[11px] text-gray-500">
+                    This block prints content rather than a table of values, and the template
+                    names no columns for it — WellView draws it from <b>{b.table}</b> at print time.
+                  </div>
+                ) : b.computed && !b.derived ? (
                   <div className="px-3 py-2 text-[11px] text-amber-700 bg-amber-50">
                     {b.needsScope?.length ? (
                       <>
@@ -409,6 +425,11 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                   </div>
                 ) : !b.exists ? (
                   <div className="px-3 py-2 text-[11px] text-gray-400">Table not present in this database.</div>
+                ) : b.contentOnly ? (
+                  <div className="px-3 py-2 text-[11px] text-gray-500">
+                    This block prints no columns — the template draws its content directly
+                    (a chart or an image list), which this app does not reproduce.
+                  </div>
                 ) : (b.columns?.length ?? 0) === 0 ? (
                   <div className="px-3 py-2 text-[11px] text-gray-400">
                     None of this block's columns exist in the stored table.

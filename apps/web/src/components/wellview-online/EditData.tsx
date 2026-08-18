@@ -40,6 +40,7 @@ import { wvDbApi, type WvRecordColumn, type WvRecords, type WvTreeNode } from ".
 import { usePicklistCatalog } from "../../entry/picklists.js";
 import { useUnitSet } from "../../entry/unitSet.js";
 import { toDisplay, fromDisplay, displayUnitFor, formatUnitValue } from "@dd/shared";
+import { Attachments } from "./Attachments.js";
 
 type Row = Record<string, string | number | null>;
 
@@ -76,6 +77,8 @@ export function EditData({
    *  and can be set from a record's ancestor path. */
   const [parentPick, setParentPick] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<string | null>(null);
+  /** §3.9 attachments: the files hanging off this well or this folder. */
+  const [showAttach, setShowAttach] = useState(false);
 
   /**
    * Arriving from a report field: position every parent folder on the record's
@@ -154,6 +157,14 @@ export function EditData({
             <input type="checkbox" checked={showSystem} onChange={(e) => setShowSystem(e.target.checked)} />
             Show System Fields
           </label>
+          <button type="button" onClick={() => setShowAttach((v) => !v)}
+            data-testid="wv-edit-attachments"
+            title="Files stored in the database against this well"
+            className={`h-7 px-2 text-[11px] rounded border ${showAttach
+              ? "bg-blue-600 border-blue-600 text-white"
+              : "border-gray-600 text-gray-200 hover:bg-gray-700"}`}>
+            Attachments
+          </button>
           <button type="button" onClick={() => setVertical((v) => !v)}
             title="Change Edit Mode — horizontal reads left to right, vertical top to bottom"
             className="h-7 px-2 text-[11px] rounded border border-gray-600 text-gray-200 hover:bg-gray-700">
@@ -164,6 +175,15 @@ export function EditData({
             Save and Exit
           </button>
         </div>
+
+        {showAttach && (
+          /* Files stored in the database against this well. Scoped to the
+             folder in view when one is open, so uploading from the Casing
+             folder attaches to casing rather than to the well at large. */
+          <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 max-h-72 overflow-y-auto shrink-0">
+            <Attachments db={db} idwell={idwell} table={table ?? undefined} />
+          </div>
+        )}
 
         <div className="flex flex-1 min-h-0">
           {/* folder tree */}

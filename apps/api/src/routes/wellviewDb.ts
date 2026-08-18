@@ -40,6 +40,7 @@ import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } fro
 import { computeSurvey } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
 import { resolveXlExtract, type XlTemplate } from "../wellview/xlExtract.js";
+import { sniff, safeFilename, attachmentHeaders, MAX_ATTACHMENT_BYTES } from "../wellview/attachments.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
@@ -1353,6 +1354,189 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       // A bounded set: the query binds one parameter per well.
       if (wells.length > 500) return reply.code(400).send({ error: "at most 500 wells at a time" });
       return resolveMultiTemplate(d.ro, tpl, wells);
+    },
+  );
+
+  /**
+   * Attachments on a well, or on one record of one table.
+   *
+   * Metadata only — the blob is fetched separately, because a listing that
+   * inlined 3.6 MB of wellhead photographs would be unusable. Size and type
+   * come from the BYTES, never from AttachBlobSz or AttachExtension: the first
+   * is NULL on 9 of the sample database's 17 rows whose blob is real, and the
+   * second is absent or wrong on several.
+   */
+  app.get<{ Params: { db: string }; Querystring: { idwell?: string; table?: string; idrec?: string } }>(
+    "/entry/wellview/dbs/:db/attachments",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, "wvAttachment");
+      if (!t) return { attachments: [], supported: false };
+
+      const preds: string[] = [];
+      const args: string[] = [];
+      if (req.query.idwell) { preds.push(`"${t.colSet.get("idwell")}" = ?`); args.push(req.query.idwell); }
+      // A record's own attachments: WellView keys them by the parent record AND
+      // the parent's table name, lowercased, in TblKeyParent.
+      if (req.query.idrec) {
+        // The parent RECORD is the requirement; the parent TABLE only
+        // disambiguates. 8 of the sample's 17 rows name a parent record and
+        // leave TblKeyParent NULL — older imports — so requiring both hides
+        // them from the record they are actually attached to. Still refuses a
+        // row explicitly labelled for a different table, which matters because
+        // an IDRec can collide across tables.
+        preds.push(`"${t.colSet.get("idrecparent")}" = ?`);
+        args.push(req.query.idrec);
+        if (req.query.table) {
+          preds.push(`("${t.colSet.get("tblkeyparent")}" IS NULL OR lower("${t.colSet.get("tblkeyparent")}") = ?)`);
+          args.push(req.query.table.toLowerCase());
+        }
+      } else if (req.query.table) {
+        preds.push(`lower("${t.colSet.get("tblkeyparent")}") = ?`);
+        args.push(req.query.table.toLowerCase());
+      }
+      const where = preds.length ? ` WHERE ${preds.join(" AND ")}` : "";
+
+      // Read the blob's LENGTH and only its first bytes. Selecting the blobs
+      // themselves to measure and sniff them pulled 3.9 MB into memory to
+      // produce a listing that shows none of it.
+      const blobCol = t.colSet.get("attachblob");
+      const extra = blobCol
+        ? `, length("${blobCol}") AS __bytes, substr("${blobCol}", 1, 64) AS __head`
+        : "";
+      const rows = d.ro.prepare(
+        `SELECT *${extra} FROM "${t.name}"${where}`).all(...args) as Record<string, unknown>[];
+      const col = (c: string) => t.colSet.get(c) ?? c;
+      return {
+        supported: true,
+        attachments: rows.map((r) => {
+          const head = r.__head as Uint8Array | null;
+          const bytes = Number(r.__bytes ?? 0);
+          const s = sniff(head);
+          return {
+            idrec: String(r[col("idrec")] ?? ""),
+            idwell: r[col("idwell")] ?? null,
+            parent: r[col("idrecparent")] ?? null,
+            parentTable: r[col("tblkeyparent")] ?? null,
+            des: r[col("des")] ?? null,
+            typ1: r[col("typ1")] ?? null,
+            typ2: r[col("typ2")] ?? null,
+            dttm: r[col("dttm")] ?? null,
+            com: r[col("com")] ?? null,
+            /** Where the file came from originally — a local path on someone's
+             *  desktop in 2004. Shown as provenance, never fetched. */
+            sourceUrl: r[col("attachurl")] ?? null,
+            extension: r[col("attachextension")] ?? null,
+            bytes,
+            mime: s.mime,
+            kind: s.label,
+            inline: s.inline,
+          };
+        }),
+      };
+    },
+  );
+
+  /**
+   * The bytes of one attachment.
+   *
+   * Rendered inline ONLY when the magic number says it is one of a short list
+   * of raster image formats; everything else, including anything unrecognised
+   * and anything SVG-shaped, is sent as a download. See attachments.ts — this
+   * is the route where a file someone else uploaded is served back from this
+   * application's own origin, which is where stored XSS would live.
+   */
+  app.get<{ Params: { db: string; idrec: string } }>(
+    "/entry/wellview/dbs/:db/attachments/:idrec/content",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, "wvAttachment");
+      if (!t) return reply.code(404).send({ error: "no attachments in this database" });
+      const row = d.ro.prepare(
+        `SELECT * FROM "${t.name}" WHERE "${t.colSet.get("idrec")}" = ?`,
+      ).get(req.params.idrec) as Record<string, unknown> | undefined;
+      if (!row) return reply.code(404).send({ error: "no such attachment" });
+
+      const blob = row[t.colSet.get("attachblob") ?? "AttachBlob"] as Uint8Array | null;
+      if (!blob?.length) return reply.code(404).send({ error: "this attachment holds no data" });
+
+      const s = sniff(blob);
+      const name = safeFilename(
+        (row[t.colSet.get("des") ?? "Des"] as string) ?? null,
+        (row[t.colSet.get("attachextension") ?? "AttachExtension"] as string) ?? null,
+        s.mime,
+      );
+      reply.headers(attachmentHeaders(s, name, blob.length));
+      return reply.send(Buffer.from(blob));
+    },
+  );
+
+  /**
+   * Add an attachment.
+   *
+   * Multipart, one file. The blob is bound as a parameter like every other
+   * write here; the declared filename and type are recorded as the user's
+   * description but are NEVER used to decide how the file is served back —
+   * that always comes from the bytes.
+   */
+  app.post<{ Params: { db: string } }>(
+    "/entry/wellview/dbs/:db/attachments",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, "wvAttachment");
+      if (!t) return reply.code(404).send({ error: "this database has no wvAttachment table" });
+      if (!req.isMultipart()) return reply.code(400).send({ error: "send the file as multipart/form-data" });
+
+      const file = await req.file();
+      if (!file) return reply.code(400).send({ error: "no file in the request" });
+      const buf = await file.toBuffer();
+      // @fastify/multipart flags a file that hit its limit rather than throwing.
+      if (file.file.truncated || buf.length > MAX_ATTACHMENT_BYTES) {
+        return reply.code(413).send({ error: `attachments are limited to ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB` });
+      }
+      if (!buf.length) return reply.code(400).send({ error: "the file is empty" });
+
+      const field = (n: string): string | null => {
+        const f = (file.fields as Record<string, unknown>)[n] as { value?: unknown } | undefined;
+        const v = f && typeof f === "object" && "value" in f ? f.value : undefined;
+        return typeof v === "string" && v.trim() ? v.trim() : null;
+      };
+      const idwell = field("idwell");
+      if (!idwell) return reply.code(400).send({ error: "idwell is required" });
+
+      const idrec = newIdRec();
+      const col = (c: string) => t.colSet.get(c);
+      const values: Record<string, unknown> = {};
+      const put = (c: string, v: unknown) => { const a = col(c); if (a && v != null) values[a] = v; };
+      put("idrec", idrec);
+      put("idwell", idwell);
+      put("idrecparent", field("parent"));
+      put("tblkeyparent", field("table")?.toLowerCase() ?? null);
+      put("des", field("des") ?? file.filename ?? "Attachment");
+      put("typ1", field("typ1"));
+      put("typ2", field("typ2"));
+      put("com", field("com"));
+      put("dttm", new Date().toISOString().slice(0, 19) + "Z");
+      // Recorded from the upload for provenance; the served type is sniffed.
+      put("attachextension", (file.filename?.split(".").pop() ?? "").toLowerCase().slice(0, 8) || null);
+      put("attachblobsz", buf.length);
+      put("attachblob", buf);
+
+      const cols = Object.keys(values);
+      const sql = `INSERT INTO "${t.name}" (${cols.map((c) => `"${c}"`).join(", ")})
+                   VALUES (${cols.map(() => "?").join(", ")})`;
+      writable(d).prepare(sql).run(...cols.map((c) => values[c] as never));
+
+      const s = sniff(buf);
+      return reply.code(201).send({
+        idrec, bytes: buf.length, mime: s.mime, kind: s.label, inline: s.inline,
+      });
     },
   );
 

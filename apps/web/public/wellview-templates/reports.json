@@ -4177,7 +4177,15 @@
    ],
    "root_table": "wvattachment",
    "filters": [],
-   "blocks": [],
+   "blocks": [
+    {
+     "table": "wvattachment",
+     "title": null,
+     "fields": [],
+     "printed_field_count": 0,
+     "contentOnly": true
+    }
+   ],
    "captions": [],
    "misc_strings": [
     "wvattachment",
@@ -7232,7 +7240,15 @@
      "dttm"
     ]
    ],
-   "blocks": [],
+   "blocks": [
+    {
+     "table": "wvcas",
+     "title": null,
+     "fields": [],
+     "printed_field_count": 0,
+     "contentOnly": true
+    }
+   ],
    "captions": [
     "@RCasing Description: <wvcas.des>; Set Depth: <wvcas.depthbtm>; ",
     "@RTubing Description: <wvtub.des>; Set Depth: <wvtub.depthbtm>; ",
@@ -15065,7 +15081,15 @@
      "dttm"
     ]
    ],
-   "blocks": [],
+   "blocks": [
+    {
+     "table": "wvcas",
+     "title": null,
+     "fields": [],
+     "printed_field_count": 0,
+     "contentOnly": true
+    }
+   ],
    "captions": [
     "@RCasing Description: <wvcas.des>; Set Depth: <wvcas.depthbtm>; ",
     "@RTubing Description: <wvtub.des>; Set Depth: <wvtub.depthbtm>; ",
@@ -36417,7 +36441,15 @@
    ],
    "root_table": "wvattachment",
    "filters": [],
-   "blocks": [],
+   "blocks": [
+    {
+     "table": "wvattachment",
+     "title": null,
+     "fields": [],
+     "printed_field_count": 0,
+     "contentOnly": true
+    }
+   ],
    "captions": [],
    "misc_strings": [
     "wvattachment",
@@ -62197,7 +62229,15 @@
    ],
    "root_table": "wvwellbore",
    "filters": [],
-   "blocks": [],
+   "blocks": [
+    {
+     "table": "wvwellbore",
+     "title": null,
+     "fields": [],
+     "printed_field_count": 0,
+     "contentOnly": true
+    }
+   ],
    "captions": [],
    "misc_strings": [
     "wvwellbore",
