@@ -41,6 +41,7 @@ import { computeSurvey } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
 import { resolveXlExtract, type XlTemplate } from "../wellview/xlExtract.js";
 import { sniff, safeFilename, attachmentHeaders, MAX_ATTACHMENT_BYTES } from "../wellview/attachments.js";
+import { exportWell, importWell, importPreflight, type WellExport } from "../wellview/transfer.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
@@ -1586,6 +1587,60 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         /** Elevations are heights, in the model's base length unit. */
         unit: modelField("wvWellHeader", "elvorigkb")?.baseUnit,
       };
+    },
+  );
+
+  /**
+   * Export a well — every row in every table that carries its idwell.
+   *
+   * Sent as a download rather than a JSON body: a real well is thousands of
+   * rows and, with attachments, megabytes of base64.
+   */
+  app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
+    "/entry/wellview/dbs/:db/export",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const idwell = String(req.query.idwell ?? "");
+      if (!idwell) return reply.code(400).send({ error: "idwell is required" });
+      const payload = exportWell(d.ro, req.params.db, idwell);
+      if (!payload) return reply.code(404).send({ error: `no well ${idwell} in ${req.params.db}` });
+      const name = (payload.source.wellName ?? idwell).replace(/[^\w.-]+/g, "_").slice(0, 60);
+      reply.header("Content-Type", "application/json; charset=utf-8");
+      reply.header("Content-Disposition", `attachment; filename="${name}.wellview.json"`);
+      return reply.send(JSON.stringify(payload));
+    },
+  );
+
+  /** What an import would do — checked before anything is written. */
+  app.post<{ Params: { db: string }; Body: WellExport }>(
+    "/entry/wellview/dbs/:db/import/preflight",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      return importPreflight(d.ro, req.body);
+    },
+  );
+
+  /**
+   * Import a well.
+   *
+   * IDRec is preserved so every association survives, which is exactly why a
+   * database that already holds the well is refused rather than merged.
+   */
+  app.post<{ Params: { db: string }; Body: WellExport }>(
+    "/entry/wellview/dbs/:db/import",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      try {
+        return importWell(writable(d), req.body);
+      } catch (e) {
+        return reply.code(409).send({ error: (e as Error).message });
+      }
     },
   );
 

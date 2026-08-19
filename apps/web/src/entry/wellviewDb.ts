@@ -254,6 +254,21 @@ const enc = encodeURIComponent;
 export const wvDbApi = {
   databases: () => entryApi.get<WvDatabase[]>("/wellview/dbs"),
 
+  /** Download a well as a portable JSON document. */
+  exportWell: (db: string, idwell: string) =>
+    entryApi.blob(`/wellview/dbs/${enc(db)}/export?idwell=${enc(idwell)}`),
+
+  importPreflight: (db: string, payload: unknown) =>
+    entryApi.post<{ ok: boolean; reason?: string; missingTables: string[]; missingColumns: string[] }>(
+      `/wellview/dbs/${enc(db)}/import/preflight`, payload),
+
+  importWell: (db: string, payload: unknown) =>
+    entryApi.post<{
+      idwell: string; wellName: string | null;
+      inserted: { tables: number; rows: number };
+      missingTables: string[]; missingColumns: string[]; emptyTables: number;
+    }>(`/wellview/dbs/${enc(db)}/import`, payload),
+
   /** The elevations a well can be re-referenced to. */
   elevations: (db: string, idwell: string) =>
     entryApi.get<WvElevations>(`/wellview/dbs/${enc(db)}/elevations?idwell=${enc(idwell)}`),

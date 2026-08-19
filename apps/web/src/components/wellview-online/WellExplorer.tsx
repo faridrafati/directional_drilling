@@ -17,6 +17,7 @@
  * localStorage — the manual's "per user, per machine" behaviour, literally.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { wvDbApi, type WvHeaderColumn, type WvQuery, type WvQueryResult } from "../../entry/wellviewDb.js";
 
@@ -70,6 +71,47 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
   const [lowestOnly, setLowestOnly] = useState<boolean>(() => store.get(K("groupsLowest"), false));
   const [sort, setSort] = useState<{ column: string; desc: boolean } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const queryClient = useQueryClient();
+  const importRef = useRef<HTMLInputElement | null>(null);
+  const [transfer, setTransfer] = useState<string | null>(null);
+
+  /** Export: the payload is large, so it is streamed to a file, not held. */
+  const exportWell = async (idwell: string) => {
+    setTransfer("Exporting…");
+    try {
+      const blob = await wvDbApi.exportWell(db, idwell);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${idwell.replace(/[^\w.-]+/g, "_")}.wellview.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setTransfer("Exported.");
+    } catch (e) {
+      setTransfer((e as Error).message);
+    }
+  };
+
+  /** Import: checked before anything is written, and refused if the well is
+   *  already here — IDRecs are preserved, so a merge would duplicate records. */
+  const importWell = async (file: File) => {
+    setTransfer("Reading…");
+    try {
+      const payload = JSON.parse(await file.text());
+      const pre = await wvDbApi.importPreflight(db, payload);
+      if (!pre.ok) { setTransfer(`Not imported — ${pre.reason}`); return; }
+      const res = await wvDbApi.importWell(db, payload);
+      const notes = [
+        `Imported ${res.wellName ?? res.idwell}: ${res.inserted.rows} rows across ${res.inserted.tables} tables.`,
+        res.missingTables.length ? `${res.missingTables.length} table(s) not in this database.` : "",
+        res.missingColumns.length ? `${res.missingColumns.length} column(s) not in this database.` : "",
+      ].filter(Boolean);
+      setTransfer(notes.join(" "));
+      await queryClient.invalidateQueries({ queryKey: ["wvdb", db] });
+    } catch (e) {
+      setTransfer((e as Error).message);
+    }
+  };
   const lastClick = useRef<number | null>(null);
   const [showListProps, setShowListProps] = useState(false);
   const [showGroupDlg, setShowGroupDlg] = useState(false);
@@ -270,12 +312,25 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
           onClick={() => void newWell()} />
         <ToolButton label="Data Audit" hint="Check that fields meet the §10.2 business rules"
           onClick={() => onAudit(selected)} />
+        <ToolButton label="Export Well"
+          hint="Download this well — every row in every table — as a portable document"
+          disabled={!primary}
+          onClick={() => primary && void exportWell(primary)} />
+        <ToolButton label="Import Well"
+          hint="Bring a well exported from another database into this one"
+          onClick={() => importRef.current?.click()} />
         <ToolButton label="Multi Well Reports"
           hint="Print one table across the selected wells (custom/reports multi)"
           disabled={!selected.length}
           onClick={() => onMultiReport(selected)} />
+        <input ref={importRef} type="file" accept="application/json,.json" className="hidden"
+          data-testid="wv-import-well"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void importWell(f); e.target.value = ""; }} />
         <span className="mx-1 h-5 w-px bg-gray-300" />
         <ToolButton label="Change Database" hint="Back to the Open Database window" onClick={onChangeDatabase} />
+        {transfer && (
+          <span className="text-[11px] text-blue-700 max-w-[28rem] truncate" title={transfer}>{transfer}</span>
+        )}
         <span className="ml-auto text-[11px] text-gray-400 tabular-nums">
           {rows.length} well{rows.length === 1 ? "" : "s"}
           {selected.length > 1 ? ` · ${selected.length} selected` : ""}
