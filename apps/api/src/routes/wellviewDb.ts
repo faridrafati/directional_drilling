@@ -1869,6 +1869,70 @@ export async function registerWellviewDbRoutes(
     },
   );
 
+  /**
+   * Saved schematic views (§8.3 Schematic Templates).
+   *
+   * "Users can set up a standard list of settings in the schematic templates,
+   * which provide various layouts to describe different data." Chevron's own
+   * ship under custom/schematics — those folders are EMPTY in this export, so
+   * there is no binary format to decode and these are the app's own templates:
+   * a name over the settings the schematic already has.
+   *
+   * Not keyed by database. A template names element KINDS, not columns.
+   */
+  app.get("/entry/wellview/dbs/:db/schematic-templates", { preHandler: WELLVIEW_GUARD }, async () => {
+    if (!prisma) return { templates: [] };
+    const rows = await prisma.wellviewSchematicTemplate.findMany({ orderBy: { name: "asc" } });
+    return {
+      templates: rows.map((r) => ({
+        id: r.id, name: r.name,
+        settings: JSON.parse(r.settings) as Record<string, unknown>,
+        createdBy: r.createdBy,
+      })),
+    };
+  });
+
+  app.post<{ Params: { db: string }; Body: { id?: string; name?: string; settings?: unknown } }>(
+    "/entry/wellview/dbs/:db/schematic-templates",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      if (!prisma) return reply.code(503).send({ error: "saved templates need the application database" });
+      const name = (req.body?.name ?? "").trim();
+      if (!name) return reply.code(400).send({ error: "a name is required" });
+      if (!req.body?.settings || typeof req.body.settings !== "object") {
+        return reply.code(400).send({ error: "settings are required" });
+      }
+      const data = {
+        name,
+        settings: JSON.stringify(req.body.settings),
+        createdBy: req.entryUser?.username ?? "unknown",
+      };
+      try {
+        const saved = req.body?.id
+          ? await prisma.wellviewSchematicTemplate.update({ where: { id: req.body.id }, data })
+          : await prisma.wellviewSchematicTemplate.create({ data });
+        return reply.code(req.body?.id ? 200 : 201).send({ id: saved.id, name: saved.name });
+      } catch (e) {
+        if (String((e as { code?: string }).code) === "P2002") {
+          return reply.code(409).send({ error: `there is already a schematic template called "${name}"` });
+        }
+        throw e;
+      }
+    },
+  );
+
+  app.delete<{ Params: { db: string; id: string } }>(
+    "/entry/wellview/dbs/:db/schematic-templates/:id",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      if (!prisma) return reply.code(503).send({ error: "saved templates need the application database" });
+      const found = await prisma.wellviewSchematicTemplate.findUnique({ where: { id: req.params.id } });
+      if (!found) return reply.code(404).send({ error: "no such schematic template" });
+      await prisma.wellviewSchematicTemplate.delete({ where: { id: req.params.id } });
+      return { deleted: req.params.id };
+    },
+  );
+
   /** The Excel-report extracts this database can run. */
   app.get("/entry/wellview/dbs/:db/reports-xl", { preHandler: WELLVIEW_GUARD }, async () => {
     return {

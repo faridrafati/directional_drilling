@@ -570,6 +570,26 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
 }
 
 // ── Schematic tab ─────────────────────────────────────────────────────────────
+
+/** §8.3 "group lists" — the kinds of downhole item a template may show. */
+export type SchematicLayer =
+  | "holeSizes" | "casing" | "tubing" | "rods" | "otherInHole"
+  | "perforations" | "cement" | "zones";
+
+export const SCHEMATIC_LAYERS: { key: SchematicLayer; label: string }[] = [
+  { key: "holeSizes", label: "Hole sizes" },
+  { key: "casing", label: "Casing" },
+  { key: "tubing", label: "Tubing" },
+  { key: "rods", label: "Rods" },
+  { key: "otherInHole", label: "Other in hole" },
+  { key: "perforations", label: "Perforations" },
+  { key: "cement", label: "Cement" },
+  { key: "zones", label: "Zones" },
+];
+
+const ALL_LAYERS = Object.fromEntries(
+  SCHEMATIC_LAYERS.map((l) => [l.key, true]),
+) as Record<SchematicLayer, boolean>;
 const num = (v: string | number | null | undefined): number | null => {
   if (v == null || v === "") return null;
   const n = Number(v);
@@ -603,6 +623,20 @@ function SchematicTab({ db, idwell, onEditTable }: {
   const [boreId, setBoreId] = useState<string>("");            // "" = all wellbores
   const [showProposed, setShowProposed] = useState(false);
   const [scale, setScale] = useState(1);
+  /**
+   * §8.3 "group lists": which kinds of downhole item the view draws. A
+   * completions template shows tubing, rods and perforations; a drilling one
+   * shows casing and hole sizes. Everything on by default — a template is a
+   * narrowing of the full picture, not a prerequisite for seeing it.
+   */
+  const [layers, setLayers] = useState<Record<SchematicLayer, boolean>>(ALL_LAYERS);
+  /**
+   * §8.3 SmartScaling: "adjusts the view so that only equipment that appears on
+   * the selected date is used in the scaling algorithm." Off, the axis spans
+   * the deepest item the well ever had, so an early date draws as a sliver at
+   * the top of a mostly empty track.
+   */
+  const [smartScaling, setSmartScaling] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const dates = useMemo(() => q.data?.dates ?? [], [q.data]);
@@ -664,6 +698,12 @@ function SchematicTab({ db, idwell, onEditTable }: {
           {dates.length ? `${date} (${ix + 1}/${dates.length})` : "no dated items"}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
+          <label className="flex items-center gap-1 text-[11px] text-gray-600"
+            title="§8.3 — scale only to what is in the hole on the selected date">
+            <input type="checkbox" checked={smartScaling} data-testid="wv-sch-smart"
+              onChange={(e) => setSmartScaling(e.target.checked)} />
+            SmartScaling
+          </label>
           <label className="flex items-center gap-1 text-[11px] text-gray-600">
             <input type="checkbox" checked={showProposed} onChange={(e) => setShowProposed(e.target.checked)} />
             Proposed
@@ -677,12 +717,15 @@ function SchematicTab({ db, idwell, onEditTable }: {
           </button>
         </div>
       </div>
+      <SchematicTemplates db={db} layers={layers} setLayers={setLayers}
+        smartScaling={smartScaling} setSmartScaling={setSmartScaling}
+        showProposed={showProposed} setShowProposed={setShowProposed} />
       <div className="px-3 py-0.5 text-[10px] text-gray-400 border-b border-gray-50 shrink-0">
         Click an item to edit its subject area. Widths from component nominal OD, depths as stored.
       </div>
       <div className="flex-1 overflow-auto">
         <SchematicSvg s={s} date={date} boreId={boreId || null} showProposed={showProposed}
-          scale={scale} onEditTable={onEditTable} />
+          scale={scale} layers={layers} smartScaling={smartScaling} onEditTable={onEditTable} />
       </div>
     </div>
   );
@@ -695,9 +738,10 @@ function SchematicTab({ db, idwell, onEditTable }: {
  * hatch beside the casing it belongs to, zones as green bands with names.
  * Proposed strings (ch. 4 planning) draw dashed when the toggle is on.
  */
-function SchematicSvg({ s, date, boreId, showProposed, scale, onEditTable }: {
+function SchematicSvg({ s, date, boreId, showProposed, scale, layers, smartScaling, onEditTable }: {
   s: WvSchematic; date: string; boreId: string | null; showProposed: boolean;
-  scale: number; onEditTable: (table: string) => void;
+  scale: number; layers: Record<SchematicLayer, boolean>; smartScaling: boolean;
+  onEditTable: (table: string) => void;
 }) {
   /**
    * Every depth drawn here — the axis, the shoe labels, the tooltips — is one
@@ -757,33 +801,56 @@ function SchematicSvg({ s, date, boreId, showProposed, scale, onEditTable }: {
     };
   }, [boreId, s.wellbores]);
 
-  const casings = s.casings.filter((c) => inHole(c, date) && boreFilter(c));
-  const tubings = s.tubings.filter((t) => inHole(t, date) && boreFilter(t));
-  const rods = s.rods.filter((r) => inHole(r, date) && boreFilter(r));
-  const other = s.otherInHole.filter((o) => inHole(o, date) && boreFilter(o));
+  // Each set is gated by its §8.3 group list before anything is drawn or
+  // measured, so a template that hides a layer also stops it from setting
+  // the depth axis.
+  const casings = (layers.casing ? s.casings : []).filter((c) => inHole(c, date) && boreFilter(c));
+  const tubings = (layers.tubing ? s.tubings : []).filter((t) => inHole(t, date) && boreFilter(t));
+  const rods = (layers.rods ? s.rods : []).filter((r) => inHole(r, date) && boreFilter(r));
+  const other = (layers.otherInHole ? s.otherInHole : []).filter((o) => inHole(o, date) && boreFilter(o));
   const propCasings = showProposed ? s.casings.filter((c) => isProposed(c) && boreFilter(c)) : [];
   const propTubings = showProposed ? s.tubings.filter((t) => isProposed(t) && boreFilter(t)) : [];
-  const sizes = s.sizes.filter((z) => {
+  const sizes = (layers.holeSizes ? s.sizes : []).filter((z) => {
     const start = dstr(z.DtTmStart);
     return (!start || start <= date);
   });
-  const perfs = s.perforations.filter((p) => {
+  const perfs = (layers.perforations ? s.perforations : []).filter((p) => {
     const d = dstr(p.DtTm);
     return (!d || d <= date) && String(p.Proposed ?? "") !== "1" && boreFilter(p);
   });
-  const cement = s.cement.filter((c) => {
+  const cement = (layers.cement ? s.cement : []).filter((c) => {
     const d = dstr(c.DtTmStart);
     return (!d || d <= date) && String(c.Proposed ?? "") !== "1";
   });
 
-  const depths: number[] = [];
-  for (const set of [casings, tubings, rods, other, propCasings, propTubings]) for (const r of set) {
-    const d = num(r.DepthBtm); if (d) depths.push(d);
-  }
-  for (const z of sizes) { const d = num(z.DepthBtmActual); if (d) depths.push(d); }
-  for (const p of perfs) { const d = num(p.DepthBtm) ?? num(p.DepthTop); if (d) depths.push(d); }
-  for (const z of s.zones) { const d = num(z.DepthBtm); if (d) depths.push(d); }
-  const maxDepth = Math.max(100, ...depths) * 1.04;
+  /**
+   * The depth axis.
+   *
+   * §8.3 SmartScaling "adjusts the view so that only equipment that appears on
+   * the selected date is used in the scaling algorithm". With it OFF the axis
+   * spans everything the well ever held, so stepping the history player keeps
+   * one scale and the string genuinely grows down the track. With it ON the
+   * axis fits the selected date, which is what you want on an early date that
+   * would otherwise draw as a sliver at the top of an empty track. Off by
+   * default: an axis that silently rescales under a moving picture is the
+   * harder one to read.
+   */
+  const depthsOf = (dated: boolean): number[] => {
+    const out: number[] = [];
+    const strings = dated
+      ? [casings, tubings, rods, other, propCasings, propTubings]
+      : [s.casings, s.tubings, s.rods, s.otherInHole];
+    for (const set of strings) for (const r of set) { const d = num(r.DepthBtm); if (d) out.push(d); }
+    for (const z of (dated ? sizes : s.sizes)) { const d = num(z.DepthBtmActual); if (d) out.push(d); }
+    for (const p of (dated ? perfs : s.perforations)) {
+      const d = num(p.DepthBtm) ?? num(p.DepthTop); if (d) out.push(d);
+    }
+    // Zones are geology, not equipment: they are in the well whatever the date,
+    // so SmartScaling does not exclude them.
+    for (const z of (layers.zones ? s.zones : [])) { const d = num(z.DepthBtm); if (d) out.push(d); }
+    return out;
+  };
+  const maxDepth = Math.max(100, ...depthsOf(smartScaling)) * 1.04;
 
   const H = 640, W = 560, CX = 240, TOP = 24;
   const y = (depth: number) => TOP + (depth / maxDepth) * (H - TOP - 16);
@@ -813,7 +880,7 @@ function SchematicSvg({ s, date, boreId, showProposed, scale, onEditTable }: {
   }
 
   // zones: green bands behind strings
-  for (const [i, z] of s.zones.entries()) {
+  for (const [i, z] of (layers.zones ? s.zones : []).entries()) {
     const top = num(z.DepthTop), btm = num(z.DepthBtm);
     if (top == null || btm == null) continue;
     items.push(
@@ -1116,6 +1183,111 @@ function SurveyTab({ db, idwell, onEditTable }: {
           </div>
         </>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Schematic templates (§8.3): a name over the settings above.
+ *
+ * "Users can set up a standard list of settings in the schematic templates,
+ * which provide various layouts to describe different data. For example: A
+ * Completions template will portray completions data." Chevron's own live in
+ * custom/schematics — those folders are empty in this export, so these are the
+ * app's own rather than a decoded format, and the row says so.
+ */
+function SchematicTemplates({
+  db, layers, setLayers, smartScaling, setSmartScaling, showProposed, setShowProposed,
+}: {
+  db: string;
+  layers: Record<SchematicLayer, boolean>;
+  setLayers: (l: Record<SchematicLayer, boolean>) => void;
+  smartScaling: boolean;
+  setSmartScaling: (v: boolean) => void;
+  showProposed: boolean;
+  setShowProposed: (v: boolean) => void;
+}) {
+  const qc = useQueryClient();
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const q = useQuery({
+    queryKey: ["wvdb", db, "schematic-templates"],
+    queryFn: () => wvDbApi.schematicTemplates(db),
+  });
+
+  const apply = (settings: Record<string, unknown>) => {
+    const l = settings.layers as Record<SchematicLayer, boolean> | undefined;
+    if (l) setLayers({ ...layers, ...l });
+    setSmartScaling(settings.smartScaling === true);
+    setShowProposed(settings.showProposed === true);
+  };
+
+  const save = async () => {
+    setError(null);
+    try {
+      await wvDbApi.saveSchematicTemplate(db, {
+        name: name.trim(),
+        settings: { layers, smartScaling, showProposed },
+      });
+      await qc.invalidateQueries({ queryKey: ["wvdb", db, "schematic-templates"] });
+      setNaming(false);
+      setName("");
+    } catch (e) { setError((e as Error).message); }
+  };
+
+  const on = Object.values(layers).filter(Boolean).length;
+  return (
+    <div className="px-3 py-1 border-b border-gray-100 flex items-center gap-1.5 flex-wrap shrink-0">
+      <span className="text-[10px] uppercase tracking-wide text-gray-400">Show</span>
+      {SCHEMATIC_LAYERS.map((l) => (
+        <label key={l.key} className="flex items-center gap-1 text-[11px] text-gray-600"
+          data-testid={`wv-sch-layer-${l.key}`}>
+          <input type="checkbox" checked={layers[l.key]}
+            onChange={(e) => setLayers({ ...layers, [l.key]: e.target.checked })} />
+          {l.label}
+        </label>
+      ))}
+      <span className="text-[10px] text-gray-400 tabular-nums">{on}/{SCHEMATIC_LAYERS.length}</span>
+
+      <div className="ml-auto flex items-center gap-1.5">
+        <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
+          Template
+          <select data-testid="wv-sch-template" defaultValue=""
+            onChange={(e) => {
+              const t = (q.data?.templates ?? []).find((x) => x.id === e.target.value);
+              if (t) apply(t.settings);
+            }}
+            className="h-7 border border-gray-300 rounded px-1 text-xs bg-white text-gray-800 normal-case tracking-normal max-w-[12rem]">
+            <option value="">Choose…</option>
+            {(q.data?.templates ?? []).map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </label>
+        {naming ? (
+          <>
+            <input value={name} onChange={(e) => setName(e.target.value)} autoFocus
+              placeholder="Template name" data-testid="wv-sch-name"
+              className="h-7 border border-gray-300 rounded px-2 text-xs w-40" />
+            <button type="button" onClick={() => void save()} disabled={!name.trim()}
+              data-testid="wv-sch-save"
+              className="h-7 px-2 text-[11px] rounded bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40">
+              Save
+            </button>
+            <button type="button" onClick={() => { setNaming(false); setError(null); }}
+              className="h-7 px-2 text-[11px] rounded border border-gray-300 hover:bg-gray-50">Cancel</button>
+          </>
+        ) : (
+          <button type="button" onClick={() => setNaming(true)} data-testid="wv-sch-new"
+            title="Save these settings as a template (§8.3)"
+            className="h-7 px-2 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+            Save as template
+          </button>
+        )}
+        {error && <span className="text-[11px] text-red-700" data-testid="wv-sch-error">{error}</span>}
+      </div>
     </div>
   );
 }

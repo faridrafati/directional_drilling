@@ -278,10 +278,30 @@ export interface WvSavedQuery {
   createdBy: string; updatedAt: string;
 }
 
+
+/** A saved schematic view (§8.3): a name over the display settings. */
+export interface WvSchematicTemplate {
+  id: string; name: string;
+  settings: { layers?: Record<string, boolean>; smartScaling?: boolean; showProposed?: boolean };
+  createdBy: string;
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
   databases: () => entryApi.get<WvDatabase[]>("/wellview/dbs"),
+
+  /** Saved schematic views. Not per-database: they name element kinds. */
+  schematicTemplates: (db: string) =>
+    entryApi.get<{ templates: WvSchematicTemplate[] }>(
+      `/wellview/dbs/${enc(db)}/schematic-templates`),
+
+  saveSchematicTemplate: (db: string, body: { id?: string; name: string; settings: unknown }) =>
+    entryApi.post<{ id: string; name: string }>(
+      `/wellview/dbs/${enc(db)}/schematic-templates`, body),
+
+  deleteSchematicTemplate: (db: string, id: string) =>
+    entryApi.del<{ deleted: string }>(`/wellview/dbs/${enc(db)}/schematic-templates/${enc(id)}`),
 
   /** Query templates written in the app, for this database. */
   savedQueries: (db: string) =>

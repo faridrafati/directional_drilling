@@ -2741,3 +2741,21 @@ model WellviewQuery {
   @@unique([database, name])
   @@index([database])
 }
+
+/// A saved schematic view (§8.3). WellView calls these templates: "Users can
+/// set up a standard list of settings in the schematic templates, which provide
+/// various layouts to describe different data." Chevron's own ship in
+/// custom/schematics, but those folders are empty in this export, so these are
+/// the app's own — settings, not a decoded binary format.
+///
+/// Not keyed by database: a template names element KINDS (casing, tubing,
+/// perforations), not columns, so it applies to any converted database.
+model WellviewSchematicTemplate {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  /// The view settings, as JSON: layers, proposed, smartScaling, asOf.
+  settings  String
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
