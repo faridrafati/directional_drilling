@@ -121,15 +121,47 @@ const ICON_ALIASES: Record<string, string> = {
 };
 
 let _icons: { norm: string; png: string }[] | null = null;
-function icons(): { norm: string; png: string }[] {
-  if (_icons) return _icons;
+/** Every non-blank icon, by normalised name — for resolving a STORED name. */
+let _byName: Map<string, string> | null = null;
+
+function loadIcons(): void {
+  if (_icons && _byName) return;
   const raw = JSON.parse(readFileSync(ICONS_MANIFEST, "utf-8"));
-  _icons = (raw.icons as { name: string; png: string; blank?: boolean }[])
-    // The shaded render is the icon; wireframe/cut-out variants are drawings of
-    // the same thing and would win containment matches for the wrong reasons.
+  const all = raw.icons as { name: string; png: string; blank?: boolean }[];
+  // Resolving an explicit name searches EVERYTHING: if a row says it wants the
+  // wireframe variant, that is the icon it wants.
+  _byName = new Map(all.filter((i) => !i.blank).map((i) => [normalise(i.name), i.png]));
+  _icons = all
+    // …but for the description GUESS below, the shaded render is the icon;
+    // wireframe/cut-out variants are drawings of the same thing and would win
+    // containment matches for the wrong reasons.
     .filter((i) => !i.blank && !/wireframe|cut.?out/i.test(i.name))
     .map((i) => ({ norm: normalise(i.name), png: i.png }));
-  return _icons;
+}
+function icons(): { norm: string; png: string }[] {
+  loadIcons();
+  return _icons!;
+}
+
+/**
+ * The icon WellView itself recorded for a row.
+ *
+ * Nearly every component table carries an IconName, chosen by whoever entered
+ * the record: 215 of 215 casing components in the sample, 1,579 of 1,581 drill
+ * string components, 528 of 528 tubing. 129 of the 130 distinct names resolve
+ * straight into the converted library, and the one that does not is literally
+ * "Blank" — which means no icon, not a miss.
+ *
+ * Guessing from the description instead got 24% of rows right, put a WRONG
+ * icon on 14%, and left 62% bare: a casing string is described "SURFACE" or
+ * "PRODUCTION", and no text matcher will ever turn that into a casing icon.
+ */
+function iconByName(name: string | null): string | null {
+  if (!name) return null;
+  const n = normalise(name);
+  if (!n || n === "blank" || n === "none") return null;
+  loadIcons();
+  return _byName!.get(n) ?? null;
 }
 
 function iconFor(des: string | null): string | null {
@@ -452,11 +484,16 @@ export function resolveTemplateData(
     const desCol = t.cols.get("des");
     const withDes = desCol && COMPONENT_TABLE.test(t.name) && !present.some((p) => p.actual === desCol)
       ? `${sel}, t0."${desCol}"` : sel;
+    // The icon WellView recorded for the row travels too, whether or not the
+    // template prints it: it is what decides the picture beside the row.
+    const iconCol = t.cols.get("iconname");
+    const withIcon = iconCol && COMPONENT_TABLE.test(t.name) && !present.some((p) => p.actual === iconCol)
+      ? `${withDes}, t0."${iconCol}"` : withDes;
     // The record id travels with every row so the report can hand a specific
     // record to Edit Data — the manual's "double-click a field on the report".
     const idCol = t.cols.get("idrec");
     const withId = idCol && !present.some((p) => p.actual === idCol)
-      ? `${withDes}, t0."${idCol}" AS __idrec` : withDes;
+      ? `${withIcon}, t0."${idCol}" AS __idrec` : withIcon;
     // …and so do the …TK companions of any printed link column: they name the
     // table the link points at, which is what turns its key into a caption.
     const tkCols = present
@@ -508,7 +545,12 @@ export function resolveTemplateData(
           const v = r.__idrec ?? r[idCol];
           return v == null ? null : String(v);
         }),
-      icons: decorate && !allNull ? rows.map((r) => iconFor(r[desCol!] as string | null)) : undefined,
+      // The recorded icon wins; the description guess is only for the rows
+      // and the tables that have no IconName at all.
+      icons: decorate && !allNull
+        ? rows.map((r) => iconByName(r[iconCol ?? ""] as string | null)
+            ?? iconFor(r[desCol!] as string | null))
+        : undefined,
     };
   });
 
