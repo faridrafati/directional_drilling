@@ -249,10 +249,34 @@ export interface WvElevations {
   unit?: string;
 }
 
+
+/** A product's closing balance on a well (Mud Inventory Transfer, §5.1). */
+export interface WvInventoryItem {
+  idrec: string; des: string | null; typ: string | null;
+  unitLabel: string | null; unitSz: number | null;
+  vendor: string | null; cost: number | null;
+  received: number; consumed: number; returned: number; balance: number;
+  kind: "mud" | "supply";
+  transferable: boolean; reason?: string;
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
   databases: () => entryApi.get<WvDatabase[]>("/wellview/dbs"),
+
+  /** Closing mud-additive and job-supply balances for a well. */
+  inventory: (db: string, idwell: string) =>
+    entryApi.get<{ idwell: string; items: WvInventoryItem[]; transferable: number }>(
+      `/wellview/dbs/${enc(db)}/inventory?idwell=${enc(idwell)}`),
+
+  transferInventory: (db: string, body: {
+    fromWell: string; toWell: string; toJob: string; dtTm: string; items: string[];
+  }) => entryApi.post<{
+    transferred: { des: string | null; kind: string; quantity: number; unit: string | null }[];
+    skipped: { des: string | null; reason: string }[];
+    reusedProducts: number; createdProducts: number;
+  }>(`/wellview/dbs/${enc(db)}/inventory-transfer`, body),
 
   /** Download a well as a portable JSON document. */
   exportWell: (db: string, idwell: string) =>

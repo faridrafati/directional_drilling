@@ -42,6 +42,7 @@ import { useUnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
 import { toDisplay, fromDisplay, displayUnitFor, formatUnitValue } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
+import { InventoryTransfer } from "./InventoryTransfer.js";
 
 type Row = Record<string, string | number | null>;
 
@@ -80,6 +81,8 @@ export function EditData({
   const [status, setStatus] = useState<string | null>(null);
   /** §3.9 attachments: the files hanging off this well or this folder. */
   const [showAttach, setShowAttach] = useState(false);
+  /** §5.1 Add-ins > Utilities > Mud Inventory Transfer. */
+  const [showInventory, setShowInventory] = useState(false);
 
   /**
    * Arriving from a report field: position every parent folder on the record's
@@ -158,6 +161,12 @@ export function EditData({
             <input type="checkbox" checked={showSystem} onChange={(e) => setShowSystem(e.target.checked)} />
             Show System Fields
           </label>
+          <button type="button" onClick={() => setShowInventory(true)}
+            data-testid="wv-edit-inventory"
+            title="Add-ins > Utilities > Mud Inventory Transfer — carry a previous well's closing mud and supply balances onto a job here"
+            className="h-7 px-2 text-[11px] rounded border border-gray-600 text-gray-200 hover:bg-gray-700">
+            Utilities
+          </button>
           <button type="button" onClick={() => setShowAttach((v) => !v)}
             data-testid="wv-edit-attachments"
             title="Files stored in the database against this well"
@@ -177,6 +186,10 @@ export function EditData({
           </button>
         </div>
 
+        {showInventory && (
+          <InventoryTransfer db={db} toWell={idwell} toWellName={wellName}
+            onClose={() => setShowInventory(false)} />
+        )}
         {showAttach && (
           /* Files stored in the database against this well. Scoped to the
              folder in view when one is open, so uploading from the Casing

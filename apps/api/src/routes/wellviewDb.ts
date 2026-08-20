@@ -42,6 +42,7 @@ import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiRepor
 import { resolveXlExtract, type XlTemplate } from "../wellview/xlExtract.js";
 import { sniff, safeFilename, attachmentHeaders, MAX_ATTACHMENT_BYTES } from "../wellview/attachments.js";
 import { exportWell, importWell, importPreflight, type WellExport } from "../wellview/transfer.js";
+import { closingInventory, transferInventory } from "../wellview/inventory.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
@@ -1666,6 +1667,58 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
       if (!d) return;
       try {
         return importWell(writable(d), req.body);
+      } catch (e) {
+        return reply.code(409).send({ error: (e as Error).message });
+      }
+    },
+  );
+
+  /** What a well has left on the pad — its closing mud/supply balances (§5.1). */
+  app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
+    "/entry/wellview/dbs/:db/inventory",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const idwell = String(req.query.idwell ?? "");
+      if (!idwell) return reply.code(400).send({ error: "idwell is required" });
+      const items = closingInventory(d.ro, idwell);
+      return {
+        idwell,
+        items,
+        transferable: items.filter((i) => i.transferable).length,
+      };
+    },
+  );
+
+  /**
+   * Mud Inventory Transfer: carry a previous well's closing balances onto a
+   * job in this one, as stock received on the date given.
+   */
+  app.post<{
+    Params: { db: string };
+    Body: { fromWell?: string; toWell?: string; toJob?: string; dtTm?: string; items?: string[] };
+  }>(
+    "/entry/wellview/dbs/:db/inventory-transfer",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const { fromWell, toWell, toJob, dtTm, items } = req.body ?? {};
+      if (!fromWell || !toWell || !toJob) {
+        return reply.code(400).send({ error: "fromWell, toWell and toJob are required" });
+      }
+      if (fromWell === toWell) {
+        return reply.code(400).send({ error: "the source and destination wells are the same" });
+      }
+      if (!items?.length) return reply.code(400).send({ error: "nothing selected to transfer" });
+      try {
+        return transferInventory(writable(d), {
+          fromWell, toWell, toJob,
+          // The guide is explicit that the date decides which report it lands on.
+          dtTm: dtTm || `${new Date().toISOString().slice(0, 19)}Z`,
+          items, newIdRec,
+        });
       } catch (e) {
         return reply.code(409).send({ error: (e as Error).message });
       }
