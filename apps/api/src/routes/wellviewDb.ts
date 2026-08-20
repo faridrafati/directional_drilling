@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { requireUser } from "../entry/auth.js";
+import { requireUser, requireAdmin } from "../entry/auth.js";
 import { resolveTemplateData } from "./wellviewSample.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
@@ -664,9 +664,37 @@ function xlTemplates(): XlTemplate[] {
   return _xl;
 }
 
+
+/**
+ * WHO MAY USE THE WELLVIEW DATABASES.
+ *
+ * `requireUser` authenticates; it does not authorise. Every other well-scoped
+ * area of this API narrows a company man to their assigned wells through
+ * `mayUseWell` (see entry/access.ts), and this module did not — so any signed-in
+ * user could read every record of every well in every converted database, edit
+ * them, and (since 99b6e0c) export a whole well in one request.
+ *
+ * Per-well scoping is not buildable here yet, and the gap is not an oversight
+ * in the check but a missing correspondence: assignments are made against this
+ * application's own `EntryWell` records, while a WellView well is identified by
+ * an `idwell` GUID inside an imported .sqlite that knows nothing about them.
+ * There is no column joining the two. Inventing one would be a product
+ * decision, not a bug fix.
+ *
+ * So the module is closed by default to the role that already governs
+ * office-side work — the guide's own line is that creating a well is
+ * "restricted to certain office personnel only". A deployment that genuinely
+ * wants rig-side users in here can set WELLVIEW_DB_ALLOW_NON_ADMIN=true, which
+ * restores the previous behaviour; the point is that the open state is now
+ * chosen rather than inherited.
+ */
+const WELLVIEW_GUARD = process.env.WELLVIEW_DB_ALLOW_NON_ADMIN === "true"
+  ? requireUser
+  : requireAdmin;
+
 export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<void> {
   /** The Open Database window. */
-  app.get("/entry/wellview/dbs", { preHandler: requireUser }, async () => {
+  app.get("/entry/wellview/dbs", { preHandler: WELLVIEW_GUARD }, async () => {
     return listDbFiles().map((f) => {
       const d = db(f.id)!;
       let wells = 0;
@@ -680,7 +708,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   /** Well-header columns, for the column chooser / group-by / quick-query pickers. */
   app.get<{ Params: { db: string } }>(
     "/entry/wellview/dbs/:db/header-columns",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -699,7 +727,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { cols?: string; lookin?: string; lookfor?: string } }>(
     "/entry/wellview/dbs/:db/wells",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -734,7 +762,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   /** The Edit Data subject-area tree, with per-well record counts. */
   app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
     "/entry/wellview/dbs/:db/tree",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -745,7 +773,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   /** Records of one folder, scoped to a well and (for subfolders) a parent record. */
   app.get<{ Params: { db: string; table: string }; Querystring: { idwell?: string; parent?: string; system?: string } }>(
     "/entry/wellview/dbs/:db/records/:table",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -841,7 +869,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   /** Add a record (§3.9 "Add a New Record"): IDRec generated, links filled in. */
   app.post<{ Params: { db: string; table: string }; Body: { idwell?: string; parent?: string; values?: Record<string, unknown> } }>(
     "/entry/wellview/dbs/:db/records/:table",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -912,7 +940,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   /** Edit fields of a record. */
   app.patch<{ Params: { db: string; table: string; idrec: string }; Body: { values?: Record<string, unknown> } }>(
     "/entry/wellview/dbs/:db/records/:table/:idrec",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -957,7 +985,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
     Body: { idwell?: string; parent?: string; order?: string[] };
   }>(
     "/entry/wellview/dbs/:db/records/:table/reorder",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1010,7 +1038,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   /** Delete a record and, per the manual, everything in its subfolders. */
   app.delete<{ Params: { db: string; table: string; idrec: string } }>(
     "/entry/wellview/dbs/:db/records/:table/:idrec",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1027,7 +1055,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { table?: string; idwell?: string } }>(
     "/entry/wellview/dbs/:db/link-candidates",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1059,7 +1087,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { table?: string; idrec?: string } }>(
     "/entry/wellview/dbs/:db/record-path",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1098,7 +1126,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { survey?: string; idwell?: string } }>(
     "/entry/wellview/dbs/:db/survey",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1214,7 +1242,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { table?: string; column?: string } }>(
     "/entry/wellview/dbs/:db/column-values",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1243,7 +1271,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
     Body: { idwell?: string; parent?: string };
   }>(
     "/entry/wellview/dbs/:db/records/:table/:idrec/copy",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1302,7 +1330,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.delete<{ Params: { db: string; idwell: string } }>(
     "/entry/wellview/dbs/:db/wells/:idwell",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1324,7 +1352,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    * rather than one well's whole report. Listed separately from the single-well
    * templates because they are chosen and run differently.
    */
-  app.get("/entry/wellview/dbs/:db/reports-multi", { preHandler: requireUser }, async () => {
+  app.get("/entry/wellview/dbs/:db/reports-multi", { preHandler: WELLVIEW_GUARD }, async () => {
     return {
       reports: multiTemplates().map((t) => ({
         html: t.html,
@@ -1345,7 +1373,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { html?: string; wells?: string } }>(
     "/entry/wellview/dbs/:db/multi-report",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1371,7 +1399,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { idwell?: string; table?: string; idrec?: string } }>(
     "/entry/wellview/dbs/:db/attachments",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1453,7 +1481,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string; idrec: string } }>(
     "/entry/wellview/dbs/:db/attachments/:idrec/content",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1488,7 +1516,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.post<{ Params: { db: string } }>(
     "/entry/wellview/dbs/:db/attachments",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1554,7 +1582,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
     "/entry/wellview/dbs/:db/elevations",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1598,7 +1626,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
     "/entry/wellview/dbs/:db/export",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1616,7 +1644,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   /** What an import would do — checked before anything is written. */
   app.post<{ Params: { db: string }; Body: WellExport }>(
     "/entry/wellview/dbs/:db/import/preflight",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1632,7 +1660,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.post<{ Params: { db: string }; Body: WellExport }>(
     "/entry/wellview/dbs/:db/import",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1645,7 +1673,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   );
 
   /** The Excel-report extracts this database can run. */
-  app.get("/entry/wellview/dbs/:db/reports-xl", { preHandler: requireUser }, async () => {
+  app.get("/entry/wellview/dbs/:db/reports-xl", { preHandler: WELLVIEW_GUARD }, async () => {
     return {
       reports: xlTemplates().filter((t) => !t.empty).map((t) => ({
         html: t.html, name: t.name, folder: t.folder, table: t.table, title: t.title,
@@ -1663,7 +1691,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { html?: string; wells?: string } }>(
     "/entry/wellview/dbs/:db/xl-extract",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1678,7 +1706,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   );
 
   /** The saved Query Templates (§8.1), with the model's captions for prompting. */
-  app.get("/entry/wellview/dbs/:db/queries", { preHandler: requireUser }, async () => {
+  app.get("/entry/wellview/dbs/:db/queries", { preHandler: WELLVIEW_GUARD }, async () => {
     return {
       queries: queryTemplates().map((q) => ({
         ...q,
@@ -1713,7 +1741,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
     Body: { id?: string; values?: Record<string, string> };
   }>(
     "/entry/wellview/dbs/:db/queries/run",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1791,7 +1819,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   /** §10.2 Data Audit across selected wells (or all). */
   app.get<{ Params: { db: string }; Querystring: { wells?: string } }>(
     "/entry/wellview/dbs/:db/audit",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1849,7 +1877,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
   /** Everything the schematic view draws, in one honest payload. */
   app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
     "/entry/wellview/dbs/:db/schematic",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
@@ -1904,7 +1932,7 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.get<{ Params: { db: string }; Querystring: { html?: string; well?: string; anchor?: string } }>(
     "/entry/wellview/dbs/:db/template-data",
-    { preHandler: requireUser },
+    { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;

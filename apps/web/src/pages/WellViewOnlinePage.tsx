@@ -179,11 +179,21 @@ function OpenDatabase({ onOpen }: { onOpen: (id: string) => void }) {
           as the desktop application wrote to its .mdb.
         </p>
         {q.isLoading && <div className="text-sm text-gray-400">Looking for databases…</div>}
-        {q.error && (
+        {q.error && ((q.error as { status?: number }).status === 403 ? (
+          /* Not a failure the user can fix by retrying: the WellView databases
+             are office-side data with no per-well assignment behind them, so
+             the whole area is admin-only. Say that, rather than showing the
+             bare "admin only" the API returns. */
+          <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900">
+            <b>This area is for office personnel.</b> The converted WellView databases hold every
+            well in the asset and are not scoped to your well assignments, so access is limited to
+            administrators. Your own reports are under <b>Daily Report Entry</b>.
+          </div>
+        ) : (
           <div className="px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
             {(q.error as Error).message}
           </div>
-        )}
+        ))}
         {q.data?.length === 0 && (
           <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
             No converted database found. Convert the Access files first:{" "}
