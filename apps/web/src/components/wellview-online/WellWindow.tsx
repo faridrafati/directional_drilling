@@ -25,6 +25,7 @@ import { useDatumShift } from "../../entry/datum.js";
 import { toDisplay, fromDisplay, formatUnitValue, displayUnitFor } from "@dd/shared";
 import type { UnitFormat } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
+import { PrintReport } from "./PrintReport.js";
 import { wvDbApi, type WvSchematic, type WvSchematicRow } from "../../entry/wellviewDb.js";
 
 interface TemplateEntry {
@@ -256,6 +257,7 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
   const [jobId, setJobId] = useState<string>("");
   const [dayId, setDayId] = useState<string>("");
   const [zoom, setZoom] = useState(100);
+  const [printing, setPrinting] = useState(false);
 
   // First resolve WITHOUT an anchor to learn which tables the template uses.
   const probeQ = useQuery({
@@ -313,8 +315,26 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
   const newTarget = newBlock?.table ?? null;
   const newTargetLabel = newBlock?.title ?? null;
 
+  /** Chapter 9's Print Range: the records the report is produced for. */
+  const printLevel = usesDay && jobId
+    ? { table: "wvJobReport", label: "Day" }
+    : usesJob ? { table: "wvJob", label: "Job" } : null;
+  const printRecords = (printLevel?.table === "wvJobReport" ? daysQ.data?.rows : jobsQ.data?.rows) ?? [];
+
   return (
     <div className="flex-1 min-h-0 flex flex-col">
+      {printing && (
+        <PrintReport
+          db={db} idwell={idwell} wellName={data?.well?.name ?? idwell} html={html}
+          reportName={data?.report ?? html.replace(/\.html$/, "")}
+          level={printLevel}
+          records={printRecords.map((r) => ({
+            idrec: String(r.IDRec), caption: anchorCaption(r),
+          }))}
+          initial={dayId ? [dayId] : jobId ? [jobId] : []}
+          onClose={() => setPrinting(false)}
+        />
+      )}
       {/* the report toolbar (§3.8 Table 3-2): anchors, refresh, zoom */}
       <div className="px-2 py-1.5 border-b border-gray-100 flex items-center gap-2 flex-wrap shrink-0">
         {usesJob && (
@@ -329,6 +349,11 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
             </select>
           </label>
         )}
+        <button type="button" onClick={() => setPrinting(true)} data-testid="wv-print-open"
+          title="Print this report — for every job or day, or only the ones you choose (ch. 9)"
+          className="h-7 px-2 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+          Print
+        </button>
         {usesDay && jobId && (
           <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
             Daily operation
