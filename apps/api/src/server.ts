@@ -75,7 +75,7 @@ async function main() {
   // assemblers. Same entry token, same well-access rule as /entry/* above.
   await registerWellviewRoutes(app, prisma);
   await registerWellviewSampleRoutes(app);
-  await registerWellviewDbRoutes(app);
+  await registerWellviewDbRoutes(app, prisma);
   await registerReportRoutes(app, prisma);
   await seedAdmin(prisma, (msg) => app.log.info(msg));
   // The WellView operation-code tables. Idempotent upserts, same bootstrap

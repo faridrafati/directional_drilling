@@ -2720,3 +2720,24 @@ model StimulationStage {
 
   @@index([stimulationId, order])
 }
+
+/// A query template a user wrote in the app (§8.1), as opposed to the 29
+/// decoded from Peloton's shipped .afq files. Kept here rather than beside the
+/// converted .sqlite so that authoring a query never writes into the WellView
+/// data itself.
+model WellviewQuery {
+  id        String   @id @default(cuid())
+  /// The converted database it was written against: a criterion names a table
+  /// and column, and those differ between databases.
+  database  String
+  name      String
+  category  String?
+  /// The criteria, as JSON: [{ table, field, op, value, prompts }].
+  criteria  String
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([database, name])
+  @@index([database])
+}

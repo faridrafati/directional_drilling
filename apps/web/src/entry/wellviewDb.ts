@@ -260,10 +260,52 @@ export interface WvInventoryItem {
   transferable: boolean; reason?: string;
 }
 
+
+/** One line of a query template: a column, an operator and a value (§8.1). */
+export interface WvCriterion {
+  table: string; field: string; op: string;
+  /** null when the criterion prompts for a value, matching the shipped shape. */
+  value?: string | null;
+  prompts?: boolean;
+}
+export interface WvSavedQuery {
+  id: string; name: string; category: string;
+  /**
+   * The SAME shape as a shipped template's criteria, so the prompt panel
+   * renders a saved query exactly as it renders a Peloton one.
+   */
+  criteria: WvQueryCriterion[];
+  createdBy: string; updatedAt: string;
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
   databases: () => entryApi.get<WvDatabase[]>("/wellview/dbs"),
+
+  /** Query templates written in the app, for this database. */
+  savedQueries: (db: string) =>
+    entryApi.get<{ queries: WvSavedQuery[] }>(`/wellview/dbs/${enc(db)}/saved-queries`),
+
+  saveQuery: (db: string, body: { id?: string; name: string; category?: string; criteria: WvCriterion[] }) =>
+    entryApi.post<{ id: string; name: string }>(`/wellview/dbs/${enc(db)}/saved-queries`, body),
+
+  deleteQuery: (db: string, id: string) =>
+    entryApi.del<{ deleted: string }>(`/wellview/dbs/${enc(db)}/saved-queries/${enc(id)}`),
+
+  /** The tables and columns a query may be built from. */
+  queryTables: (db: string) =>
+    entryApi.get<{ tables: { table: string; label: string }[] }>(
+      `/wellview/dbs/${enc(db)}/query-fields`),
+
+  queryFields: (db: string, table: string) =>
+    entryApi.get<{ table: string; fields: { field: string; label: string; type: string; unit?: string }[] }>(
+      `/wellview/dbs/${enc(db)}/query-fields?table=${enc(table)}`),
+
+  /** Run criteria that have not been saved — the builder's preview. */
+  runCriteria: (db: string, criteria: WvCriterion[]) =>
+    entryApi.post<{ wells: Record<string, string | number | null>[]; skipped: { criterion: string; reason: string }[] }>(
+      `/wellview/dbs/${enc(db)}/queries/run`, { criteria }),
 
   /** Closing mud-additive and job-supply balances for a well. */
   inventory: (db: string, idwell: string) =>

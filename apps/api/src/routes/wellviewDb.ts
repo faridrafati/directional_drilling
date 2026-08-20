@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type { PrismaClient } from "@prisma/client";
 import { requireUser, requireAdmin } from "../entry/auth.js";
 import { resolveTemplateData } from "./wellviewSample.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
@@ -693,7 +694,10 @@ const WELLVIEW_GUARD = process.env.WELLVIEW_DB_ALLOW_NON_ADMIN === "true"
   ? requireUser
   : requireAdmin;
 
-export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<void> {
+export async function registerWellviewDbRoutes(
+  app: FastifyInstance,
+  prisma?: PrismaClient,
+): Promise<void> {
   /** The Open Database window. */
   app.get("/entry/wellview/dbs", { preHandler: WELLVIEW_GUARD }, async () => {
     return listDbFiles().map((f) => {
@@ -1725,6 +1729,146 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
     },
   );
 
+  /**
+   * Query templates a user wrote (§8.1), alongside the 29 shipped ones.
+   *
+   * Kept in the application's own database rather than beside the converted
+   * .sqlite: authoring a query should never write into the WellView data. A
+   * criterion names a table and a column, and those differ between converted
+   * databases, so a saved query belongs to the database it was written for.
+   */
+  app.get<{ Params: { db: string } }>(
+    "/entry/wellview/dbs/:db/saved-queries",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      if (!prisma) return { queries: [] };
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const rows = await prisma.wellviewQuery.findMany({
+        where: { database: req.params.db },
+        orderBy: [{ category: "asc" }, { name: "asc" }],
+      });
+      return {
+        queries: rows.map((r) => ({
+          id: r.id, name: r.name, category: r.category ?? "Saved",
+          // Enriched exactly as the shipped templates are, so the prompt panel
+          // renders a saved query the same way it renders a Peloton one.
+          criteria: (JSON.parse(r.criteria) as QueryCriterion[]).map((c) => ({
+            ...c,
+            value: c.value ?? null,
+            prompts: c.prompts === true,
+            op: c.op ?? null,
+            tableLabel: folderLabel(c.table, null),
+            fieldLabel: columnLabel(c.table, c.field),
+            isDate: modelField(c.table, c.field)?.type === "datetime",
+          })),
+          createdBy: r.createdBy, updatedAt: r.updatedAt.toISOString(),
+        })),
+      };
+    },
+  );
+
+  app.post<{
+    Params: { db: string };
+    Body: { id?: string; name?: string; category?: string; criteria?: QueryCriterion[] };
+  }>(
+    "/entry/wellview/dbs/:db/saved-queries",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      if (!prisma) return reply.code(503).send({ error: "saved queries need the application database" });
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const name = (req.body?.name ?? "").trim();
+      const criteria = req.body?.criteria ?? [];
+      if (!name) return reply.code(400).send({ error: "a name is required" });
+      if (!criteria.length) return reply.code(400).send({ error: "a query needs at least one criterion" });
+
+      // Refuse a criterion this database cannot satisfy, rather than saving a
+      // query that will only reveal itself as broken when someone runs it.
+      const bad: string[] = [];
+      for (const c of criteria) {
+        const t = table(d, c.table);
+        if (!t) { bad.push(`${c.table} is not a table here`); continue; }
+        if (!t.colSet.get(c.field.toLowerCase())) bad.push(`${c.table}.${c.field} is not a column here`);
+        else if (!t.hasIdwell) bad.push(`${c.table} is not per-well, so it cannot select wells`);
+        if (!c.op) bad.push(`${c.table}.${c.field} has no operator`);
+      }
+      if (bad.length) return reply.code(400).send({ error: bad.join("; ") });
+
+      const data = {
+        database: req.params.db, name,
+        category: req.body?.category?.trim() || null,
+        criteria: JSON.stringify(criteria),
+        createdBy: req.entryUser?.username ?? "unknown",
+      };
+      try {
+        const saved = req.body?.id
+          ? await prisma.wellviewQuery.update({ where: { id: req.body.id }, data })
+          : await prisma.wellviewQuery.create({ data });
+        return reply.code(req.body?.id ? 200 : 201).send({ id: saved.id, name: saved.name });
+      } catch (e) {
+        // The unique key is (database, name): a clash is a real answer, not a 500.
+        if (String((e as { code?: string }).code) === "P2002") {
+          return reply.code(409).send({ error: `this database already has a query called "${name}"` });
+        }
+        throw e;
+      }
+    },
+  );
+
+  app.delete<{ Params: { db: string; id: string } }>(
+    "/entry/wellview/dbs/:db/saved-queries/:id",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      if (!prisma) return reply.code(503).send({ error: "saved queries need the application database" });
+      const found = await prisma.wellviewQuery.findUnique({ where: { id: req.params.id } });
+      if (!found || found.database !== req.params.db) {
+        return reply.code(404).send({ error: "no such saved query in this database" });
+      }
+      await prisma.wellviewQuery.delete({ where: { id: req.params.id } });
+      return { deleted: req.params.id };
+    },
+  );
+
+  /**
+   * The tables and columns a query may be built from.
+   *
+   * Only per-well tables can select wells, so only those are offered — the
+   * builder cannot be used to compose a criterion the runner would then skip.
+   */
+  app.get<{ Params: { db: string }; Querystring: { table?: string } }>(
+    "/entry/wellview/dbs/:db/query-fields",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      if (!req.query.table) {
+        const out = [...schema(d).values()]
+          .filter((t) => t.hasIdwell && !HIDDEN_TABLES.test(t.name.toLowerCase()))
+          .map((t) => ({ table: t.name, label: folderLabel(t.name, null) }))
+          .sort((a, b) => a.label.localeCompare(b.label));
+        return { tables: out };
+      }
+      const t = table(d, req.query.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.query.table}` });
+      return {
+        table: t.name,
+        fields: t.cols
+          .filter((c) => !isSysCol(c))
+          .map((c) => {
+            const mf = modelField(t.name, c);
+            return {
+              field: c,
+              label: columnLabel(t.name, c),
+              type: mf?.type ?? "string",
+              unit: mf?.baseUnit,
+            };
+          })
+          .sort((a, b) => a.label.localeCompare(b.label)),
+      };
+    },
+  );
+
   /** The Excel-report extracts this database can run. */
   app.get("/entry/wellview/dbs/:db/reports-xl", { preHandler: WELLVIEW_GUARD }, async () => {
     return {
@@ -1791,14 +1935,28 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
    */
   app.post<{
     Params: { db: string };
-    Body: { id?: string; values?: Record<string, string> };
+    Body: { id?: string; criteria?: QueryCriterion[]; values?: Record<string, string> };
   }>(
     "/entry/wellview/dbs/:db/queries/run",
     { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
-      const q = queryTemplates().find((x) => x.id === req.body?.id);
+      // A run may name a shipped template, name a SAVED one, or carry its
+      // criteria inline — the last is what the builder previews with, before
+      // anything is saved.
+      let q: { id: string; name: string; criteria: QueryCriterion[] } | undefined;
+      if (req.body?.criteria?.length) {
+        q = { id: "(unsaved)", name: "Unsaved query", criteria: req.body.criteria };
+      } else {
+        q = queryTemplates().find((x) => x.id === req.body?.id);
+        if (!q && prisma && req.body?.id) {
+          const saved = await prisma.wellviewQuery.findUnique({ where: { id: req.body.id } });
+          if (saved) {
+            q = { id: saved.id, name: saved.name, criteria: JSON.parse(saved.criteria) as QueryCriterion[] };
+          }
+        }
+      }
       if (!q) return reply.code(404).send({ error: `no query ${req.body?.id}` });
       const hdr = table(d, "wvWellHeader");
       if (!hdr) return reply.code(404).send({ error: "wvWellHeader missing" });
@@ -1812,7 +1970,10 @@ export async function registerWellviewDbRoutes(app: FastifyInstance): Promise<vo
         const label = `${c.table}.${c.field} ${c.op ?? ""}`.trim();
         const t = table(d, c.table);
         if (!t) { skipped.push({ criterion: label, reason: `table ${c.table} not in this database` }); return; }
-        const col = t.colSet.get(c.field);
+        // colSet is keyed lowercase. The 29 shipped templates spell their
+        // fields lowercase already; a criterion built in the app carries the
+        // column's real name ("WVTyp"), so both have to resolve.
+        const col = t.colSet.get(c.field.toLowerCase());
         if (!col) { skipped.push({ criterion: label, reason: `column ${c.field} not in ${t.name}` }); return; }
         if (!c.op) { skipped.push({ criterion: label, reason: "no operator in the template" }); return; }
         if (!t.hasIdwell) { skipped.push({ criterion: label, reason: `${t.name} is not per-well` }); return; }

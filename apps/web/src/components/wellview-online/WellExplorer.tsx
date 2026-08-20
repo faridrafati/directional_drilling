@@ -18,8 +18,9 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { QueryBuilder } from "./QueryBuilder.js";
 import { useQuery } from "@tanstack/react-query";
-import { wvDbApi, type WvHeaderColumn, type WvQuery, type WvQueryResult } from "../../entry/wellviewDb.js";
+import { wvDbApi, type WvHeaderColumn, type WvQuery, type WvQueryResult , type WvSavedQuery } from "../../entry/wellviewDb.js";
 
 type WellRow = Record<string, string | number | null>;
 
@@ -72,6 +73,8 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
   const [sort, setSort] = useState<{ column: string; desc: boolean } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const queryClient = useQueryClient();
+  /** §8.1: writing a query, not just running the 29 shipped ones. */
+  const [building, setBuilding] = useState<{ editing: WvSavedQuery | null } | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
   const [transfer, setTransfer] = useState<string | null>(null);
 
@@ -144,6 +147,12 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
     queryKey: ["wvdb", db, "queries"],
     queryFn: () => wvDbApi.queries(db),
     staleTime: Infinity,
+  });
+
+  /** Query templates this user wrote, kept in the app's own database. */
+  const savedQ = useQuery({
+    queryKey: ["wvdb", db, "saved-queries"],
+    queryFn: () => wvDbApi.savedQueries(db),
   });
   /** Runs only once the user asks — a template with prompts needs them first. */
   const templateRunQ = useQuery({
@@ -302,6 +311,11 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
+      {building && (
+        <QueryBuilder db={db} editing={building.editing}
+          onClose={() => setBuilding(null)}
+          onSaved={() => setBuilding(null)} />
+      )}
       {/* ── toolbar (§3.1) ── */}
       <div className="flex items-center gap-1 mb-2 shrink-0 flex-wrap">
         <ToolButton label="Open" hint="Open the selected well to view reports and the schematic"
@@ -379,12 +393,60 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
 
           {/* saved Query Templates (§8.1) — the manual's "My Queries" */}
           <div className="mt-1 border-t border-gray-100 pt-1">
-            <div className="px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-400">
+            <div className="px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-400 flex items-center">
               Queries
               <span className="ml-1 font-normal normal-case tabular-nums">
-                {templatesQ.data?.queries.length ?? 0}
+                {(templatesQ.data?.queries.length ?? 0) + (savedQ.data?.queries.length ?? 0)}
               </span>
+              <button type="button" data-testid="wv-qb-new"
+                onClick={() => setBuilding({ editing: null })}
+                title="Write a query of your own (§8.1)"
+                className="ml-auto mr-1 h-5 px-1.5 text-[10px] normal-case rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+                New
+              </button>
             </div>
+            {(savedQ.data?.queries ?? []).length > 0 && (
+              <div>
+                <div className="px-2 pt-1 text-[9px] uppercase tracking-wide text-gray-300">Mine</div>
+                {(savedQ.data?.queries ?? []).map((q) => (
+                  <div key={q.id} className="group">
+                    <div className="flex items-center">
+                    <button type="button" data-testid="wv-saved-query"
+                      onClick={() => {
+                        // Exactly what a shipped template does: select it, and
+                        // run it at once unless a criterion asks for a value.
+                        setFolder({ kind: "template", queryId: q.id });
+                        setQueryValues({});
+                        if (!q.criteria.some((c) => c.prompts)) setRanQuery({ id: q.id, values: {} });
+                        else setRanQuery(null);
+                      }}
+                      className={`flex-1 text-left px-2 py-1 rounded text-xs truncate ${
+                        folder.kind === "template" && folder.queryId === q.id
+                          ? "bg-blue-100 text-blue-900 font-medium" : "text-gray-700 hover:bg-gray-100"}`}>
+                      {q.name}
+                    </button>
+                    <button type="button" title="Edit" onClick={() => setBuilding({ editing: q })}
+                      data-testid="wv-qb-edit"
+                      className="opacity-0 group-hover:opacity-100 px-1 text-[10px] text-gray-500 hover:text-blue-700">edit</button>
+                    <button type="button" title="Delete" data-testid="wv-qb-delete"
+                      onClick={() => void wvDbApi.deleteQuery(db, q.id).then(() =>
+                        queryClient.invalidateQueries({ queryKey: ["wvdb", db, "saved-queries"] }))}
+                      className="opacity-0 group-hover:opacity-100 px-1 text-[10px] text-gray-500 hover:text-red-700">del</button>
+                    </div>
+                    {folder.kind === "template" && folder.queryId === q.id && (
+                      <QueryPrompts
+                        query={q}
+                        values={queryValues}
+                        onChange={setQueryValues}
+                        onRun={() => setRanQuery({ id: q.id, values: queryValues })}
+                        result={templateRunQ.data ?? null}
+                        running={templateRunQ.isFetching}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             {Object.entries(
               (templatesQ.data?.queries ?? []).reduce<Record<string, WvQuery[]>>((acc, q) => {
                 (acc[q.category] ??= []).push(q);
