@@ -79,6 +79,36 @@ function db(id: string): Db | null {
   return entry;
 }
 
+
+/**
+ * The wellbore a new record belongs to, when the user has not said.
+ *
+ * WellView ships this as a data-event add-in —
+ * `system/bin/add-ins/data events/Peloton.Addin.WellView.DefaultWellboreLinker.dll`
+ * — and the effect is visible in the data: IDRecWellbore is populated on 98% of
+ * drilling parameters, 100% of logs, 96% of perforations, 88% of phases. A
+ * record created without it is one WellView would consider unlinked, and it
+ * drops out of anything scoped by wellbore.
+ *
+ * The default is only taken where it is UNAMBIGUOUS: the well's single
+ * wellbore (38 of the sample's 41 wells), or the Original Hole, which §10.4
+ * marks by pointing IDRecParent at itself. A well with several sidetracks and
+ * no original gets nothing rather than a guess — picking the wrong bore is
+ * worse than leaving a field the user can fill.
+ */
+function defaultWellbore(d: Db, idwell: string): string | null {
+  const wb = table(d, "wvWellbore");
+  const idrec = wb?.colSet.get("idrec");
+  if (!wb || !idrec || !wb.hasIdwell) return null;
+  const rows = d.ro.prepare(
+    `SELECT "${idrec}" AS id, "${wb.colSet.get("idrecparent") ?? idrec}" AS parent
+       FROM "${wb.name}" WHERE "${wb.colSet.get("idwell")}" = ?`).all(idwell) as
+    { id: string; parent: string | null }[];
+  if (rows.length === 1) return rows[0].id;
+  const original = rows.filter((r) => r.parent && r.parent === r.id);
+  return original.length === 1 ? original[0].id : null;
+}
+
 /** The writable handle, opened only when a mutation actually happens. */
 function writable(d: Db): DatabaseSync {
   if (!d.rw) {
@@ -907,7 +937,21 @@ export async function registerWellviewDbRoutes(
         const c = t.colSet.get(k);
         if (c) values[c] = v;
       }
+      // The DefaultWellboreLinker add-in's job: a wellbore-scoped record gets
+      // the well's wellbore when the user has not chosen one. Before `cols` is
+      // taken, so the column joins the INSERT.
+      const wbCol = t.colSet.get("idrecwellbore");
+      if (wbCol && !values[wbCol] && idwell) {
+        const wbId = defaultWellbore(d, idwell);
+        if (wbId) {
+          values[wbCol] = wbId;
+          // …and its TK companion, which names the target table lowercased.
+          const tk = t.colSet.get("idrecwellboretk");
+          if (tk) values[tk] = "wvwellbore";
+        }
+      }
       const cols = Object.keys(values);
+
       if (!cols.length) return reply.code(400).send({ error: "nothing to insert" });
       writable(d).prepare(
         `INSERT INTO "${t.name}" (${cols.map((c) => `"${c}"`).join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
