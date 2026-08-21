@@ -9,6 +9,11 @@
  * Refresh and a zoom control. Clicking a block's title bar or double-clicking
  * a data row opens the Edit Data window at that subject area.
  *
+ * Wellhead: the surface assembly — its own recorded picture at a size worth
+ * looking at, its pressure rating, and the components and outlets bolted into
+ * it. See WellheadTab for why it is a specification panel and not a stack
+ * drawing: the components carry neither art nor an order to draw them in.
+ *
  * Schematic: drawn from the downhole subject areas exactly as §3.8 lists them —
  * wellbore sizes, casing and tubing strings, rods, other-in-hole, perforations,
  * cement and zones — honestly to depth, with string widths from the components'
@@ -26,7 +31,8 @@ import { toDisplay, fromDisplay, formatUnitValue, displayUnitFor } from "@dd/sha
 import type { UnitFormat } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
 import { PrintReport } from "./PrintReport.js";
-import { wvDbApi, type WvSchematic, type WvSchematicRow } from "../../entry/wellviewDb.js";
+import { wvDbApi, type WvSchematic, type WvSchematicRow,
+  type WvWellhead, type WvWellheadField } from "../../entry/wellviewDb.js";
 
 interface TemplateEntry {
   name: string;
@@ -48,7 +54,7 @@ interface Props {
 }
 
 export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditRecord }: Props) {
-  const [tab, setTab] = useState<"reports" | "schematic" | "survey">("reports");
+  const [tab, setTab] = useState<"reports" | "schematic" | "survey" | "wellhead">("reports");
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -59,8 +65,8 @@ export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditR
         </button>
         <span className="text-sm font-semibold text-gray-900 truncate">{wellName}</span>
         <div className="ml-3 flex gap-1 border-b-0">
-          {([["reports", "Reports"], ["schematic", "Schematic"], ["survey", "Survey"]] as const).map(([id, label]) => (
-            <button key={id} type="button" onClick={() => setTab(id)}
+          {([["reports", "Reports"], ["schematic", "Schematic"], ["survey", "Survey"], ["wellhead", "Wellhead"]] as const).map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setTab(id)} data-testid={`wv-tab-${id}`}
               className={`px-3 h-8 text-xs rounded-t-md border ${tab === id
                 ? "bg-white border-gray-300 border-b-white font-medium text-blue-700"
                 : "bg-gray-100 border-gray-200 text-gray-500 hover:text-gray-700"}`}>
@@ -78,7 +84,9 @@ export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditR
         ? <ReportsTab db={db} idwell={idwell} onEditTable={onEditTable} onEditRecord={onEditRecord} />
         : tab === "schematic"
           ? <SchematicTab db={db} idwell={idwell} onEditTable={onEditTable} />
-          : <SurveyTab db={db} idwell={idwell} onEditTable={onEditTable} />}
+          : tab === "survey"
+            ? <SurveyTab db={db} idwell={idwell} onEditTable={onEditTable} />
+            : <WellheadTab db={db} idwell={idwell} onEditTable={onEditTable} />}
     </div>
   );
 }
@@ -1287,6 +1295,167 @@ function SchematicTemplates({
           </button>
         )}
         {error && <span className="text-[11px] text-red-700" data-testid="wv-sch-error">{error}</span>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The wellhead (manual §3.8 subject area "Wellhead"), which WellView draws with
+ * Peloton.Visualizer.WellView.Wellhead.dll.
+ *
+ * What the data will and will not support, because it decides the whole design:
+ * the ASSEMBLY carries a picture — `wvWellhead.IconName` is one of the
+ * "Wellhead 01".."Wellhead 08" or steel-plate images, and every one of them
+ * resolves in the converted icon library. The COMPONENTS carry no icon and no
+ * sequence column, and `Sect` — the only thing that hints at a position — is
+ * null on 23 of the sample's 35 rows. There is nothing to stack.
+ *
+ * So this draws the recorded assembly image large, and lays the specification
+ * out beside it: the head's rating, then each component with its make, model,
+ * serial, bore, working pressures, connection sizes and ring gaskets, and the
+ * outlets and their valves nested underneath. Inventing a vertical arrangement
+ * of real pressure-containing equipment would look more like WellView and mean
+ * less, and on a wellhead a wrong picture is worse than an honest list.
+ */
+function WellheadTab({ db, idwell, onEditTable }: {
+  db: string; idwell: string; onEditTable: (table: string) => void;
+}) {
+  const qc = useQueryClient();
+  const [unitSet] = useUnitSet();
+  const q = useQuery({
+    queryKey: ["wvdb", db, "wellheads", idwell],
+    queryFn: () => wvDbApi.wellheads(db, idwell),
+  });
+  const [openId, setOpenId] = useState<string | null>(null);
+
+/**
+   * A recorded value, rendered the way the model says it should be read.
+   *
+   * The database stores a boolean as 0/1 and a date as a full ISO timestamp;
+   * printing either raw turns a specification into something the reader has to
+   * decode. "Proposed Wellhead? 0" in particular reads as a quantity, not as No.
+   */
+  const show = (f: WvWellheadField) => {
+    if (f.type === "boolean") return Number(f.value) ? "Yes" : "No";
+    if (f.type === "datetime") {
+      const t = String(f.value);
+      // Midnight is WellView's "date only"; keep the time when there is one.
+      return /T00:00:00/.test(t) ? t.slice(0, 10) : t.replace("T", " ").replace(/(:\d\d)Z?$/, "");
+    }
+    const n = Number(f.value);
+    if (f.unit && f.value !== "" && Number.isFinite(n)) {
+      const d = toDisplay(n, { unit: f.unit, units: f.units as Record<string, UnitFormat> }, unitSet);
+      if (d) return `${formatUnitValue(d.value, d)} ${d.unit}`;
+    }
+    return String(f.value);
+  };
+
+  if (q.isLoading) return <div className="p-4 text-sm text-gray-400">Reading the wellhead…</div>;
+  if (q.error) {
+    return <div className="m-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+      {(q.error as Error).message}
+    </div>;
+  }
+  const heads: WvWellhead[] = q.data?.wellheads ?? [];
+  const btn = "h-7 px-2 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50";
+
+  /** The label/value grid used at every level of the assembly. */
+  const Spec = ({ fields, cols }: { fields: WvWellheadField[]; cols: string }) => (
+    <dl className={`grid ${cols} gap-x-4 gap-y-0.5 text-[11px]`}>
+      {fields.map((f) => (
+        <div key={f.column} className="flex gap-1.5 min-w-0">
+          <dt className="text-gray-400 shrink-0">{f.label}</dt>
+          <dd className="text-gray-800 font-medium truncate" title={show(f)}>{show(f)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+
+  return (
+    <div className="flex-1 min-h-0 border border-gray-200 rounded-lg bg-white flex flex-col">
+      <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2 shrink-0">
+        <span className="text-[10px] uppercase tracking-wide text-gray-400">Wellhead</span>
+        <span className="text-xs text-gray-700 font-medium" data-testid="wv-wh-count">
+          {heads.length} {heads.length === 1 ? "assembly" : "assemblies"}
+        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button type="button" className={btn} onClick={() => onEditTable("wvWellhead")}>
+            Edit Data
+          </button>
+          <button type="button" className={btn} title="Refresh"
+            onClick={() => void qc.invalidateQueries({ queryKey: ["wvdb", db, "wellheads", idwell] })}>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-auto p-3 space-y-3">
+        {!heads.length && (
+          <div className="text-sm text-gray-400" data-testid="wv-wh-empty">
+            No wellhead recorded for this well.
+          </div>
+        )}
+        {heads.map((h) => {
+          const open = openId === h.idrec;
+          return (
+            <section key={h.idrec} data-testid="wv-wh-head"
+              className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="flex gap-4 p-3">
+                {/* The picture WellView itself recorded for this assembly. */}
+                <div className="shrink-0 w-32 flex flex-col items-center gap-1">
+                  {h.icon ? (
+                    <img src={`/wellview-icons/${h.icon}`} alt={h.iconName ?? "wellhead"}
+                      data-testid="wv-wh-icon"
+                      className="w-28 h-40 object-contain" loading="lazy" />
+                  ) : (
+                    <div className="w-28 h-40 border border-dashed border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300 text-center px-2">
+                      no picture recorded
+                    </div>
+                  )}
+                  {h.iconName && <span className="text-[10px] text-gray-400">{String(h.iconName)}</span>}
+                </div>
+                <div className="min-w-0 flex-1">
+                  {h.job && (
+                    <div className="text-[11px] text-gray-500 mb-1.5" data-testid="wv-wh-job">
+                      Installed on <span className="text-gray-800 font-medium">{h.job}</span>
+                    </div>
+                  )}
+                  <Spec fields={h.fields} cols="grid-cols-2 lg:grid-cols-3" />
+                  {h.components.length > 0 && (
+                    <button type="button" data-testid="wv-wh-toggle"
+                      onClick={() => setOpenId(open ? null : h.idrec)}
+                      className="mt-2 text-[11px] text-blue-700 hover:underline">
+                      {open ? "▾" : "▸"} {h.components.length} component{h.components.length === 1 ? "" : "s"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {open && (
+                <div className="border-t border-gray-100 bg-gray-50 p-3 space-y-2">
+                  {h.components.map((c) => (
+                    <div key={c.idrec} data-testid="wv-wh-comp"
+                      className="bg-white border border-gray-200 rounded p-2">
+                      <div className="text-[11px] font-semibold text-gray-900 mb-1">
+                        {c.des ?? "Component"}
+                      </div>
+                      <Spec fields={c.fields.filter((f) => f.column.toLowerCase() !== "des")}
+                        cols="grid-cols-2 lg:grid-cols-4" />
+                      {c.outlets.map((o) => (
+                        <div key={o.idrec} data-testid="wv-wh-outlet"
+                          className="mt-1.5 ml-3 pl-2 border-l-2 border-gray-200">
+                          <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Outlet</div>
+                          <Spec fields={o.fields} cols="grid-cols-2 lg:grid-cols-4" />
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
     </div>
   );

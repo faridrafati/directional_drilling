@@ -36,7 +36,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { PrismaClient } from "@prisma/client";
 import { requireUser, requireAdmin } from "../entry/auth.js";
-import { resolveTemplateData } from "./wellviewSample.js";
+import { resolveTemplateData, iconByName } from "./wellviewSample.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
@@ -1974,6 +1974,118 @@ export async function registerWellviewDbRoutes(
       if (!found) return reply.code(404).send({ error: "no such schematic template" });
       await prisma.wellviewSchematicTemplate.delete({ where: { id: req.params.id } });
       return { deleted: req.params.id };
+    },
+  );
+
+  /**
+   * The wellhead: its assembly picture, its rating, and what it is made of.
+   *
+   * WellView draws this with Peloton.Visualizer.WellView.Wellhead.dll, and the
+   * data says what that drawing can honestly be. The ASSEMBLY carries the
+   * picture — wvWellhead.IconName holds "Wellhead 01".."Wellhead 08" and a
+   * steel-plate variant, all of which resolve into the converted icon library.
+   * The COMPONENTS carry no icon and no sequence column, and Sect is null on 23
+   * of the sample's 35, so there is nothing to compose a stack drawing from:
+   * they are a specification list — make, model, serial, bore, working
+   * pressures, connection sizes and ring gaskets — and are presented as one.
+   *
+   * Anything else would be an invented arrangement of real equipment, which on
+   * a pressure-containing assembly is exactly the wrong thing to guess at.
+   */
+  /** "Completion / Recompletion — 2009-04-15", or null when there is no job. */
+  function wellheadJobLabel(d: Db, idrecJob: string | null): string | null {
+    if (!idrecJob) return null;
+    const job = table(d, "wvJob");
+    if (!job) return null;
+    const row = d.ro.prepare(`SELECT * FROM "${job.name}" WHERE "${job.colSet.get("idrec")}" = ?`)
+      .get(idrecJob) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const pick = (c: string) => row[job.colSet.get(c) ?? c];
+    const parts = [pick("jobtyp"), pick("jobsubtyp")].filter(Boolean).join(" / ");
+    const when = String(pick("dttmstart") ?? "").slice(0, 10);
+    return [parts || null, when || null].filter(Boolean).join(" — ") || null;
+  }
+
+  app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
+    "/entry/wellview/dbs/:db/wellheads",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const idwell = String(req.query.idwell ?? "");
+      if (!idwell) return reply.code(400).send({ error: "idwell is required" });
+      const head = table(d, "wvWellhead");
+      if (!head) return { wellheads: [], supported: false };
+      const jobLabel = (id: string | null) => wellheadJobLabel(d, id);
+      const comp = table(d, "wvWellheadComp");
+      const outlet = table(d, "wvWellheadCompOutlet");
+
+      const heads = d.ro.prepare(
+        `SELECT * FROM "${head.name}" WHERE "${head.colSet.get("idwell")}" = ?`).all(idwell) as Record<string, unknown>[];
+
+      /**
+       * Model caption + unit for every column a panel shows.
+       *
+       * Link columns are dropped as well as key ones: a bare 32-hex GUID is not
+       * a specification, and IDRecJob is resolved to the job's own name below
+       * instead. IconName goes too — it is the caption under the picture, not a
+       * line of the rating.
+       */
+      const skip = (k: string) =>
+        isSysCol(k) || isKeyCol(k) || /^idrec/i.test(k) || /tk$/i.test(k) ||
+        k.toLowerCase() === "iconname" || k.toLowerCase() === "wvtyp";
+      const describe = (tbl: string, row: Record<string, unknown>) =>
+        Object.entries(row)
+          .filter(([k, v]) => v != null && v !== "" && !skip(k))
+          .map(([k, v]) => {
+            const mf = modelField(tbl, k);
+            return {
+              column: k,
+              label: modelTable(tbl) ? columnLabel(tbl, k) : k,
+              value: v as string | number,
+              // The model's physicaltype, so a boolean renders as Yes/No rather
+              // than as the 0 the database stores, and a timestamp as a date.
+              type: mf?.type,
+              unit: mf?.baseUnit,
+              units: mf?.units as Record<string, unknown> | undefined,
+            };
+          });
+
+      return {
+        supported: true,
+        wellheads: heads.map((h) => {
+          const id = String(h[head.colSet.get("idrec") ?? "IDRec"] ?? "");
+          const comps = comp
+            ? (d.ro.prepare(`SELECT * FROM "${comp.name}" WHERE "${comp.colSet.get("idrecparent")}" = ?`)
+                .all(id) as Record<string, unknown>[])
+            : [];
+          return {
+            idrec: id,
+            /** The assembly picture WellView recorded for this head. */
+            icon: iconByName((h[head.colSet.get("iconname") ?? "IconName"] as string) ?? null),
+            iconName: h[head.colSet.get("iconname") ?? "IconName"] ?? null,
+            /** The job this head was installed on, by name rather than by GUID. */
+            job: jobLabel(h[head.colSet.get("idrecjob") ?? "IDRecJob"] as string | null),
+            fields: describe(head.name, h),
+            components: comps.map((c) => {
+              const cid = String(c[comp!.colSet.get("idrec") ?? "IDRec"] ?? "");
+              const outs = outlet
+                ? (d.ro.prepare(`SELECT * FROM "${outlet.name}" WHERE "${outlet.colSet.get("idrecparent")}" = ?`)
+                    .all(cid) as Record<string, unknown>[])
+                : [];
+              return {
+                idrec: cid,
+                des: (c[comp!.colSet.get("des") ?? "Des"] as string) ?? null,
+                fields: describe(comp!.name, c),
+                outlets: outs.map((o) => ({
+                  idrec: String(o[outlet!.colSet.get("idrec") ?? "IDRec"] ?? ""),
+                  fields: describe(outlet!.name, o),
+                })),
+              };
+            }),
+          };
+        }),
+      };
     },
   );
 

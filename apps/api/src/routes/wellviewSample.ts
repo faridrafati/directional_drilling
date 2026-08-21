@@ -156,7 +156,7 @@ function icons(): { norm: string; png: string }[] {
  * icon on 14%, and left 62% bare: a casing string is described "SURFACE" or
  * "PRODUCTION", and no text matcher will ever turn that into a casing icon.
  */
-function iconByName(name: string | null): string | null {
+export function iconByName(name: string | null): string | null {
   if (!name) return null;
   const n = normalise(name);
   if (!n || n === "blank" || n === "none") return null;

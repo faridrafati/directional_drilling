@@ -286,10 +286,38 @@ export interface WvSchematicTemplate {
   createdBy: string;
 }
 
+/** One labelled value from a wellhead record, with its unit. */
+export interface WvWellheadField {
+  column: string; label: string; value: string | number;
+  /** The model's physicaltype — decides how the value is rendered. */
+  type?: "string" | "stringlong" | "double" | "datetime" | "boolean" | "integer" | "blob";
+  unit?: string; units?: Record<string, UnitFormat>;
+}
+export interface WvWellheadOutlet { idrec: string; fields: WvWellheadField[] }
+export interface WvWellheadComp {
+  idrec: string; des: string | null;
+  fields: WvWellheadField[]; outlets: WvWellheadOutlet[];
+}
+export interface WvWellhead {
+  idrec: string;
+  /** The assembly picture WellView recorded, already resolved to a file. */
+  icon: string | null;
+  iconName: string | null;
+  /** The job this head was installed on, named rather than a GUID. */
+  job: string | null;
+  fields: WvWellheadField[];
+  components: WvWellheadComp[];
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
   databases: () => entryApi.get<WvDatabase[]>("/wellview/dbs"),
+
+  /** The well's wellhead assemblies, their components and outlets. */
+  wellheads: (db: string, idwell: string) =>
+    entryApi.get<{ supported: boolean; wellheads: WvWellhead[] }>(
+      `/wellview/dbs/${enc(db)}/wellheads?idwell=${enc(idwell)}`),
 
   /** Saved schematic views. Not per-database: they name element kinds. */
   schematicTemplates: (db: string) =>

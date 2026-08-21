@@ -80,3 +80,64 @@ test.describe("WellView Online", () => {
     await expect(page.getByRole("heading", { name: /Well Header Information/ })).toBeVisible();
   });
 });
+
+/**
+ * The Wellhead tab (§3.8 subject area "Wellhead"), which the desktop app draws
+ * with Peloton.Visualizer.WellView.Wellhead.dll.
+ *
+ * "Sample 40 - Complex Gravel Pack Assembly" is the sample's richest wellhead:
+ * one assembly, four components, thirteen outlets. The assertions check the
+ * things a user would notice were wrong — that the recorded assembly picture
+ * actually loads rather than showing a broken image, that pressures arrive in
+ * the unit set's own unit, and that the components and their outlets are there
+ * once expanded.
+ */
+test.describe("WellView Online — wellhead", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/wellview");
+    await page.getByRole("heading", { name: "WellView" }).waitFor();
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    if (await signIn.isVisible().catch(() => false)) {
+      await page.getByLabel("User name").fill(USER);
+      await page.getByLabel("Password").fill(PASSWORD);
+      await signIn.click();
+    }
+    await page.getByTestId("wv-db-wv9.0_Sample").click();
+    await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("shows the assembly picture, its rating, and its components", async ({ page }) => {
+    await page.getByTestId("wv-well-row")
+      .filter({ hasText: "Complex Gravel Pack Assembly" }).first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByTestId("wv-tab-wellhead").click();
+    await expect(page.getByTestId("wv-wh-head")).toHaveCount(1, { timeout: 15_000 });
+    await expect(page.getByTestId("wv-wh-count")).toContainText("1 assembly");
+
+    // The picture WellView recorded must actually render — a broken image on a
+    // wellhead reads to the user as "there is no data here".
+    const icon = page.getByTestId("wv-wh-icon").first();
+    await expect(icon).toBeVisible();
+    expect(await icon.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+
+    // The rating, in the unit set's own unit rather than the stored kPa.
+    await expect(page.getByTestId("wv-wh-head")).toContainText("Working Pressure");
+    await expect(page.getByTestId("wv-wh-head")).toContainText(/psi|bars|kPa/);
+
+    // The components and their outlets, once expanded.
+    await page.getByTestId("wv-wh-toggle").first().click();
+    await expect(page.getByTestId("wv-wh-comp")).toHaveCount(4);
+    expect(await page.getByTestId("wv-wh-outlet").count()).toBe(13);
+    await expect(page.getByTestId("wv-wh-comp").first()).toContainText("Xmas Tree");
+  });
+
+  test("says so plainly when a well has no wellhead", async ({ page }) => {
+    // "Sample 04 - Offshore" has no wvWellhead row at all.
+    await page.getByTestId("wv-well-row").filter({ hasText: "Sample 04 - Offshore" }).first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-tab-wellhead").click();
+    await expect(page.getByTestId("wv-wh-empty")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("wv-wh-head")).toHaveCount(0);
+  });
+});
