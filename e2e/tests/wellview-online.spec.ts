@@ -634,3 +634,41 @@ test.describe("WellView Online — schematic", () => {
     }
   });
 });
+
+/**
+ * Totals over child rows — the second half of the calculated-field work.
+ *
+ * wvTub.LengthCalc is "Cum of <wvTubComp.Length>": a string's length is the sum
+ * of its components', and neither the total nor the column exists in the
+ * database. The report printed it as a blank column with no note.
+ */
+test("a report totals child rows for a calculated column", async ({ page }) => {
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await page.getByTestId("wv-well-row").filter({ hasText: "Complex Gravel Pack" })
+    .first().dblclick();
+  await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+
+  await page.getByPlaceholder("Search reports…").fill("Downhole Well Profile");
+  await page.getByRole("button", { name: "Downhole Well Profile", exact: true }).first().click();
+
+  const derived = page.getByTestId("wv-derived-col");
+  await expect(derived.first()).toBeVisible({ timeout: 15_000 });
+  await expect(derived.first()).toContainText("String Length");
+  // The heading carries the equation, so a total is traceable to its source.
+  expect(await derived.first().getAttribute("title")).toContain("wvtubcomp.length");
+
+  // And it carries numbers, not a column of blanks — the whole point.
+  const table = derived.first().locator("xpath=ancestor::table[1]");
+  const idx = await derived.first().evaluate((el) =>
+    Array.from(el.parentElement!.children).indexOf(el));
+  const cells = await table.locator(`tbody tr td:nth-child(${idx + 1})`).allTextContents();
+  expect(cells.filter((c) => /\d/.test(c)).length).toBeGreaterThan(3);
+});

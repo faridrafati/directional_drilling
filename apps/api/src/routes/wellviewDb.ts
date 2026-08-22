@@ -38,7 +38,7 @@ import type { PrismaClient } from "@prisma/client";
 import { requireUser, requireAdmin } from "../entry/auth.js";
 import { resolveTemplateData, iconByName } from "./wellviewSample.js";
 import { daysVsDepth, resolveTemplate, type DvdTemplate } from "../wellview/daysVsDepth.js";
-import { calcFieldsFor, computeRow } from "../wellview/calcFields.js";
+import { calcFieldsFor, computeRow, calcAggregatesFor, sumChildren } from "../wellview/calcFields.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
@@ -880,7 +880,11 @@ export async function registerWellviewDbRoutes(
       const cols = t.cols.filter((c) => showSys || !isSysCol(c));
       // The model-calculated fields this table can carry, appended after the
       // stored columns; they have no column of their own in the database.
-      const computed = calcFieldsFor(t.name);
+      // Two kinds: arithmetic over the row itself, and totals over child rows.
+      const computed = [
+        ...calcFieldsFor(t.name).map((c) => ({ field: c.field, label: c.label, eqn: c.eqn })),
+        ...calcAggregatesFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+      ];
       const where: string[] = [];
       const args: string[] = [];
       if (req.query.idwell && t.hasIdwell) { where.push(`"${t.colSet.get("idwell")}" = ?`); args.push(req.query.idwell); }
@@ -982,14 +986,26 @@ export async function registerWellviewDbRoutes(
             group: mf?.group,
           };
         }),
-        rows: rows.map((r) => {
-          const out: Record<string, string | number | null> = {};
-          for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
-          // A field that cannot be computed for THIS row stays absent, so the
-          // grid shows a blank rather than a zero nobody measured.
-          for (const [k, v] of Object.entries(computeRow(t.name, r))) out[k] = v;
-          return out;
-        }),
+        rows: (() => {
+          /*
+           * Child totals for the whole page in ONE query per aggregate, keyed
+           * by the parent's IDRec — not a query per row, which is fine on a
+           * sample database and not fine on a real one.
+           */
+          const idCol = t.colSet.get("idrec");
+          const totals = idCol && req.query.idwell
+            ? sumChildren(d.ro, t.name, req.query.idwell, rows.map((r) => String(r[idCol] ?? "")))
+            : new Map<string, Record<string, number>>();
+          return rows.map((r) => {
+            const out: Record<string, string | number | null> = {};
+            for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
+            // A field that cannot be computed for THIS row stays absent, so the
+            // grid shows a blank rather than a zero nobody measured.
+            for (const [k, v] of Object.entries(computeRow(t.name, r))) out[k] = v;
+            for (const [k, v] of Object.entries(totals.get(String(r[idCol ?? ""] ?? "")) ?? {})) out[k] = v;
+            return out;
+          });
+        })(),
       };
     },
   );

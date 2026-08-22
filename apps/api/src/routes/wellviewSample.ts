@@ -32,7 +32,7 @@ import type { FastifyInstance } from "fastify";
 import { requireUser } from "../entry/auth.js";
 import { columnLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeCalc, calcMissingScope } from "../wellview/calc.js";
-import { calcFieldsFor, computeRow } from "../wellview/calcFields.js";
+import { calcFieldsFor, computeRow, calcAggregatesFor, sumChildren } from "../wellview/calcFields.js";
 // Importing the registry is what registers it; nothing else references the module.
 import "../wellview/calcDerivations.js";
 
@@ -514,10 +514,14 @@ export function resolveTemplateData(
      * column without one is not.
      */
     const computable = new Map(calcFieldsFor(t.name).map((c) => [c.field.toLowerCase(), c]));
-    const derivedCols = wanted.filter((w) => w.actual == null
-      && computable.has(w.column.toLowerCase()));
-    const missing = wanted.filter((w) => w.actual == null
-      && !computable.has(w.column.toLowerCase())).map((w) => w.column);
+    // Totals over child rows are computed the same way but need the database,
+    // so they are resolved per block after the rows are read.
+    const aggregable = new Map(calcAggregatesFor(t.name).map((a) => [a.field.toLowerCase(), a]));
+    const derivable = (c: string) =>
+      computable.has(c.toLowerCase()) || aggregable.has(c.toLowerCase());
+    const derivedCols = wanted.filter((w) => w.actual == null && derivable(w.column));
+    const missing = wanted.filter((w) => w.actual == null && !derivable(w.column))
+      .map((w) => w.column);
     // A block whose ONLY columns are derivable still has nothing to select
     // from, so it is treated as empty rather than queried for zero columns.
     if (present.length === 0) {
@@ -639,8 +643,10 @@ export function resolveTemplateData(
     // …and the inputs each derived column's equation needs, which the template
     // never asked for: a print-time field is computed from columns the report
     // does not itself print.
+    // Only the ARITHMETIC fields read columns off this row; a child total reads
+    // the child table instead, so asking it for `needs` finds nothing at all.
     const needCols = [...new Set(derivedCols.flatMap((w) =>
-      computable.get(w.column.toLowerCase())!.needs))]
+      computable.get(w.column.toLowerCase())?.needs ?? []))]
       .map((n) => t.cols.get(n))
       .filter((c): c is string => !!c && !present.some((p) => p.actual === c));
     const withNeeds = needCols.length
@@ -653,6 +659,21 @@ export function resolveTemplateData(
     // A link column prints the record it points at, not its key.
     const linkCaptions = resolveLinkCaptions(
       d, sch, t, rows, present.map((p) => ({ actual: p.actual! })));
+    /*
+     * Child totals for this block, in one query per aggregate.
+     *
+     * The record id is read as `__idrec` first: when the template does not
+     * itself print IDRec the SELECT aliases it, so looking only under the real
+     * column name finds nothing and every total comes back null — which is
+     * exactly what a first attempt here did, on a block whose SQL sums were
+     * plainly non-zero.
+     */
+    const idColName = t.cols.get("idrec");
+    const idOfRow = (x: Record<string, unknown>) =>
+      String(x.__idrec ?? (idColName ? x[idColName] : "") ?? "");
+    const blockTotals = idColName && hasIdwell
+      ? sumChildren(d, t.name, well, rows.map(idOfRow))
+      : new Map<string, Record<string, number>>();
     const shaped = rows.map((r) => [
       ...present.map((p) => {
         const raw = shapeValue(r[p.actual!]);
@@ -663,14 +684,21 @@ export function resolveTemplateData(
         return linkCaptions.get(`${targetLc}|${String(raw)}`) ?? raw;
       }),
       // The derived columns, in the same order they were declared above.
-      // computeRow evaluates them in DEPENDENCY order and feeds each result
-      // back in, which is what lets ROPCalc read the DepthDrilledCalc that has
-      // no column of its own. A row whose inputs are incomplete yields null —
-      // a blank cell, never a zero.
+      // computeRow evaluates the arithmetic in DEPENDENCY order and feeds each
+      // result back in, which is what lets ROPCalc read the DepthDrilledCalc
+      // that has no column of its own; child totals come from `blockTotals`,
+      // read once for the whole block rather than per row. A row whose inputs
+      // are incomplete yields null — a blank cell, never a zero.
       ...(() => {
         const computedRow = computeRow(t.name, r);
-        return derivedCols.map((w) => computedRow[
-          computable.get(w.column.toLowerCase())!.field] ?? null);
+        const mine = blockTotals.get(idOfRow(r)) ?? {};
+        return derivedCols.map((w) => {
+          const lc = w.column.toLowerCase();
+          const arith = computable.get(lc);
+          if (arith) return computedRow[arith.field] ?? null;
+          const agg = aggregable.get(lc);
+          return agg ? mine[agg.field] ?? null : null;
+        });
       })(),
     ]);
     // Rows whose every printed cell is null render as a page of dashes —
@@ -695,7 +723,8 @@ export function resolveTemplateData(
         // model's own equation. Flagged so the page can mark them as derived
         // rather than let them pass for stored measurements.
         ...derivedCols.map((w) => {
-          const cf = computable.get(w.column.toLowerCase())!;
+          const lc = w.column.toLowerCase();
+          const cf = computable.get(lc) ?? aggregable.get(lc)!;
           return {
             column: cf.field,
             label: cf.label,

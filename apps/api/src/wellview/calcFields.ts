@@ -354,3 +354,164 @@ export function calcFieldsAvailable(): boolean {
 }
 
 export { modelTable };
+
+// ── aggregates over child rows ───────────────────────────────────────────────
+
+/**
+ * One "Sum of <child.field>" equation.
+ *
+ * WellView writes both "Sum of" and "Cum of" for this shape and they mean the
+ * same thing here — the total over every child row. "Cum" carries its running
+ * sense only when the reference is to the field's OWN table, an ordered
+ * sibling total (`wvJobProgramPhase.CostMLCumCalc` is "Cum of
+ * <wvjobprogramphase.costml>"), which is a different computation and is
+ * refused rather than approximated. daysVsDepth.ts does that one where the
+ * ordering is known.
+ */
+export interface CalcAggregate {
+  table: string;
+  field: string;
+  label: string;
+  eqn: string;
+  /** The child table summed, as the model spells it. */
+  childTable: string;
+  /** The child's column, lowercased. */
+  childField: string;
+  /** True when the child column is itself calculated and computed here. */
+  childCalculated: boolean;
+}
+
+let _aggregates: Map<string, CalcAggregate[]> | null = null;
+
+/** "Sum of <a.b>" / "Cum of <a.b>" and nothing else. */
+const AGG_RE = /^(?:sum|cum|total)\s+of\s+<([a-z0-9_]+)\.([a-z0-9_]+)>\s*\.?$/i;
+
+/**
+ * The aggregates this module can compute, by lowercased parent table.
+ *
+ * Same discipline as the arithmetic: one shape, everything else refused. The
+ * child must DESCEND from the parent by WellView's table-name prefix rule, both
+ * ends must be numeric, and a child column that is itself calculated must be
+ * one this module can produce — otherwise the total would always be blank and
+ * the column would advertise a value it cannot fill.
+ */
+export function calcAggregates(): Map<string, CalcAggregate[]> {
+  if (_aggregates) return _aggregates;
+  const reg = new Map<string, CalcAggregate[]>();
+  const tabs = allModelTables();
+  const arith = calcFields();
+  const computableArith = (tLc: string, fLc: string) =>
+    (arith.get(tLc) ?? []).some((c) => c.field.toLowerCase() === fLc);
+
+  for (const [tLc, t] of Object.entries(tabs)) {
+    if (/calc$/.test(tLc)) continue;
+    for (const [fLc, f] of Object.entries(t.fields)) {
+      if (!f.calculated || !f.help) continue;
+      if (!NUMERIC.has(f.type ?? "")) continue;
+      const eqn = eqnOf(f.help);
+      const m = eqn?.match(AGG_RE);
+      if (!eqn || !m) continue;
+      const childLc = m[1].toLowerCase(), colLc = m[2].toLowerCase();
+      // Prefix-descendant, and not the table itself: a self-reference is the
+      // running-total sense, not a child total.
+      if (childLc === tLc || !childLc.startsWith(tLc) || !tabs[childLc]) continue;
+      const cf = modelField(childLc, colLc);
+      if (!cf || !NUMERIC.has(cf.type ?? "")) continue;
+      if (cf.calculated && !computableArith(childLc, colLc)) continue;
+      const list = reg.get(tLc) ?? [];
+      list.push({
+        table: t.table,
+        field: fLc,
+        label: f.label ?? fLc,
+        eqn,
+        childTable: tabs[childLc].table,
+        childField: colLc,
+        childCalculated: !!cf.calculated,
+      });
+      reg.set(tLc, list);
+    }
+  }
+  _aggregates = reg;
+  return reg;
+}
+
+/** The aggregates of one table, or an empty list. */
+export function calcAggregatesFor(table: string): CalcAggregate[] {
+  return calcAggregates().get(table.toLowerCase()) ?? [];
+}
+
+/** Total across every table — pinned by the tests. */
+export function calcAggregateCount(): number {
+  let n = 0;
+  for (const l of calcAggregates().values()) n += l.length;
+  return n;
+}
+
+/** What `sumChildren` needs of a database handle: one prepared query. */
+export interface AggQuery {
+  prepare(sql: string): { all(...args: unknown[]): unknown[] };
+}
+
+/**
+ * Total each aggregate over its child rows, for a whole page of parents at once.
+ *
+ * ONE query per aggregate, grouped by the parent id — not one per row. A grid of
+ * 200 records would otherwise issue 200 queries per column, which is the kind of
+ * thing that works on a sample database and falls over on a real one.
+ *
+ * A child column that is itself calculated cannot be summed in SQL, because it
+ * has no column: those rows are read and the arithmetic evaluator runs over each
+ * before adding it up.
+ *
+ * Returns a map of parent IDRec → { field → total }. A parent with no child rows
+ * is ABSENT rather than zero: WellView leaves the cell blank, and a nil total
+ * reads as "nothing was spent" rather than "nothing was entered".
+ */
+export function sumChildren(
+  db: AggQuery,
+  table: string,
+  idwell: string,
+  parentIds: string[],
+): Map<string, Record<string, number>> {
+  const out = new Map<string, Record<string, number>>();
+  const aggs = calcAggregatesFor(table);
+  if (!aggs.length || !parentIds.length) return out;
+  const ids = [...new Set(parentIds.filter(Boolean))];
+  if (!ids.length) return out;
+  const holes = ids.map(() => "?").join(", ");
+
+  for (const a of aggs) {
+    const add = (parent: string, v: number) => {
+      if (!Number.isFinite(v)) return;
+      const rec = out.get(parent) ?? {};
+      rec[a.field] = (rec[a.field] ?? 0) + v;
+      out.set(parent, rec);
+    };
+    try {
+      if (!a.childCalculated) {
+        for (const r of db.prepare(
+          `SELECT "IDRecParent" AS p, SUM("${a.childField}") AS s
+             FROM "${a.childTable}" WHERE idwell = ? AND "IDRecParent" IN (${holes})
+            GROUP BY "IDRecParent"`).all(idwell, ...ids) as { p: string; s: number | null }[]) {
+          if (r.s != null) add(String(r.p), Number(r.s));
+        }
+      } else {
+        // The child value is computed, so the rows have to be read and each one
+        // evaluated before the total means anything.
+        for (const r of db.prepare(
+          `SELECT * FROM "${a.childTable}" WHERE idwell = ? AND "IDRecParent" IN (${holes})`)
+          .all(idwell, ...ids) as Record<string, unknown>[]) {
+          const v = computeRow(a.childTable, r)[a.childField];
+          if (v != null) add(String(r.IDRecParent ?? ""), v);
+        }
+      }
+    } catch {
+      // A table or column this database does not have: the field stays absent,
+      // which is the same answer as "nothing to total".
+    }
+  }
+  return out;
+}
+
+/** Reset the aggregate cache — tests only. */
+export function _resetAggregates(): void { _aggregates = null; }

@@ -17,7 +17,10 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { calcFields, calcFieldsFor, calcFieldCount, computeRow, calcFieldsOrdered } from "./calcFields.js";
+import {
+  calcFields, calcFieldsFor, calcFieldCount, computeRow, calcFieldsOrdered,
+  calcAggregates, calcAggregatesFor, calcAggregateCount, sumChildren,
+} from "./calcFields.js";
 import { modelField } from "./model.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -196,5 +199,80 @@ d("against the sample database", () => {
         expect(() => computeRow(t.name, r)).not.toThrow();
       }
     }
+  });
+});
+
+describe("aggregates over child rows", () => {
+  it("admits a known set and refuses the rest", () => {
+    // 52 equations have the "Sum of <x.y>" shape; 41 name a prefix-descendant
+    // with numeric ends; 33 survive the chain rule as well.
+    expect(calcAggregateCount()).toBe(33);
+    expect(calcAggregates().size).toBe(12);
+  });
+
+  it("REFUSES a self-referencing running total", () => {
+    // "Cum of <wvjobprogramphase.costml>" on wvJobProgramPhase is a running
+    // total down an ORDERED sibling list, not a total over children. Summing
+    // the siblings would give every phase the job's whole cost.
+    const ph = calcAggregatesFor("wvJobProgramPhase").map((a) => a.field);
+    for (const f of ["costmlcumcalc", "costmincumcalc", "dayjobmlplancalc"]) {
+      expect(ph, `${f} is a running total, not a child sum`).not.toContain(f);
+    }
+  });
+
+  it("REFUSES a total whose child value it cannot itself produce", () => {
+    // wvJob.CostTotalCalc is "Cum of <wvJobReport.CostTotalCalc>", and that
+    // child is a mixed sum this evaluator does not execute — so the parent
+    // would always be blank.
+    const job = calcAggregatesFor("wvJob").map((a) => a.field);
+    expect(job).not.toContain("costtotalcalc");
+    expect(job).not.toContain("afeamtcalc");
+  });
+});
+
+d("aggregates against the sample database", () => {
+  it("reconciles phase costs and string lengths against SQL", () => {
+    const jobs = db.prepare(`SELECT idwell, IDRecParent AS job, SUM(CostML) s
+       FROM wvJobProgramPhase WHERE CostML IS NOT NULL
+       GROUP BY idwell, IDRecParent`).all() as { idwell: string; job: string; s: number }[];
+    expect(jobs.length).toBeGreaterThan(3);
+    for (const x of jobs) {
+      const mine = sumChildren(db, "wvJob", x.idwell, [x.job]).get(x.job)?.costmltotalcalc;
+      expect(mine, `job ${x.job}`).toBeCloseTo(x.s, 6);
+    }
+    const strings = db.prepare(`SELECT idwell, IDRecParent AS s, SUM(Length) t
+       FROM wvCasComp WHERE Length IS NOT NULL GROUP BY idwell, IDRecParent`)
+      .all() as { idwell: string; s: string; t: number }[];
+    expect(strings.length).toBeGreaterThan(10);
+    for (const x of strings) {
+      const mine = sumChildren(db, "wvCas", x.idwell, [x.s]).get(x.s)?.lengthcalc;
+      expect(mine, `casing ${x.s}`).toBeCloseTo(x.t, 6);
+    }
+  });
+
+  it("leaves a parent with no child rows ABSENT, not zero", () => {
+    // A nil total reads as "nothing was spent"; absent reads as "nothing was
+    // entered", and only one of those is true.
+    const lonely = db.prepare(`SELECT j.idwell, j.IDRec FROM wvJob j
+       WHERE NOT EXISTS (SELECT 1 FROM wvJobProgramPhase p WHERE p.IDRecParent = j.IDRec)
+       LIMIT 5`).all() as { idwell: string; IDRec: string }[];
+    expect(lonely.length).toBeGreaterThan(0);
+    for (const j of lonely) {
+      const rec = sumChildren(db, "wvJob", j.idwell, [j.IDRec]).get(j.IDRec) ?? {};
+      expect("costmltotalcalc" in rec).toBe(false);
+    }
+  });
+
+  it("issues one query per aggregate, not one per row", () => {
+    let queries = 0;
+    const counting = {
+      prepare(sql: string) { queries++; return db.prepare(sql); },
+    };
+    const ids = (db.prepare("SELECT IDRec FROM wvCas WHERE idwell = ? LIMIT 40")
+      .all("462C2607F3BA4FE9846197C58352207B") as { IDRec: string }[]).map((r) => r.IDRec);
+    expect(ids.length).toBeGreaterThan(3);
+    sumChildren(counting, "wvCas", "462C2607F3BA4FE9846197C58352207B", ids);
+    // wvCas has exactly one aggregate; a per-row implementation would issue 40.
+    expect(queries).toBe(calcAggregatesFor("wvCas").length);
   });
 });
