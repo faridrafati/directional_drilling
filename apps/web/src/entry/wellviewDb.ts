@@ -172,6 +172,8 @@ export interface WvQueryCriterion {
   value: string | null;
   /** §8.1 "Prompt for Value" — the user supplies it when the query runs. */
   prompts: boolean;
+  /** §8.1's And/Or, joining this criterion to the one before it. */
+  conj?: "AND" | "OR";
   tableLabel: string;
   fieldLabel: string;
   isDate: boolean;
@@ -309,6 +311,11 @@ export interface WvCriterion {
   /** null when the criterion prompts for a value, matching the shipped shape. */
   value?: string | null;
   prompts?: boolean;
+  /**
+   * §8.1: the And/Or that joins this criterion to the one BEFORE it, so the
+   * first line has none. Absent means And.
+   */
+  conj?: "AND" | "OR";
 }
 export interface WvSavedQuery {
   id: string; name: string; category: string;
@@ -568,6 +575,12 @@ export const wvDbApi = {
    * Distinct values a column actually holds in this database — Quick Query's
    * Look-for lookup, and the library lookup in Edit Data.
    */
+  /** §8.1 Custom SQL — one read-only SELECT returning an idwell column. */
+  runSql: (db: string, sql: string) =>
+    entryApi.post<{ wells: { idwell: string; name: string }[]; matched: number;
+      unknown: string[]; truncated: boolean; rows: number }>(
+      `/wellview/dbs/${enc(db)}/queries/sql`, { sql }),
+
   columnValues: (db: string, table: string, column: string) =>
     entryApi.get<{ table: string; column: string; values: string[] }>(
       `/wellview/dbs/${enc(db)}/column-values?table=${enc(table)}&column=${enc(column)}`),

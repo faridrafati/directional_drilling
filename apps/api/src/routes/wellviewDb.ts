@@ -52,6 +52,8 @@ const REPO = join(HERE, "..", "..", "..", "..");
 const DB_DIR = join(REPO, "sqlite_DB", "wellview");
 /** Rows one Paste Data may insert. The guide’s largest tally is 147 joints. */
 const PASTE_ROW_CAP = 5000;
+/** Rows a Custom SQL query may return before it is truncated (§8.1). */
+const SQL_ROW_CAP = 2000;
 const DVDC_JSON = join(REPO, "apps", "web", "public", "wellview-templates", "days-vs-depth.json");
 
 /**
@@ -289,6 +291,12 @@ interface QueryCriterion {
   op: string | null;
   value: string | null;
   prompts: boolean;
+  /**
+   * §8.1: "Add a condition to every line in the list of criteria, except the
+   * first one." It joins this criterion to the one BEFORE it, so the first has
+   * none. Absent means AND, which is what every shipped template implies.
+   */
+  conj?: "AND" | "OR";
 }
 interface QueryTemplate { id: string; category: string; name: string; criteria: QueryCriterion[] }
 
@@ -2045,6 +2053,7 @@ export async function registerWellviewDbRoutes(
             ...c,
             value: c.value ?? null,
             prompts: c.prompts === true,
+            conj: c.conj === "OR" ? "OR" : undefined,
             op: c.op ?? null,
             tableLabel: folderLabel(c.table, null),
             fieldLabel: columnLabel(c.table, c.field),
@@ -2497,10 +2506,59 @@ export async function registerWellviewDbRoutes(
 
       const supplied = req.body?.values ?? {};
       const skipped: { criterion: string; reason: string }[] = [];
-      /** table → the WHERE fragments that must hold on ONE of its rows. */
-      const byTable = new Map<string, { preds: string[]; args: (string | number)[] }>();
-
+      /*
+       * §8.1's And / Or, read as a sum of products.
+       *
+       * "Add a condition to every line in the list of criteria, except the
+       * first one" — so a conjunction joins a criterion to the one BEFORE it.
+       * An Or starts a new group; within a group the criteria are ANDed. A well
+       * matches if ANY group matches, which is what "find wells that meet at
+       * least one of the criteria" means.
+       *
+       * Grouping happens before anything is resolved, so a criterion that has
+       * to be skipped removes itself from ITS group and cannot silently widen
+       * another.
+       */
+      const groups: QueryCriterion[][] = [];
       q.criteria.forEach((c, i) => {
+        if (i === 0 || c.conj !== "OR") {
+          if (!groups.length) groups.push([]);
+          groups[groups.length - 1].push(c);
+        } else {
+          groups.push([c]);
+        }
+      });
+
+      /** table → the WHERE fragments that must hold on ONE of its rows. */
+      let byTable = new Map<string, { preds: string[]; args: (string | number)[] }>();
+      const groupWheres: string[] = [];
+      const groupArgs: (string | number)[] = [];
+      /**
+       * How many criteria were actually applied.
+       *
+       * Counted as they go in, NOT from byTable at the end: closeGroup empties
+       * that map, so reading its size after the loop reports nothing applied on
+       * a query that ran perfectly well.
+       */
+      let applied = 0;
+
+      const closeGroup = () => {
+        if (!byTable.size) return;
+        const parts: string[] = [];
+        for (const [tname, e] of byTable) {
+          parts.push(
+            `EXISTS (SELECT 1 FROM "${tname}" x WHERE x.idwell = h.idwell AND ${e.preds.join(" AND ")})`);
+          groupArgs.push(...e.args);
+        }
+        groupWheres.push(parts.length > 1 ? `(${parts.join(" AND ")})` : parts[0]);
+        byTable = new Map();
+      };
+
+      let index = -1;
+      groups.forEach((group) => {
+      group.forEach((c) => {
+        index++;
+        const i = index;
         const label = `${c.table}.${c.field} ${c.op ?? ""}`.trim();
         const t = table(d, c.table);
         if (!t) { skipped.push({ criterion: label, reason: `table ${c.table} not in this database` }); return; }
@@ -2537,19 +2595,18 @@ export async function registerWellviewDbRoutes(
           }
         }
         byTable.set(t.name, entry);
+        applied++;
+      });
+      closeGroup();
       });
 
-      if (byTable.size === 0) {
+      if (!groupWheres.length) {
         return { wells: [], skipped, ran: 0, note: "No criterion could be applied to this database." };
       }
 
-      const wheres: string[] = [];
-      const args: (string | number)[] = [];
-      for (const [tname, e] of byTable) {
-        wheres.push(
-          `EXISTS (SELECT 1 FROM "${tname}" x WHERE x.idwell = h.idwell AND ${e.preds.join(" AND ")})`);
-        args.push(...e.args);
-      }
+      // Groups are ORed; each group's own criteria were ANDed inside closeGroup.
+      const wheres = [groupWheres.length > 1 ? groupWheres.join(" OR ") : groupWheres[0]];
+      const args: (string | number)[] = groupArgs;
       const nameCol = hdr.colSet.get("wellname") ?? "WellName";
       const rows = d.ro.prepare(
         `SELECT h.idwell AS idwell, h."${nameCol}" AS name FROM "${hdr.name}" h
@@ -2559,10 +2616,97 @@ export async function registerWellviewDbRoutes(
       return {
         wells: rows.map((r) => ({ idwell: r.idwell, name: r.name ?? r.idwell })),
         skipped,
-        ran: byTable.size,
+        ran: applied,
+        /** How the criteria grouped: one entry per OR group (§8.1). */
+        orGroups: groupWheres.length,
       };
     },
   );
+
+/**
+   * Custom SQL Queries (§8.1) — "users can also build their own searches using
+   * a direct SQL query".
+   *
+   * The guide offers this because its own criteria builder degrades a
+   * cross-table And into an Or and tells the user to write SQL to get a real
+   * And. This app honours the And, so the escape hatch is not needed for that —
+   * but a direct query is still the only way to express something the criteria
+   * grid cannot, and the guide teaches it, so it is here.
+   *
+   * WHAT IT WILL NOT RUN, and why each guard is there rather than trusted to
+   * the reader being sensible:
+   *
+   *   - Anything but a single SELECT (or a WITH that leads to one). The
+   *     connection is the READ-ONLY handle, so a write would fail anyway, but
+   *     failing early says why instead of surfacing a driver error.
+   *   - More than one statement. `;` ends it; a trailing empty fragment is
+   *     allowed so a pasted statement with a final semicolon still runs.
+   *   - Anything that does not yield an `idwell` column: the result IS a well
+   *     list, and a query returning something else has misunderstood the field
+   *     rather than found nothing.
+   *
+   * Rows are capped and the wells resolved against the header, so an idwell
+   * that matches no well is reported rather than shown as a blank row.
+   */
+  app.post<{ Params: { db: string }; Body: { sql?: string } }>(
+    "/entry/wellview/dbs/:db/queries/sql",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const raw = String(req.body?.sql ?? "").trim();
+      if (!raw) return reply.code(400).send({ error: "a SQL statement is required" });
+
+      const statements = raw.split(";").map((x) => x.trim()).filter(Boolean);
+      if (statements.length > 1) {
+        return reply.code(400).send({ error: "only one statement at a time" });
+      }
+      const sql = statements[0];
+      if (!/^\s*(select|with)\b/i.test(sql)) {
+        return reply.code(400).send({ error: "only a SELECT can be run here" });
+      }
+
+      const hdr = table(d, "wvWellHeader");
+      if (!hdr) return reply.code(404).send({ error: "wvWellHeader missing" });
+
+      let rows: Record<string, unknown>[];
+      try {
+        rows = d.ro.prepare(`SELECT * FROM (${sql}) LIMIT ${SQL_ROW_CAP + 1}`)
+          .all() as Record<string, unknown>[];
+      } catch (e) {
+        return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) });
+      }
+      const truncated = rows.length > SQL_ROW_CAP;
+      if (truncated) rows.length = SQL_ROW_CAP;
+
+      const key = rows.length
+        ? Object.keys(rows[0]).find((k) => k.toLowerCase() === "idwell")
+        : "idwell";
+      if (rows.length && !key) {
+        return reply.code(400).send({
+          error: "the statement must return an idwell column — the result is a list of wells",
+          columns: Object.keys(rows[0]),
+        });
+      }
+
+      const ids = [...new Set(rows.map((r) => String(r[key!] ?? "")).filter(Boolean))];
+      const nameCol = hdr.colSet.get("wellname") ?? "WellName";
+      const wells = ids.length
+        ? (d.ro.prepare(
+          `SELECT idwell, "${nameCol}" AS name FROM "${hdr.name}"
+            WHERE idwell IN (${ids.map(() => "?").join(", ")}) ORDER BY 2`)
+          .all(...ids) as { idwell: string; name: string | null }[])
+          .map((r) => ({ idwell: r.idwell, name: r.name ?? r.idwell }))
+        : [];
+      // An id the header does not know is a real answer about the data, not a
+      // row to quietly drop.
+      const known = new Set(wells.map((w) => w.idwell));
+      const unknown = ids.filter((i) => !known.has(i));
+
+      return { wells, matched: ids.length, unknown, truncated, rows: rows.length };
+    },
+  );
+
 
   /** §10.2 Data Audit across selected wells (or all). */
   app.get<{ Params: { db: string }; Querystring: { wells?: string } }>(

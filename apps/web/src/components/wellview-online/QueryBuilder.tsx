@@ -55,12 +55,67 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
     editing?.criteria.length
       ? editing.criteria.map((c) => ({
           table: c.table, field: c.field, op: c.op ?? "=",
-          value: c.value ?? "", prompts: c.prompts,
+          value: c.value ?? "", prompts: c.prompts, conj: c.conj,
         }))
       : [{ table: "", field: "", op: "=", value: "" }]);
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [sql, setSql] = useState("");
+
+  /**
+   * §8.1's "Paste From Criteria" — the grid above, written out as SQL.
+   *
+   * Deliberately the SAME shape the runner builds: one EXISTS per subject area
+   * so that criteria on a table hold on ONE of its rows, groups ANDed, OR
+   * between groups. A statement that read differently would be a second,
+   * quietly diverging implementation of the query, which is worse than none.
+   *
+   * Values are inlined with quotes doubled, because this is a starting point a
+   * person then edits — a placeholder they had to fill in would defeat it.
+   */
+  const sqlFromCriteria = (cs: WvCriterion[]): string => {
+    if (!cs.length) return "";
+    const groups: WvCriterion[][] = [];
+    cs.forEach((c, i) => {
+      if (i === 0 || c.conj !== "OR") {
+        if (!groups.length) groups.push([]);
+        groups[groups.length - 1].push(c);
+      } else groups.push([c]);
+    });
+    const lit = (v: string) => `'${v.replace(/'/g, "''")}'`;
+    const groupSql = groups.map((g) => {
+      const byTable = new Map<string, string[]>();
+      for (const c of g) {
+        const preds = byTable.get(c.table) ?? [];
+        if (c.op === "IS NULL" || c.op === "IS NOT NULL") preds.push(`x."${c.field}" ${c.op}`);
+        else if (c.prompts) preds.push(`x."${c.field}" ${c.op} :${c.field}`);
+        else if (c.op === "LIKE" || c.op === "NOT LIKE") {
+          preds.push(`x."${c.field}" ${c.op} ${lit(`%${c.value ?? ""}%`)}`);
+        } else preds.push(`x."${c.field}" ${c.op} ${lit(c.value ?? "")}`);
+        byTable.set(c.table, preds);
+      }
+      const parts = [...byTable.entries()].map(([t, preds]) =>
+        `EXISTS (SELECT 1 FROM "${t}" x WHERE x.idwell = h.idwell AND ${preds.join(" AND ")})`);
+      return parts.length > 1 ? `(${parts.join("\n     AND ")})` : parts[0];
+    });
+    return `SELECT h.idwell, h."WellName"\n  FROM "wvWellHeader" h\n WHERE ${groupSql.join("\n    OR ")}`;
+  };
+
+  const runSql = async () => {
+    setBusy(true); setError(null); setPreview(null);
+    try {
+      const r = await wvDbApi.runSql(db, sql);
+      const extra = r.unknown.length
+        ? ` ${r.unknown.length} id${r.unknown.length === 1 ? "" : "s"} matched no well.`
+        : "";
+      setPreview(`${r.wells.length} well${r.wells.length === 1 ? "" : "s"}`
+        + (r.truncated ? " (truncated)" : "") + `.${extra}`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally { setBusy(false); }
+  };
 
   const tablesQ = useQuery({
     queryKey: ["wvdb", db, "query-tables"],
@@ -72,8 +127,11 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
     setCriteria((cs) => cs.map((c, k) => (k === i ? { ...c, ...patch } : c)));
 
   const complete = useMemo(
+    // A criterion that PROMPTS is complete without a value: the value is
+    // supplied when the query runs, which is what makes one template serve
+    // every contact name (§8.1).
     () => criteria.filter((c) => c.table && c.field && c.op
-      && (!NEEDS_VALUE(c.op) || (c.value ?? "").trim() !== "")),
+      && (!NEEDS_VALUE(c.op) || c.prompts === true || (c.value ?? "").trim() !== "")),
     [criteria]);
 
   const run = async () => {
@@ -125,13 +183,30 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
           <div>
             <p className="text-xs font-medium text-gray-800">Criteria</p>
             <p className="text-[11px] text-gray-500 mb-1.5">
-              A well must satisfy every line. Lines on the <b>same table</b> must be satisfied by the
-              <b> same record</b> — two conditions on a daily report mean one report meeting both,
-              not two reports meeting one each.
+              Lines joined by <b>And</b> must all hold; an <b>Or</b> starts a new alternative, and a
+              well matches if any alternative does. Lines on the <b>same table</b> must be satisfied
+              by the <b>same record</b> — two conditions on a daily report mean one report meeting
+              both, not two reports meeting one each. Unlike the desktop, an <b>And</b> across
+              different subject areas really does mean both (§8.1 notes that WellView degrades it to
+              an Or and suggests Custom SQL instead).
             </p>
             <ul className="space-y-1.5">
               {criteria.map((c, i) => (
                 <li key={i} className="flex flex-wrap items-center gap-1.5" data-testid="wv-qb-row">
+                  {/* §8.1: "Add a condition to every line in the list of
+                      criteria, except the first one." */}
+                  {i === 0 ? (
+                    <span className="w-14 text-[10px] uppercase tracking-wide text-gray-400 text-right pr-1">
+                      where
+                    </span>
+                  ) : (
+                    <select value={c.conj ?? "AND"} data-testid="wv-qb-conj"
+                      onChange={(e) => set(i, { conj: e.target.value as "AND" | "OR" })}
+                      className="h-8 w-14 border border-gray-300 rounded px-1 text-xs bg-white">
+                      <option value="AND">And</option>
+                      <option value="OR">Or</option>
+                    </select>
+                  )}
                   <select value={c.table} data-testid="wv-qb-table"
                     onChange={(e) => set(i, { table: e.target.value, field: "" })}
                     className="h-8 border border-gray-300 rounded px-1 text-xs bg-white min-w-[10rem]">
@@ -148,9 +223,27 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
                     {OPS.map((o) => <option key={o.op} value={o.op}>{o.label}</option>)}
                   </select>
                   {NEEDS_VALUE(c.op) && (
-                    <input value={c.value ?? ""} onChange={(e) => set(i, { value: e.target.value })}
-                      data-testid="wv-qb-value" placeholder="value"
-                      className="h-8 border border-gray-300 rounded px-2 text-xs w-40" />
+                    c.prompts ? (
+                      <span className="h-8 px-2 flex items-center text-[11px] text-blue-700 bg-blue-50
+                        border border-blue-200 rounded w-40" data-testid="wv-qb-prompted">
+                        asked when it runs
+                      </span>
+                    ) : (
+                      <ValueBox db={db} table={c.table} field={c.field} value={c.value ?? ""}
+                        onChange={(v) => set(i, { value: v })} />
+                    )
+                  )}
+                  {NEEDS_VALUE(c.op) && (
+                    /* §8.1 "Select Prompt for Value": the query asks at run
+                       time instead of storing an answer, which is how one
+                       template serves every contact name or date range. */
+                    <label className="flex items-center gap-1 text-[10px] text-gray-500"
+                      title="Prompt for Value (§8.1) — ask for this when the query runs">
+                      <input type="checkbox" checked={c.prompts === true}
+                        data-testid="wv-qb-prompts"
+                        onChange={(e) => set(i, { prompts: e.target.checked })} />
+                      Prompt
+                    </label>
                   )}
                   <button type="button" onClick={() => setCriteria((cs) => cs.filter((_, k) => k !== i))}
                     disabled={criteria.length === 1} title="Remove this line"
@@ -164,6 +257,42 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
               Add a criterion
             </button>
           </div>
+
+          {/*
+            * §8.1 Custom SQL Queries — "users can also build their own searches
+            * using a direct SQL query", by typing it, pasting it, or using
+            * "Paste From Criteria" to start from the grid above.
+            *
+            * Read-only and one SELECT at a time; the server enforces both and
+            * says which rule was broken rather than surfacing a driver error.
+            */}
+          <details className="border-t border-gray-100 pt-2" data-testid="wv-qb-sql-panel">
+            <summary className="text-xs font-medium text-gray-800 cursor-pointer">
+              Custom SQL
+            </summary>
+            <p className="text-[11px] text-gray-500 mt-1 mb-1.5">
+              One <b>SELECT</b>, returning an <b>idwell</b> column — the result is a list of wells.
+              Run only; nothing here can change the database.
+            </p>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <button type="button" data-testid="wv-qb-sql-paste"
+                onClick={() => setSql(sqlFromCriteria(complete))}
+                disabled={!complete.length}
+                title="Paste From Criteria (§8.1) — start from the lines above"
+                className="h-7 px-2 text-[11px] rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-40">
+                Paste From Criteria
+              </button>
+              <button type="button" data-testid="wv-qb-sql-run"
+                onClick={() => void runSql()} disabled={busy || !sql.trim()}
+                className="h-7 px-2 text-[11px] rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-40">
+                Run SQL
+              </button>
+            </div>
+            <textarea value={sql} onChange={(e) => setSql(e.target.value)} rows={4}
+              data-testid="wv-qb-sql"
+              placeholder="SELECT DISTINCT idwell FROM wvJob WHERE wvTyp = 'Drilling'"
+              className="w-full border border-gray-300 rounded p-2 text-[11px] font-mono" />
+          </details>
 
           <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-gray-100">
             <button type="button" onClick={() => void run()} data-testid="wv-qb-run"
@@ -209,5 +338,46 @@ function FieldPicker({ db, table, value, onChange }: {
         <option key={f.field} value={f.field}>{f.label}</option>
       ))}
     </select>
+  );
+}
+
+/**
+ * A criterion's value, with §8.1's Lookup list.
+ *
+ * "Click the Lookup button to display a list of values already entered in the
+ * field" — the desktop reads the approved library; this reads the DISTINCT
+ * values the open database actually holds for the column, which is the same
+ * list the Edit Data grid offers and is captioned the same way there. It is a
+ * datalist, so the box stays free text: a value not yet in the data is a
+ * legitimate thing to search for.
+ */
+function ValueBox({ db, table, field, value, onChange }: {
+  db: string; table: string; field: string; value: string; onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const q = useQuery({
+    queryKey: ["wvdb", db, "column-values", table, field],
+    // Fetched only when the Lookup is opened: a query can name a dozen fields
+    // and almost none of them get looked up.
+    queryFn: () => wvDbApi.columnValues(db, table, field),
+    enabled: open && !!table && !!field,
+    staleTime: 5 * 60 * 1000,
+  });
+  const listId = `wv-qb-vals-${table}-${field}`.replace(/\W/g, "");
+  return (
+    <span className="flex items-center gap-1">
+      <input value={value} onChange={(e) => onChange(e.target.value)}
+        data-testid="wv-qb-value" placeholder="value" list={open ? listId : undefined}
+        className="h-8 border border-gray-300 rounded px-2 text-xs w-40" />
+      <datalist id={listId}>
+        {(q.data?.values ?? []).map((v) => <option key={v} value={v} />)}
+      </datalist>
+      <button type="button" data-testid="wv-qb-lookup" disabled={!table || !field}
+        onClick={() => setOpen(true)}
+        title="Lookup (§8.1) — values already entered in this field"
+        className="h-8 px-1.5 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-30">
+        {q.isFetching ? "…" : "▾"}
+      </button>
+    </span>
   );
 }

@@ -119,7 +119,12 @@ test.describe("WellView Online — wellhead", () => {
     // wellhead reads to the user as "there is no data here".
     const icon = page.getByTestId("wv-wh-icon").first();
     await expect(icon).toBeVisible();
-    expect(await icon.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    // POLLED, not read once: toBeVisible passes as soon as the <img> has layout,
+    // which is before the browser has decoded it, so a single read of
+    // naturalWidth races the decode and reports 0 on a perfectly good image.
+    // That raced twice in full-suite runs while passing in isolation.
+    await expect.poll(async () => icon.evaluate((el) => (el as HTMLImageElement).naturalWidth),
+      { timeout: 10_000 }).toBeGreaterThan(0);
 
     // The rating, in the unit set's own unit rather than the stored kPa.
     await expect(page.getByTestId("wv-wh-head")).toContainText("Working Pressure");
@@ -753,4 +758,89 @@ test("pastes a block of spreadsheet rows into a folder", async ({ page }) => {
     }, tag);
     expect(gone, "the test did not clean up after itself").toBe(created.length || 3);
   }
+});
+
+/**
+ * §8.1 Query Templates: And/Or conditions, Prompt for Value, the Lookup list
+ * and Custom SQL.
+ *
+ * The semantics are asserted at the API (wellviewQueryOr.test.ts), where an Or
+ * can be compared against the actual union of its two sides. What is checked
+ * here is that the builder can AUTHOR each of them — none of it could be
+ * expressed before, whatever the runner supported.
+ *
+ * Drilling jobs (28 wells) or perforated wells (35) is a real widening to 42;
+ * job type Drilling or Completion would not be, because in this database every
+ * completion well also has a drilling job.
+ */
+test("the query builder authors And/Or, prompts, lookups and Custom SQL", async ({ page }) => {
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("wv-qb-new").click();
+  await expect(page.getByTestId("wv-qb-name")).toBeVisible();
+
+  const setRow = async (i: number, table: string, field: string, value?: string) => {
+    await page.getByTestId("wv-qb-table").nth(i).selectOption({ label: table });
+    await expect
+      .poll(async () => page.getByTestId("wv-qb-field").nth(i).locator("option").count(),
+        { timeout: 10_000 }).toBeGreaterThan(1);
+    await page.getByTestId("wv-qb-field").nth(i).selectOption({ label: field });
+    if (value !== undefined) await page.getByTestId("wv-qb-value").nth(i).fill(value);
+  };
+  const count = async () => {
+    await page.getByTestId("wv-qb-run").click();
+    await expect(page.getByTestId("wv-qb-preview")).toBeVisible({ timeout: 15_000 });
+    return Number((await page.getByTestId("wv-qb-preview").textContent() ?? "").match(/(\d+)/)?.[1]);
+  };
+
+  // The first line has no conjunction — §8.1: "except the first one".
+  await expect(page.getByTestId("wv-qb-conj")).toHaveCount(0);
+  await setRow(0, "Jobs", "Job Category", "Drilling");
+  const drilling = await count();
+  expect(drilling).toBe(28);
+
+  await page.getByTestId("wv-qb-add").click();
+  await expect(page.getByTestId("wv-qb-conj")).toHaveCount(1);
+  await setRow(1, "Perforations", "Top Depth", undefined);
+  await page.getByTestId("wv-qb-op").nth(1).selectOption("IS NOT NULL");
+
+  // And narrows, Or widens — the same two lines, one selector apart.
+  await page.getByTestId("wv-qb-conj").selectOption("AND");
+  const and = await count();
+  await page.getByTestId("wv-qb-conj").selectOption("OR");
+  const or = await count();
+  expect(and).toBeLessThan(drilling);
+  expect(or).toBe(42);
+  expect(or).toBeGreaterThan(drilling);
+
+  // Prompt for Value: the value box gives way to a note, and the line is still
+  // complete — that is what lets one template serve every answer.
+  await page.getByTestId("wv-qb-prompts").first().check();
+  await expect(page.getByTestId("wv-qb-prompted")).toBeVisible();
+  await expect(page.getByTestId("wv-qb-run")).toBeEnabled();
+  await page.getByTestId("wv-qb-prompts").first().uncheck();
+
+  // The Lookup list offers values already in the field.
+  await expect(page.getByTestId("wv-qb-lookup").first()).toBeEnabled();
+
+  // Custom SQL, written out of the criteria and run.
+  await page.getByTestId("wv-qb-sql-panel").locator("summary").click();
+  await page.getByTestId("wv-qb-sql-paste").click();
+  const sql = await page.getByTestId("wv-qb-sql").inputValue();
+  expect(sql).toContain("SELECT h.idwell");
+  expect(sql).toContain("wvJob");
+  expect(sql).toContain(" OR ");            // the Or above became a real OR
+  await page.getByTestId("wv-qb-sql-run").click();
+  await expect
+    .poll(async () => (await page.getByTestId("wv-qb-preview").textContent() ?? ""),
+      { timeout: 15_000 })
+    .toMatch(/42 wells/);
 });
