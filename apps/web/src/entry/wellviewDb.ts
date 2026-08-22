@@ -314,6 +314,9 @@ export interface WvDvdPoint { x: number; y: number; label?: string }
 /** An axis: the model's caption, its base unit, and the per-set formats. */
 export interface WvDvdAxis {
   field: string; label: string; unit?: string; units?: Record<string, UnitFormat>;
+  /** Measured from the reference datum — the depth axes are, days and cost are not. */
+  applyDatum?: boolean;
+  datumMode?: "depth" | "up" | "invariant";
 }
 export interface WvDvdSeries {
   caption: string; x: WvDvdAxis; y: WvDvdAxis;

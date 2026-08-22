@@ -2046,7 +2046,9 @@ export async function registerWellviewDbRoutes(
       const label = (tbl: string, field: string) => {
         const mf = modelField(tbl, field);
         return { label: mf?.label ?? field, unit: mf?.baseUnit ?? undefined,
-          units: mf?.units as Record<string, unknown> | undefined };
+          units: mf?.units as Record<string, unknown> | undefined,
+          // The depth axes shift with Tools > Reference Datum; days and cost do not.
+          applyDatum: mf?.applyDatum, datumMode: mf?.datumMode };
       };
 
       const resolved = job && tpl ? resolveTemplate(job, tpl, label) : { series: [], empty: [] };

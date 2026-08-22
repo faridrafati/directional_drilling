@@ -215,3 +215,47 @@ test.describe("WellView Online — days vs depth", () => {
       .or(page.getByTestId("wv-dvd-empty"))).toBeVisible({ timeout: 10_000 });
   });
 });
+
+/**
+ * The drilling curve has to move with Tools > Reference Datum like every other
+ * depth in the app, or the Days vs Depth tab silently disagrees with the
+ * Schematic and the Survey tab by the height of the rig floor.
+ *
+ * The assertion is on the AXIS LABELS, not on the polyline: shifting every
+ * point by a constant shifts the auto-scaled axis with it, so the drawn curve
+ * is translation-invariant and identical coordinates prove nothing either way.
+ * "Sample 12 - Phase and Prod" has KB 1075.80 m and ground 1072.10 m, so the
+ * depth axis must read 3.7 m shallower.
+ */
+test("the drilling curve follows the reference datum", async ({ page }) => {
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12 - Phase and Prod" })
+    .first().dblclick();
+  await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("wv-tab-dvd").click();
+  await expect(page.getByTestId("wv-dvd-chart").first()).toBeVisible({ timeout: 15_000 });
+
+  const ticks = () => page.getByTestId("wv-dvd-chart").first().locator("text").allTextContents();
+  const datum = page.locator("select").filter({ hasText: "Original KB" }).first();
+  try {
+    const fromKB = await ticks();
+    await datum.selectOption("Ground");
+    await expect.poll(async () => (await ticks()).join("|"), { timeout: 10_000 })
+      .not.toBe(fromKB.join("|"));
+    const fromGround = await ticks();
+    // A depth of zero from the KB is 3.7 m ABOVE ground, so the axis goes negative.
+    expect(fromGround.some((t) => t.startsWith("-"))).toBe(true);
+    expect(fromKB.some((t) => t.startsWith("-"))).toBe(false);
+  } finally {
+    // Leave the shared datum where the other specs expect it.
+    await datum.selectOption("OrigKB");
+  }
+});

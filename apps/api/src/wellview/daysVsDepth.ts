@@ -353,6 +353,16 @@ export interface DvdAxis {
   unit?: string;
   /** Per unit set: the unit to show and how to format it. */
   units?: Record<string, unknown>;
+  /**
+   * Measured from the reference datum (Tools > Reference Datum).
+   *
+   * Both depth axes of this chart are. Without it the drilling curve would be
+   * the one place in the app where switching the datum to Ground leaves the
+   * depths where they were — silently disagreeing with the Schematic, the
+   * Survey tab and every grid, by the height of the rig floor.
+   */
+  applyDatum?: boolean;
+  datumMode?: string;
 }
 
 /** One series of a template, resolved against a job's computed rows. */

@@ -26,7 +26,7 @@ const IDWELL = "946E6358693E482097B8099D7F84F532";
 const hasDb = existsSync(SAMPLE);
 const d = describe.skipIf(!hasDb);
 
-interface Axis { field: string; label: string; unit?: string; units?: Record<string, unknown> }
+interface Axis { field: string; label: string; unit?: string; units?: Record<string, unknown>; applyDatum?: boolean }
 interface Series { caption: string; kind: "plan" | "actual"; x: Axis; y: Axis; points: { x: number; y: number }[] }
 interface Body {
   supported: boolean;
@@ -111,6 +111,26 @@ d("WellView days-vs-depth route", () => {
     }
     expect(b.series.some((s) => s.y.unit === "m")).toBe(true);
     expect(b.series.every((s) => s.x.unit === "days")).toBe(true);
+  });
+
+  /**
+   * Without this the drilling curve is the one place in the app where switching
+   * Tools > Reference Datum to Ground leaves the depths where they were, quietly
+   * disagreeing with the Schematic and the Survey tab by the height of the rig
+   * floor — hundreds of metres on some of these wells.
+   */
+  it("marks the depth axes as datum-bearing, and the time and cost axes as not", async () => {
+    const b = (await get(`idwell=${IDWELL}`)).json() as Body;
+    const depth = b.series.filter((s) => s.y.unit === "m");
+    expect(depth.length).toBeGreaterThan(0);
+    for (const s of depth) {
+      expect(s.y.applyDatum, `${s.caption} y is a depth but is not datum-bearing`).toBe(true);
+    }
+    // Days and money do not move with the reference datum.
+    for (const s of b.series) {
+      expect(s.x.applyDatum ?? false, `${s.caption} x is days but claims a datum`).toBe(false);
+      if (s.y.unit === "Cost") expect(s.y.applyDatum ?? false).toBe(false);
+    }
   });
 
   it("names the series it could not fill instead of quietly dropping them", async () => {

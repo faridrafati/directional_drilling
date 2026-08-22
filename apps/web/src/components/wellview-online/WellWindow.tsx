@@ -1490,6 +1490,7 @@ function DaysVsDepthTab({ db, idwell, onEditTable }: {
 }) {
   const qc = useQueryClient();
   const [unitSet] = useUnitSet();
+  const { shift: datumShift } = useDatumShift(db, idwell);
   const [job, setJob] = useState<string>("");
   const [template, setTemplate] = useState<string>("");
   const q = useQuery({
@@ -1497,10 +1498,19 @@ function DaysVsDepthTab({ db, idwell, onEditTable }: {
     queryFn: () => wvDbApi.daysVsDepth(db, idwell, job || undefined, template || undefined),
   });
 
-  /** A value on an axis, in the user's unit set. */
+  /**
+   * A value on an axis, in the user's unit set and from the chosen datum.
+   *
+   * Both depth axes carry applyDatum, so the curve moves with Tools > Reference
+   * Datum exactly as the Schematic, the Survey tab and every grid do. Days and
+   * cost do not, and toDisplay leaves them alone because the model says so —
+   * the decision is not made here.
+   */
   const conv = (v: number, a: WvDvdAxis) => {
     if (!a.unit) return v;
-    const d = toDisplay(v, { unit: a.unit, units: a.units }, unitSet);
+    const d = toDisplay(v,
+      { unit: a.unit, units: a.units, applyDatum: a.applyDatum, datumMode: a.datumMode },
+      unitSet, datumShift);
     return d ? d.value : v;
   };
   const axisUnit = (a: WvDvdAxis) => {
