@@ -70,7 +70,17 @@ export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditR
         </button>
         <span className="text-sm font-semibold text-gray-900 truncate">{wellName}</span>
         <div className="ml-3 flex gap-1 border-b-0">
-          {([["reports", "Reports"], ["schematic", "Schematic"], ["survey", "Survey"], ["wellhead", "Wellhead"], ["dvd", "Days vs Depth"]] as const).map(([id, label]) => (
+          {/*
+            * The order is Peloton s own. peloton.appframe.ini s
+            * [VisToolsSingle] numbers the five single-well visual tools:
+            * report engine 1, schematic 2, wellhead 3, time tracks 4, days vs
+            * depth 5. Four of those are built (time tracks has no data in any
+            * export here), and they now appear in that sequence.
+            *
+            * Survey is this app s own addition, not one of the five, so it goes
+            * after them rather than splitting Schematic from Wellhead as it did.
+            */}
+          {([["reports", "Reports"], ["schematic", "Schematic"], ["wellhead", "Wellhead"], ["dvd", "Days vs Depth"], ["survey", "Survey"]] as const).map(([id, label]) => (
             <button key={id} type="button" onClick={() => setTab(id)} data-testid={`wv-tab-${id}`}
               className={`px-3 h-8 text-xs rounded-t-md border ${tab === id
                 ? "bg-white border-gray-300 border-b-white font-medium text-blue-700"

@@ -406,6 +406,12 @@ const enc = encodeURIComponent;
 export const wvDbApi = {
   databases: () => entryApi.get<WvDatabase[]>("/wellview/dbs"),
 
+  /** WellView’s own manifest — which build the shipped material came from. */
+  about: () => entryApi.get<{
+    appName: string | null; version: string | null; packageId: string | null;
+    subtitle: string | null; singleTools: string[]; multiTools: string[];
+  }>("/wellview/about"),
+
   /** The drilling curve: WellView's Days vs Depth / Cost chart for a job. */
   daysVsDepth: (db: string, idwell: string, job?: string, template?: string) =>
     entryApi.get<WvDaysVsDepth>(

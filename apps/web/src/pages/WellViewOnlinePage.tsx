@@ -39,6 +39,14 @@ function Inner() {
   const [unitSet, setUnitSet] = useUnitSet();
   const [datum, setDatum] = useDatum();
   const [db, setDb] = useState<string | null>(null);
+  // Peloton s own manifest: read once, and only when signed in, since the
+  // route is behind the same guard as everything else here.
+  const about = useQuery({
+    queryKey: ["wvdb", "about"],
+    queryFn: () => wvDbApi.about(),
+    enabled: !!user,
+    staleTime: Infinity,
+  });
   const [openWell, setOpenWell] = useState<string | null>(null);
   const [edit, setEdit] = useState<
     { idwell: string; table: string | null; idrec?: string; column?: string | null } | null>(null);
@@ -64,7 +72,25 @@ function Inner() {
       <div className="w-full max-w-[1700px] mx-auto flex flex-col flex-1 min-h-0">
         <div className="mb-3 shrink-0 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
           <div className="border-l-[3px] border-amber-500 pl-3">
-            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 tracking-tight">WellView</h2>
+            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 tracking-tight">
+              WellView
+              {/*
+                * The build the shipped material came from, out of Peloton’s own
+                * manifest rather than typed here. The templates, data model,
+                * units and icons all come from ONE package and are not
+                * interchangeable between versions, so a user given a different
+                * export can see at a glance that they no longer match.
+                */}
+              {about.data?.version && (
+                <span className="ml-2 text-sm font-normal text-gray-400"
+                  data-testid="wv-version"
+                  title={about.data.packageId
+                    ? `Templates, data model, units and icons from WellView package ${about.data.packageId}`
+                    : undefined}>
+                  {about.data.version}
+                </span>
+              )}
+            </h2>
             <p className="text-xs text-gray-500 mt-0.5">
               The WellView application online — Well Explorer, Edit Data, Reports, Schematic and the
               Data Auditor, over your converted WellView databases.

@@ -39,6 +39,7 @@ import { requireUser, requireAdmin } from "../entry/auth.js";
 import { resolveTemplateData, iconByName } from "./wellviewSample.js";
 import { daysVsDepth, resolveTemplate, type DvdTemplate } from "../wellview/daysVsDepth.js";
 import { calcFieldsFor, computeRow, calcAggregatesFor, sumChildren } from "../wellview/calcFields.js";
+import { appFrame, WELL_FILE_EXTENSION } from "../wellview/appframe.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
@@ -761,6 +762,26 @@ export async function registerWellviewDbRoutes(
   prisma?: PrismaClient,
 ): Promise<void> {
   /** The Open Database window. */
+  /**
+   * WellView’s own manifest: which build of the product this app was built
+   * against.
+   *
+   * Every piece of shipped material — the 182 report templates, the data
+   * model, the unit table, the icon library — comes from ONE package, and
+   * they are not interchangeable between versions. Stating the build is how a
+   * user handed a different export can tell that the templates no longer match
+   * the data. Null when the vendor tree is absent, which a clean checkout is.
+   */
+  app.get("/entry/wellview/about", { preHandler: WELLVIEW_GUARD }, async () => {
+    const a = appFrame();
+    return a ? {
+      appName: a.appName, version: a.version, packageId: a.packageId,
+      subtitle: a.subtitle,
+      singleTools: a.singleTools, multiTools: a.multiTools,
+    } : { appName: null, version: null, packageId: null, subtitle: null,
+      singleTools: [], multiTools: [] };
+  });
+
   app.get("/entry/wellview/dbs", { preHandler: WELLVIEW_GUARD }, async () => {
     return listDbFiles().map((f) => {
       const d = db(f.id)!;
@@ -1939,7 +1960,17 @@ export async function registerWellviewDbRoutes(
       if (!payload) return reply.code(404).send({ error: `no well ${idwell} in ${req.params.db}` });
       const name = (payload.source.wellName ?? idwell).replace(/[^\w.-]+/g, "_").slice(0, 60);
       reply.header("Content-Type", "application/json; charset=utf-8");
-      reply.header("Content-Disposition", `attachment; filename="${name}.wellview.json"`);
+      /*
+       * NOT ".wvd", though that is what WellView calls a well file
+       * (peloton.appframe.ini: datafileextension=wvd).
+       *
+       * A .wvd is Peloton’s own container. This is a JSON document of this
+       * app’s making — the same data, a different format, and WellView cannot
+       * open it. Borrowing the extension would claim an interoperability that
+       * does not exist, which is worse than an unfamiliar suffix.
+       */
+      reply.header("Content-Disposition",
+        `attachment; filename="${name}.${WELL_FILE_EXTENSION}"`);
       return reply.send(JSON.stringify(payload));
     },
   );
