@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
+import { DatabaseSync } from "node:sqlite";
 import { registerWellviewDbRoutes } from "./wellviewDb.js";
 import { issueToken } from "../entry/auth.js";
 
@@ -200,5 +201,63 @@ d("§8.1 Custom SQL", () => {
       payload: { sql: "SELECT idwell FROM wvJob" } as never,
     });
     expect(anon.statusCode).toBe(401);
+  });
+});
+
+d("§8.1 Custom SQL — the guards, probed adversarially", () => {
+  /**
+   * The regex guard is defence in DEPTH, not the only line: the handle the
+   * route uses is opened read-only, so a write that somehow got past the
+   * pattern would still be refused by SQLite itself. Both are asserted, because
+   * relying on either alone is how one of them quietly stops being true.
+   */
+  it("the connection itself refuses to write, regex or no regex", () => {
+    const db = new DatabaseSync(SAMPLE, { readOnly: true });
+    try {
+      expect(() => db.prepare("DELETE FROM wvNote WHERE 1=0").run())
+        .toThrow(/readonly/i);
+    } finally { db.close(); }
+  });
+
+  it("refuses every statement that is not a single read-only SELECT", async () => {
+    const refused = [
+      "DELETE FROM wvNote",
+      "UPDATE wvJob SET wvTyp = 'x'",
+      "INSERT INTO wvNote (idwell) VALUES ('x')",
+      "DROP TABLE wvNote",
+      "SELECT idwell FROM wvJob; DROP TABLE wvNote",
+      "PRAGMA table_list",
+      "PRAGMA writable_schema = 1",
+      "ATTACH DATABASE '/tmp/evil.db' AS evil",
+      "CREATE TABLE t (x)",
+      "REPLACE INTO wvNote (idwell) VALUES ('x')",
+    ];
+    for (const bad of refused) {
+      const res = await sql(bad);
+      expect(res.statusCode, `accepted: ${bad}`).toBe(400);
+    }
+  });
+
+  it("allows the forms the guide's own examples take", async () => {
+    for (const good of [
+      "SELECT idwell FROM wvJob LIMIT 1",
+      "select idwell from wvJob limit 1",                 // case
+      "  SELECT idwell FROM wvJob LIMIT 1 ; ",            // trailing semicolon
+      "WITH x AS (SELECT idwell FROM wvJob) SELECT * FROM x LIMIT 1",
+    ]) {
+      const res = await sql(good);
+      expect(res.statusCode, `refused: ${good} — ${res.body.slice(0, 90)}`).toBe(200);
+    }
+  });
+
+  it("does not turn a schema read into a well", async () => {
+    // sqlite_master is reachable — it is the user's own database and the app
+    // already lists its tables — but its names must not be dressed up as wells.
+    const res = await sql(
+      "SELECT name AS idwell FROM sqlite_master WHERE type = 'table' LIMIT 5");
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { wells: unknown[]; unknown: string[] };
+    expect(body.wells).toEqual([]);
+    expect(body.unknown.length).toBeGreaterThan(0);
   });
 });
