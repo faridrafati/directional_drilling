@@ -50,6 +50,8 @@ import { closingInventory, transferInventory } from "../wellview/inventory.js";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
 const DB_DIR = join(REPO, "sqlite_DB", "wellview");
+/** Rows one Paste Data may insert. The guide’s largest tally is 147 joints. */
+const PASTE_ROW_CAP = 5000;
 const DVDC_JSON = join(REPO, "apps", "web", "public", "wellview-templates", "days-vs-depth.json");
 
 /**
@@ -1009,6 +1011,139 @@ export async function registerWellviewDbRoutes(
       };
     },
   );
+
+/**
+   * Paste Data from Clipboard (§3.9) — a block of spreadsheet rows into a folder.
+   *
+   * The guide teaches this as the way tallies are entered: "Enter the tubing
+   * string information by cutting and pasting from the applied Excel
+   * spreadsheet" — 147 joints in that exercise alone — and the casing tally and
+   * survey loads the same way. Only the outbound half existed, so every one of
+   * those was row-by-row typing.
+   *
+   * The client sends rows of ALREADY-MAPPED values: it owns the column-mapping
+   * dialog and the "Start at row" setting the guide describes, and it converts
+   * what the user pasted out of their unit set before sending, exactly as the
+   * grid does on a single edit. This route's job is the part that must not be
+   * got wrong — the same write rules as a single insert, applied to many rows,
+   * in ONE transaction.
+   *
+   * All or nothing: a half-finished paste of a 147-joint tally leaves a folder
+   * that has to be cleaned up by hand before it can be retried, which is worse
+   * than a refusal.
+   */
+  app.post<{
+    Params: { db: string; table: string };
+    Body: { idwell?: string; parent?: string; rows?: Record<string, unknown>[]; startSeq?: number };
+  }>(
+    "/entry/wellview/dbs/:db/records/:table/paste",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, req.params.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
+      const rows = req.body?.rows ?? [];
+      if (!rows.length) return reply.code(400).send({ error: "no rows to paste" });
+      if (rows.length > PASTE_ROW_CAP) {
+        return reply.code(400).send({
+          error: `too many rows at once (${rows.length}); the limit is ${PASTE_ROW_CAP}`,
+        });
+      }
+      const idwell = req.body?.idwell ?? null;
+      if (t.hasIdwell && !idwell) return reply.code(400).send({ error: "idwell is required" });
+
+      // Which of the named columns this table will actually accept. Reported
+      // back rather than silently dropped: a column that quietly went nowhere
+      // is how a tally ends up missing its grades.
+      const named = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+      const accepted = new Map<string, string>();
+      const rejected: { column: string; why: string }[] = [];
+      for (const k of named) {
+        const actual = t.colSet.get(k.toLowerCase());
+        if (!actual) { rejected.push({ column: k, why: "not a column in this table" }); continue; }
+        if (modelField(t.name, actual)?.calculated) {
+          rejected.push({ column: k, why: "calculated by WellView at print time" });
+          continue;
+        }
+        if (isSysCol(actual)) { rejected.push({ column: k, why: "a system column" }); continue; }
+        if (isKeyCol(actual) && !isSelfParentLink(t, actual)) {
+          rejected.push({ column: k, why: "a record key" });
+          continue;
+        }
+        accepted.set(k, actual);
+      }
+      if (!accepted.size) {
+        return reply.code(400).send({ error: "none of those columns can be written here", rejected });
+      }
+
+      const user = req.entryUser?.username ?? "web";
+      const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      const seqCol = modelTable(t.name)?.sequenced ? t.colSet.get("sysseq") : null;
+      // A tally is an ORDERED folder, and the order of the pasted block is the
+      // order the joints go in the hole. Continue after whatever is there.
+      let seq = req.body?.startSeq ?? 0;
+      if (seqCol && !req.body?.startSeq) {
+        const where: string[] = [];
+        const args: string[] = [];
+        if (t.hasIdwell && idwell) { where.push(`"${t.colSet.get("idwell")}" = ?`); args.push(idwell); }
+        if (t.hasParent && req.body?.parent) { where.push(`"${t.colSet.get("idrecparent")}" = ?`); args.push(req.body.parent); }
+        const max = d.ro.prepare(
+          `SELECT MAX("${seqCol}") AS m FROM "${t.name}"${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`,
+        ).get(...args) as { m: number | null };
+        seq = Number(max?.m ?? 0);
+      }
+      const wbCol = t.colSet.get("idrecwellbore");
+      const defaultBore = wbCol && idwell ? defaultWellbore(d, idwell) : null;
+
+      const built = rows.map((r) => {
+        const values: Record<string, unknown> = {};
+        for (const [k, actual] of accepted) {
+          if (k in r) values[actual] = r[k] === "" ? null : r[k];
+        }
+        if (t.colSet.has("idrec")) values[t.colSet.get("idrec")!] = newIdRec();
+        if (t.hasIdwell && idwell) values[t.colSet.get("idwell")!] = idwell;
+        if (t.hasParent && req.body?.parent) values[t.colSet.get("idrecparent")!] = req.body.parent;
+        if (seqCol) values[seqCol] = ++seq;
+        for (const [k, v] of [["syscreatedate", now], ["syscreateuser", user],
+          ["sysmoddate", now], ["sysmoduser", user]] as const) {
+          const c = t.colSet.get(k);
+          if (c) values[c] = v;
+        }
+        // The DefaultWellboreLinker add-in, as on a single insert.
+        if (wbCol && !values[wbCol] && defaultBore) {
+          values[wbCol] = defaultBore;
+          const tk = t.colSet.get("idrecwellboretk");
+          if (tk) values[tk] = "wvwellbore";
+        }
+        return values;
+      });
+
+      const cols = [...new Set(built.flatMap((v) => Object.keys(v)))];
+      const db = writable(d);
+      const stmt = db.prepare(
+        `INSERT INTO "${t.name}" (${cols.map((c) => `"${c}"`).join(", ")})
+         VALUES (${cols.map(() => "?").join(", ")})`,
+      );
+      db.exec("BEGIN");
+      try {
+        for (const v of built) stmt.run(...cols.map((c) => (v[c] ?? null) as string | number | null));
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        return reply.code(400).send({
+          error: `the paste was rolled back: ${e instanceof Error ? e.message : String(e)}`,
+          rejected,
+        });
+      }
+      return reply.code(201).send({
+        inserted: built.length,
+        columns: [...accepted.keys()],
+        rejected,
+      });
+    },
+  );
+
 
   /** Add a record (§3.9 "Add a New Record"): IDRec generated, links filled in. */
   app.post<{ Params: { db: string; table: string }; Body: { idwell?: string; parent?: string; values?: Record<string, unknown> } }>(

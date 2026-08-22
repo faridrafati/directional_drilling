@@ -402,6 +402,19 @@ export const wvDbApi = {
     entryApi.post<{ id: string; name: string }>(
       `/wellview/dbs/${enc(db)}/schematic-templates`, body),
 
+  /**
+   * Paste Data from Clipboard (§3.9) — a block of spreadsheet rows into a folder.
+   *
+   * The values must already be in the database's BASE units: the grid shows and
+   * accepts the user's unit set, so what was pasted is converted on the way in,
+   * the same as a single cell edit.
+   */
+  pasteRecords: (db: string, table: string,
+    body: { idwell?: string; parent?: string; rows: Record<string, unknown>[] }) =>
+    entryApi.post<{ inserted: number; columns: string[];
+      rejected: { column: string; why: string }[] }>(
+      `/wellview/dbs/${enc(db)}/records/${enc(table)}/paste`, body),
+
   deleteSchematicTemplate: (db: string, id: string) =>
     entryApi.del<{ deleted: string }>(`/wellview/dbs/${enc(db)}/schematic-templates/${enc(id)}`),
 

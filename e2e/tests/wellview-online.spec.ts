@@ -672,3 +672,85 @@ test("a report totals child rows for a calculated column", async ({ page }) => {
   const cells = await table.locator(`tbody tr td:nth-child(${idx + 1})`).allTextContents();
   expect(cells.filter((c) => /\d/.test(c)).length).toBeGreaterThan(3);
 });
+
+/**
+ * Paste Data from Clipboard (§3.9) — the inbound half of Copy Data.
+ *
+ * The guide teaches this as how tallies are entered: "Enter the tubing string
+ * information by cutting and pasting from the applied Excel spreadsheet" — 147
+ * joints in that exercise — and the casing tally and survey loads the same way.
+ * Only the outbound half existed, so each was row-by-row typing.
+ *
+ * The write path is covered thoroughly at the API level (wellviewPaste.test.ts,
+ * including a rolled-back bad row); what is checked here is the part that lives
+ * only in the UI: parsing the block, guessing the mapping, honouring "Start at
+ * row", and refusing to write a column it could not map.
+ */
+test("pastes a block of spreadsheet rows into a folder", async ({ page }) => {
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await page.getByTestId("wv-well-row").filter({ hasText: "Complex Gravel Pack" })
+    .first().dblclick();
+  await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Edit Data", exact: true }).click();
+  await expect(page.getByText("Show System Fields")).toBeVisible({ timeout: 15_000 });
+  await page.locator('button[title="wvNote"]').click();
+  await expect(page.getByTestId("wv-edit-paste-open")).toBeVisible({ timeout: 15_000 });
+
+  const tag = `E2EPASTE-${Date.now() % 100000}`;
+  const created: string[] = [];
+  try {
+    await page.getByTestId("wv-edit-paste-open").click();
+    await expect(page.getByTestId("wv-paste-dialog")).toBeVisible();
+
+    // A heading row, then three rows. "Note" is NOT a column of this folder —
+    // its caption is Comment — so the guess must leave that column unmapped
+    // rather than put the text somewhere plausible-looking.
+    await page.getByTestId("wv-paste-text").fill(
+      [`Comment\tDate\tNote`,
+        `${tag} one\t2020-01-01\tignored`,
+        `${tag} two\t2020-01-02\tignored`,
+        `${tag} three\t2020-01-03\tignored`].join("\n"));
+
+    // The heading row was recognised, so the data starts at row 2.
+    await expect(page.getByTestId("wv-paste-startrow")).toHaveValue("2");
+    await expect(page.getByTestId("wv-paste-map-0")).toHaveValue("Com");
+    await expect(page.getByTestId("wv-paste-map-1")).toHaveValue("DtTm");
+    await expect(page.getByTestId("wv-paste-map-2"), "an unmatched heading must not be guessed")
+      .toHaveValue("");
+
+    await page.getByTestId("wv-paste-ok").click();
+    await expect(page.getByTestId("wv-paste-dialog")).toBeHidden({ timeout: 15_000 });
+    // The folder re-reads itself: three records where there were none.
+    await expect.poll(async () =>
+      ((await page.locator("body").textContent()) ?? "").match(/(\d+) records/)?.[1],
+    { timeout: 15_000 }).toBe("3");
+    await expect(page.locator("body")).toContainText("Pasted 3 records");
+  } finally {
+    // Written into a REAL well, so this test removes exactly what it added.
+    const gone = await page.evaluate(async (t) => {
+      const token = localStorage.getItem("dd.entry.token");
+      const head = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+      const url = "/api/entry/wellview/dbs/wv9.0_Sample/records/wvNote"
+        + "?idwell=462C2607F3BA4FE9846197C58352207B";
+      const res = await fetch(url, { headers: head });
+      const body = await res.json() as { rows: Record<string, string>[] };
+      let n = 0;
+      for (const r of body.rows ?? []) {
+        if (!String(r.Com ?? "").startsWith(t)) continue;
+        await fetch(`/api/entry/wellview/dbs/wv9.0_Sample/records/wvNote/${r.IDRec}`,
+          { method: "DELETE", headers: head });
+        n++;
+      }
+      return n;
+    }, tag);
+    expect(gone, "the test did not clean up after itself").toBe(created.length || 3);
+  }
+});

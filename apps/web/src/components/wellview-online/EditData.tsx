@@ -38,9 +38,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { wvDbApi, type WvRecordColumn, type WvRecords, type WvTreeNode } from "../../entry/wellviewDb.js";
 import { usePicklistCatalog } from "../../entry/picklists.js";
-import { useUnitSet } from "../../entry/unitSet.js";
+import { useUnitSet, type UnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
 import { toDisplay, fromDisplay, displayUnitFor, formatUnitValue } from "@dd/shared";
+import type { DatumShift } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
 import { InventoryTransfer } from "./InventoryTransfer.js";
 
@@ -489,6 +490,8 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   const plQ = usePicklistCatalog();
   const [unitSet] = useUnitSet();
   const { shift: datumShift } = useDatumShift(db, idwell);
+  /** §3.9 Paste Data from Clipboard — the mapping dialog is open. */
+  const [pasting, setPasting] = useState(false);
   const [popover, setPopover] = useState<{ key: string | null; col: string } | null>(null);
   /** What the model says about one column's units, for the conversion helpers. */
   const unitOf = (c: WvRecordColumn) =>
@@ -1125,6 +1128,13 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
             className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
             Copy Data
           </button>
+          {/* §3.9 Paste Data from Clipboard — the inbound half, which the
+              guide’s tally exercises depend on. */}
+          <button type="button" onClick={() => setPasting(true)} data-testid="wv-edit-paste-open"
+            title="Paste Data from Clipboard (§3.9) — a block of spreadsheet rows into this folder"
+            className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+            Paste Data
+          </button>
           {canPaste && (
             <button type="button" onClick={() => void pasteRecord()} disabled={busy}
               title={`Paste "${clipboard!.caption}" into this folder (subfolders included)`}
@@ -1272,6 +1282,31 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           </table>
         )}
       </div>
+
+      {pasting && (
+        <PasteData
+          columns={cols}
+          unitSet={unitSet}
+          datumShift={datumShift}
+          onCancel={() => setPasting(false)}
+          onPaste={async (rows) => {
+            const res = await wvDbApi.pasteRecords(db, data.table, {
+              idwell, parent: parentIdrec ?? undefined, rows,
+            });
+            setPasting(false);
+            // onSaved is the grid’s own refresh — the folder re-reads itself.
+            onSaved();
+            // The server names any column it would not write. Saying so is the
+            // difference between a tally that is short a field and one that
+            // looks complete.
+            const note = res.rejected.length
+              ? ` ${res.rejected.length} column${res.rejected.length === 1 ? " was" : "s were"} not written: `
+                + res.rejected.map((r) => `${r.column} (${r.why})`).join(", ")
+              : "";
+            onStatus(`Pasted ${res.inserted} record${res.inserted === 1 ? "" : "s"}.${note}`);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1412,6 +1447,194 @@ function LinkPopover({ targets, cands, onPick, onClose }: {
             No candidate records on this well yet — enter the linked folder first.
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Paste Data from Clipboard (§3.9).
+ *
+ * The guide's own procedure, and the reason it matters: "Enter the tubing
+ * string information by cutting and pasting from the applied Excel spreadsheet"
+ * — 147 joints in that exercise — plus the casing tally and survey loads the
+ * same way. Each was row-by-row typing while only the outbound half existed.
+ *
+ * It follows the desktop's dialog: paste the block, MAP each pasted column to a
+ * column in this folder, set "Start at row" to skip a heading, then OK. Two
+ * things it does that the desktop does not have to: the mapping is guessed from
+ * the heading row where a name matches, and every value is converted out of the
+ * user's unit set before it is sent, because the grid the block was copied from
+ * shows feet where the database stores metres.
+ */
+function PasteData({
+  columns, unitSet, datumShift, onCancel, onPaste,
+}: {
+  columns: WvRecordColumn[];
+  unitSet: UnitSet;
+  datumShift: DatumShift | null;
+  onCancel: () => void;
+  onPaste: (rows: Record<string, unknown>[]) => Promise<void>;
+}) {
+  const [text, setText] = useState("");
+  const [startRow, setStartRow] = useState(2);
+  const [map, setMap] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /** Columns this folder will accept — the same rule the server applies. */
+  const writable = useMemo(
+    () => columns.filter((c) => !c.id && !c.system && !c.tk && !c.calculated),
+    [columns]);
+
+  /** The pasted block. Tab-separated is what every spreadsheet puts on the clipboard. */
+  const grid = useMemo(() => text.replace(/\r/g, "").split("\n")
+    .filter((l) => l.length > 0).map((l) => l.split("\t")), [text]);
+  const width = grid.reduce((n, r) => Math.max(n, r.length), 0);
+
+  /**
+   * Guess the mapping from the first row, by label or column name.
+   *
+   * Only ever a starting point: the dialog shows every choice and the user can
+   * change any of them, because a wrong guess here writes a length into a grade.
+   */
+  useEffect(() => {
+    if (!grid.length) return;
+    const head = grid[0];
+    const next: Record<number, string> = {};
+    head.forEach((h, i) => {
+      const k = h.trim().toLowerCase().replace(/\s+/g, "");
+      const hit = writable.find((c) => c.label.toLowerCase().replace(/\s+/g, "") === k
+        || c.column.toLowerCase() === k);
+      if (hit) next[i] = hit.column;
+    });
+    setMap(next);
+    // A heading row that mapped is a heading row: start at 2.
+    setStartRow(Object.keys(next).length ? 2 : 1);
+  }, [text, grid, writable]);
+
+  const mapped = Object.values(map).filter(Boolean);
+  const body = grid.slice(Math.max(0, startRow - 1));
+
+  const go = async () => {
+    setError(null);
+    if (!mapped.length) { setError("Map at least one column first."); return; }
+    setBusy(true);
+    try {
+      const rows = body.map((cells) => {
+        const out: Record<string, unknown> = {};
+        for (const [ix, col] of Object.entries(map)) {
+          if (!col) continue;
+          const raw = (cells[Number(ix)] ?? "").trim();
+          if (raw === "") continue;
+          const c = columns.find((x) => x.column === col);
+          // A measured column was copied in the unit set on screen, so it is
+          // converted back the way a single edited cell is.
+          if (c?.unit) {
+            const base = fromDisplay(raw, c, unitSet, c.applyDatum ? datumShift : null);
+            out[col] = base === null ? raw : base;
+          } else {
+            out[col] = raw;
+          }
+        }
+        return out;
+      }).filter((r) => Object.keys(r).length > 0);
+      if (!rows.length) { setError("Nothing to paste after the start row."); return; }
+      await onPaste(rows);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/30 grid place-items-center p-4"
+      data-testid="wv-paste-dialog">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div className="px-4 py-2 border-b border-gray-200 text-sm font-semibold text-gray-900">
+          Paste Data from Clipboard
+        </div>
+        <div className="p-4 space-y-3 overflow-auto">
+          <p className="text-[11px] text-gray-500">
+            Copy a block of cells in Excel, then paste it here. Map each pasted column to a
+            field in this folder — measured columns are read in the units on screen.
+          </p>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5}
+            data-testid="wv-paste-text" autoFocus
+            placeholder="Paste here (Ctrl-V)…"
+            className="w-full border border-gray-300 rounded p-2 text-[11px] font-mono" />
+
+          {grid.length > 0 && (
+            <>
+              <label className="flex items-center gap-2 text-[11px] text-gray-600">
+                Start at row
+                <input type="number" min={1} max={Math.max(1, grid.length)} value={startRow}
+                  data-testid="wv-paste-startrow"
+                  onChange={(e) => setStartRow(Math.max(1, Number(e.target.value) || 1))}
+                  className="h-7 w-16 border border-gray-300 rounded px-1 text-[11px]" />
+                <span className="text-gray-400">
+                  {body.length} row{body.length === 1 ? "" : "s"} will be added
+                </span>
+              </label>
+
+              <div className="overflow-auto border border-gray-200 rounded">
+                <table className="w-full text-[11px] border-collapse">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      {Array.from({ length: width }, (_, i) => (
+                        <th key={i} className="px-1 py-1 text-left font-medium">
+                          <select value={map[i] ?? ""} data-testid={`wv-paste-map-${i}`}
+                            onChange={(e) => setMap((m) => ({ ...m, [i]: e.target.value }))}
+                            className="h-7 w-full border border-gray-300 rounded px-1 text-[11px] bg-white">
+                            <option value="">— skip —</option>
+                            {writable.map((c) => (
+                              <option key={c.column} value={c.column}>
+                                {c.label}{c.unit ? ` (${displayUnitFor(c, unitSet)?.unit ?? c.unit})` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {body.slice(0, 5).map((r, ri) => (
+                      <tr key={ri} className={ri % 2 ? "bg-gray-50" : ""}>
+                        {Array.from({ length: width }, (_, ci) => (
+                          <td key={ci} className={`px-1.5 py-0.5 whitespace-nowrap ${
+                            map[ci] ? "text-gray-800" : "text-gray-300 line-through"}`}>
+                            {r[ci] ?? ""}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {body.length > 5 && (
+                <p className="text-[10px] text-gray-400">
+                  Showing the first 5 of {body.length}.
+                </p>
+              )}
+            </>
+          )}
+          {error && <p className="text-[11px] text-red-700" data-testid="wv-paste-error">{error}</p>}
+        </div>
+        <div className="px-4 py-2 border-t border-gray-200 flex items-center gap-2">
+          <span className="text-[11px] text-gray-500">
+            {mapped.length} column{mapped.length === 1 ? "" : "s"} mapped
+          </span>
+          <div className="ml-auto flex gap-2">
+            <button type="button" onClick={onCancel}
+              className="h-7 px-3 text-[11px] rounded border border-gray-300 hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="button" onClick={() => void go()} disabled={busy || !mapped.length || !body.length}
+              data-testid="wv-paste-ok"
+              className="h-7 px-3 text-[11px] rounded bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40">
+              {busy ? "Pasting…" : "OK"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
