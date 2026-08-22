@@ -36,7 +36,8 @@ import { Attachments } from "./Attachments.js";
 import { PrintReport } from "./PrintReport.js";
 import { wvDbApi, type WvSchematic, type WvSchematicRow,
   type WvWellhead, type WvWellheadField,
-  type WvDvdSeries, type WvDvdAxis } from "../../entry/wellviewDb.js";
+  type WvDvdSeries, type WvDvdAxis, type WvSavedReport,
+  type WvReportBlockDef } from "../../entry/wellviewDb.js";
 
 interface TemplateEntry {
   name: string;
@@ -116,6 +117,7 @@ function ReportsTab({ db, idwell, onEditTable, onEditRecord }: {
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const qcReports = useQueryClient();
   /** Show only the input reports — "where do I enter data?" in one click. */
   const [entryOnly, setEntryOnly] = useState(false);
 
@@ -128,6 +130,24 @@ function ReportsTab({ db, idwell, onEditTable, onEditRecord }: {
     },
     staleTime: Infinity,
   });
+
+  /** §9.2 My Reports — this user's own designs for this database. */
+  const savedQ = useQuery({
+    queryKey: ["wvdb", db, "saved-reports"],
+    queryFn: () => wvDbApi.savedReports(db),
+  });
+  const mine = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (savedQ.data?.reports ?? []).filter((r) => !q || r.name.toLowerCase().includes(q));
+  }, [savedQ.data, query]);
+  const [editing, setEditing] = useState<{ report: WvSavedReport | null } | null>(null);
+
+  const removeReport = async (r: WvSavedReport) => {
+    if (!window.confirm(`Delete the report "${r.name}"?`)) return;
+    await wvDbApi.deleteReport(db, r.id);
+    if (selected === `saved:${r.id}`) setSelected(null);
+    await qcReports.invalidateQueries({ queryKey: ["wvdb", db, "saved-reports"] });
+  };
 
   const groups = useMemo(() => {
     const reports = indexQ.data?.reports ?? [];
@@ -168,6 +188,51 @@ function ReportsTab({ db, idwell, onEditTable, onEditRecord }: {
           </label>
         </div>
         <div className="overflow-y-auto flex-1 p-1">
+          {/*
+            * §9.2 My Reports — the reports this user designed, above Peloton's
+            * own so they are the first thing seen. They open through the SAME
+            * viewer as a shipped template because the server resolves them
+            * through the same code.
+            */}
+          <div className="mb-2" data-testid="wv-myreports">
+            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5 text-violet-700">
+              <span className="truncate">My Reports</span>
+              <span className="font-normal text-gray-400 tabular-nums ml-auto">
+                {mine.length}
+              </span>
+              <button type="button" data-testid="wv-report-new"
+                onClick={() => setEditing({ report: null })}
+                title="New Report (§9.2) — design a report over this database"
+                className="ml-1 h-5 px-1.5 text-[10px] rounded border border-violet-300 text-violet-700 hover:bg-violet-50">
+                New
+              </button>
+            </div>
+            {!mine.length && (
+              <p className="px-2 py-1 text-[10px] text-gray-400">
+                None yet. New designs a report from this database&rsquo;s subject areas.
+              </p>
+            )}
+            {mine.map((r) => (
+              <div key={r.id} className="flex items-center gap-1 group">
+                <button type="button" onClick={() => setSelected(`saved:${r.id}`)}
+                  data-testid="wv-report-saved"
+                  className={`flex-1 text-left px-2 py-1 rounded text-[11px] leading-snug ${
+                    `saved:${r.id}` === selected ? "bg-violet-50 text-violet-800 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
+                  {r.name}
+                </button>
+                <button type="button" title="Edit Report (§9.2)" data-testid="wv-report-edit"
+                  onClick={() => setEditing({ report: r })}
+                  className="h-5 px-1 text-[10px] text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100">
+                  ✎
+                </button>
+                <button type="button" title="Delete Report (§9.2)" data-testid="wv-report-delete"
+                  onClick={() => void removeReport(r)}
+                  className="h-5 px-1 text-[10px] text-gray-400 hover:text-red-700 opacity-0 group-hover:opacity-100">
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
           {groups.map(([folder, list]) => {
             const entry = INPUT_FOLDER.test(folder);
             return (
@@ -195,7 +260,9 @@ function ReportsTab({ db, idwell, onEditTable, onEditRecord }: {
       <div className="flex-1 min-w-0 border border-gray-200 rounded-lg bg-white flex flex-col min-h-0">
         {selected
           ? <FilledTemplate db={db} html={selected} idwell={idwell}
-              isInput={INPUT_FOLDER.test(selected)}
+              /* A user report is never a data-entry form: those are Peloton's
+                 own Job Setup / Daily Input folders. */
+              isInput={!selected.startsWith("saved:") && INPUT_FOLDER.test(selected)}
               onEditTable={onEditTable} onEditRecord={onEditRecord} />
           : (
             <div className="flex-1 grid place-items-center text-sm text-gray-400 px-6 text-center max-w-md mx-auto">
@@ -211,6 +278,15 @@ function ReportsTab({ db, idwell, onEditTable, onEditRecord }: {
             </div>
           )}
       </div>
+
+      {editing && (
+        <ReportEditor db={db} report={editing.report}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await qcReports.invalidateQueries({ queryKey: ["wvdb", db, "saved-reports"] });
+          }} />
+      )}
     </div>
   );
 }
@@ -282,7 +358,9 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
   // First resolve WITHOUT an anchor to learn which tables the template uses.
   const probeQ = useQuery({
     queryKey: ["wvdb", db, "template", html, idwell, "probe"],
-    queryFn: () => entryApi.get<{ blocks: BlockData[] }>(wvDbApi.templateDataPath(db, html, idwell)),
+    queryFn: () => entryApi.get<{ blocks: BlockData[] }>(html.startsWith("saved:")
+      ? wvDbApi.savedReportDataPath(db, html.slice(6), idwell)
+      : wvDbApi.templateDataPath(db, html, idwell)),
     staleTime: 60_000,
   });
   const tables = (probeQ.data?.blocks ?? []).map((b) => (b.table ?? "").toLowerCase());
@@ -308,11 +386,15 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
 
   const q = useQuery({
     queryKey: ["wvdb", db, "template", html, idwell, anchor?.table ?? "", anchor?.idrec ?? ""],
+    // A saved report (§9.2) comes from its own route, but returns the SAME
+    // shape because the server resolves it through the same function.
     queryFn: () => entryApi.get<{
       report: string; well: { name: string };
       filters?: { table: string; field: string; value: string; label?: string }[];
       blocks: BlockData[];
-    }>(wvDbApi.templateDataPath(db, html, idwell, anchor)),
+    }>(html.startsWith("saved:")
+      ? wvDbApi.savedReportDataPath(db, html.slice(6), idwell, anchor)
+      : wvDbApi.templateDataPath(db, html, idwell, anchor)),
   });
 
   const fmt = (v: string | number | null): string => {
@@ -2123,5 +2205,230 @@ function DvdChart({ series, conv, axisUnit, invertY }: {
         ))}
       </figcaption>
     </figure>
+  );
+}
+
+/**
+ * The report editor (§9.2 "Design Single Well Reports").
+ *
+ * WHAT THIS EDITS, AND WHAT IT DELIBERATELY DOES NOT.
+ *
+ * WellView's editor is a page designer: blocks dragged and sized on a fixed
+ * sheet, master templates, fonts, colours, margins, layering. This app renders
+ * a report as responsive HTML and leaves paper to the print view, so those
+ * settings would have nothing to act on — offering a font picker that changed
+ * nothing would be worse than not offering one.
+ *
+ * What it does edit is the part that decides what a report SAYS, which is the
+ * same thing a decoded .afr carries: the anchor, the blocks, each block's
+ * subject area, and the fields it prints in order. A saved report then goes
+ * through the same resolver as Peloton's 182, so it gets the same unit
+ * conversion, link captions, calculated fields and anchor scoping — not a
+ * lookalike.
+ */
+function ReportEditor({ db, report, onClose, onSaved }: {
+  db: string;
+  report: WvSavedReport | null;
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+}) {
+  const [name, setName] = useState(report?.name ?? "");
+  const [category, setCategory] = useState(report?.category === "My Reports" ? "" : report?.category ?? "");
+  const [anchor, setAnchor] = useState(report?.definition.anchor ?? "");
+  const [blocks, setBlocks] = useState<WvReportBlockDef[]>(
+    report?.definition.blocks?.length
+      ? report.definition.blocks.map((b) => ({ ...b, fields: [...b.fields] }))
+      : [{ table: "", title: "", fields: [] }]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const tablesQ = useQuery({
+    queryKey: ["wvdb", db, "query-tables"],
+    queryFn: () => wvDbApi.queryTables(db),
+    staleTime: Infinity,
+  });
+
+  const setBlock = (i: number, patch: Partial<WvReportBlockDef>) =>
+    setBlocks((bs) => bs.map((b, k) => (k === i ? { ...b, ...patch } : b)));
+
+  const usable = blocks.filter((b) => b.table && b.fields.length);
+
+  const save = async () => {
+    setBusy(true); setError(null);
+    try {
+      await wvDbApi.saveReport(db, {
+        ...(report ? { id: report.id } : {}),
+        name: name.trim(),
+        category: category.trim() || undefined,
+        definition: { anchor: anchor || null, blocks: usable },
+      });
+      await onSaved();
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 p-3 sm:p-6" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-full h-full max-w-3xl mx-auto flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()} data-testid="wv-report-editor">
+        <div className="px-3 py-2 bg-gray-800 text-white flex items-center gap-3 shrink-0">
+          <span className="text-sm font-semibold">{report ? "Edit report" : "New report"}</span>
+          <button type="button" onClick={onClose} data-testid="wv-re-close"
+            className="ml-auto h-7 px-3 text-[11px] rounded bg-gray-700 hover:bg-gray-600">Close</button>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-auto p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="text-[11px] text-gray-600">
+              Name
+              <input value={name} onChange={(e) => setName(e.target.value)} data-testid="wv-re-name"
+                placeholder="Daily cost summary"
+                className="mt-0.5 w-full h-8 border border-gray-300 rounded px-2 text-xs" />
+            </label>
+            <label className="text-[11px] text-gray-600">
+              Category (optional)
+              <input value={category} onChange={(e) => setCategory(e.target.value)}
+                placeholder="My Reports" data-testid="wv-re-category"
+                className="mt-0.5 w-full h-8 border border-gray-300 rounded px-2 text-xs" />
+            </label>
+          </div>
+
+          <label className="text-[11px] text-gray-600 block">
+            Anchor (§9.2) — the subject area the report splits on
+            <select value={anchor} onChange={(e) => setAnchor(e.target.value)}
+              data-testid="wv-re-anchor"
+              className="mt-0.5 w-full h-8 border border-gray-300 rounded px-1 text-xs bg-white">
+              <option value="">None — one report for the whole well</option>
+              <option value="wvJob">Job — one report per job</option>
+              <option value="wvJobReport">Daily Operation — one report per day</option>
+            </select>
+          </label>
+
+          <div>
+            <p className="text-xs font-medium text-gray-800">Blocks</p>
+            <p className="text-[11px] text-gray-500 mb-1.5">
+              Each block prints one subject area. Fields print in the order listed — use the arrows
+              to move one. Fields the app <b>computes</b> can be printed too; they are marked green
+              on the report, as WellView marks them.
+            </p>
+            <ul className="space-y-2">
+              {blocks.map((b, i) => (
+                <li key={i} className="border border-gray-200 rounded p-2 space-y-1.5"
+                  data-testid="wv-re-block">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <select value={b.table} data-testid="wv-re-table"
+                      onChange={(e) => setBlock(i, { table: e.target.value, fields: [] })}
+                      className="h-8 border border-gray-300 rounded px-1 text-xs bg-white min-w-[12rem]">
+                      <option value="">Subject area…</option>
+                      {(tablesQ.data?.tables ?? []).map((t) => (
+                        <option key={t.table} value={t.table}>{t.label}</option>
+                      ))}
+                    </select>
+                    <input value={b.title ?? ""} onChange={(e) => setBlock(i, { title: e.target.value })}
+                      placeholder="Block title (optional)" data-testid="wv-re-title"
+                      className="h-8 border border-gray-300 rounded px-2 text-xs flex-1 min-w-[8rem]" />
+                    <button type="button" data-testid="wv-re-block-remove"
+                      onClick={() => setBlocks((bs) => bs.filter((_, k) => k !== i))}
+                      disabled={blocks.length === 1} title="Remove this block"
+                      className="h-8 w-8 text-xs rounded border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-30">×</button>
+                  </div>
+                  {b.table && (
+                    <ReportFields db={db} table={b.table} chosen={b.fields}
+                      onChange={(fields) => setBlock(i, { fields })} />
+                  )}
+                </li>
+              ))}
+            </ul>
+            <button type="button" data-testid="wv-re-block-add"
+              onClick={() => setBlocks((bs) => [...bs, { table: "", title: "", fields: [] }])}
+              className="mt-1.5 h-7 px-2 text-[11px] rounded border border-gray-300 hover:bg-gray-50">
+              Add a block
+            </button>
+          </div>
+
+          <p className="text-[10px] text-gray-400 border-t border-gray-100 pt-2">
+            The desktop editor also sets page size, margins, fonts, colours and master templates,
+            and positions blocks on a sheet. This app renders reports as a page that reflows, and
+            prints through the report&rsquo;s own Print view, so those settings are not offered
+            rather than offered and ignored.
+          </p>
+        </div>
+
+        <div className="px-4 py-2 border-t border-gray-200 flex items-center gap-2 shrink-0">
+          <span className="text-[11px] text-gray-500">
+            {usable.length} block{usable.length === 1 ? "" : "s"} with fields
+          </span>
+          {error && <span className="text-[11px] text-red-700" data-testid="wv-re-error">{error}</span>}
+          <div className="ml-auto flex gap-2">
+            <button type="button" onClick={onClose}
+              className="h-8 px-3 text-xs rounded border border-gray-300 hover:bg-gray-50">Cancel</button>
+            <button type="button" onClick={() => void save()} data-testid="wv-re-save"
+              disabled={busy || !name.trim() || !usable.length}
+              className="h-8 px-4 text-xs rounded bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40">
+              {report ? "Save changes" : "Save report"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The fields of one subject area, chosen and ORDERED.
+ *
+ * Order is the whole point — §9.2's editor has up/down arrows for exactly this
+ * — so the chosen list is kept as a list, not a set, and the picker adds to
+ * the end.
+ */
+function ReportFields({ db, table, chosen, onChange }: {
+  db: string; table: string; chosen: string[]; onChange: (f: string[]) => void;
+}) {
+  const q = useQuery({
+    queryKey: ["wvdb", db, "query-fields", table],
+    queryFn: () => wvDbApi.queryFields(db, table),
+    enabled: !!table,
+    staleTime: Infinity,
+  });
+  const all = q.data?.fields ?? [];
+  const labelOf = (f: string) =>
+    all.find((x) => x.field.toLowerCase() === f.toLowerCase())?.label ?? f;
+  const move = (i: number, by: number) => {
+    const next = [...chosen];
+    const j = i + by;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  };
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5">
+        <select value="" data-testid="wv-re-field-add"
+          onChange={(e) => { if (e.target.value) onChange([...chosen, e.target.value]); }}
+          className="h-8 border border-gray-300 rounded px-1 text-xs bg-white flex-1">
+          <option value="">Add a field…</option>
+          {all.filter((f) => !chosen.some((c) => c.toLowerCase() === f.field.toLowerCase()))
+            .map((f) => <option key={f.field} value={f.field}>{f.label}</option>)}
+        </select>
+      </div>
+      {!chosen.length && (
+        <p className="text-[10px] text-gray-400">No fields yet — a block with none is not saved.</p>
+      )}
+      <ul className="space-y-0.5">
+        {chosen.map((f, i) => (
+          <li key={f} className="flex items-center gap-1 text-[11px]" data-testid="wv-re-field">
+            <span className="w-5 text-gray-400 tabular-nums text-right">{i + 1}</span>
+            <span className="flex-1 truncate text-gray-800">{labelOf(f)}</span>
+            <button type="button" onClick={() => move(i, -1)} disabled={i === 0}
+              title="Move up" className="h-6 w-6 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30">↑</button>
+            <button type="button" onClick={() => move(i, 1)} disabled={i === chosen.length - 1}
+              title="Move down" className="h-6 w-6 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30">↓</button>
+            <button type="button" onClick={() => onChange(chosen.filter((_, k) => k !== i))}
+              title="Remove" data-testid="wv-re-field-remove"
+              className="h-6 w-6 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">×</button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

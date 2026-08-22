@@ -384,6 +384,15 @@ export interface WvDaysVsDepth {
   unavailable: string[];
 }
 
+/** A report the user designed (§9.2 "My Reports"). */
+export interface WvReportBlockDef { table: string; title?: string | null; fields: string[] }
+export interface WvReportDef { anchor?: string | null; blocks: WvReportBlockDef[] }
+export interface WvSavedReport {
+  id: string; name: string; category: string;
+  definition: WvReportDef;
+  createdBy: string; updatedAt: string;
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
@@ -575,6 +584,24 @@ export const wvDbApi = {
    * Distinct values a column actually holds in this database — Quick Query's
    * Look-for lookup, and the library lookup in Edit Data.
    */
+  /** §9.2 My Reports — the reports this user designed for this database. */
+  savedReports: (db: string) =>
+    entryApi.get<{ reports: WvSavedReport[]; note?: string }>(
+      `/wellview/dbs/${enc(db)}/reports`),
+
+  saveReport: (db: string, body: {
+    id?: string; name: string; category?: string; definition: WvReportDef;
+  }) => entryApi.post<{ id: string; name: string }>(`/wellview/dbs/${enc(db)}/reports`, body),
+
+  deleteReport: (db: string, id: string) =>
+    entryApi.del<{ deleted: string }>(`/wellview/dbs/${enc(db)}/reports/${enc(id)}`),
+
+  /** Where a saved report's data comes from — the same shape a template's does. */
+  savedReportDataPath: (db: string, id: string, well: string,
+    anchor?: { table: string; idrec: string } | null) =>
+    `/wellview/dbs/${enc(db)}/reports/${enc(id)}/data?well=${enc(well)}`
+    + (anchor ? `&anchor=${enc(`${anchor.table}:${anchor.idrec}`)}` : ""),
+
   /** §8.1 Custom SQL — one read-only SELECT returning an idwell column. */
   runSql: (db: string, sql: string) =>
     entryApi.post<{ wells: { idwell: string; name: string }[]; matched: number;

@@ -844,3 +844,79 @@ test("the query builder authors And/Or, prompts, lookups and Custom SQL", async 
       { timeout: 15_000 })
     .toMatch(/42 wells/);
 });
+
+/**
+ * The report editor (§9.2 "Design Single Well Reports" / "My Reports").
+ *
+ * The design point is that a report the user builds goes through the SAME
+ * resolver as Peloton's 182, so it opens in the same viewer and gets the same
+ * units, captions, calculated fields and anchor. The API tests assert that
+ * equivalence directly; this drives the editor a user would use.
+ *
+ * Not tested because deliberately not built: page size, margins, fonts,
+ * colours, master templates and block positioning. This app renders reports as
+ * a page that reflows, so those settings would have nothing to act on.
+ */
+test("designs, saves, renders and edits a report of one's own", async ({ page }) => {
+  test.setTimeout(90_000);
+  page.on("dialog", (d) => void d.accept(""));
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12 - Phase and Prod" })
+    .first().dblclick();
+  await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+
+  // §9.2: "You must first select the My Reports folder."
+  await expect(page.getByTestId("wv-myreports")).toBeVisible();
+  const name = `E2E Report ${Date.now() % 100000}`;
+  try {
+    await page.getByTestId("wv-report-new").click();
+    await expect(page.getByTestId("wv-report-editor")).toBeVisible();
+    await page.getByTestId("wv-re-name").fill(name);
+    // An anchor makes it one report per day, as §9.2's own example does.
+    await page.getByTestId("wv-re-anchor").selectOption("wvJobReport");
+    await page.getByTestId("wv-re-table").first().selectOption({ label: "Daily Operations" });
+    await expect
+      .poll(async () => page.getByTestId("wv-re-field-add").first().locator("option").count(),
+        { timeout: 15_000 }).toBeGreaterThan(3);
+
+    // Two fields, in the order they are added — order is the point of the arrows.
+    await page.getByTestId("wv-re-field-add").first().selectOption({ index: 1 });
+    await page.getByTestId("wv-re-field-add").first().selectOption({ index: 1 });
+    await expect(page.getByTestId("wv-re-field")).toHaveCount(2);
+    const before = await page.getByTestId("wv-re-field").allTextContents();
+    await page.getByTestId("wv-re-field").first().getByTitle("Move down").click();
+    const after = await page.getByTestId("wv-re-field").allTextContents();
+    expect(after[0]).not.toBe(before[0]);
+
+    await page.getByTestId("wv-re-save").click();
+    await expect(page.getByTestId("wv-report-editor")).toBeHidden({ timeout: 15_000 });
+
+    // It lists under My Reports and opens in the ordinary report viewer.
+    const saved = page.getByTestId("wv-report-saved").filter({ hasText: name });
+    await expect(saved).toHaveCount(1, { timeout: 15_000 });
+    await saved.click();
+    await expect(page.locator("body")).toContainText(name, { timeout: 15_000 });
+    await expect(page.locator("body")).toContainText(/\d+ of \d+ blocks have rows/);
+
+    // Editing reopens it with what was saved, rather than a blank form.
+    await page.getByTestId("wv-report-edit").first().click({ force: true });
+    await expect(page.getByTestId("wv-re-name")).toHaveValue(name);
+    await expect(page.getByTestId("wv-re-anchor")).toHaveValue("wvJobReport");
+    await expect(page.getByTestId("wv-re-field")).toHaveCount(2);
+    await page.getByTestId("wv-re-close").click();
+  } finally {
+    const row = page.getByTestId("wv-report-saved").filter({ hasText: name });
+    if (await row.count()) {
+      await page.getByTestId("wv-report-delete").first().click({ force: true });
+      await expect(row).toHaveCount(0, { timeout: 10_000 });
+    }
+  }
+});

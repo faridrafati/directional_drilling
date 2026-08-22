@@ -217,7 +217,7 @@ model EntryRig {
 /// A well being drilled now — the DR.xls header band is well-level, so it lives
 /// here and is filled once instead of on every daily report.
 model EntryWell {
-  id                     String                 @id @default(cuid())
+  id                     String                   @id @default(cuid())
   rigId                  String
   name                   String
   field                  String?
@@ -294,10 +294,10 @@ model EntryWell {
   otherElevation         Float?
   /// Free text: "Take chopper to above reference lat/long." (report 30).
   directionsToWell       String?
-  active                 Boolean                @default(true)
-  createdAt              DateTime               @default(now())
-  updatedAt              DateTime               @updatedAt
-  rig                    EntryRig               @relation(fields: [rigId], references: [id], onDelete: Cascade)
+  active                 Boolean                  @default(true)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  rig                    EntryRig                 @relation(fields: [rigId], references: [id], onDelete: Cascade)
   assignments            EntryAssignment[]
   reports                EntryReport[]
   jobs                   Job[]
@@ -407,49 +407,49 @@ model EntryReport {
 
   // ── Summary / weather ──
   /// a.json operations.summary — the day's narrative.
-  description     String?
+  description             String?
   /// a.json operations.at_report_time — where the rig is RIGHT NOW, e.g.
   /// "RIH 24" H.S. BHA at 21m." a.json marks the `operations` block required.
-  opsAtReportTime String?
+  opsAtReportTime         String?
   /// a.json operations.next_report_period — what is planned next.
-  opsNextPeriod   String?
-  windSpeedDir    String?
-  waveVisible     String?
-  freshWater      Float?
-  fuel            Float?
+  opsNextPeriod           String?
+  windSpeedDir            String?
+  waveVisible             String?
+  freshWater              Float?
+  fuel                    Float?
   // ── reports 06 / 07 header cells ──
   /// Weather, road and hole condition — free text, as the sheet prints them.
-  weather         String?
-  roadCondition   String?
-  holeCondition   String?
+  weather                 String?
+  roadCondition           String?
+  holeCondition           String?
   /// Air temperature in °C (the samples print °F; we print our own unit).
-  temperatureC    Float?
+  temperatureC            Float?
   /// Start depth on the TVD scale. `endDepthTvd` above is its other half —
   /// report 07 prints both, report 06 neither.
-  startDepthTvd   Float?
+  startDepthTvd           Float?
   /// Report 07's free-text "Remarks", distinct from `description` (the 24-hour
   /// summary) and from `opsAtReportTime`.
-  remarks         String?
+  remarks                 String?
   /// Days since the last recordable incident. `daysLti` above is lost-time.
-  daysRi          Float?
+  daysRi                  Float?
   // ── report 18's daily geological band ──
   /// The day's gas readings, in percent, as the mud logger reports them. Four
   /// KINDS of gas, each with an average and a maximum — a background average of
   /// 2% with a 40% connection peak is a different well from one reading 2%
   /// flat, and a single "gas" column cannot say which you have.
-  avgBackgroundGasPct Float?
-  maxBackgroundGasPct Float?
-  avgConnectionGasPct Float?
-  maxConnectionGasPct Float?
-  avgTripGasPct       Float?
-  maxTripGasPct       Float?
-  avgDrillGasPct      Float?
-  maxDrillGasPct      Float?
+  avgBackgroundGasPct     Float?
+  maxBackgroundGasPct     Float?
+  avgConnectionGasPct     Float?
+  maxConnectionGasPct     Float?
+  avgTripGasPct           Float?
+  maxTripGasPct           Float?
+  avgDrillGasPct          Float?
+  maxDrillGasPct          Float?
   /// Tubing and casing pressure, psi. A COMPLETION day reports these where a
   /// drilling day reports depth — report 23 prints both, and neither is on the
   /// drilling sheet.
-  pTubingPsi          Float?
-  pCasingPsi          Float?
+  pTubingPsi              Float?
+  pCasingPsi              Float?
   /// The geologist's own narrative, kept apart from the driller's `description`
   /// / `opsAtReportTime` / `opsNextPeriod`: the two are written by different
   /// people about different things, and report 18 prints only these.
@@ -940,19 +940,19 @@ model EntryBulkMaterial {
 
 /// Wellhead Component — a.json `wellhead_component`.
 model EntryWellheadComponent {
-  id          String      @id @default(cuid())
-  reportId    String
-  order       Int         @default(0)
-  installDate String? /// install_date, as printed
-  sizeIn      Float? /// size_in
-  type        String?
-  make        String?
+  id                String      @id @default(cuid())
+  reportId          String
+  order             Int         @default(0)
+  installDate       String? /// install_date, as printed
+  sizeIn            Float? /// size_in
+  type              String?
+  make              String?
   /// Model and serial number. NOT in a.json's `wellhead_component`, but report
   /// 04 prints both beside the make — the archive simply never carried them, and
   /// a spool without its serial cannot be traced back to its certificate.
-  model       String?
-  sn          String?
-  wpPsi       Float? /// wp_psi — working pressure
+  model             String?
+  sn                String?
+  wpPsi             Float? /// wp_psi — working pressure
   /// Report 22's wellhead-component table prints the SPOOL: which section it is,
   /// what connects above and below, and at what size. A wellhead is a stack, and
   /// a row that cannot say what it lands in is not a row anybody can order from.
@@ -969,8 +969,8 @@ model EntryWellheadComponent {
   wpTopPsi          Float? /// working pressure at the TOP flange, distinct from wpPsi
   topRingGasket     String? /// "BX-160", "R-54"
   boreMinIn         Float?
-  com         String?
-  report      EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  com               String?
+  report            EntryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId, order])
 }
@@ -1521,15 +1521,15 @@ model CostItem {
 /// Well-level, not per-day: "Original Hole / KO MD 1,381.2" is the same row on
 /// every report day.
 model EntryWellbore {
-  id        String   @id @default(cuid())
-  wellId    String
-  order     Int      @default(0)
-  name      String? /// e.g. "Original Hole", "ST-1"
+  id               String   @id @default(cuid())
+  wellId           String
+  order            Int      @default(0)
+  name             String? /// e.g. "Original Hole", "ST-1"
   /// "Original Hole" | "Sidetrack" | "Re-drill" | "Lateral"
-  kind      String?
+  kind             String?
   /// The azimuth the vertical section is projected onto, degrees. Report 04
   /// prints it; without it a VS figure is a number with no direction attached.
-  vsAzimuthDeg Float?
+  vsAzimuthDeg     Float?
   /// A sidetrack is drilled OUT OF another wellbore; report 30 prints which.
   ///
   /// Deliberately a PLAIN column and not a self-relation: SQLite cannot add a
@@ -1540,24 +1540,24 @@ model EntryWellbore {
   parentWellboreId String?
   /// Report 22 prints the wellbore's OWN identifiers beside the well's — a
   /// sidetrack gets its own UWI and its own bottom-hole location.
-  apiUwi      String?
-  btmLocation String?
+  apiUwi           String?
+  btmLocation      String?
   /// Kick-off measured depth, mKB. EntryReport.kop stays the DR.xls per-day
   /// free text and is NOT migrated into this column.
-  koMdMkb   Float?
-  createdAt DateTime @default(now())
+  koMdMkb          Float?
+  createdAt        DateTime @default(now())
 
   otherInHole          OtherInHole[]
   bottomHoleCores      BottomHoleCore[]
   rodStrings           RodString[]
   schematicAnnotations SchematicAnnotation[]
 
-  well               EntryWell                @relation(fields: [wellId], references: [id], onDelete: Cascade)
-  drillingParameters EntryDrillingParameter[]
-  bhaRuns            EntryBhaRun[]
-  holeSections       HoleSection[]
-  casingStrings      CasingString[]
-  cementJobs         CementJob[]
+  well                 EntryWell                @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  drillingParameters   EntryDrillingParameter[]
+  bhaRuns              EntryBhaRun[]
+  holeSections         HoleSection[]
+  casingStrings        CasingString[]
+  cementJobs           CementJob[]
   samplingRequirements GeoSamplingRequirement[]
   zones                WellZone[]
   tubingStrings        TubingString[]
@@ -1839,19 +1839,19 @@ model EntryBhaSensor {
 /// report 19 exists to print them beside each other, and a prognosis that
 /// vanishes when the top is drilled cannot be compared with anything.
 model WellFormation {
-  id          String  @id @default(cuid())
-  wellId      String
-  order       Int     @default(0)
-  name        String?
+  id             String   @id @default(cuid())
+  wellId         String
+  order          Int      @default(0)
+  name           String?
   /// "Dolomite" | "Shale" | "Limestone" | "Sandstone" — as printed.
-  lithDes     String?
+  lithDes        String?
   /// "Marker" | "Reservoir" | "Seal" — the element the formation plays.
-  elementType String?
+  elementType    String?
   /// Report 22 prints the age beside the name; a formation is identified by
   /// both, and two beds called "Cretaceous" are not the same formation.
-  geologicAge String?
+  geologicAge    String?
   /// Report 19's "Layer Name", where a formation is subdivided.
-  layerName   String?
+  layerName      String?
   // ── prognosis (report 20) ──
   /// Subsea depths, metres. The samples print "Prog Depth Top SS (ft)".
   progDepthTopSs Float?
@@ -1859,23 +1859,23 @@ model WellFormation {
   progDepthBtmSs Float?
   progBtmTvd     Float?
   // ── as drilled (reports 18, 19) ──
-  drillTopMd  Float?
-  drillTopTvd Float?
-  drillBtmMd  Float?
-  drillBtmTvd Float?
+  drillTopMd     Float?
+  drillTopTvd    Float?
+  drillBtmMd     Float?
+  drillBtmTvd    Float?
   /// Report 19's "Final Top MD" / "Final Btm MD" — the tops after the log was
   /// tied in, which is not the same as where the driller called them.
-  finalTopMd  Float?
-  finalBtmMd  Float?
+  finalTopMd     Float?
+  finalBtmMd     Float?
   /// Rate of penetration through this formation, m/hr.
-  ropMHr      Float?
+  ropMHr         Float?
   /// Pore and frac pressure in ppg, temperature in °C, H2S in percent.
-  pPorePpg    Float?
-  pFracPpg    Float?
-  temperatureC Float?
-  h2sConcPct  Float?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  pPorePpg       Float?
+  pFracPpg       Float?
+  temperatureC   Float?
+  h2sConcPct     Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
 
@@ -1962,18 +1962,18 @@ model EntryLithology {
 /// prints two blocks, but every column except the gas readings is shared, and
 /// two tables would need every query and every entry grid twice over.
 model EntryShow {
-  id           String  @id @default(cuid())
-  reportId     String
-  order        Int     @default(0)
+  id             String  @id @default(cuid())
+  reportId       String
+  order          Int     @default(0)
   /// "Oil" | "Gas" — which block of report 18 the row prints in.
-  kind         String?
-  topMkb       Float?
-  btmMkb       Float?
+  kind           String?
+  topMkb         Float?
+  btmMkb         Float?
   /// Oil shows only: "Poor" | "Fair" | "Good" | "Excellent".
-  showQuality  String?
+  showQuality    String?
   /// Oil shows only: "Cut" | "Fluorescence" | "Stain" | "Bleeding".
-  showOrigin   String?
-  showType     String?
+  showOrigin     String?
+  showType       String?
   /// Gas shows only, in percent.
   totalGasAvgPct Float?
   totalGasMinPct Float?
@@ -1986,9 +1986,9 @@ model EntryShow {
 
 /// A wireline or LWD run — report 18's "Logs" section.
 model EntryLogRun {
-  id             String  @id @default(cuid())
+  id             String   @id @default(cuid())
   reportId       String
-  order          Int     @default(0)
+  order          Int      @default(0)
   time           String? /// HH:MM as printed
   runNo          String?
   /// Whether the hole was cased when it was logged — reports 23 and 30 print it,
@@ -2006,15 +2006,15 @@ model EntryLogRun {
 
 /// A reservoir the well penetrates — report 22 lists them.
 model Reservoir {
-  id             String  @id @default(cuid())
-  wellId         String
-  order          Int     @default(0)
-  name           String?
-  topMkb         Float?
-  btmMkb         Float?
+  id          String  @id @default(cuid())
+  wellId      String
+  order       Int     @default(0)
+  name        String?
+  topMkb      Float?
+  btmMkb      Float?
   /// The datum depth the reservoir's pressures are referred to.
-  datumDepthM    Float?
-  fluidType      String? /// "Oil" | "Gas" | "Water" | "Condensate"
+  datumDepthM Float?
+  fluidType   String? /// "Oil" | "Gas" | "Water" | "Condensate"
 
   well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
 
@@ -2102,16 +2102,16 @@ model PerforationStatus {
 /// A completion / tubing string — reports 24 and 30, and the schematic's
 /// completion side ("2-1; Tubing", "2-4; TRSSV").
 model TubingString {
-  id             String  @id @default(cuid())
-  wellId         String
-  wellboreId     String?
-  order          Int     @default(0)
-  description    String?
-  runDate        String?
+  id            String   @id @default(cuid())
+  wellId        String
+  wellboreId    String?
+  order         Int      @default(0)
+  description   String?
+  runDate       String?
   /// When it came OUT. Report 23 prints "Tubing Run" and "Tubing Pulled" as two
   /// tables against the day, and a string with only a run date can never appear
   /// in the second one.
-  pullDate       String?
+  pullDate      String?
   /// A DESIGNED string rather than one that was run.
   ///
   /// Report 29 draws "proposed" beside "actual", and its sample's proposed side
@@ -2119,14 +2119,14 @@ model TubingString {
   /// actual's 2-1 to 2-8 — not a geological prognosis. So the two pictures are
   /// the same well with a different STRING in it, and this is the flag that
   /// says which one a string is.
-  proposed       Boolean?
-  stringLengthM  Float?
-  setDepthMkb    Float?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  proposed      Boolean?
+  stringLengthM Float?
+  setDepthMkb   Float?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  well       EntryWell        @relation(fields: [wellId], references: [id], onDelete: Cascade)
-  wellbore   EntryWellbore?   @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+  well       EntryWell         @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore   EntryWellbore?    @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
   components TubingComponent[]
 
   @@index([wellId, order])
@@ -2176,16 +2176,16 @@ model PlugBack {
 /// which is definitive. The stations themselves are `EntrySurvey` (actual) and
 /// `WellPlanStation` (proposed); this is the index over them.
 model DeviationSurveyRecord {
-  id           String   @id @default(cuid())
-  wellId       String
-  order        Int      @default(0)
-  date         String?
-  des          String?
+  id         String   @id @default(cuid())
+  wellId     String
+  order      Int      @default(0)
+  date       String?
+  des        String?
   /// Proposed rather than shot.
-  proposed     Boolean?
+  proposed   Boolean?
   /// The one the well is officially positioned by.
-  definitive   Boolean?
-  company      String?
+  definitive Boolean?
+  company    String?
 
   well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
 
@@ -2198,24 +2198,24 @@ model DeviationSurveyRecord {
 /// stored: an allocated rate from the operator is not always the volume over
 /// the days, and report 27 prints whichever the operator reported.
 model ProductionPeriod {
-  id              String  @id @default(cuid())
-  wellId          String
-  zoneId          String?
-  order           Int     @default(0)
-  startDate       String?
-  endDate         String?
+  id               String  @id @default(cuid())
+  wellId           String
+  zoneId           String?
+  order            Int     @default(0)
+  startDate        String?
+  endDate          String?
   /// "Produce" | "Inject" | "Shut In" | "Workover".
-  activityType    String?
-  prodTimeDays    Float?
-  downTimeDays    Float?
-  volOilBbl       Float?
-  volWaterBbl     Float?
-  volResGasMcf    Float?
-  qOilBblD        Float?
-  qWaterBblD      Float?
-  qResGasMcfD     Float?
+  activityType     String?
+  prodTimeDays     Float?
+  downTimeDays     Float?
+  volOilBbl        Float?
+  volWaterBbl      Float?
+  volResGasMcf     Float?
+  qOilBblD         Float?
+  qWaterBblD       Float?
+  qResGasMcfD      Float?
   waterGasRatioPct Float?
-  com             String?
+  com              String?
 
   well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
   zone WellZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
@@ -2225,24 +2225,24 @@ model ProductionPeriod {
 
 /// A downhole equipment failure — report 25 pivots cost on `failureType`.
 model EquipmentFailure {
-  id              String  @id @default(cuid())
-  wellId          String
-  order           Int     @default(0)
-  date            String?
+  id               String  @id @default(cuid())
+  wellId           String
+  order            Int     @default(0)
+  date             String?
   /// "Wear" | "Worn" | "Parted" | "Collapse" | "Hole" | "Other" — report 25's
   /// stack, printed with "(blank)" where nobody classified it.
-  failureType     String?
-  componentDes    String?
+  failureType      String?
+  componentDes     String?
   /// Report 22's Production Failures block: what failed, why, and when it was
   /// put right. `componentDes` is the DESCRIPTION; `failedItem` is the item.
-  failedItem      String?
-  cause           String?
-  resolvedDate    String?
+  failedItem       String?
+  cause            String?
+  resolvedDate     String?
   /// What it cost to put right.
-  cost            Float?
+  cost             Float?
   /// Who the cost is charged to, as the interval problems record it.
   accountableParty String?
-  com             String?
+  com              String?
 
   well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
 
@@ -2280,19 +2280,19 @@ model Stimulation {
 /// 08 draws one curve from each, and merging them into one table would make
 /// "plan vs actual" impossible to state.
 model WellPlanStation {
-  id     String @id @default(cuid())
-  wellId String
-  order  Int    @default(0)
-  md     Float?
-  inc    Float?
-  azi    Float?
-  tvd    Float?
+  id      String  @id @default(cuid())
+  wellId  String
+  order   Int     @default(0)
+  md      Float?
+  inc     Float?
+  azi     Float?
+  tvd     Float?
   /// North/south and east/west offsets from the surface location, metres.
-  ns     Float?
-  ew     Float?
+  ns      Float?
+  ew      Float?
   /// Vertical section — the offset projected onto the plan's VS azimuth.
-  vs     Float?
-  dls    Float?
+  vs      Float?
+  dls     Float?
   /// Free text: "KOP", "End of build", "Target A".
   comment String?
 
@@ -2487,7 +2487,6 @@ model CementFluidAdditive {
   @@index([cementFluidId, order])
 }
 
-
 /// ══ what reports 22 and 30 print and had nowhere to live ═════════════════════
 ///
 /// Everything below is read by the two "everything about the well" reports and
@@ -2500,10 +2499,10 @@ model CementFluidAdditive {
 /// a packer, a fish. Reports 22 and 30 both print it; 30 also prints when it was
 /// run and when it came out, because "still down there" is the whole question.
 model OtherInHole {
-  id         String  @id @default(cuid())
+  id         String   @id @default(cuid())
   wellId     String
   wellboreId String?
-  order      Int     @default(0)
+  order      Int      @default(0)
   des        String? /// "Bridge Plug - Permanent"
   odIn       String? /// TEXT: the sheet prints 7, 9 5/8
   idIn       Float?
@@ -2527,19 +2526,19 @@ model OtherInHole {
 /// percentage: the sample prints metres recovered, and the percentage is a
 /// division anyone can do but nobody can undo.
 model BottomHoleCore {
-  id          String  @id @default(cuid())
-  wellId      String
-  wellboreId  String?
-  order       Int     @default(0)
-  coreNo      String?
-  type        String? /// "Conventional" | "Oriented" | "Sidewall"
-  topMkb      Float?
-  btmMkb      Float?
-  recoveredM  Float?
-  date        String?
-  com         String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  wellId     String
+  wellboreId String?
+  order      Int      @default(0)
+  coreNo     String?
+  type       String? /// "Conventional" | "Oriented" | "Sidewall"
+  topMkb     Float?
+  btmMkb     Float?
+  recoveredM Float?
+  date       String?
+  com        String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   well     EntryWell      @relation(fields: [wellId], references: [id], onDelete: Cascade)
   wellbore EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
@@ -2550,10 +2549,10 @@ model BottomHoleCore {
 /// A sucker-rod string, and its make-up. Shaped like TubingString/TubingComponent
 /// because report 30 prints them the same way — a header line and a tally.
 model RodString {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   wellId      String
   wellboreId  String?
-  order       Int     @default(0)
+  order       Int      @default(0)
   description String?
   runDate     String?
   setDepthMkb Float?
@@ -2561,16 +2560,16 @@ model RodString {
   updatedAt   DateTime @updatedAt
 
   components RodStringComponent[]
-  well       EntryWell      @relation(fields: [wellId], references: [id], onDelete: Cascade)
-  wellbore   EntryWellbore? @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
+  well       EntryWell            @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  wellbore   EntryWellbore?       @relation(fields: [wellboreId], references: [id], onDelete: SetNull)
 
   @@index([wellId, order])
 }
 
 model RodStringComponent {
-  id            String  @id @default(cuid())
+  id            String   @id @default(cuid())
   rodStringId   String
-  order         Int     @default(0)
+  order         Int      @default(0)
   itemDes       String?
   odNominalIn   String? /// TEXT: the sheet prints 7/8, 1
   massPerLenKgM Float?
@@ -2590,34 +2589,34 @@ model RodStringComponent {
 /// report 30 prints 23 named properties of it, and a pump described by four of
 /// them is not a pump anybody can order a replacement for.
 model RodPump {
-  id                          String  @id @default(cuid())
-  wellId                      String
-  order                       Int     @default(0)
-  make                        String?
-  model                       String?
-  serialNo                    String?
-  pumpBoreIn                  Float?
-  apiPumpType                 String?
-  apiBarrelType               String?
-  apiAnchorType               String?
-  seatAssyType                String?
-  barrelLenM                  Float?
-  nomPlungerLenM              Float?
-  upperExtLenM                Float?
-  lowerExtLenM                Float?
-  plungerOdClearanceIn        Float?
-  seatingAssemblyDes          String?
-  seatAssySizeIn              Float?
-  apiBarrelMaterial           String?
-  apiPlungerMaterial          String?
-  gasAnchorOdIn               Float?
-  gasAnchorLenM               Float?
-  travelingValveBallMaterial  String?
-  travelingValveSeatMaterial  String?
-  standingValveBallMaterial   String?
-  standingValveSeatMaterial   String?
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
+  id                         String   @id @default(cuid())
+  wellId                     String
+  order                      Int      @default(0)
+  make                       String?
+  model                      String?
+  serialNo                   String?
+  pumpBoreIn                 Float?
+  apiPumpType                String?
+  apiBarrelType              String?
+  apiAnchorType              String?
+  seatAssyType               String?
+  barrelLenM                 Float?
+  nomPlungerLenM             Float?
+  upperExtLenM               Float?
+  lowerExtLenM               Float?
+  plungerOdClearanceIn       Float?
+  seatingAssemblyDes         String?
+  seatAssySizeIn             Float?
+  apiBarrelMaterial          String?
+  apiPlungerMaterial         String?
+  gasAnchorOdIn              Float?
+  gasAnchorLenM              Float?
+  travelingValveBallMaterial String?
+  travelingValveSeatMaterial String?
+  standingValveBallMaterial  String?
+  standingValveSeatMaterial  String?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
   well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
 
@@ -2626,18 +2625,18 @@ model RodPump {
 
 /// A swab run and what it recovered, per zone.
 model Swab {
-  id           String  @id @default(cuid())
-  wellId       String
-  zoneId       String?
-  order        Int     @default(0)
-  date         String?
-  swabCompany  String?
-  totalVolBbl  Float?
-  totalOilBbl  Float?
-  totalBswBbl  Float?
-  com          String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  wellId      String
+  zoneId      String?
+  order       Int      @default(0)
+  date        String?
+  swabCompany String?
+  totalVolBbl Float?
+  totalOilBbl Float?
+  totalBswBbl Float?
+  com         String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   well EntryWell @relation(fields: [wellId], references: [id], onDelete: Cascade)
   zone WellZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
@@ -2648,9 +2647,9 @@ model Swab {
 /// A document attached to the well. The report prints the DESCRIPTION only, so
 /// that is what is required; the reference is where it actually lives.
 model WellAttachment {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   wellId    String
-  order     Int     @default(0)
+  order     Int      @default(0)
   des       String?
   kind      String? /// "Drawing" | "Report" | "Photo" | "Certificate"
   reference String? /// a path, a URL or a file number — wherever it is kept
@@ -2667,10 +2666,10 @@ model WellAttachment {
 /// Separate from WellNote because this one has a depth and is drawn on a
 /// picture, and a note without a depth cannot be.
 model SchematicAnnotation {
-  id         String  @id @default(cuid())
+  id         String   @id @default(cuid())
   wellId     String
   wellboreId String?
-  order      Int     @default(0)
+  order      Int      @default(0)
   depthMkb   Float?
   annotation String?
   createdAt  DateTime @default(now())
@@ -2685,9 +2684,9 @@ model SchematicAnnotation {
 /// Report 22's "General Notes" — a dated remark about the well, belonging to no
 /// day and no job.
 model WellNote {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   wellId    String
-  order     Int     @default(0)
+  order     Int      @default(0)
   date      String?
   com       String?
   createdAt DateTime @default(now())
@@ -2701,9 +2700,9 @@ model WellNote {
 /// One stage of a stimulation. Report 30 prints the stages under the treatment,
 /// the same shape cement uses: a job header, then what was pumped into it.
 model StimulationStage {
-  id               String  @id @default(cuid())
+  id               String   @id @default(cuid())
   stimulationId    String
-  order            Int     @default(0)
+  order            Int      @default(0)
   stageNo          Int?
   stageType        String? /// "Pre-Wash" | "Pad" | "Proppant" | "Flush"
   topDepthMkb      Float?
@@ -2758,4 +2757,32 @@ model WellviewSchematicTemplate {
   createdBy String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// A report a user designed (§9.2 "My Reports").
+///
+/// The app renders a report as a stack of table blocks, so a saved report is
+/// the same shape a decoded .afr template resolves to — subject area, title,
+/// fields — and runs through the SAME resolver. That is deliberate: a user's
+/// report and one of Peloton's 182 behave identically, including units, links,
+/// calculated fields and the anchor.
+///
+/// It is NOT the desktop's page designer. WellView's editor positions blocks on
+/// a fixed page with fonts, colours and master templates; this app renders
+/// responsive HTML and leaves paper to the print view, so those settings have
+/// nothing to act on and are not offered.
+model WellviewReport {
+  id         String   @id @default(cuid())
+  /// The converted database it was written against: a block names a table and
+  /// its fields, and those differ between databases.
+  database   String
+  name       String
+  category   String?
+  /// The blocks and anchor, as JSON: { anchor, blocks: [{ table, title, fields }] }.
+  definition String
+  createdBy  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([database, name])
 }

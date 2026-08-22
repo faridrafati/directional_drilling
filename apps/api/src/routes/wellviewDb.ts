@@ -2708,6 +2708,158 @@ export async function registerWellviewDbRoutes(
   );
 
 
+// ── My Reports (§9.2) ──────────────────────────────────────────────────────
+
+  /**
+   * A report the user designed, in the shape the resolver already understands.
+   *
+   * WHAT THIS IS AND IS NOT. §9.2's editor is a page designer: blocks dragged
+   * and sized on a fixed page, master templates, fonts, colours, margins. This
+   * app renders a report as responsive HTML and leaves paper to the print view,
+   * so those settings would have nothing to act on. What it DOES offer is the
+   * part that decides what a report says — the anchor, the blocks, the subject
+   * area of each, and the fields it prints, in order — and it runs them through
+   * the SAME resolver as the 182 shipped templates, so a user's report gets the
+   * same units, link captions, calculated fields and filters.
+   */
+  interface SavedReportDef {
+    /** Subject area the report splits on (§9.2 "Set Anchor Properties"). */
+    anchor?: string | null;
+    blocks: { table: string; title?: string | null; fields: string[] }[];
+  }
+
+  /** Validate a definition against THIS database, naming what is wrong. */
+  function checkReport(d: Db, def: SavedReportDef): string[] {
+    const bad: string[] = [];
+    if (!def.blocks?.length) bad.push("a report needs at least one block");
+    for (const b of def.blocks ?? []) {
+      const t = table(d, b.table);
+      if (!t) { bad.push(`${b.table} is not a table in this database`); continue; }
+      if (!b.fields?.length) { bad.push(`${b.table} has no fields selected`); continue; }
+      for (const f of b.fields) {
+        // A field may be a stored column OR one the calc engine computes, which
+        // has no column at all — refusing those would reject exactly the fields
+        // WellView is best known for printing.
+        if (t.colSet.has(f.toLowerCase())) continue;
+        if (calcFieldsFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
+        if (calcAggregatesFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
+        bad.push(`${b.table}.${f} is neither a column here nor a field this app can compute`);
+      }
+    }
+    if (def.anchor && !table(d, def.anchor)) bad.push(`${def.anchor} is not a table in this database`);
+    return bad;
+  }
+
+  app.get<{ Params: { db: string } }>(
+    "/entry/wellview/dbs/:db/reports",
+    { preHandler: WELLVIEW_GUARD },
+    async (req) => {
+      if (!prisma) return { reports: [], note: "saved reports need the application database" };
+      const rows = await prisma.wellviewReport.findMany({
+        where: { database: req.params.db },
+        orderBy: [{ category: "asc" }, { name: "asc" }],
+      });
+      return {
+        reports: rows.map((r) => ({
+          id: r.id, name: r.name, category: r.category ?? "My Reports",
+          definition: JSON.parse(r.definition) as SavedReportDef,
+          createdBy: r.createdBy, updatedAt: r.updatedAt.toISOString(),
+        })),
+      };
+    },
+  );
+
+  app.post<{
+    Params: { db: string };
+    Body: { id?: string; name?: string; category?: string; definition?: SavedReportDef };
+  }>(
+    "/entry/wellview/dbs/:db/reports",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      if (!prisma) return reply.code(503).send({ error: "saved reports need the application database" });
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const name = (req.body?.name ?? "").trim();
+      if (!name) return reply.code(400).send({ error: "a name is required" });
+      const def = req.body?.definition;
+      if (!def?.blocks) return reply.code(400).send({ error: "a definition with blocks is required" });
+
+      // Checked against the database it is written for, at SAVE time, exactly as
+      // a saved query is: a report that cannot resolve is worth refusing before
+      // it is stored rather than after someone opens it.
+      const bad = checkReport(d, def);
+      if (bad.length) return reply.code(400).send({ error: bad[0], problems: bad });
+
+      const data = {
+        database: req.params.db,
+        name,
+        category: (req.body?.category ?? "").trim() || null,
+        definition: JSON.stringify(def),
+        createdBy: req.entryUser?.username ?? "unknown",
+      };
+      try {
+        const saved = req.body?.id
+          ? await prisma.wellviewReport.update({ where: { id: req.body.id }, data })
+          : await prisma.wellviewReport.create({ data });
+        return reply.code(req.body?.id ? 200 : 201).send({ id: saved.id, name: saved.name });
+      } catch (e) {
+        if (String((e as { code?: string }).code) === "P2002") {
+          return reply.code(409).send({ error: `there is already a report called "${name}"` });
+        }
+        throw e;
+      }
+    },
+  );
+
+  app.delete<{ Params: { db: string; id: string } }>(
+    "/entry/wellview/dbs/:db/reports/:id",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      if (!prisma) return reply.code(503).send({ error: "saved reports need the application database" });
+      const found = await prisma.wellviewReport.findUnique({ where: { id: req.params.id } });
+      if (!found) return reply.code(404).send({ error: "no such report" });
+      await prisma.wellviewReport.delete({ where: { id: req.params.id } });
+      return { deleted: req.params.id };
+    },
+  );
+
+  /** Resolve a SAVED report against a well — the same path a shipped one takes. */
+  app.get<{ Params: { db: string; id: string }; Querystring: { well?: string; anchor?: string } }>(
+    "/entry/wellview/dbs/:db/reports/:id/data",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      if (!prisma) return reply.code(503).send({ error: "saved reports need the application database" });
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const well = String(req.query.well ?? "");
+      if (!well) return reply.code(400).send({ error: "well (idwell) is required" });
+      const row = await prisma.wellviewReport.findUnique({ where: { id: req.params.id } });
+      if (!row) return reply.code(404).send({ error: "no such report" });
+      const def = JSON.parse(row.definition) as SavedReportDef;
+
+      let anchor: { table: string; idrec: string } | null = null;
+      if (req.query.anchor) {
+        const ix = req.query.anchor.indexOf(":");
+        if (ix > 0) anchor = { table: req.query.anchor.slice(0, ix), idrec: req.query.anchor.slice(ix + 1) };
+      }
+      const resolved = resolveTemplateData(d.ro, {
+        name: row.name,
+        html: `saved:${row.id}`,
+        blocks: def.blocks.map((b) => ({
+          table: b.table,
+          title: b.title ?? null,
+          fields: b.fields.map((f) => ({ column: f })),
+        })),
+        // A user's report carries no decoded .afr filters; its scoping is the
+        // anchor, which the viewer already drives.
+        filters: [],
+      }, well, anchor);
+      if (!resolved) return reply.code(500).send({ error: "the report could not be resolved" });
+      return { ...resolved, saved: { id: row.id, name: row.name, anchor: def.anchor ?? null } };
+    },
+  );
+
+
   /** §10.2 Data Audit across selected wells (or all). */
   app.get<{ Params: { db: string }; Querystring: { wells?: string } }>(
     "/entry/wellview/dbs/:db/audit",

@@ -70,7 +70,7 @@ export interface TemplateFilter {
   /** The model's caption for the field — "Job Type", not "wvtyp". */
   label?: string;
 }
-interface Template {
+export interface Template {
   name: string; html: string; blocks: TemplateBlock[];
   /** The filters WellView applies before printing; see `readFilters`. */
   filters: TemplateFilter[];
@@ -395,7 +395,8 @@ function prefixParent(sch: ReturnType<typeof schema>, tnameLc: string): string |
  */
 export function resolveTemplateData(
   d: DatabaseSync,
-  html: string,
+  /** A shipped template id, or a report definition the user designed. */
+  html: string | Template,
   well: string,
   anchor?: { table: string; idrec: string } | null,
 ): {
@@ -405,7 +406,17 @@ export function resolveTemplateData(
   filters: TemplateFilter[];
   blocks: unknown[];
 } | null {
-  const tpl = templates().get(html);
+  /*
+   * A shipped template by id, OR a report the user designed (§9.2 "My
+   * Reports"), passed in directly.
+   *
+   * Deliberately the same function either way. A user's report and one of
+   * Peloton's 182 then behave identically — the same unit conversion, link
+   * captions, calculated fields, anchor scoping and row filters — because they
+   * ARE the same code path. Rendering user reports separately would guarantee
+   * the two drifted.
+   */
+  const tpl = typeof html === "string" ? templates().get(html) : html;
   if (!tpl) return null;
 
   const sch = schema(d);
