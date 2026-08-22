@@ -38,6 +38,7 @@ import type { PrismaClient } from "@prisma/client";
 import { requireUser, requireAdmin } from "../entry/auth.js";
 import { resolveTemplateData, iconByName } from "./wellviewSample.js";
 import { daysVsDepth, resolveTemplate, type DvdTemplate } from "../wellview/daysVsDepth.js";
+import { calcFieldsFor, computeRow } from "../wellview/calcFields.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
@@ -877,6 +878,9 @@ export async function registerWellviewDbRoutes(
       if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
       const showSys = req.query.system === "1";
       const cols = t.cols.filter((c) => showSys || !isSysCol(c));
+      // The model-calculated fields this table can carry, appended after the
+      // stored columns; they have no column of their own in the database.
+      const computed = calcFieldsFor(t.name);
       const where: string[] = [];
       const args: string[] = [];
       if (req.query.idwell && t.hasIdwell) { where.push(`"${t.colSet.get("idwell")}" = ?`); args.push(req.query.idwell); }
@@ -953,9 +957,37 @@ export async function registerWellviewDbRoutes(
             link,
           };
         }),
+        /**
+         * The model-calculated fields this table's rows can carry (§3.9's green
+         * cells). They have no column in the database — WellView works them out
+         * when a report prints — so they are appended here, after the stored
+         * ones, and marked `computed` so the client can render them read-only
+         * and say where they came from.
+         */
+        computedColumns: computed.map((c) => {
+          const mf = modelField(t.name, c.field);
+          return {
+            column: c.field,
+            label: c.label,
+            calculated: true,
+            /** Computed HERE, from this row, by the model's own equation. */
+            computed: true,
+            eqn: c.eqn,
+            help: mf?.help,
+            type: mf?.type,
+            unit: mf?.baseUnit,
+            applyDatum: mf?.applyDatum || undefined,
+            datumMode: mf?.datumMode,
+            units: mf?.units,
+            group: mf?.group,
+          };
+        }),
         rows: rows.map((r) => {
           const out: Record<string, string | number | null> = {};
           for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
+          // A field that cannot be computed for THIS row stays absent, so the
+          // grid shows a blank rather than a zero nobody measured.
+          for (const [k, v] of Object.entries(computeRow(t.name, r))) out[k] = v;
           return out;
         }),
       };

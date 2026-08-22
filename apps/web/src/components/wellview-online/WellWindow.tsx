@@ -261,7 +261,9 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
     /** Derivable, but waiting on a job/day selection in the toolbar. */
     needsScope?: string[];
     columns?: { column: string; label: string; unit?: string;
-      units?: Record<string, UnitFormat> }[]; missing?: string[];
+      units?: Record<string, UnitFormat>;
+      /** Computed here from the model equation, not stored in the database. */
+      derived?: boolean; eqn?: string }[]; missing?: string[];
     rowCount?: number; truncated?: boolean; allNull?: boolean;
     /** Row filters the template declares and this block honoured (§9.2). */
     filtersApplied?: { table: string; field: string; value: string }[];
@@ -440,8 +442,10 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
               <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1"
                 data-testid="wv-report-filter">
                 This template filters to{" "}
-                {data.filters.map((f) =>
-                  `${f.label ?? f.field} starting "${f.value.replace(/\*+$/, "")}"`).join(", ")}
+                {/* A template can state the same filter twice with different
+                    abbreviations ("drill" and "dril"); they mean one thing. */}
+                {[...new Set(data.filters.map((f) =>
+                  `${f.label ?? f.field} starting "${f.value.replace(/\*+$/, "")}"`))].join(", ")}
                 {" "}— rows outside it are not shown, exactly as WellView prints it.
               </p>
             )}
@@ -527,8 +531,16 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                         <tr className={b.derived ? "bg-green-100/70 text-green-900" : "bg-gray-100 text-gray-600"}>
                           {b.icons && <th className="px-1 py-1 w-8" aria-label="icon" />}
                           {b.columns!.map((c) => (
-                            <th key={c.column} className="px-2 py-1 text-left font-medium whitespace-nowrap"
-                              title={`${b.table}.${c.column}`}>
+                            <th key={c.column}
+                              /* Green is WellView's own convention for a value
+                                 it worked out rather than one somebody entered
+                                 (§4.3), and the tooltip carries the equation. */
+                              className={`px-2 py-1 text-left font-medium whitespace-nowrap ${
+                                c.derived ? "text-green-700" : ""}`}
+                              data-testid={c.derived ? "wv-derived-col" : undefined}
+                              title={c.derived
+                                ? `${b.table}.${c.column} — computed here: ${c.eqn ?? ""}`
+                                : `${b.table}.${c.column}`}>
                               {c.label}
                               {c.unit && (
                                 <span className="ml-1 font-normal text-gray-400">

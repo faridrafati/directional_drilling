@@ -32,6 +32,7 @@ import type { FastifyInstance } from "fastify";
 import { requireUser } from "../entry/auth.js";
 import { columnLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeCalc, calcMissingScope } from "../wellview/calc.js";
+import { calcFieldsFor, computeRow } from "../wellview/calcFields.js";
 // Importing the registry is what registers it; nothing else references the module.
 import "../wellview/calcDerivations.js";
 
@@ -501,7 +502,24 @@ export function resolveTemplateData(
       actual: t.cols.get(f.column.toLowerCase()) ?? null,
     }));
     const present = wanted.filter((w) => w.actual != null);
-    const missing = wanted.filter((w) => w.actual == null).map((w) => w.column);
+    /*
+     * A template column with no stored column is not always absent: 866 of the
+     * model's calculated fields live on stored tables and WellView works them
+     * out at print time. 120 of the 182 templates print at least one, and until
+     * now every one of them vanished from the page with no note at all.
+     *
+     * calcFieldsFor returns only the ones this app can compute from the model's
+     * own equation, safely. Everything else stays in `missing` and is still
+     * reported missing: a blank column with an explanation is honest, a blank
+     * column without one is not.
+     */
+    const computable = new Map(calcFieldsFor(t.name).map((c) => [c.field.toLowerCase(), c]));
+    const derivedCols = wanted.filter((w) => w.actual == null
+      && computable.has(w.column.toLowerCase()));
+    const missing = wanted.filter((w) => w.actual == null
+      && !computable.has(w.column.toLowerCase())).map((w) => w.column);
+    // A block whose ONLY columns are derivable still has nothing to select
+    // from, so it is treated as empty rather than queried for zero columns.
     if (present.length === 0) {
       return { table: t.name, title: blockTitle(b), exists: true, computed: false, contentOnly, columns: [], missing, rowCount: 0, rows: [] };
     }
@@ -618,22 +636,43 @@ export function resolveTemplateData(
       .filter((c): c is string => !!c && !present.some((p) => p.actual === c));
     const withTk = tkCols.length
       ? `${withId}, ${[...new Set(tkCols)].map((c) => `t0."${c}"`).join(", ")}` : withId;
+    // …and the inputs each derived column's equation needs, which the template
+    // never asked for: a print-time field is computed from columns the report
+    // does not itself print.
+    const needCols = [...new Set(derivedCols.flatMap((w) =>
+      computable.get(w.column.toLowerCase())!.needs))]
+      .map((n) => t.cols.get(n))
+      .filter((c): c is string => !!c && !present.some((p) => p.actual === c));
+    const withNeeds = needCols.length
+      ? `${withTk}, ${[...new Set(needCols)].map((c) => `t0."${c}"`).join(", ")}` : withTk;
     const rows = d.prepare(
-      `SELECT ${withTk} FROM "${t.name}" t0${joins}${where}${ord ? ` ORDER BY t0."${ord}"` : ""} LIMIT ${ROW_CAP}`,
+      `SELECT ${withNeeds} FROM "${t.name}" t0${joins}${where}${ord ? ` ORDER BY t0."${ord}"` : ""} LIMIT ${ROW_CAP}`,
     ).all(...args) as Record<string, unknown>[];
 
     const decorate = desCol != null && COMPONENT_TABLE.test(t.name);
     // A link column prints the record it points at, not its key.
     const linkCaptions = resolveLinkCaptions(
       d, sch, t, rows, present.map((p) => ({ actual: p.actual! })));
-    const shaped = rows.map((r) => present.map((p) => {
-      const raw = shapeValue(r[p.actual!]);
-      if (raw == null || !/^idrec./i.test(p.actual!) || /tk$/i.test(p.actual!)) return raw;
-      const tkCol = t.cols.get(`${p.actual!.toLowerCase()}tk`);
-      const tk = tkCol ? r[tkCol] : null;
-      const targetLc = (tk ? String(tk) : LINK_TARGET_FALLBACK(p.actual!, sch)[0] ?? "").toLowerCase();
-      return linkCaptions.get(`${targetLc}|${String(raw)}`) ?? raw;
-    }));
+    const shaped = rows.map((r) => [
+      ...present.map((p) => {
+        const raw = shapeValue(r[p.actual!]);
+        if (raw == null || !/^idrec./i.test(p.actual!) || /tk$/i.test(p.actual!)) return raw;
+        const tkCol = t.cols.get(`${p.actual!.toLowerCase()}tk`);
+        const tk = tkCol ? r[tkCol] : null;
+        const targetLc = (tk ? String(tk) : LINK_TARGET_FALLBACK(p.actual!, sch)[0] ?? "").toLowerCase();
+        return linkCaptions.get(`${targetLc}|${String(raw)}`) ?? raw;
+      }),
+      // The derived columns, in the same order they were declared above.
+      // computeRow evaluates them in DEPENDENCY order and feeds each result
+      // back in, which is what lets ROPCalc read the DepthDrilledCalc that has
+      // no column of its own. A row whose inputs are incomplete yields null —
+      // a blank cell, never a zero.
+      ...(() => {
+        const computedRow = computeRow(t.name, r);
+        return derivedCols.map((w) => computedRow[
+          computable.get(w.column.toLowerCase())!.field] ?? null);
+      })(),
+    ]);
     // Rows whose every printed cell is null render as a page of dashes —
     // noise dressed as data. Collapse them into one honest sentence and let
     // the client say so; the count still tells the truth.
@@ -643,14 +682,30 @@ export function resolveTemplateData(
       title: blockTitle(b),
       exists: true,
       computed: false,
-      columns: present.map((p) => ({
-        column: p.column,
-        label: p.label,
-        // The client renders in the user's unit set, so it needs the base
-        // unit and the per-set target the model names.
-        unit: modelField(t.name, p.column)?.baseUnit,
-        units: modelField(t.name, p.column)?.units,
-      })),
+      columns: [
+        ...present.map((p) => ({
+          column: p.column,
+          label: p.label,
+          // The client renders in the user's unit set, so it needs the base
+          // unit and the per-set target the model names.
+          unit: modelField(t.name, p.column)?.baseUnit,
+          units: modelField(t.name, p.column)?.units,
+        })),
+        // Columns WellView computes at print time, worked out here from the
+        // model's own equation. Flagged so the page can mark them as derived
+        // rather than let them pass for stored measurements.
+        ...derivedCols.map((w) => {
+          const cf = computable.get(w.column.toLowerCase())!;
+          return {
+            column: cf.field,
+            label: cf.label,
+            unit: modelField(t.name, cf.field)?.baseUnit,
+            units: modelField(t.name, cf.field)?.units,
+            derived: true as const,
+            eqn: cf.eqn,
+          };
+        }),
+      ],
       missing,
       /** The template's row filters honoured for this block (§9.2). */
       filtersApplied: applied.length ? applied : undefined,

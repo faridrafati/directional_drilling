@@ -97,6 +97,8 @@ export const modelTable = (name: string): ModelTable | undefined => model()[name
 export const modelField = (table: string, col: string): ModelField | undefined =>
   modelTable(table)?.fields[col.toLowerCase()];
 export const modelLoaded = (): boolean => Object.keys(model()).length > 0;
+/** Every table in the model, keyed by lowercase name. Read-only. */
+export const allModelTables = (): Readonly<Record<string, ModelTable>> => model();
 
 /**
  * The plumbing columns the model does not describe, because they are not user

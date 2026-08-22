@@ -441,3 +441,51 @@ test("a report states and applies the filter its template declares", async ({ pa
     await expect(page.getByTestId("wv-report-filter")).toBeHidden({ timeout: 10_000 });
   }
 });
+
+/**
+ * Model-calculated fields on stored tables — WellView's green cells.
+ *
+ * These have no column in a converted database; WellView works them out when a
+ * report prints, and until now the app dropped them silently, so 120 of the 182
+ * templates printed at least one column of nothing with no note.
+ *
+ * The pair checked here is the one that proves dependency ordering works:
+ * Interval ROP is "<DepthDrilledCalc> / <TmDrill>" and DepthDrilledCalc is
+ * ITSELF derived, so evaluating the two independently leaves ROP permanently
+ * blank — a column advertising a value it can never produce.
+ */
+test("a report fills the fields WellView computes at print time", async ({ page }) => {
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12 - Phase and Prod" })
+    .first().dblclick();
+  await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+
+  await page.getByPlaceholder("Search reports…").fill("Hydraulics Summary");
+  await page.getByRole("button", { name: "Hydraulics Summary", exact: true }).first().click();
+
+  const derived = page.getByTestId("wv-derived-col");
+  await expect(derived.first()).toBeVisible({ timeout: 15_000 });
+  await expect(derived).toHaveCount(2);
+  const heads = (await derived.allTextContents()).map((h) => h.replace(/\s+/g, " ").trim());
+  expect(heads.join(" ")).toContain("Interval Depth Drilled");
+  expect(heads.join(" ")).toContain("Interval ROP");
+
+  // The heading carries the model's own equation, so the number is traceable.
+  expect(await derived.first().getAttribute("title")).toContain("computed here:");
+
+  // Both columns must actually carry values — ROP especially, since it reads a
+  // field that exists only because this computed it first.
+  const table = derived.first().locator("xpath=ancestor::table[1]");
+  const idx = await derived.first().evaluate((el) =>
+    Array.from(el.parentElement!.children).indexOf(el));
+  const cells = await table.locator(`tbody tr td:nth-child(${idx + 1})`).allTextContents();
+  expect(cells.filter((c) => c.trim()).length).toBeGreaterThan(10);
+});
