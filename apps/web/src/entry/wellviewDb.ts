@@ -130,6 +130,32 @@ export interface WvSchematic {
   otherInHole: WvSchematicRow[];
   perforations: WvSchematicRow[];
   cement: WvSchematicRow[];
+  /**
+   * Cement STAGES, which are where the depths live (§7.2).
+   *
+   * wvCement itself has no depth column, so a diagram drawn from it can only
+   * show a token strip. Each stage carries its own top and bottom, plus the
+   * drill-out depth that says how much of a plug is still there.
+   */
+  cementStages: (WvSchematicRow & {
+    IDRecString?: string | null;
+    DepthDrillOut?: number | null;
+    DtTmDrillOut?: string | null;
+    BtmPlug?: number | null;
+  })[];
+  /**
+   * The drill strings in the hole, positioned from their drilling parameters —
+   * wvJobDrillString has no depth of its own — each with the bit on its end.
+   */
+  drillStrings: (WvSchematicRow & {
+    maxOd?: number | null;
+    bit?: {
+      IDRec?: string | null; Des?: string | null; Sz?: number | null;
+      Length?: number | null; IconName?: string | null; Typ?: string | null;
+    } | null;
+  })[];
+  /** Which deviation survey each wellbore is linked to (§7.2), if any. */
+  surveyLinks: { wellbore: string; survey: string | null; surveyName: string | null }[];
   zones: WvSchematicRow[];
   dates: string[];
   /** The unit every depth on the diagram is stored in, and how to show it. */

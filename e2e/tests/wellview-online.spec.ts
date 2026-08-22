@@ -489,3 +489,148 @@ test("a report fills the fields WellView computes at print time", async ({ page 
   const cells = await table.locator(`tbody tr td:nth-child(${idx + 1})`).allTextContents();
   expect(cells.filter((c) => c.trim()).length).toBeGreaterThan(10);
 });
+
+/**
+ * The schematic, after the guide-audit fixes (§7.2 troubleshooting, §8.3 tracks
+ * and templates, §3.8 copy/print).
+ *
+ * Each assertion stands for a thing the diagram used to get wrong rather than
+ * merely lack: cement was a fixed 60-pixel strip above every shoe whatever was
+ * pumped, the drill string and its bit were not drawn at all, and the deviation
+ * survey a wellbore is linked to was never read.
+ */
+test.describe("WellView Online — schematic", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/wellview");
+    await page.getByRole("heading", { name: "WellView" }).waitFor();
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    if (await signIn.isVisible().catch(() => false)) {
+      await page.getByLabel("User name").fill(USER);
+      await page.getByLabel("Password").fill(PASSWORD);
+      await signIn.click();
+    }
+    await page.getByTestId("wv-db-wv9.0_Sample").click();
+    await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("draws cement between the depths that were recorded", async ({ page }) => {
+    await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12 - Phase and Prod" })
+      .first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-tab-schematic").click();
+
+    await expect
+      .poll(async () => (await page.locator("svg title").allTextContents())
+        .filter((t) => /wvCementStage/.test(t)).length, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    const titles = (await page.locator("svg title").allTextContents())
+      .filter((t) => /wvCementStage/.test(t));
+    // A real interval, not a token strip: the tooltip names both depths.
+    expect(titles.some((t) => /Cement stage — .+ to .+/.test(t))).toBe(true);
+  });
+
+  test("draws the drill string and its bit while they are in the hole", async ({ page }) => {
+    await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12 - Phase and Prod" })
+      .first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-tab-schematic").click();
+    await expect(page.getByTestId("wv-sch-layer-drillString")).toBeVisible({ timeout: 15_000 });
+
+    // At the LAST date every string has been pulled, which is correct — step to
+    // the first, when one was still on bottom.
+    await page.getByTitle("First date").click();
+    await expect
+      .poll(async () => (await page.locator("svg title").allTextContents())
+        .filter((t) => /wvJobDrillString/.test(t)).length, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    const ds = (await page.locator("svg title").allTextContents())
+      .filter((t) => /wvJobDrillString/.test(t));
+    expect(ds.some((t) => /bit /.test(t)), "the bit is not named on the string").toBe(true);
+  });
+
+  test("offers TVD and inclination tracks from the linked survey", async ({ page }) => {
+    await page.getByTestId("wv-well-row").filter({ hasText: "Sample 11 - Full Data" })
+      .first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-tab-schematic").click();
+
+    const tvd = page.getByTestId("wv-sch-track-tvd");
+    await expect(tvd).toBeVisible({ timeout: 15_000 });
+    await expect(tvd).toBeEnabled();                  // this wellbore links a survey
+    await tvd.check();
+    await page.getByTestId("wv-sch-track-incl").check();
+
+    await expect
+      .poll(async () => (await page.locator("svg title").allTextContents())
+        .filter((t) => /^TVD from survey|^Incl. from survey/.test(t)).length, { timeout: 15_000 })
+      .toBe(2);
+    // The track names the survey it came from, so a TVD is never anonymous.
+    const t = (await page.locator("svg title").allTextContents())
+      .find((x) => /^TVD from survey/.test(x)) ?? "";
+    expect(t).toMatch(/stations/);
+  });
+
+  test("can copy, save and print the drawing", async ({ page }) => {
+    await page.getByTestId("wv-well-row").first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-tab-schematic").click();
+    for (const id of ["wv-sch-copy", "wv-sch-png", "wv-sch-print"]) {
+      await expect(page.getByTestId(id)).toBeVisible({ timeout: 15_000 });
+    }
+  });
+
+  test("edits, copies, renames and deletes a schematic template (§8.3)", async ({ page }) => {
+    // Six round-trips through the app database, each waiting for the list to
+    // refetch. Fixed waits rather than polls: the list is re-fetched on a query
+    // invalidation, and polling allTextContents across that refetch races the
+    // element being replaced.
+    test.setTimeout(90_000);
+    const stamp = `E2E${Date.now() % 100000}`;
+    page.on("dialog", (d) => void d.accept(d.type() === "prompt" ? `${stamp} renamed` : ""));
+    await page.getByTestId("wv-well-row").first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-tab-schematic").click();
+    await expect(page.getByTestId("wv-sch-new")).toBeVisible({ timeout: 15_000 });
+
+    const names = async () =>
+      (await page.getByTestId("wv-sch-template").locator("option").allTextContents());
+    const made: string[] = [];
+    try {
+      await page.getByTestId("wv-sch-new").click();
+      await page.getByTestId("wv-sch-name").fill(stamp);
+      await page.getByTestId("wv-sch-save").click();
+      await page.waitForTimeout(1500);
+      made.push(stamp);
+      // Saving selects what it saved — that is what gives Edit/Copy/Delete a
+      // target, and the row offered none of them before.
+      await expect(page.getByTestId("wv-sch-update")).toBeVisible({ timeout: 10_000 });
+
+      // Copy a Template: "the copy appears with (copy) beside the name" (§8.3).
+      await page.getByTestId("wv-sch-copy-tpl").click();
+      await page.waitForTimeout(1500);
+      made.push(`${stamp} (copy)`);
+      expect(await names()).toEqual(expect.arrayContaining([`${stamp} (copy)`]));
+
+      // Edit a Template, here as a rename — the same update path.
+      await page.getByTestId("wv-sch-rename").click();
+      await page.waitForTimeout(1500);
+      made.push(`${stamp} renamed`);
+      expect(await names()).toEqual(expect.arrayContaining([`${stamp} renamed`]));
+    } finally {
+      // Delete every one this made, so a rerun is not blocked by the API's
+      // unique-name constraint.
+      // Only select names that are ACTUALLY in the list. selectOption retries
+      // until the action timeout when the label is absent, so attempting to
+      // delete a name that a rename already consumed costs 30 seconds of doing
+      // nothing — which is what made this test look hung rather than slow.
+      for (const name of [...new Set(made)].reverse()) {
+        if (!(await names()).includes(name)) continue;
+        await page.getByTestId("wv-sch-template").selectOption({ label: name });
+        if (await page.getByTestId("wv-sch-delete").isVisible().catch(() => false)) {
+          await page.getByTestId("wv-sch-delete").click().catch(() => {});
+          await page.waitForTimeout(900);
+        }
+      }
+    }
+  });
+});

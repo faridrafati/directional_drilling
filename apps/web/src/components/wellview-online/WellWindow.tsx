@@ -622,7 +622,7 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
 /** §8.3 "group lists" — the kinds of downhole item a template may show. */
 export type SchematicLayer =
   | "holeSizes" | "casing" | "tubing" | "rods" | "otherInHole"
-  | "perforations" | "cement" | "zones";
+  | "perforations" | "cement" | "zones" | "drillString";
 
 export const SCHEMATIC_LAYERS: { key: SchematicLayer; label: string }[] = [
   { key: "holeSizes", label: "Hole sizes" },
@@ -632,6 +632,9 @@ export const SCHEMATIC_LAYERS: { key: SchematicLayer; label: string }[] = [
   { key: "otherInHole", label: "Other in hole" },
   { key: "perforations", label: "Perforations" },
   { key: "cement", label: "Cement" },
+  // §7.2 "Drilling OD Not Visible" / "Bit Not Visible": the string in the hole
+  // and the bit on its end are part of the picture a driller expects.
+  { key: "drillString", label: "Drill string & bit" },
   { key: "zones", label: "Zones" },
 ];
 
@@ -686,10 +689,114 @@ function SchematicTab({ db, idwell, onEditTable }: {
    */
   const [smartScaling, setSmartScaling] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const svgBox = useRef<HTMLDivElement | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  /**
+   * §8.3 "Adding Tracks": columns of data beside the drawing, on the same depth
+   * scale. MD is the depth axis the diagram already has; the other two come
+   * from the deviation survey the WELLBORE is linked to (§7.2 "Deviation Survey
+   * Not Visible — the deviation survey is not linked to the wellbore"), which
+   * is why they are offered only when that link exists and say so when it does
+   * not. The guide's other track types — depth curves over drilling parameters,
+   * depth markers — are not offered rather than faked.
+   */
+  const [tracks, setTracks] = useState<{ tvd: boolean; incl: boolean }>({ tvd: false, incl: false });
+
+  /**
+   * Get the drawing out of the app (§3.8 "Copy a Schematic" / "Print a
+   * Schematic").
+   *
+   * The SVG is serialised and rasterised through a canvas rather than screen-
+   * grabbed, so the image is the drawing at its own resolution instead of at
+   * whatever the window happened to be. Fonts and colours are inline already —
+   * there is no stylesheet to lose.
+   *
+   * Clipboard images are not universally permitted; when the browser refuses,
+   * this says so and falls back to a download rather than failing silently.
+   */
+  async function exportSchematic(how: "copy" | "png" | "print") {
+    const svg = svgBox.current?.querySelector("svg");
+    if (!svg) return;
+    const xml = new XMLSerializer().serializeToString(svg);
+    const src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
+    const w = Number(svg.getAttribute("width")) || 900;
+    const h = Number(svg.getAttribute("height")) || 1200;
+
+    if (how === "print") {
+      const win = window.open("", "_blank", "width=900,height=1200");
+      if (!win) { setCopied("popup blocked"); setTimeout(() => setCopied(null), 2500); return; }
+      win.document.write(
+        `<title>Schematic — ${date}</title>`
+        + `<body style="margin:0;display:flex;justify-content:center">`
+        + `<img src="${src}" style="max-width:100%">`);
+      win.document.close();
+      // Wait for the image before printing, or the sheet comes out blank.
+      win.onload = () => { win.focus(); win.print(); };
+      return;
+    }
+
+    const png = await new Promise<Blob | null>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas");
+        // Two-times for a legible print; the drawing is vector, so it costs
+        // nothing but pixels.
+        c.width = w * 2; c.height = h * 2;
+        const ctx = c.getContext("2d");
+        if (!ctx) return resolve(null);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob(resolve, "image/png");
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+    if (!png) { setCopied("could not render"); setTimeout(() => setCopied(null), 2500); return; }
+
+    if (how === "png") {
+      const url = URL.createObjectURL(png);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `schematic-${date}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+      setCopied("Copied ✓");
+    } catch {
+      // Firefox and any non-secure context refuse image writes; say so rather
+      // than leaving a button that appears to have worked.
+      setCopied("clipboard refused — use PNG");
+    }
+    setTimeout(() => setCopied(null), 2500);
+  }
 
   const dates = useMemo(() => q.data?.dates ?? [], [q.data]);
   const ix = dateIx === null ? Math.max(0, dates.length - 1) : dateIx;
   const date = dates[ix] ?? "9999-12-31";
+
+  /*
+   * The deviation survey the selected wellbore is linked to.
+   *
+   * With no bore chosen, the first linked one stands in — a well usually has
+   * one survey that matters and offering nothing at all would be less useful
+   * than offering the obvious one. Whichever it is, the track header names it,
+   * so the reader is never left guessing which survey a TVD came from.
+   */
+  const link = useMemo(() => {
+    const links = q.data?.surveyLinks ?? [];
+    if (boreId) return links.find((l) => l.wellbore === boreId && l.survey) ?? null;
+    return links.find((l) => l.survey) ?? null;
+  }, [q.data, boreId]);
+  const trackQ = useQuery({
+    queryKey: ["wvdb", db, "survey", link?.survey ?? ""],
+    queryFn: () => wvDbApi.survey(db, link!.survey!),
+    enabled: !!link?.survey && (tracks.tvd || tracks.incl),
+    staleTime: 5 * 60 * 1000,
+  });
 
   // History player (§3.8): AutoPlay steps through the dates, loops off the end.
   useEffect(() => {
@@ -752,6 +859,25 @@ function SchematicTab({ db, idwell, onEditTable }: {
               onChange={(e) => setSmartScaling(e.target.checked)} />
             SmartScaling
           </label>
+          {/* §8.3 Tracks: extra depth-scaled columns beside the drawing. */}
+          <label className="flex items-center gap-1 text-[11px] text-gray-600"
+            title={link?.survey
+              ? `TVD track from the linked survey${link.surveyName ? ` "${link.surveyName}"` : ""} (§8.3)`
+              : "This wellbore has no deviation survey linked (§7.2), so TVD cannot be computed"}>
+            <input type="checkbox" checked={tracks.tvd} disabled={!link?.survey}
+              data-testid="wv-sch-track-tvd"
+              onChange={(e) => setTracks((t) => ({ ...t, tvd: e.target.checked }))} />
+            TVD
+          </label>
+          <label className="flex items-center gap-1 text-[11px] text-gray-600"
+            title={link?.survey
+              ? "Inclination track from the linked survey (§8.3)"
+              : "This wellbore has no deviation survey linked (§7.2)"}>
+            <input type="checkbox" checked={tracks.incl} disabled={!link?.survey}
+              data-testid="wv-sch-track-incl"
+              onChange={(e) => setTracks((t) => ({ ...t, incl: e.target.checked }))} />
+            Incl
+          </label>
           <label className="flex items-center gap-1 text-[11px] text-gray-600">
             <input type="checkbox" checked={showProposed} onChange={(e) => setShowProposed(e.target.checked)} />
             Proposed
@@ -759,6 +885,28 @@ function SchematicTab({ db, idwell, onEditTable }: {
           <button type="button" className={btn} title="Zoom out" onClick={() => setScale((z) => Math.max(0.5, z / 1.25))}>−</button>
           <button type="button" className={btn} title="Zoom full" onClick={() => setScale(1)}>Fit</button>
           <button type="button" className={btn} title="Zoom in" onClick={() => setScale((z) => Math.min(4, z * 1.25))}>+</button>
+          {/*
+            * §3.8 "Copy a Schematic" and "Print a Schematic". The desktop puts
+            * the drawing on the clipboard so it can be pasted into a report or
+            * an email; the browser equivalent is an image on the clipboard,
+            * with a PNG download for the browsers that refuse clipboard images
+            * and a print view for the guide's second suggestion.
+            */}
+          <button type="button" className={btn} data-testid="wv-sch-copy"
+            title="Copy a Schematic (§3.8) — put the drawing on the clipboard as an image"
+            onClick={() => void exportSchematic("copy")}>
+            {copied ?? "Copy"}
+          </button>
+          <button type="button" className={btn} data-testid="wv-sch-png"
+            title="Save the drawing as a PNG"
+            onClick={() => void exportSchematic("png")}>
+            PNG
+          </button>
+          <button type="button" className={btn} data-testid="wv-sch-print"
+            title="Print a Schematic (§3.8)"
+            onClick={() => void exportSchematic("print")}>
+            Print
+          </button>
           <button type="button" className={btn} title="Refresh — re-read the downhole data"
             onClick={() => void qc.invalidateQueries({ queryKey: ["wvdb", db, "schematic", idwell] })}>
             Refresh
@@ -771,9 +919,11 @@ function SchematicTab({ db, idwell, onEditTable }: {
       <div className="px-3 py-0.5 text-[10px] text-gray-400 border-b border-gray-50 shrink-0">
         Click an item to edit its subject area. Widths from component nominal OD, depths as stored.
       </div>
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" ref={svgBox}>
         <SchematicSvg s={s} date={date} boreId={boreId || null} showProposed={showProposed}
-          scale={scale} layers={layers} smartScaling={smartScaling} onEditTable={onEditTable} />
+          scale={scale} layers={layers} smartScaling={smartScaling} onEditTable={onEditTable}
+          tracks={tracks} stations={trackQ.data?.stations ?? null}
+          surveyName={link?.surveyName ?? null} />
       </div>
     </div>
   );
@@ -786,10 +936,18 @@ function SchematicTab({ db, idwell, onEditTable }: {
  * hatch beside the casing it belongs to, zones as green bands with names.
  * Proposed strings (ch. 4 planning) draw dashed when the toggle is on.
  */
-function SchematicSvg({ s, date, boreId, showProposed, scale, layers, smartScaling, onEditTable }: {
+function SchematicSvg({
+  s, date, boreId, showProposed, scale, layers, smartScaling, onEditTable,
+  tracks, stations, surveyName,
+}: {
   s: WvSchematic; date: string; boreId: string | null; showProposed: boolean;
   scale: number; layers: Record<SchematicLayer, boolean>; smartScaling: boolean;
   onEditTable: (table: string) => void;
+  /** §8.3 Tracks: which extra depth-scaled columns to draw. */
+  tracks?: { tvd: boolean; incl: boolean };
+  /** The linked survey's stations, or null while loading / when none is linked. */
+  stations?: { md: number; tvd: number; inclination: number }[] | null;
+  surveyName?: string | null;
 }) {
   /**
    * Every depth drawn here — the axis, the shoe labels, the tooltips — is one
@@ -867,6 +1025,10 @@ function SchematicSvg({ s, date, boreId, showProposed, scale, layers, smartScali
     return (!d || d <= date) && String(p.Proposed ?? "") !== "1" && boreFilter(p);
   });
   const cement = (layers.cement ? s.cement : []).filter((c) => {
+    const d = dstr(c.DtTmStart);
+    return (!d || d <= date) && String(c.Proposed ?? "") !== "1";
+  });
+  const cementStages = (layers.cement ? s.cementStages ?? [] : []).filter((c) => {
     const d = dstr(c.DtTmStart);
     return (!d || d <= date) && String(c.Proposed ?? "") !== "1";
   });
@@ -963,20 +1125,116 @@ function SchematicSvg({ s, date, boreId, showProposed, scale, layers, smartScali
       </g>,
     );
     if (proposed) return;
-    // cement for this string: hatch strip outside the casing lines
-    const cem = cement.filter((m) => String(m.IDRecString ?? "") === String(c.IDRec ?? "-"));
-    if (cem.length) {
+    /*
+     * Cement on this string, drawn between the depths that were RECORDED.
+     *
+     * This used to be a 60-pixel strip hanging above the shoe whatever was
+     * pumped — a decoration that looked like data. The depths live on the
+     * STAGES (§7.2 "in the Cement Stages folder, make sure that the Top Depth
+     * and Bottom Depth information is entered"), not on wvCement, which has no
+     * depth column at all.
+     *
+     * A stage with a drill-out depth is drawn only BELOW that depth: §7.2
+     * "Cement Plug Still Visible" says entering the depth drilled out to is
+     * what removes the drilled part from the picture. A stage still showing
+     * its full height after the plug was drilled is the complaint the guide is
+     * answering.
+     */
+    const stages = cementStages.filter(
+      (m) => String(m.IDRecString ?? "") === String(c.IDRec ?? "-"));
+    stages.forEach((m, k) => {
+      const top = num(m.DepthTop), btm = num(m.DepthBtm);
+      if (top == null || btm == null) return;
+      const drilled = num(m.DepthDrillOut);
+      // Drilled out to D: only what is deeper than D is still in the hole.
+      const from = drilled != null ? Math.max(top, drilled) : top;
+      if (from >= btm) return;                       // wholly drilled out
+      const y0 = y(from), y1 = y(btm);
+      if (y1 <= y0) return;
       items.push(
-        <g key={`cem${i}`} className="cursor-pointer" onClick={() => onEditTable("wvCement")}>
-          <title>{`Cement × ${cem.length} on ${c.Des ?? "casing"} (wvCement)`}</title>
-          <rect x={CX + hw + 1} y={Math.max(TOP, yb - 60)} width={5} height={Math.min(60, yb - TOP)} fill="url(#cemhatch)" />
-          <rect x={CX - hw - 6} y={Math.max(TOP, yb - 60)} width={5} height={Math.min(60, yb - TOP)} fill="url(#cemhatch)" />
+        <g key={`cem${i}-${k}`} className="cursor-pointer" onClick={() => onEditTable("wvCementStage")}>
+          <title>
+            {`${m.Des ?? "Cement stage"} — ${fmtDepth(top)} to ${fmtDepth(btm)}`
+              + (drilled != null ? `, drilled out to ${fmtDepth(drilled)}` : "")
+              + ` (wvCementStage)`}
+          </title>
+          <rect x={CX + hw + 1} y={y0} width={5} height={y1 - y0} fill="url(#cemhatch)" />
+          <rect x={CX - hw - 6} y={y0} width={5} height={y1 - y0} fill="url(#cemhatch)" />
+          {drilled != null && (
+            /* the drill-out depth, so a shortened column is legible as such */
+            <line x1={CX - hw - 8} x2={CX + hw + 8} y1={y(Math.max(top, drilled))}
+              y2={y(Math.max(top, drilled))} stroke="#6b7280" strokeWidth="0.8" strokeDasharray="2 2" />
+          )}
+        </g>,
+      );
+    });
+    // Cement recorded with no stage depths at all still deserves a mark, but a
+    // small one at the shoe — not a strip pretending to a height.
+    const bare = cement.filter((m) => String(m.IDRecString ?? "") === String(c.IDRec ?? "-")
+      && !stages.some((st) => String(st.IDRecParent ?? "") === String(m.IDRec ?? "-")));
+    if (bare.length) {
+      items.push(
+        <g key={`cemb${i}`} className="cursor-pointer" onClick={() => onEditTable("wvCementStage")}>
+          <title>{`Cement × ${bare.length} on ${c.Des ?? "casing"} — no stage depths recorded, so its extent is unknown (wvCement)`}</title>
+          <rect x={CX + hw + 1} y={yb - 8} width={5} height={8} fill="url(#cemhatch)" opacity={0.55} />
+          <rect x={CX - hw - 6} y={yb - 8} width={5} height={8} fill="url(#cemhatch)" opacity={0.55} />
         </g>,
       );
     }
   };
   casings.forEach((c, i) => drawCasing(c, i, false));
   propCasings.forEach((c, i) => drawCasing(c, i, true));
+
+  /*
+   * The drill string in the hole, and the bit on the end of it
+   * (§7.2 "Drilling OD Not Visible", "Bit Not Visible").
+   *
+   * Its depth range comes from the drilling parameters recorded against it —
+   * wvJobDrillString has no depth column — so a string that was never drilled
+   * with does not appear rather than appearing at surface. The width is the
+   * largest component OD, which is what the guide means by "enter the OD for
+   * each applicable record".
+   *
+   * Drawn last so it sits over the casing it is inside, and in a warm grey that
+   * reads as steel-in-hole rather than as another string of pipe.
+   */
+  const drillStrings = (layers.drillString ? s.drillStrings ?? [] : []).filter((r) => {
+    const run = dstr(r.DtTmRun), pull = dstr(r.DtTmPull);
+    // In the hole on the selected date: run on or before it, not yet pulled.
+    return (!run || run <= date) && (!pull || pull > date) && String(r.Proposed ?? "") !== "1";
+  });
+  drillStrings.forEach((r, i) => {
+    const top = num(r.DepthTop) ?? 0;
+    const btm = num(r.DepthBtm);
+    if (btm == null) return;
+    const hw = Math.max(2.5, halfW(num(r.maxOd ?? null)) * 0.42);
+    const y0 = y(Math.max(0, top)), y1 = y(btm);
+    const bit = r.bit;
+    const bitLen = num(bit?.Length ?? null);
+    // The bit occupies the bottom of the string; give it at least a few pixels
+    // so it is visible on a well kilometres deep.
+    const bitPx = bitLen != null ? Math.max(6, y(btm) - y(Math.max(0, btm - bitLen))) : 8;
+    items.push(
+      <g key={`ds${i}`} className="cursor-pointer" onClick={() => onEditTable("wvJobDrillString")}>
+        <title>
+          {`${r.Des ?? "Drill string"} — ${fmtDepth(top)} to ${fmtDepth(btm)}`
+            + (bit?.Des ? `, bit ${bit.Des}` : "") + " (wvJobDrillString)"}
+        </title>
+        <rect x={CX - hw} y={y0} width={hw * 2} height={Math.max(1, y1 - y0 - bitPx)}
+          fill="#78716c" opacity={0.55} />
+        {bit && (
+          /* the bit: a wedge at the bottom, sized to its own OD when recorded */
+          <g>
+            <title>{`${bit.Des ?? "Bit"}${bit.Typ ? ` — ${bit.Typ}` : ""} (wvJobDrillBit)`}</title>
+            <polygon
+              points={`${CX - Math.max(hw, halfW(num(bit.Sz ?? null)) * 0.42)},${y1 - bitPx} `
+                + `${CX + Math.max(hw, halfW(num(bit.Sz ?? null)) * 0.42)},${y1 - bitPx} ${CX},${y1}`}
+              fill="#44403c" />
+          </g>
+        )}
+      </g>,
+    );
+  });
 
   // tubing: blue pair, inside; proposed dashed
   const drawTubing = (t: WvSchematicRow & { maxOd?: number | null }, i: number, proposed: boolean) => {
@@ -1057,9 +1315,64 @@ function SchematicSvg({ s, date, boreId, showProposed, scale, layers, smartScali
     );
   }
 
+  /*
+   * §8.3 Tracks — extra columns on the SAME depth scale as the drawing.
+   *
+   * Each is a simple curve of the survey value against measured depth, drawn to
+   * the right of the diagram so the axis it shares is obvious. The survey's own
+   * MD range need not reach the deepest item on the picture, so the curve stops
+   * where the survey stops rather than being extrapolated: a track that carried
+   * on past its last station would be inventing a hole angle.
+   */
+  const trackCols: React.ReactNode[] = [];
+  const wanted = [
+    tracks?.tvd ? { key: "tvd", label: "TVD", get: (st: { tvd: number }) => st.tvd, spec: depthSpec } : null,
+    tracks?.incl ? { key: "incl", label: "Incl°", get: (st: { inclination: number }) => st.inclination, spec: {} } : null,
+  ].filter(Boolean) as { key: string; label: string; get: (st: never) => number; spec: typeof depthSpec }[];
+  const TRACK_W = 66;
+  const trackLeft = W - 8 - wanted.length * TRACK_W;
+  wanted.forEach((t, ti) => {
+    const x0 = trackLeft + ti * TRACK_W;
+    const pts = (stations ?? [])
+      .filter((st) => Number.isFinite(st.md) && Number.isFinite(t.get(st as never)))
+      .sort((a, b) => a.md - b.md);
+    const vals = pts.map((st) => t.get(st as never));
+    const hi = Math.max(1, ...vals);
+    trackCols.push(
+      <g key={`tr${t.key}`}>
+        <rect x={x0} y={TOP - 14} width={TRACK_W - 6} height={H - TOP - 2} fill="#f8fafc" stroke="#e2e8f0" />
+        <text x={x0 + (TRACK_W - 6) / 2} y={TOP - 4} fontSize="9" fill="#475569" textAnchor="middle">
+          {t.label}
+        </text>
+        {pts.length > 1 ? (
+          <polyline fill="none" stroke="#0f766e" strokeWidth="1.2"
+            points={pts.map((st) => {
+              const v = t.get(st as never);
+              const shown = t.spec.unit ? toDisplay(v, t.spec, unitSet)?.value ?? v : v;
+              const shownHi = t.spec.unit ? toDisplay(hi, t.spec, unitSet)?.value ?? hi : hi;
+              const x = x0 + 3 + (shown / (shownHi || 1)) * (TRACK_W - 12);
+              return `${x},${y(Math.min(st.md, maxDepth))}`;
+            }).join(" ")} />
+        ) : (
+          <text x={x0 + (TRACK_W - 6) / 2} y={TOP + 24} fontSize="8" fill="#94a3b8" textAnchor="middle">
+            {stations ? "no stations" : "loading…"}
+          </text>
+        )}
+        {pts.length > 1 && (
+          <text x={x0 + (TRACK_W - 6) / 2} y={H - 4} fontSize="7" fill="#94a3b8" textAnchor="middle">
+            0–{Math.round(t.spec.unit ? toDisplay(hi, t.spec, unitSet)?.value ?? hi : hi).toLocaleString()}
+          </text>
+        )}
+        <title>{`${t.label} from ${surveyName ? `survey "${surveyName}"` : "the linked deviation survey"}`
+          + ` — ${pts.length} stations, on the same depth scale as the drawing`}</title>
+      </g>,
+    );
+  });
+
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width={W * scale} height={H * scale} className="mx-auto block"
       role="img" aria-label="Wellbore schematic">
+      {trackCols}
       <defs>
         <pattern id="cemhatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <rect width="4" height="4" fill="#e5e7eb" />
@@ -1259,6 +1572,9 @@ function SchematicTemplates({
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /** The template currently applied, so Update/Rename/Copy/Delete have a target. */
+  const [picked, setPicked] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const q = useQuery({
     queryKey: ["wvdb", db, "schematic-templates"],
@@ -1272,17 +1588,66 @@ function SchematicTemplates({
     setShowProposed(settings.showProposed === true);
   };
 
-  const save = async () => {
+  const templates = q.data?.templates ?? [];
+  const current = templates.find((t) => t.id === picked) ?? null;
+
+  /**
+   * §8.3 gives Edit, Copy and Delete as three separate procedures, and the row
+   * offered none of them: Save always created, so re-using a name was refused
+   * with a 409 and a template could only ever be added.
+   *
+   * `id` present updates in place; absent creates. That is the API's own
+   * contract — only the UI never used it.
+   */
+  const save = async (opts: { id?: string; name: string } = { name: name.trim() }) => {
     setError(null);
+    setBusy(true);
     try {
-      await wvDbApi.saveSchematicTemplate(db, {
-        name: name.trim(),
+      const saved = await wvDbApi.saveSchematicTemplate(db, {
+        ...(opts.id ? { id: opts.id } : {}),
+        name: opts.name,
         settings: { layers, smartScaling, showProposed },
       });
       await qc.invalidateQueries({ queryKey: ["wvdb", db, "schematic-templates"] });
       setNaming(false);
       setName("");
+      if (saved?.id) setPicked(saved.id);
     } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  /** Edit a Template — write the settings now on screen back into it. */
+  const update = () => { if (current) void save({ id: current.id, name: current.name }); };
+
+  /** Copy a Template — "the copy appears with (copy) beside the name" (§8.3). */
+  const copy = () => {
+    if (!current) return;
+    const base = `${current.name} (copy)`;
+    // A second copy of the same template must not collide with the first.
+    let next = base, n = 2;
+    while (templates.some((t) => t.name === next)) next = `${base} ${n++}`;
+    void save({ name: next });
+  };
+
+  /** Rename — the same update, with a name the user types. */
+  const rename = () => {
+    if (!current) return;
+    const next = window.prompt("Rename this schematic template", current.name)?.trim();
+    if (!next || next === current.name) return;
+    void save({ id: current.id, name: next });
+  };
+
+  const remove = async () => {
+    if (!current) return;
+    if (!window.confirm(`Delete the schematic template "${current.name}"?`)) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await wvDbApi.deleteSchematicTemplate(db, current.id);
+      await qc.invalidateQueries({ queryKey: ["wvdb", db, "schematic-templates"] });
+      setPicked("");
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
   };
 
   const on = Object.values(layers).filter(Boolean).length;
@@ -1302,18 +1667,44 @@ function SchematicTemplates({
       <div className="ml-auto flex items-center gap-1.5">
         <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
           Template
-          <select data-testid="wv-sch-template" defaultValue=""
+          <select data-testid="wv-sch-template" value={picked}
             onChange={(e) => {
-              const t = (q.data?.templates ?? []).find((x) => x.id === e.target.value);
+              setPicked(e.target.value);
+              const t = templates.find((x) => x.id === e.target.value);
               if (t) apply(t.settings);
             }}
             className="h-7 border border-gray-300 rounded px-1 text-xs bg-white text-gray-800 normal-case tracking-normal max-w-[12rem]">
             <option value="">Choose…</option>
-            {(q.data?.templates ?? []).map((t) => (
+            {templates.map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
         </label>
+        {/* §8.3 Edit / Copy / Delete a Template, on whichever one is applied. */}
+        {current && !naming && (
+          <>
+            <button type="button" onClick={update} disabled={busy} data-testid="wv-sch-update"
+              title={`Edit a Template (§8.3) — save what is on screen into "${current.name}"`}
+              className="h-7 px-2 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40">
+              Update
+            </button>
+            <button type="button" onClick={rename} disabled={busy} data-testid="wv-sch-rename"
+              title="Rename this template"
+              className="h-7 px-2 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40">
+              Rename
+            </button>
+            <button type="button" onClick={copy} disabled={busy} data-testid="wv-sch-copy-tpl"
+              title="Copy a Template (§8.3) — the copy appears with (copy) beside the name"
+              className="h-7 px-2 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40">
+              Copy
+            </button>
+            <button type="button" onClick={() => void remove()} disabled={busy} data-testid="wv-sch-delete"
+              title="Delete a Template (§8.3)"
+              className="h-7 px-2 text-[11px] rounded border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-40">
+              Delete
+            </button>
+          </>
+        )}
         {naming ? (
           <>
             <input value={name} onChange={(e) => setName(e.target.value)} autoFocus

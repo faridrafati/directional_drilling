@@ -2499,10 +2499,179 @@ export async function registerWellviewDbRoutes(
       const other = stringRows(d, "wvOtherInHole", idwell, ["SzODMax", "IconName"]);
       const perfs = stringRows(d, "wvPerforation", idwell, ["DepthTop", "DtTm", "Proposed", "Typ"]);
       const cement = stringRows(d, "wvCement", idwell, ["IDRecString", "DtTmStart", "Proposed"]);
+      /*
+       * Cement STAGES, which are where the depths live (§7.2 "Cement
+       * Information Not Visible — in the Cement Stages folder, make sure that
+       * the Top Depth and Bottom Depth information is entered").
+       *
+       * wvCement itself carries no depth column at all, so a schematic drawn
+       * from it can only show a token strip of a fixed height — which is what
+       * this did, hanging 60 px above each shoe regardless of what was pumped.
+       * Every one of the sample's 115 stages has both depths.
+       *
+       * DepthDrillOut and DtTmDrillOut come too: §7.2's "Cement Plug Still
+       * Visible" says a plug drilled out should stop being drawn below that
+       * depth, which the renderer cannot honour without being told.
+       */
+      const cementStages = (() => {
+        const st = table(d, "wvCementStage");
+        const cem = table(d, "wvCement");
+        if (!st || !cem) return [];
+        const col = (t: NonNullable<ReturnType<typeof table>>, c: string) => t.colSet.get(c.toLowerCase());
+        const want: [string, string][] = [
+          ["IDRec", "idrec"], ["IDRecParent", "idrecparent"], ["Des", "des"],
+          ["DepthTop", "depthtop"], ["DepthBtm", "depthbtm"],
+          ["DepthDrillOut", "depthdrillout"], ["DtTmDrillOut", "dttmdrillout"],
+          ["DepthTagged", "depthtagged"], ["BtmPlug", "btmplug"],
+        ];
+        const sel = want.map(([alias, c]) => {
+          const actual = col(st, c);
+          return actual ? `s."${actual}" AS "${alias}"` : `NULL AS "${alias}"`;
+        });
+        const cs = col(cem, "idrecstring"), cd = col(cem, "dttmstart"), cp = col(cem, "proposed");
+        sel.push(cs ? `c."${cs}" AS "IDRecString"` : `NULL AS "IDRecString"`);
+        sel.push(cd ? `c."${cd}" AS "DtTmStart"` : `NULL AS "DtTmStart"`);
+        sel.push(cp ? `c."${cp}" AS "Proposed"` : `NULL AS "Proposed"`);
+        try {
+          return (d.ro.prepare(
+            `SELECT ${sel.join(", ")} FROM "${st.name}" s
+             JOIN "${cem.name}" c ON c."${col(cem, "idrec")}" = s."${col(st, "idrecparent")}"
+                                 AND c.idwell = s.idwell
+             WHERE s.idwell = ?`).all(idwell) as Record<string, unknown>[])
+            .map((r) => {
+              const out: Record<string, unknown> = {};
+              for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
+              return out;
+            });
+        } catch {
+          return [];
+        }
+      })();
       const zones = stringRows(d, "wvZone", idwell, ["DepthTop", "ZoneName"]);
+
+      /*
+       * The drill string in the hole, and its bit (§7.2 "Drilling OD Not
+       * Visible", "Bit Not Visible").
+       *
+       * wvJobDrillString has NO depth column of its own — the string's position
+       * comes from the drilling parameters recorded against it, exactly as the
+       * days-vs-depth curve does. So the depth range is MIN(DepthStart) to
+       * MAX(DepthEnd) over its params, and a string with no params is not drawn
+       * rather than drawn at zero.
+       *
+       * The width is the largest component OD (SzODNom, falling back to
+       * SzODMax): 1,579 of the sample's 1,581 components carry one, which is
+       * what the guide's "enter the OD for each applicable record" is about.
+       */
+      const drillStrings = (() => {
+        const ds = table(d, "wvJobDrillString");
+        const dp = table(d, "wvJobDrillStringDrillParam");
+        if (!ds || !dp) return [];
+        const dsIdRec = ds.colSet.get("idrec");
+        const dpParent = dp.colSet.get("idrecparent");
+        const dStart = dp.colSet.get("depthstart"), dEnd = dp.colSet.get("depthend");
+        if (!dsIdRec || !dpParent || !dEnd) return [];
+        const od = maxOdByParent(d, "wvJobDrillStringComp", idwell);
+        /*
+         * The bit is keyed BY ITS OWN IDRec and reached through the string's
+         * IDRecBit — not by IDRecParent, which points at the JOB.
+         *
+         * That follows from WellView's own linkage rule: a child's parent is
+         * the longest table-name PREFIX that exists, and "wvJobDrillString" is
+         * not a prefix of "wvJobDrillBit" — "wvJob" is. Reading it as a child
+         * of the string finds nothing at all (0 of 169), which is exactly what
+         * a first attempt here did.
+         */
+        const bitT = table(d, "wvJobDrillBit");
+        const bitBy = new Map<string, Record<string, unknown>>();
+        if (bitT) {
+          for (const b of d.ro.prepare(
+            `SELECT * FROM "${bitT.name}" WHERE idwell = ?`).all(idwell) as Record<string, unknown>[]) {
+            bitBy.set(String(b[bitT.colSet.get("idrec") ?? "IDRec"] ?? ""), b);
+          }
+        }
+        const pick = (r: Record<string, unknown>, t: NonNullable<ReturnType<typeof table>>, c: string) => {
+          const a = t.colSet.get(c.toLowerCase());
+          return a ? shapeValue(r[a]) : null;
+        };
+        try {
+          const rows = d.ro.prepare(`SELECT * FROM "${ds.name}" WHERE idwell = ?`)
+            .all(idwell) as Record<string, unknown>[];
+          const out: Record<string, unknown>[] = [];
+          for (const r of rows) {
+            const id = String(r[dsIdRec] ?? "");
+            const span = d.ro.prepare(
+              `SELECT MIN(${dStart ? `"${dStart}"` : `"${dEnd}"`}) AS top, MAX("${dEnd}") AS btm,
+                      MIN(DtTmStart) AS t0, MAX(DtTmEnd) AS t1
+                 FROM "${dp.name}" WHERE idwell = ? AND "${dpParent}" = ?`)
+              .get(idwell, id) as { top: number | null; btm: number | null; t0: string | null; t1: string | null };
+            if (span?.btm == null) continue;             // no params: not in the hole
+            const bit = bitBy.get(String(pick(r, ds, "idrecbit") ?? ""));
+            out.push({
+              IDRec: id,
+              Des: pick(r, ds, "des") ?? pick(r, ds, "stringno"),
+              DepthTop: span.top,
+              DepthBtm: span.btm,
+              DtTmRun: span.t0,
+              DtTmPull: span.t1,
+              maxOd: od.get(id) ?? null,
+              Proposed: pick(r, ds, "proposed"),
+              // wvJobDrillString carries NO wellbore column, so the wellbore
+              // filter cannot narrow drill strings; the client shows them for
+              // every bore rather than pretending to a link that is not there.
+              bit: bit && bitT ? {
+                IDRec: pick(bit, bitT, "idrec"),
+                Des: [pick(bit, bitT, "make"), pick(bit, bitT, "model")].filter(Boolean).join(" ") || null,
+                Sz: pick(bit, bitT, "szoddrill"),
+                Length: pick(bit, bitT, "length"),
+                IconName: pick(bit, bitT, "iconname"),
+                Typ: pick(bit, bitT, "typ"),
+              } : null,
+            });
+          }
+          return out;
+        } catch {
+          return [];
+        }
+      })();
+
+      /*
+       * The deviation survey each wellbore is LINKED to (§7.2 "Deviation Survey
+       * Not Visible — the deviation survey is not linked to the wellbore").
+       *
+       * 41 of the sample's 44 wellbores carry IDRecDirSrvyActual. The schematic
+       * cannot draw a well path from it — this is a vertical depth diagram, not
+       * a plan view — but it CAN say which survey applies and offer its TVD, so
+       * a depth track reads true depth instead of measured depth, and so a
+       * wellbore with no survey linked says so instead of looking complete.
+       */
+      const surveyLinks = (() => {
+        const wb = table(d, "wvWellbore");
+        const link = wb?.colSet.get("idrecdirsrvyactual");
+        if (!wb || !link) return [];
+        const srv = table(d, "wvWellboreDirSurvey");
+        const names = new Map<string, string>();
+        if (srv) {
+          for (const r of d.ro.prepare(`SELECT * FROM "${srv.name}" WHERE idwell = ?`)
+            .all(idwell) as Record<string, unknown>[]) {
+            names.set(String(r[srv.colSet.get("idrec") ?? "IDRec"] ?? ""),
+              String(r[srv.colSet.get("des") ?? "Des"] ?? "") || "survey");
+          }
+        }
+        return (d.ro.prepare(
+          `SELECT "${wb.colSet.get("idrec")}" AS idrec, "${link}" AS srv FROM "${wb.name}" WHERE idwell = ?`)
+          .all(idwell) as Record<string, unknown>[])
+          .map((r) => ({
+            wellbore: String(r.idrec ?? ""),
+            survey: r.srv ? String(r.srv) : null,
+            surveyName: r.srv ? names.get(String(r.srv)) ?? null : null,
+          }));
+      })();
       for (const set of [casings, tubings, rods, other]) collect(set, ["DtTmRun", "DtTmPull"]);
       collect(perfs, ["DtTm"]);
       collect(cement, ["DtTmStart"]);
+      collect(cementStages, ["DtTmStart", "DtTmDrillOut"]);
+      collect(drillStrings, ["DtTmRun", "DtTmPull"]);
       collect(sizes, ["DtTmStart", "DtTmEnd"]);
       // Every depth on the diagram — the axis, the shoe labels, the tooltips —
       // is one measured depth in the model's base unit, so one spec converts
@@ -2514,7 +2683,8 @@ export async function registerWellviewDbRoutes(
       const sizeField = modelField("wvWellboreSize", "sz") ?? modelField("wvCasComp", "szodnom");
       return {
         wellbores: bores, sizes, casings, tubings, rods, otherInHole: other,
-        perforations: perfs, cement, zones,
+        perforations: perfs, cement, cementStages, zones,
+        drillStrings, surveyLinks,
         dates: [...dates].sort(),
         depth: { unit: depthField?.baseUnit, units: depthField?.units },
         size: { unit: sizeField?.baseUnit, units: sizeField?.units },
