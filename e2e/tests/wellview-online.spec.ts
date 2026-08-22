@@ -259,3 +259,38 @@ test("the drilling curve follows the reference datum", async ({ page }) => {
     await datum.selectOption("OrigKB");
   }
 });
+
+/**
+ * Every reference datum must survive a page reload.
+ *
+ * The web app kept its own hand-typed whitelist of datum names beside the
+ * shared one, and it had fallen an entry behind: Sea level appeared in the
+ * picker and persisted, then the next load rejected it and reverted to the
+ * original KB — so someone reading depths from sea level silently got KB
+ * depths back. The whitelist now comes from the shared DATUMS list; this walks
+ * all of them so the two can never drift again.
+ */
+test("every reference datum survives a reload", async ({ page }) => {
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+
+  const picker = () => page.locator("select").filter({ hasText: "Original KB" }).first();
+  try {
+    for (const d of ["SeaLevel", "MudLine", "TubHead", "CasFlange", "Ground"]) {
+      await picker().selectOption(d);
+      await page.reload();
+      await expect(page.getByTestId("wv-db-wv9.0_Sample")).toBeVisible({ timeout: 15_000 });
+      expect(await picker().inputValue(), `${d} did not survive the reload`).toBe(d);
+    }
+  } finally {
+    await picker().selectOption("OrigKB");
+  }
+});

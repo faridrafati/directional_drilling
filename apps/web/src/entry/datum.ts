@@ -12,12 +12,19 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { datumShift, type Datum } from "@dd/shared";
+import { DATUMS, datumShift, type Datum } from "@dd/shared";
 import { wvDbApi } from "./wellviewDb.js";
 
 const KEY = "wv.online.datum";
 const DEFAULT: Datum = "OrigKB";
-const VALID: readonly string[] = ["OrigKB", "Ground", "MudLine", "CasFlange", "TubHead"];
+/*
+ * Read from the shared list, never re-typed here. A hand-copied whitelist that
+ * had fallen one entry behind is exactly what dropped SeaLevel: the picker
+ * offered it, the choice persisted, and the next page load silently rejected it
+ * and reverted to the original KB — so a user reading depths from sea level got
+ * KB depths back without being told.
+ */
+const VALID: readonly string[] = DATUMS;
 
 const listeners = new Set<(d: Datum) => void>();
 let current: Datum = (() => {
