@@ -211,10 +211,31 @@ const unitSets = [];
 const fieldGroup = new Map();          // "table.field" -> group name
 const groupOrder = new Map();          // table -> ordered group names
 
-for (const m of xml.matchAll(/<(afmtable|afmfieldunitformat|afmunitset|afmfield|afmtablegroupfield|afmtablegroupfieldlink)\s([^>]*?)\/?>/g)) {
+for (const m of xml.matchAll(/<(afmtable|afmfieldunitformat|afmunitset|afmfield|afmtablegroupfield|afmtablegroupfieldlink|afmfieldlookuplist)\s([^>]*?)\/?>/g)) {
   const a = attrs(m[2]);
   if (m[1] === "afmunitset") {
     if (a.des) unitSets.push({ name: a.des, comment: a.comment || undefined });
+    continue;
+  }
+  if (m[1] === "afmfieldlookuplist") {
+    /*
+     * The APPROVED values, for the few fields whose list lives in the model
+     * rather than in a library.
+     *
+     * 1,110 fields are `lookuptyp="library"` and their lists ship as encrypted
+     * .lib archives the app cannot read — for those it can only offer the
+     * values already in the database, and says so. But 22 fields are
+     * `mdllist` or `mdllistwithtables`, and their 122 values are stated right
+     * here. Those ARE the sanctioned list, and presenting them as merely
+     * "in use" would undersell them.
+     */
+    // Only where the list IS the values. On a `foreignidrec` field the same
+    // element carries the target TABLE name instead ("wvJobProgramPhase"), and
+    // offering that as a value to type would be nonsense.
+    const isValueList = /^mdllist/i.test(currentField?.lookupTyp ?? "");
+    if (currentField && a.listitem && isValueList) {
+      (currentField.modelList ??= []).push(a.listitem);
+    }
     continue;
   }
   if (m[1] === "afmfieldunitformat") {

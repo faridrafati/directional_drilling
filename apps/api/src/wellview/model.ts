@@ -40,6 +40,16 @@ export interface ModelField {
   /** The field it is carried FROM, "wvTable.Field", when not this field itself. */
   carryForwardFrom?: string;
   lookupTyp?: string;
+  /**
+   * The APPROVED values, when the model states them outright.
+   *
+   * 1,110 fields are `lookuptyp="library"` and their lists ship as encrypted
+   * .lib archives this app cannot read; for those it can only offer the values
+   * already in the database, and says so. But 22 fields are `mdllist` or
+   * `mdllistwithtables` and their 119 values are in the model itself — those
+   * ARE the sanctioned list, and must not be presented as merely "in use".
+   */
+  modelList?: string[];
   libTable?: string;
   libField?: string;
   baseUnit?: string;

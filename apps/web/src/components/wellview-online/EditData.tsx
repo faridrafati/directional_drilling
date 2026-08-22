@@ -929,7 +929,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     const bits = [
       c.help,
       c.globalMetric ? "Required global metric." : c.required ? "Required." : null,
-      c.library ? `Library field (${c.library.table}) — the approved list is not readable here.` : null,
+      c.modelList?.length
+        ? `Approved values (${c.modelList.length}), from the data model.`
+        : c.library ? `Library field (${c.library.table}) — the approved list is not readable here.` : null,
       c.calculated ? "Calculated by WellView — not editable." : null,
       c.unit ? `Base unit: ${c.unit}.` : null,
       c.link ? "Linked record." : null,
@@ -1024,7 +1026,18 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     // A lookup exists when the sample-derived catalogue has values OR the model
     // says the field is Library-bound — in the latter case the values come from
     // what this database actually uses, fetched when the list is opened.
-    const seeded = lookupFor.get(c.column.toLowerCase());
+    /*
+     * Three sources, and the difference matters (§3.9 Lookup List Library).
+     *
+     * `modelList` is the APPROVED list, stated in Peloton's own data model —
+     * 22 fields carry one. `library` names one of the 754 encrypted .lib
+     * archives, which cannot be read, so all the app can offer there is what
+     * the database already contains. Presenting the second as if it were the
+     * first is how a typo already in the data becomes a recommendation, so the
+     * two are labelled differently and the approved list wins.
+     */
+    const approved = c.modelList?.length ? c.modelList : null;
+    const seeded = approved ?? lookupFor.get(c.column.toLowerCase());
     const hasLookup = !!seeded || !!c.library;
     const listId = seeded ? `wv-lu-${data.table}-${c.column}` : undefined;
     const open = hasLookup && popover?.key === (key ?? "__ghost__") && popover.col === c.column;
@@ -1047,9 +1060,11 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           <>
             {/* Table 3-6 item J: the ellipsis button marks a lookup list. */}
             <button type="button" tabIndex={-1} data-testid="wv-lookup-button"
-              title={c.library
-                ? `Library field — ${c.library.table}. The approved list is not readable here; this offers the values in use.`
-                : "Lookup list"}
+              title={approved
+                ? "Approved values, from WellView’s own data model."
+                : c.library
+                  ? `Library field — ${c.library.table}. The approved list is not readable here; this offers the values in use.`
+                  : "Lookup list"}
               onClick={() => setPopover(open ? null : { key: key ?? "__ghost__", col: c.column })}
               className={`shrink-0 px-1 text-[10px] hover:text-blue-600 ${
                 c.library ? "text-blue-400" : "text-gray-400"}`}>…</button>
@@ -1061,8 +1076,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
             {open && (
               <LibraryPopover
                 db={db} table={data.table} column={c.column}
-                library={c.library ?? null}
+                library={approved ? null : c.library ?? null}
                 seeded={seeded ?? null}
+                approved={!!approved}
                 onPick={(v) => {
                   if (isGhost) setGhostValue(c.column, v); else setValue(key!, c.column, v);
                   setPopover(null);
@@ -1323,13 +1339,15 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
  * Values are fetched when the list is opened, not with the grid: a folder can
  * carry dozens of library-bound columns and almost none get opened.
  */
-function LibraryPopover({ db, table, column, library, seeded, onPick, onClose }: {
+function LibraryPopover({ db, table, column, library, seeded, approved, onPick, onClose }: {
   db: string;
   table: string;
   column: string;
   library: { table: string; field: string | null } | null;
   /** Values the sample-derived catalogue already knows, if any. */
   seeded: string[] | null;
+  /** True when `seeded` is the APPROVED model list, not merely values in use. */
+  approved?: boolean;
   onPick: (v: string) => void;
   onClose: () => void;
 }) {
@@ -1341,18 +1359,24 @@ function LibraryPopover({ db, table, column, library, seeded, onPick, onClose }:
   // In-use values first, then anything the catalogue knows that the database
   // has not used yet — both are offers, neither is authority.
   const values = useMemo(() => {
+    // The approved list stands on its own: mixing in whatever the database
+    // happens to contain would put unsanctioned values beside sanctioned ones
+    // with nothing to tell them apart.
+    if (approved) return seeded ?? [];
     const inUse = q.data?.values ?? [];
     const extra = (seeded ?? []).filter((v) => !inUse.includes(v));
     return [...inUse, ...extra];
-  }, [q.data, seeded]);
+  }, [q.data, seeded, approved]);
 
   return (
     <ValuesPopover
       values={values}
-      loading={q.isLoading}
-      note={library
-        ? `Values in use in this database. The approved library (${library.table}) ships encrypted and cannot be read here.`
-        : "Values in use in this database."}
+      loading={approved ? false : q.isLoading}
+      note={approved
+        ? "The approved values, from WellView’s own data model."
+        : library
+          ? `Values in use in this database. The approved library (${library.table}) ships encrypted and cannot be read here.`
+          : "Values in use in this database."}
       onPick={onPick}
       onClose={onClose}
     />

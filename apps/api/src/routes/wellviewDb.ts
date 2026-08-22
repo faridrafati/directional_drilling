@@ -967,6 +967,8 @@ export async function registerWellviewDbRoutes(
             library: mf?.lookupTyp === "library" && mf.libTable
               ? { table: mf.libTable, field: mf.libField ?? null }
               : undefined,
+            /** The APPROVED values, where the model states them (22 fields). */
+            modelList: mf?.modelList,
             warnOnly: mf?.warnOnly,
             link,
           };

@@ -81,6 +81,14 @@ export interface WvRecordColumn {
    *  itself is NOT available — custom/library/*.lib are encrypted — so the
    *  lookup offers the values this database uses and says as much. */
   library?: { table: string; field: string | null };
+  /**
+   * The APPROVED values, where the data model states them outright.
+   *
+   * Distinct from `library`, whose list ships encrypted and cannot be read —
+   * there the app can only offer the values already in the database. Showing
+   * those as if they were sanctioned is how a typo becomes a recommendation.
+   */
+  modelList?: string[];
   /** The rule only warns; it does not block. */
   warnOnly?: boolean;
 }
