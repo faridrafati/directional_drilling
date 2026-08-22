@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  UNIT_FAMILIES, UNCONVERTIBLE_UNITS, canConvert, convertUnit,
+  UNIT_FAMILIES, NOT_LINEARLY_SCALABLE, canConvert, convertUnit,
 } from "./wellview.js";
 import { formatUnitValue, formatFraction, parseNumber } from "./wellview-display.js";
 
@@ -32,13 +32,42 @@ describe("WellView units", () => {
     expect(convertUnit(1, "bbl", "gal")).toBeCloseTo(42, 9);
     expect(convertUnit(1, "bbl", "m³")).toBeCloseTo(0.158987294928, 12);
     // MCF is a THOUSAND cubic feet — the classic off-by-1000 in this domain.
-    expect(convertUnit(1, "MCF", "m³")).toBeCloseTo(28.316846592, 9);
-    expect(convertUnit(1, "MCF", "m³")! / convertUnit(1, "m³", "m³")!).toBeGreaterThan(28);
-    // 1 psi ≈ 6.894757 kPa; 1 bar is 100 kPa exactly.
-    expect(convertUnit(1, "psi", "kPa")).toBeCloseTo(6.894757293168361, 9);
+    expect(convertUnit(1, "MCF", "m³")!).toBeGreaterThan(28);
+    expect(convertUnit(1, "MCF", "m³")!).toBeLessThan(29);
+    // 1 bar is 100 kPa exactly.
     expect(convertUnit(1, "bars", "kPa")).toBe(100);
     // 1 atm ≈ 14.696 psi — a number every engineer knows.
     expect(convertUnit(101.325, "kPa", "psi")).toBeCloseTo(14.6959, 3);
+  });
+
+  it("carries Peloton's rounding, and holds it to seven significant figures", () => {
+    // The conversions come from `system/Peloton.Common.Units`, and Peloton
+    // stores its factors to about seven significant figures rather than to the
+    // exact definition — psi as 6.894757, not 6.894757293168361; MCF as
+    // 28.31685, not 28.316846592. Less precise, never wrong, and 1.2 parts per
+    // million at worst across the whole table, which is orders of magnitude
+    // below anything a rig measures.
+    //
+    // This is asserted as an explicit BOUND rather than by loosening the
+    // decimal places on each assertion above, so that the day a factor drifts
+    // further than the vendor's own rounding, a test fails instead of a report
+    // quietly changing. Peloton's number wins over the exact definition because
+    // a self-consistent table beats a mixed one, and because it is the number
+    // the desktop showed the people who typed the data in.
+    const EXACT: Array<[string, string, number]> = [
+      ["psi", "kPa", 6.894757293168361],
+      ["MCF", "m³", 28.316846592],
+      ["ft", "m", 0.3048],
+      ["bbl", "m³", 0.158987294928],
+      ["in", "mm", 25.4],
+      ["miles", "m", 1609.344],
+    ];
+    for (const [from, to, exact] of EXACT) {
+      const got = convertUnit(1, from, to);
+      expect(got, `${from} -> ${to}`).not.toBeNull();
+      const rel = Math.abs(got! - exact) / exact;
+      expect(rel, `${from} -> ${to} is ${got}, exact is ${exact}`).toBeLessThan(2e-6);
+    }
   });
 
   it("converts dogleg to the units a driller actually reads", () => {
@@ -86,14 +115,66 @@ describe("WellView units", () => {
     expect(convertUnit(1, "smoot", "m")).toBeNull();
   });
 
-  it("refuses the units whose arithmetic this table cannot express", () => {
-    // API gravity is a reciprocal of specific gravity, not a scale.
-    expect(UNCONVERTIBLE_UNITS["°API"]).toMatch(/reciprocal/i);
-    expect(convertUnit(1, "kg/m³", "°API")).toBeNull();
-    // Currency has no factor.
+  it("converts the reciprocal units, which only the vendor table can express", () => {
+    // These were refused outright until Peloton's own table was read. Its rows
+    // carry an EXPONENT as well as a factor, so a hyperbola is expressible.
+    // Each number below is checked against the definition, not against the app.
+
+    // API gravity: API = 141.5/SG - 131.5. Water is 1000 kg/m³ and 10 °API.
+    expect(convertUnit(1000, "kg/m³", "°API")).toBeCloseTo(10, 6);
+    expect(convertUnit(10, "°API", "kg/m³")).toBeCloseTo(1000, 4);
+    // A 0.8 SG crude: 141.5/0.8 - 131.5 = 45.375 °API.
+    expect(convertUnit(800, "kg/m³", "°API")).toBeCloseTo(45.375, 5);
+    // Heavier than water is negative API, and that is correct, not an error.
+    expect(convertUnit(1100, "kg/m³", "°API")!).toBeLessThan(0);
+
+    // Drilling rate as time-per-length: m/day = 1440 / (min/m).
+    expect(convertUnit(10, "min/m", "m/day")).toBeCloseTo(144, 6);
+    expect(convertUnit(144, "m/day", "min/m")).toBeCloseTo(10, 6);
+    // …and per foot: 1440 min/day / 10 = 144 ft/day = 43.8912 m/day.
+    expect(convertUnit(10, "min/ft", "m/day")).toBeCloseTo(43.8912, 6);
+
+    // The reason the reason still matters: the list explaining why a scale
+    // factor is the wrong tool for these is kept, and still says so.
+    expect(NOT_LINEARLY_SCALABLE["°API"]).toMatch(/reciprocal/i);
+    expect(NOT_LINEARLY_SCALABLE["min/m"]).toMatch(/hyperbola/i);
+  });
+
+  it("refuses an input the pair's own arithmetic cannot take", () => {
+    // The pair converts; this VALUE does not. 0 min/m is a division by zero,
+    // and an Infinity labelled as a drilling rate is worse than no answer.
+    expect(canConvert("min/m", "m/day")).toBe(true);
+    expect(convertUnit(0, "min/m", "m/day")).toBeNull();
+    expect(convertUnit(0, "m/day", "min/m")).toBeNull();
+    // -131.5 °API is the pole of the API curve.
+    expect(convertUnit(-131.5, "°API", "kg/m³")).toBeNull();
+  });
+
+  it("still refuses what has no conversion at all", () => {
+    // Currency per length and currency itself do not share a base, in this
+    // app or in Peloton's table.
     expect(convertUnit(1, "Cost", "Cost/m")).toBeNull();
     // …and a same-unit request still works, since nothing has to be computed.
     expect(convertUnit(42, "Cost", "Cost")).toBe(42);
+    // What Cost DOES convert to is its own scale prefixes — a count of units,
+    // not an exchange rate. No cross-currency row exists anywhere in the table.
+    expect(convertUnit(5000, "Cost", "1k")).toBeCloseTo(5, 9);
+    expect(convertUnit(1, "Cost/hr", "Cost/day")).toBeCloseTo(24, 9);
+    expect(convertUnit(1, "Cost/m", "Cost/ft")).toBeCloseTo(0.3048, 9);
+  });
+
+  it("takes WellView's 100 lb sack, not the 94 lb cement sack", () => {
+    // This file first assumed the North-American Portland-cement sack of 94 lb.
+    // WellView's is 100 lb: every /sack unit in Peloton's table is labelled
+    // "100 pound sack" and `sacks` ships as 45.359237 kg = 100 x 0.45359237
+    // exactly. The difference is 6.383%, straight through every cement volume.
+    expect(convertUnit(1, "sacks", "kg")).toBeCloseTo(45.359237, 6);
+    expect(convertUnit(1, "sacks", "lb")).toBeCloseTo(100, 6);
+    // 1 US gal per 100 lb sack = 0.003785411784 / 45.359237 m³/kg.
+    expect(convertUnit(1, "gal/sack", "m³/kg")).toBeCloseTo(0.003785411784 / 45.359237, 12);
+    // Both tables now agree, so the fallback cannot reintroduce the 94 lb sack.
+    const fam = UNIT_FAMILIES.find((f) => f.units["gal/sack"])!;
+    expect(fam.units["gal/sack"].scale).toBeCloseTo(0.003785411784 / 45.359237, 15);
   });
 
   it("keeps every family internally consistent", () => {

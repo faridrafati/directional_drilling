@@ -31,6 +31,8 @@ export interface UnitDef {
   /** The exact definition relied on. */
   note?: string;
 }
+import { UNIT_ROWS, type UnitRow } from "./wellview-table.js";
+
 export interface UnitFamily {
   family: string;
   canonical: string;
@@ -260,7 +262,7 @@ export const UNIT_FAMILIES: UnitFamily[] = [
     units: {
       "m³/kg": { scale: 1, note: "canonical base unit" },
       "m³/tonne": { scale: 0.001, note: "metric tonne = 1000 kg exactly; NOT the short ton (907.18474 kg)" },
-      "gal/sack": { scale: 0.0000887809, note: "0.003785411784 m³ (US gal) / 42.63768278 kg, using the North-American oilfield cement sack = 94 lb = 94 × 0.45359237 kg. The 94 lb sack is a conventio" },
+      "gal/sack": { scale: 0.00008345404452019332, note: "0.003785411784 m³ (US gal) / 45.359237 kg. THE SACK IS 100 lb, not the 94 lb Portland-cement sack this entry first assumed: Peloton's own table labels every /sack unit \"100 pound sack\" and ships sacks = 45.359237 kg = 100 × 0.45359237 exactly, and its gal/sack, ft³/sack and L/sack factors are the exact 100 lb values to 16 digits. The 94 lb assumption made every cement volume 6.383% too large" },
     },
   },
   {
@@ -275,51 +277,150 @@ export const UNIT_FAMILIES: UnitFamily[] = [
 ];
 
 /**
- * Units deliberately NOT converted, with the reason. Each would need arithmetic
- * this table cannot express, so a field displayed in one keeps its base unit
- * rather than being silently mis-scaled.
+ * Units the linear families above cannot express, with the reason.
+ *
+ * Each one is a reciprocal, a currency, or a display format. The families are
+ * linear — `value × scale + offset` — and none of these is linear against its
+ * base, so converting them with a scale would print a plausible, wrong number.
+ *
+ * They are no longer refused outright, and the reason is worth recording:
+ * Peloton's own table carries an EXPONENT as well as a factor and an offset,
+ * and every one of these twelve is in it. `min/m` is stored against `m/day`
+ * with exponent −1 and factor 1/1440 — which is exactly the hyperbola
+ * `m/day = 1440 / (min/m)` this list was written to avoid. `°API` is stored
+ * with exponent −1 and offset −131.5, which is `141.5/SG − 131.5` exactly.
+ * `1/32"` turns out to be a plain length against `m` with factor 0.0254/32; it
+ * is only the RENDERING as thirty-seconds that is a format, and that lives in
+ * `wellview-display.ts`.
+ *
+ * So this list now guards the linear fallback beneath Peloton's table, not the
+ * table itself. None of the twelve is a member of any family above, so it is
+ * belt-and-braces rather than load-bearing — kept because the reasons are the
+ * record of why a scale factor is the wrong tool for them.
+ *
+ * What stays genuinely unconvertible is what Peloton does not attempt either:
+ * there is no cross-currency row anywhere in its table. `Cost` is one
+ * dimensionless currency with scale prefixes (1k, 10k, 100k, 1M), so `Cost → 1k`
+ * is arithmetic on a count of units and not an exchange rate.
  */
-export const UNCONVERTIBLE_UNITS: Record<string, string> = {
-  "min/m": "Reciprocal rate (time per unit length — drilling time per metre), not a linear scale of the m/day speed family. m/day = 1440 / (min/m), a hyperbola, so no scale",
-  "min/ft": "Reciprocal rate, same as min/m: m/day = 438.912 / (min/ft). Not expressible as value × scale + offset against the speed canonical. (min/ft ↔ min/m alone IS line",
-  "Cost/day": "Currency per unit time. No fixed factor exists — a currency amount has no dimensional relation to any unit in this group, and cross-currency rates are not const",
-  "Cost/hr": "Currency per unit time; excluded with all currency units for the same reason as Cost/day.",
-  "1/32\"": "Not a unit and not a scale but a DISPLAY FORMAT: a length (jet/nozzle size, gauge wear) rendered as thirty-seconds of an inch, normally as a whole-number numera",
-  "°API": "API gravity is the reciprocal of specific gravity (API = 141.5/SG − 131.5), not a linear scale of kg/m³.",
-  "s/qt": "Reciprocal rate — seconds per quart against a volume-rate family.",
-  "s/L": "Reciprocal rate — seconds per litre against a volume-rate family.",
-  "Cost": "Currency. No fixed factor exists.",
-  "Cost/m": "Currency per length; the length converts, the currency does not.",
-  "Cost/ft": "Currency per length; the length converts, the currency does not.",
-  "Cost/unit": "Currency per unit. No fixed factor exists.",
+export const NOT_LINEARLY_SCALABLE: Record<string, string> = {
+  "min/m": "Reciprocal rate (drilling time per metre): m/day = 1440 / (min/m), a hyperbola, so no scale exists. Peloton stores it as exponent −1 against m/day.",
+  "min/ft": "Reciprocal rate, as min/m: m/day = 438.912 / (min/ft). Peloton stores it as exponent −1 against m/day.",
+  "Cost/day": "Currency per unit time. Convertible to Cost/hr (factor 24, same currency); not to any dimensional unit.",
+  "Cost/hr": "Currency per unit time; see Cost/day.",
+  "1/32\"": "A DISPLAY FORMAT as much as a unit: a length (jet/nozzle size, gauge wear) rendered as thirty-seconds of an inch. The arithmetic is linear (0.0254/32 m); the rendering is not this file's job.",
+  "°API": "API gravity is the reciprocal of specific gravity (API = 141.5/SG − 131.5), not a linear scale of kg/m³. Peloton stores it as exponent −1, offset −131.5.",
+  "s/qt": "Time per volume. Peloton's base for it is days/m³, against which it IS linear — the reciprocal is in the base, not the unit.",
+  "s/L": "Time per volume; see s/qt.",
+  "Cost": "Currency. Converts only to its own scale prefixes (1k, 10k, 100k, 1M); no cross-currency rate exists.",
+  "Cost/m": "Currency per length. The length converts (Cost/ft = 1/0.3048); the currency does not.",
+  "Cost/ft": "Currency per length; see Cost/m.",
+  "Cost/unit": "Currency per unit. Nothing else in the table shares its base, so no pair exists to convert.",
 };
 
 /** unit name → its family, built once. */
 const BY_UNIT = new Map<string, UnitFamily>();
 for (const f of UNIT_FAMILIES) for (const u of Object.keys(f.units)) BY_UNIT.set(u, f);
 
+/*
+ * PELOTON'S OWN CONVERSION TABLE, and why it comes first.
+ *
+ * `system/Peloton.Common.Units` is what the desktop converts with: 277 rows of
+ * (base, unit, factor, exponent, offset) over 61 base units, which is 2,550
+ * ordered pairs. The families above were worked out by hand before that file
+ * had been read, and cover 518.
+ *
+ * The 2,076 pairs only Peloton has were the cost of not reading it: each is a
+ * field that stayed in its stored unit for someone working in another, because
+ * `canConvert` did not know the pair existed. Refusing is safe, but it is not
+ * right.
+ *
+ * The hand families are KEPT beneath it rather than deleted: 44 pairs are only
+ * theirs — the 1000m³/day gas-rate group and the dimensionless ratios
+ * (Proportion, %, ppm, v/v, % v/v, mL/mL, m³/m³) — and adopting the vendor file
+ * alone would trade one silent gap for another.
+ *
+ * The two tables overlap on 474 pairs. 332 are bit-identical; 142 differ, and
+ * the worst of those is 1.2 parts per million (lb/bbl to lb/1000ft³). Every one
+ * is Peloton storing a factor to about seven significant figures where this
+ * file had used the exact definition — psi as 6.894757 rather than
+ * 6.894757293168361, MCF as 28.31685 rather than 28.316846592. Less precise,
+ * never wrong, and far below the precision of anything a rig measures.
+ * Peloton's value wins because a self-consistent table beats a mixed one, and
+ * because its number is what the desktop showed the people who typed the data.
+ *
+ * One overlap was NOT rounding, and it is the reason this was worth doing: this
+ * file had `gal/sack` on the 94 lb Portland-cement sack, and WellView's sack is
+ * 100 lb — every /sack row is labelled "100 pound sack" and `sacks` ships as
+ * 45.359237 kg exactly. Every cement volume converted through that unit was
+ * 6.383% out. The hand entry has been corrected to agree.
+ */
+const PELOTON_BY_UNIT = new Map<string, UnitRow>();
+for (const r of UNIT_ROWS) PELOTON_BY_UNIT.set(r.unit, r);
+/*
+ * A base unit is its own identity, and 14 of the 61 ship no row for themselves.
+ * Without one, `kg/m³ → lb/gal` finds no shared base and is refused — even
+ * though every lb/gal row names kg/m³ as the thing it converts to. No unit name
+ * in the table is also some other base's name, so these 14 cannot collide.
+ */
+for (const base of new Set(UNIT_ROWS.map((r) => r.base))) {
+  if (!PELOTON_BY_UNIT.has(base)) {
+    PELOTON_BY_UNIT.set(base, { base, unit: base, label: base, factor: 1, exponent: 1, offset: 0 });
+  }
+}
+
+/** user → base, by Peloton's formula: base = ((user − offset) × factor) ^ exponent. */
+const toBaseUnit = (v: number, r: UnitRow): number => Math.pow((v - r.offset) * r.factor, r.exponent);
+/** …and its inverse, base → user. */
+const fromBaseUnit = (v: number, r: UnitRow): number => Math.pow(v, 1 / r.exponent) / r.factor + r.offset;
+
+/** The two rows for `from` and `to`, when Peloton files them under one base. */
+function pelotonPair(from: string, to: string): [UnitRow, UnitRow] | null {
+  const a = PELOTON_BY_UNIT.get(from);
+  const b = PELOTON_BY_UNIT.get(to);
+  return a && b && a.base === b.base ? [a, b] : null;
+}
+
 /** Is a conversion between these two units meaningful? */
 export function canConvert(from: string, to: string): boolean {
   if (from === to) return true;
-  if (UNCONVERTIBLE_UNITS[from] || UNCONVERTIBLE_UNITS[to]) return false;
+  // Peloton's table first: it is what the desktop computes with, and its
+  // exponent expresses the reciprocals the linear families cannot.
+  if (pelotonPair(from, to)) return true;
+  // Beneath it, the linear families — which must never be handed a unit whose
+  // arithmetic is not linear.
+  if (NOT_LINEARLY_SCALABLE[from] || NOT_LINEARLY_SCALABLE[to]) return false;
   const a = BY_UNIT.get(from);
   const b = BY_UNIT.get(to);
   return !!a && a === b;
 }
 
 /**
- * Convert between two units of the same family.
+ * Convert between two units of the same base.
  *
- * Returns null when the conversion is not meaningful — a different family, an
- * unknown unit, or one of the units this table refuses. The caller shows the
- * value in its base unit and says so; it never falls back to returning the
- * number unchanged under the other unit's label, which would be a silent lie.
+ * Returns null when the conversion is not meaningful — a different base, an
+ * unknown unit, or an input the pair's own arithmetic cannot take. The caller
+ * shows the value in its stored unit and says so; it never falls back to
+ * returning the number unchanged under the other unit's label, which would be a
+ * silent lie.
  */
 export function convertUnit(value: number, from: string, to: string): number | null {
   if (!Number.isFinite(value)) return null;
   if (from === to) return value;
-  if (!canConvert(from, to)) return null;
-  const fam = BY_UNIT.get(from)!;
+
+  const pair = pelotonPair(from, to);
+  if (pair) {
+    const [ra, rb] = pair;
+    const out = fromBaseUnit(toBaseUnit(value, ra), rb);
+    // The pair being convertible does not make every INPUT convertible: 0 min/m
+    // is a division by zero, and an Infinity dressed as a drilling rate is worse
+    // than no answer at all.
+    return Number.isFinite(out) ? out : null;
+  }
+
+  if (NOT_LINEARLY_SCALABLE[from] || NOT_LINEARLY_SCALABLE[to]) return null;
+  const fam = BY_UNIT.get(from);
+  if (!fam || fam !== BY_UNIT.get(to)) return null;
   const a = fam.units[from];
   const b = fam.units[to];
   if (!a || !b) return null;
