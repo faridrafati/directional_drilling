@@ -349,3 +349,52 @@ test("the well list converts measured columns and copies what it shows", async (
     await units.selectOption("Metric");
   }
 });
+
+/**
+ * Copy Data to Clipboard (§3.9) must carry what the grid SHOWS.
+ *
+ * It read the row straight out of the payload, so the screen displayed a depth
+ * in feet while the clipboard pasted the stored metres, and a linked record
+ * showed its caption on screen but pasted a 32-hex GUID. The screen and the
+ * clipboard disagreeing is worse than either being wrong alone — the number
+ * arrives in Excel looking checked.
+ */
+test("Copy Data puts the displayed values on the clipboard, not the stored ones", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => { /* not chromium */ });
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12 - Phase and Prod" })
+    .first().dblclick();
+  await page.getByRole("button", { name: "Edit Data", exact: true }).click();
+  await expect(page.getByText("Show System Fields")).toBeVisible({ timeout: 15_000 });
+  await page.locator('button[title="wvWellbore"]').click();
+  await expect(page.getByRole("button", { name: /^Copy Data$/ })).toBeEnabled({ timeout: 10_000 });
+
+  const units = page.locator("select").first();
+  const copy = async (u: string) => {
+    await units.selectOption(u);
+    await page.getByRole("button", { name: /^Copy Data$/ }).first().click();
+    return await page.evaluate(() => navigator.clipboard.readText().catch(() => ""));
+  };
+  try {
+    const metric = await copy("Metric");
+    const us = await copy("US");
+    if (!metric) return;                       // clipboard unavailable in this browser
+    // The heading names the unit it is in, and that unit follows the set.
+    expect(metric.split("\n")[0]).toContain("(m)");
+    expect(us.split("\n")[0]).toContain("(ft)");
+    // A linked record copies as its caption, never as a bare GUID.
+    for (const line of us.split("\n").slice(1)) {
+      expect(line, "a 32-hex GUID reached the clipboard").not.toMatch(/\t[0-9A-F]{32}(\t|$)/i);
+    }
+  } finally {
+    await units.selectOption("Metric");
+  }
+});

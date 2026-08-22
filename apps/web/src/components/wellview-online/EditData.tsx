@@ -837,10 +837,30 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   };
 
   /** §3.9 Copy Data to Clipboard: the folder's records, headings included. */
+  /**
+   * Copy Data to Clipboard (§3.9) — what is ON SCREEN, not what is in the file.
+   *
+   * It used to read `r[c.column]` straight out of the row, so the grid showed a
+   * casing depth in feet and the clipboard pasted the stored metres beside a
+   * heading with no unit at all. The screen and the clipboard disagreeing is
+   * worse than either being wrong on its own: the number looks checked.
+   * `valueOf` is the same function the cells render through, so a pending edit
+   * copies as the user typed it too.
+   */
   function copyDataToClipboard() {
-    const head = cols.map((c) => c.label).join("\t");
-    const body = data.rows.map((r) =>
-      cols.map((c) => String(r[c.column] ?? "")).join("\t")).join("\n");
+    const head = cols.map((c) => {
+      const u = c.unit ? displayUnitFor(c, unitSet)?.unit ?? c.unit : "";
+      return u ? `${c.label} (${u})` : c.label;
+    }).join("\t");
+    const body = data.rows.map((r) => {
+      const k = keyOf(r);
+      return cols.map((c) => {
+        const v = k ? valueOf(r, k, c.column) : String(r[c.column] ?? "");
+        // A record link shows its caption on screen; a 32-hex GUID in the
+        // spreadsheet is not the same information, it is no information.
+        return c.link && v ? captionOfLink(v) ?? v : v;
+      }).join("\t");
+    }).join("\n");
     void navigator.clipboard.writeText(`${head}\n${body}`).then(
       () => onStatus(`Copied ${data.rows.length} record${data.rows.length === 1 ? "" : "s"} to the clipboard, headings included.`),
       () => onStatus("The browser refused clipboard access."),
