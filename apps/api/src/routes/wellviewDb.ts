@@ -804,13 +804,53 @@ export async function registerWellviewDbRoutes(
       }
       const rows = d.ro.prepare(`SELECT ${sel} FROM "${t.name}" ${where} ORDER BY "${t.colSet.get("wellname")}"`)
         .all(...args) as Record<string, unknown>[];
+      /*
+       * The elevations every row needs to be re-referenced.
+       *
+       * The well LIST is the one grid where each row is a different well, so a
+       * single datum offset cannot serve it — the shift is per row. Read here in
+       * one pass rather than one request per well.
+       */
+       const elvCols: [string, string][] = ([
+         ["OrigKB", "elvorigkb"], ["Ground", "elvground"], ["MudLine", "elvmudline"],
+         ["CasFlange", "elvcasflange"], ["TubHead", "elvtubhead"],
+       ] as [string, string][]).filter(([, c]) => t.colSet.get(c));
+       const elvBy = new Map<string, Record<string, number | null>>();
+       if (elvCols.length) {
+         const sel2 = ["idwell", ...elvCols.map(([, c]) => t.colSet.get(c)!)]
+           .map((c) => `"${c}"`).join(", ");
+         for (const r of d.ro.prepare(`SELECT ${sel2} FROM "${t.name}"`).all() as Record<string, unknown>[]) {
+           const e: Record<string, number | null> = {};
+           for (const [key, c] of elvCols) {
+             const v = r[t.colSet.get(c)!];
+             e[key] = typeof v === "number" && Number.isFinite(v) ? v : null;
+           }
+           elvBy.set(String(r.idwell), e);
+         }
+       }
+
       return {
-        columns: wanted.map((c) => ({ column: c, label: columnLabel(t.name, c) })),
+        columns: wanted.map((c) => {
+          const mf = modelField(t.name, c);
+          return {
+            column: c,
+            label: columnLabel(t.name, c),
+            // Without these the list prints stored metres whatever unit set the
+            // user chose, and Copy Well List puts those metres on the clipboard
+            // under a heading that says feet.
+            unit: mf?.baseUnit,
+            units: mf?.units as Record<string, unknown> | undefined,
+            applyDatum: mf?.applyDatum,
+            datumMode: mf?.datumMode,
+          };
+        }),
         wells: rows.map((r) => {
           const out: Record<string, string | number | null> = {};
           for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
           return out;
         }),
+        /** Per-well elevations, keyed by idwell, for the datum shift. */
+        elevations: Object.fromEntries(elvBy),
       };
     },
   );

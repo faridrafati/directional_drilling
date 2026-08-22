@@ -294,3 +294,58 @@ test("every reference datum survives a reload", async ({ page }) => {
     await picker().selectOption("OrigKB");
   }
 });
+
+/**
+ * The well list must show measured columns in the user's unit set, name that
+ * unit in the heading, and put the SAME numbers on the clipboard.
+ *
+ * It did none of the three: `String(w[c.column])` printed the stored value, so
+ * a US user reading "Original KB Elevation" saw metres, and Copy Well List
+ * pasted those metres into Excel under a heading that said feet.
+ */
+test("the well list converts measured columns and copies what it shows", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => { /* not chromium */ });
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  // Put a measured column on screen; the choice is persisted per database.
+  await page.evaluate(() => localStorage.setItem(
+    "wv.online.wv9.0_Sample.cols", JSON.stringify(["WellName", "ElvOrigKB"])));
+  await page.reload();
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+
+  const head = () => page.locator("thead").first();
+  const firstRow = () => page.getByTestId("wv-well-row").first();
+  const units = page.locator("select").first();
+  try {
+    await units.selectOption("Metric");
+    await expect(head()).toContainText("(m)");
+    const metric = (await firstRow().textContent() ?? "").replace(/\s+/g, " ");
+
+    await units.selectOption("US");
+    await expect(head()).toContainText("(ft)");
+    const us = (await firstRow().textContent() ?? "").replace(/\s+/g, " ");
+    expect(us).not.toBe(metric);
+
+    // 1078.6 m is 3538.7 ft — the conversion, not just a different string.
+    const num = (t: string) => Number((t.match(/([\d,]+\.\d+)\s*$/) ?? [])[1]?.replace(/,/g, ""));
+    expect(num(us) / num(metric)).toBeCloseTo(3.28084, 3);
+
+    // The clipboard must carry the same unit it is showing.
+    await page.getByRole("button", { name: /Copy Well List/ }).first().click();
+    const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ""));
+    if (clip) {
+      expect(clip.split("\n")[0]).toContain("(ft)");
+      // Compare the NUMBER, not a substring: both sides are thousands-grouped.
+      expect(num(clip.split("\n")[1])).toBeCloseTo(num(us), 2);
+    }
+  } finally {
+    await units.selectOption("Metric");
+  }
+});

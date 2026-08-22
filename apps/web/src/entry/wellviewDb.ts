@@ -9,11 +9,27 @@ import { entryApi } from "./client.js";
 
 export interface WvDatabase { id: string; file: string; wells: number; sizeBytes: number }
 
-export interface WvHeaderColumn { column: string; label: string }
+export interface WvHeaderColumn {
+  column: string; label: string;
+  /** The model's base unit — absent on text columns. */
+  unit?: string;
+  /** Per unit set: the unit to show and how to format it. */
+  units?: Record<string, UnitFormat>;
+  /** Measured from the reference datum. */
+  applyDatum?: boolean;
+  datumMode?: "depth" | "up" | "invariant";
+}
 
 export interface WvWellList {
   columns: WvHeaderColumn[];
   wells: Record<string, string | number | null>[];   // always includes idwell + WellName
+  /**
+   * Each well's own elevations, keyed by idwell.
+   *
+   * The well list is the one grid whose rows are DIFFERENT wells, so a single
+   * datum offset cannot serve it — every row needs its own.
+   */
+  elevations?: Record<string, Record<string, number | null>>;
 }
 
 export interface WvTreeNode {

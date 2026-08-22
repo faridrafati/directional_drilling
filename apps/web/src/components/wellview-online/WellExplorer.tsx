@@ -15,12 +15,30 @@
  *
  * Folder shortcuts, groups and column choices persist per database in
  * localStorage — the manual's "per user, per machine" behaviour, literally.
+ *
+ * Measured columns are shown in the user's unit set, the heading names that
+ * unit, and Copy Well List carries the SAME numbers the screen does — 28 of the
+ * 120 well-header fields have a unit, and printing stored metres under a
+ * heading that says feet put them on someone's clipboard that way too.
+ *
+ * The datum shift is wired the same way and is, today, unreachable: all four
+ * datum-bearing header fields (TDCalc, TDAllCalc, PBTDAllCalc, TDTVDAllCalc)
+ * are model-CALCULATED, so they have no stored column and cannot be chosen as
+ * a list column at all. It is kept because it is the correct shape for when
+ * calculated header fields are computed, and because this is the one grid whose
+ * rows are different WELLS — the offset is per row, not per screen, which is
+ * why each well's elevations come down with the list rather than being fetched
+ * once. Nothing in the sample exercises it yet; do not read a passing well list
+ * as evidence that it works.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { QueryBuilder } from "./QueryBuilder.js";
 import { useQuery } from "@tanstack/react-query";
 import { wvDbApi, type WvHeaderColumn, type WvQuery, type WvQueryResult , type WvSavedQuery } from "../../entry/wellviewDb.js";
+import { useUnitSet } from "../../entry/unitSet.js";
+import { useDatum } from "../../entry/datum.js";
+import { toDisplay, formatUnitValue, displayUnitFor, datumShift } from "@dd/shared";
 
 type WellRow = Record<string, string | number | null>;
 
@@ -62,6 +80,9 @@ interface GroupSpec { column: string; desc: boolean }
 
 export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onChangeDatabase }: Props) {
   const K = (s: string) => `wv.online.${db}.${s}`;
+
+  const [unitSet] = useUnitSet();
+  const [datum] = useDatum();
 
   const [folder, setFolder] = useState<Folder>({ kind: "all" });
   const [cols, setCols] = useState<string[]>(() => store.get(K("cols"), ["WellName", "WellIDA"]));
@@ -185,6 +206,31 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
   const allWells = useMemo(() => wellsQ.data?.wells ?? [], [wellsQ.data]);
   const columns: WvHeaderColumn[] = (wellsQ.data?.columns ?? []).filter((c) => cols.includes(c.column));
 
+  /**
+   * One cell, in the user's unit set and from the chosen reference datum.
+   *
+   * The datum offset is looked up per ROW: every row here is a different well
+   * with its own KB, so there is no single shift for the grid. A well whose
+   * elevations cannot resolve the chosen datum keeps its stored value rather
+   * than being shifted by someone else's rig height.
+   */
+  const unitLabel = (c: WvHeaderColumn): string =>
+    (c.unit ? displayUnitFor({ unit: c.unit, units: c.units }, unitSet)?.unit ?? c.unit : "");
+
+  const cell = (w: WellRow, c: WvHeaderColumn): string => {
+    const v = w[c.column];
+    if (v == null || v === "") return "";
+    if (!c.unit) return String(v);
+    const n = Number(v);
+    if (!Number.isFinite(n)) return String(v);
+    const elev = wellsQ.data?.elevations?.[String(w.idwell ?? "")];
+    const shift = c.applyDatum && elev ? datumShift(elev, datum) : null;
+    const d = toDisplay(n,
+      { unit: c.unit, units: c.units, applyDatum: c.applyDatum, datumMode: c.datumMode },
+      unitSet, shift && shift.resolved ? shift : null);
+    return d ? formatUnitValue(d.value, d) : String(v);
+  };
+
   /** The rows the active folder shows, before sorting. */
   const folderRows: WellRow[] = useMemo(() => {
     const byId = new Map(allWells.map((w) => [String(w.idwell), w]));
@@ -296,8 +342,12 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
   }
 
   function copyWellList() {
-    const head = columns.map((c) => c.label).join("\t");
-    const body = rows.map((w) => columns.map((c) => String(w[c.column] ?? "")).join("\t")).join("\n");
+    // The heading names a unit, so the value under it has to be in that unit.
+    const head = columns.map((c) => {
+      const u = c.unit ? unitLabel(c) : "";
+      return u ? `${c.label} (${u})` : c.label;
+    }).join("\t");
+    const body = rows.map((w) => columns.map((c) => cell(w, c)).join("\t")).join("\n");
     void navigator.clipboard.writeText(`${head}\n${body}`).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -594,6 +644,8 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
                         onClick={() => setSort((s) =>
                           s?.column === c.column ? { column: c.column, desc: !s.desc } : { column: c.column, desc: false })}>
                         {c.label}
+                        {/* The value converts with the unit set, so the heading has to say which. */}
+                        {unitLabel(c) && <span className="ml-1 font-normal text-gray-400">({unitLabel(c)})</span>}
                         {sort?.column === c.column && <span className="ml-1 text-gray-400">{sort.desc ? "▾" : "▴"}</span>}
                       </th>
                     ))}
@@ -611,7 +663,7 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
                         onDoubleClick={() => openWell(id)}>
                         {columns.map((c) => (
                           <td key={c.column} className="px-2 py-1 whitespace-nowrap text-gray-800">
-                            {String(w[c.column] ?? "")}
+                            {cell(w, c)}
                           </td>
                         ))}
                       </tr>
