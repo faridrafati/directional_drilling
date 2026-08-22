@@ -9,6 +9,9 @@
  * Refresh and a zoom control. Clicking a block's title bar or double-clicking
  * a data row opens the Edit Data window at that subject area.
  *
+ * Days vs Depth: the drilling curve, from WellView's own .dvdc templates —
+ * planned phase progress against what the daily reports actually recorded.
+ *
  * Wellhead: the surface assembly — its own recorded picture at a size worth
  * looking at, its pressure rating, and the components and outlets bolted into
  * it. See WellheadTab for why it is a specification panel and not a stack
@@ -32,7 +35,8 @@ import type { UnitFormat } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
 import { PrintReport } from "./PrintReport.js";
 import { wvDbApi, type WvSchematic, type WvSchematicRow,
-  type WvWellhead, type WvWellheadField } from "../../entry/wellviewDb.js";
+  type WvWellhead, type WvWellheadField,
+  type WvDvdSeries, type WvDvdAxis } from "../../entry/wellviewDb.js";
 
 interface TemplateEntry {
   name: string;
@@ -54,7 +58,7 @@ interface Props {
 }
 
 export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditRecord }: Props) {
-  const [tab, setTab] = useState<"reports" | "schematic" | "survey" | "wellhead">("reports");
+  const [tab, setTab] = useState<"reports" | "schematic" | "survey" | "wellhead" | "dvd">("reports");
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -65,7 +69,7 @@ export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditR
         </button>
         <span className="text-sm font-semibold text-gray-900 truncate">{wellName}</span>
         <div className="ml-3 flex gap-1 border-b-0">
-          {([["reports", "Reports"], ["schematic", "Schematic"], ["survey", "Survey"], ["wellhead", "Wellhead"]] as const).map(([id, label]) => (
+          {([["reports", "Reports"], ["schematic", "Schematic"], ["survey", "Survey"], ["wellhead", "Wellhead"], ["dvd", "Days vs Depth"]] as const).map(([id, label]) => (
             <button key={id} type="button" onClick={() => setTab(id)} data-testid={`wv-tab-${id}`}
               className={`px-3 h-8 text-xs rounded-t-md border ${tab === id
                 ? "bg-white border-gray-300 border-b-white font-medium text-blue-700"
@@ -86,7 +90,9 @@ export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditR
           ? <SchematicTab db={db} idwell={idwell} onEditTable={onEditTable} />
           : tab === "survey"
             ? <SurveyTab db={db} idwell={idwell} onEditTable={onEditTable} />
-            : <WellheadTab db={db} idwell={idwell} onEditTable={onEditTable} />}
+            : tab === "wellhead"
+              ? <WellheadTab db={db} idwell={idwell} onEditTable={onEditTable} />
+              : <DaysVsDepthTab db={db} idwell={idwell} onEditTable={onEditTable} />}
     </div>
   );
 }
@@ -1458,5 +1464,229 @@ function WellheadTab({ db, idwell, onEditTable }: {
         })}
       </div>
     </div>
+  );
+}
+
+/** The palette, so plan and actual stay distinguishable at a glance. */
+const DVD_COLORS = ["#1d4ed8", "#0891b2", "#7c3aed", "#059669", "#d97706", "#dc2626"];
+
+/**
+ * Days vs Depth / Cost — the drilling curve WellView draws with
+ * Peloton.DaysVsDepth.dll, from the three .dvdc templates it ships.
+ *
+ * Two deliberate departures from a naive reading of the template. WellView puts
+ * depth and cost on two Y axes of one plot; here each Y UNIT gets its own plot,
+ * because a depth line and a cost line sharing a frame invite reading one
+ * against the other's scale, and the two have nothing to do with each other.
+ * And the chart is scoped to a JOB — day 0 is the start of the job, so a well's
+ * jobs are separate curves and are never concatenated.
+ *
+ * The depth axis runs downward, which is not decoration: a driller reads this
+ * curve as the hole going down over time, and an upward depth axis reverses the
+ * meaning of every slope on it.
+ */
+function DaysVsDepthTab({ db, idwell, onEditTable }: {
+  db: string; idwell: string; onEditTable: (table: string) => void;
+}) {
+  const qc = useQueryClient();
+  const [unitSet] = useUnitSet();
+  const [job, setJob] = useState<string>("");
+  const [template, setTemplate] = useState<string>("");
+  const q = useQuery({
+    queryKey: ["wvdb", db, "dvd", idwell, job, template],
+    queryFn: () => wvDbApi.daysVsDepth(db, idwell, job || undefined, template || undefined),
+  });
+
+  /** A value on an axis, in the user's unit set. */
+  const conv = (v: number, a: WvDvdAxis) => {
+    if (!a.unit) return v;
+    const d = toDisplay(v, { unit: a.unit, units: a.units }, unitSet);
+    return d ? d.value : v;
+  };
+  const axisUnit = (a: WvDvdAxis) => {
+    if (!a.unit) return "";
+    const u = displayUnitFor({ unit: a.unit, units: a.units }, unitSet);
+    return u?.unit ?? a.unit;
+  };
+
+  if (q.isLoading) return <div className="p-4 text-sm text-gray-400">Building the curve…</div>;
+  if (q.error) {
+    return <div className="m-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+      {(q.error as Error).message}
+    </div>;
+  }
+  const data = q.data!;
+  const btn = "h-7 px-2 text-[11px] rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50";
+  const sel = "h-7 border border-gray-300 rounded px-1 text-xs bg-white text-gray-800 max-w-[16rem]";
+
+  // One plot per Y unit: depth and cost do not share a scale.
+  const groups = new Map<string, WvDvdSeries[]>();
+  for (const s of data.series) {
+    const k = s.y.unit ?? s.y.label;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(s);
+  }
+
+  return (
+    <div className="flex-1 min-h-0 border border-gray-200 rounded-lg bg-white flex flex-col">
+      <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2 flex-wrap shrink-0">
+        <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
+          Job
+          <select className={`${sel} normal-case tracking-normal`} data-testid="wv-dvd-job"
+            value={job || data.job?.idrec || ""} onChange={(e) => setJob(e.target.value)}>
+            {data.jobs.map((j) => (
+              <option key={j.idrec} value={j.idrec}>
+                {j.label} ({j.phases} phases, {j.reports} reports)
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
+          Template
+          <select className={`${sel} normal-case tracking-normal`} data-testid="wv-dvd-template"
+            value={template || data.template?.id || ""} onChange={(e) => setTemplate(e.target.value)}>
+            {data.templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </label>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button type="button" className={btn} onClick={() => onEditTable("wvJobProgramPhase")}>
+            Edit Phases
+          </button>
+          <button type="button" className={btn} title="Refresh"
+            onClick={() => void qc.invalidateQueries({ queryKey: ["wvdb", db, "dvd", idwell] })}>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-auto p-3 space-y-4">
+        {!data.series.length && (
+          <div className="text-sm text-gray-400" data-testid="wv-dvd-empty">
+            {data.jobs.length
+              ? "This job has no planned phases and no daily reports with time logged, so there is no curve to draw."
+              : "No job on this well, so there is nothing to plot against."}
+          </div>
+        )}
+        {[...groups.entries()].map(([key, series]) => (
+          <DvdChart key={key} series={series} conv={conv} axisUnit={axisUnit}
+            /* Depth reads downward; a cost axis reads upward like any other. */
+            invertY={/^m$|^ft$/i.test(series[0].y.unit ?? "")} />
+        ))}
+        {data.unavailable.length > 0 && (
+          <div className="text-[11px] text-gray-500 border-t border-gray-100 pt-2"
+            data-testid="wv-dvd-unavailable">
+            Not drawn — this job has no data for{" "}
+            {data.unavailable.length === 1 ? "this series" : `these ${data.unavailable.length} series`}:{" "}
+            <span className="text-gray-700">{data.unavailable.join("; ")}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One plot: every series that shares a Y unit, drawn on one pair of axes. */
+function DvdChart({ series, conv, axisUnit, invertY }: {
+  series: WvDvdSeries[];
+  conv: (v: number, a: WvDvdAxis) => number;
+  axisUnit: (a: WvDvdAxis) => string;
+  invertY: boolean;
+}) {
+  const W = 860, H = 380, L = 74, R = 18, T = 16, B = 46;
+  const pts = series.map((s) => s.points.map((p) => ({
+    x: conv(p.x, s.x), y: conv(p.y, s.y), label: p.label,
+  })));
+  const flat = pts.flat();
+  const xMax = Math.max(...flat.map((p) => p.x), 1);
+  const yLo = Math.min(...flat.map((p) => p.y), 0);
+  const yHi = Math.max(...flat.map((p) => p.y), 1);
+  const span = yHi - yLo || 1;
+  const sx = (v: number) => L + (v / xMax) * (W - L - R);
+  const sy = (v: number) => {
+    const f = (v - yLo) / span;
+    return invertY ? T + f * (H - T - B) : H - B - f * (H - T - B);
+  };
+  /**
+   * What to call an axis when the series on it are not all the same field.
+   *
+   * One plot holds "Planned End Depth" and "End Depth" together, and labelling
+   * it with whichever came first tells the reader the actual line is a plan.
+   * Listing all four names instead is honest but unreadable, so the axis takes
+   * what the names have in COMMON — the trailing words they share, "End Depth"
+   * — falling back to the unit's own name when they share nothing ("Cum Field
+   * Est To Date" and "Planned Likely Cum Phase Cost" are both Cost). Each
+   * series keeps its full name in the legend, which is where the detail belongs.
+   */
+  const axisName = (pick: (s: WvDvdSeries) => WvDvdAxis) => {
+    const names = [...new Set(series.map((x) => pick(x).label))];
+    if (names.length === 1) return names[0];
+    const words = names.map((n) => n.split(/\s+/));
+    const common: string[] = [];
+    for (let i = 1; i <= Math.min(...words.map((w) => w.length)); i++) {
+      const w = words[0][words[0].length - i];
+      if (!words.every((x) => x[x.length - i] === w)) break;
+      common.unshift(w);
+    }
+    if (common.length) return common.join(" ");
+    const u = pick(series[0]).unit;
+    return u && /^[A-Za-z]{3,}$/.test(u) ? u : names.join(" / ");
+  };
+  /** Don't print "Cost (Cost)" — the unit and the name are the same word. */
+  const withUnit = (name: string, unit: string) =>
+    !unit || name.toLowerCase() === unit.toLowerCase() ? name : `${name} (${unit})`;
+  const ticks = (lo: number, hi: number, n = 5) =>
+    Array.from({ length: n + 1 }, (_, i) => lo + ((hi - lo) * i) / n);
+  const fmt = (v: number) => formatUnitValue(v, { unit: "", decimals: Math.abs(v) >= 1000 ? 0 : 1 });
+
+  return (
+    <figure className="border border-gray-200 rounded-lg p-2" data-testid="wv-dvd-chart">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img"
+        aria-label={series.map((s) => s.caption).join("; ")}>
+        {ticks(yLo, yHi).map((v, i) => (
+          <g key={i}>
+            <line x1={L} x2={W - R} y1={sy(v)} y2={sy(v)} stroke="#f1f5f9" strokeWidth={1} />
+            <text x={L - 6} y={sy(v) + 3} textAnchor="end" fontSize={10} fill="#94a3b8">{fmt(v)}</text>
+          </g>
+        ))}
+        {ticks(0, xMax).map((v, i) => (
+          <g key={i}>
+            <line x1={sx(v)} x2={sx(v)} y1={T} y2={H - B} stroke="#f1f5f9" strokeWidth={1} />
+            <text x={sx(v)} y={H - B + 14} textAnchor="middle" fontSize={10} fill="#94a3b8">{fmt(v)}</text>
+          </g>
+        ))}
+        <line x1={L} x2={W - R} y1={H - B} y2={H - B} stroke="#cbd5e1" />
+        <line x1={L} x2={L} y1={T} y2={H - B} stroke="#cbd5e1" />
+        <text x={(L + W - R) / 2} y={H - 8} textAnchor="middle" fontSize={11} fill="#475569">
+          {withUnit(axisName((x) => x.x), axisUnit(series[0].x))}
+        </text>
+        <text x={14} y={(T + H - B) / 2} fontSize={11} fill="#475569"
+          transform={`rotate(-90 14 ${(T + H - B) / 2})`} textAnchor="middle">
+          {withUnit(axisName((x) => x.y), axisUnit(series[0].y))}
+        </text>
+        {pts.map((p, i) => (
+          <polyline key={i} fill="none" strokeWidth={series[i].kind === "actual" ? 2 : 1.5}
+            stroke={DVD_COLORS[i % DVD_COLORS.length]}
+            /* Plan is dashed: it is an estimate and should not read as a record. */
+            strokeDasharray={series[i].kind === "plan" ? "5 3" : undefined}
+            points={p.map((q) => `${sx(q.x)},${sy(q.y)}`).join(" ")} />
+        ))}
+        {pts.map((p, i) => p.map((q, j) => (
+          <circle key={`${i}-${j}`} cx={sx(q.x)} cy={sy(q.y)} r={2}
+            fill={DVD_COLORS[i % DVD_COLORS.length]}>
+            <title>{`${series[i].caption}\n${q.label ?? ""}\n${fmt(q.x)} ${axisUnit(series[i].x)} → ${fmt(q.y)} ${axisUnit(series[i].y)}`}</title>
+          </circle>
+        )))}
+      </svg>
+      <figcaption className="flex flex-wrap gap-x-4 gap-y-1 px-2 pt-1">
+        {series.map((s, i) => (
+          <span key={i} className="flex items-center gap-1 text-[10px] text-gray-600">
+            <svg width={18} height={6}><line x1={0} x2={18} y1={3} y2={3} strokeWidth={2}
+              stroke={DVD_COLORS[i % DVD_COLORS.length]}
+              strokeDasharray={s.kind === "plan" ? "5 3" : undefined} /></svg>
+            {s.caption}
+          </span>
+        ))}
+      </figcaption>
+    </figure>
   );
 }

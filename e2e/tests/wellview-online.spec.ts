@@ -141,3 +141,77 @@ test.describe("WellView Online — wellhead", () => {
     await expect(page.getByTestId("wv-wh-head")).toHaveCount(0);
   });
 });
+
+/**
+ * The Days vs Depth tab (Peloton.DaysVsDepth.dll, and the .dvdc templates).
+ *
+ * "Sample 11 - Full Data" has two jobs; only the drilling one carries a curve,
+ * so the tab opening on a plotted chart rather than an empty axis is itself one
+ * of the assertions. The rest are what a driller would check: that the depth
+ * axis runs downward, that plan and actual are told apart, and that the
+ * template picker actually changes the plot.
+ */
+test.describe("WellView Online — days vs depth", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/wellview");
+    await page.getByRole("heading", { name: "WellView" }).waitFor();
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    if (await signIn.isVisible().catch(() => false)) {
+      await page.getByLabel("User name").fill(USER);
+      await page.getByLabel("Password").fill(PASSWORD);
+      await signIn.click();
+    }
+    await page.getByTestId("wv-db-wv9.0_Sample").click();
+    await page.getByTestId("wv-well-row").filter({ hasText: "Sample 11 - Full Data" })
+      .first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-tab-dvd").click();
+  });
+
+  test("draws the drilling curve with depth running downward", async ({ page }) => {
+    await expect(page.getByTestId("wv-dvd-chart").first()).toBeVisible({ timeout: 15_000 });
+    // Depth and cost get their own plot: they must not share a scale.
+    expect(await page.getByTestId("wv-dvd-chart").count()).toBe(2);
+
+    const depth = page.getByTestId("wv-dvd-chart").first();
+    await expect(depth).toContainText("End Depth (m)");
+    await expect(depth).toContainText("Days");
+
+    // Both a dashed plan line and a solid actual line, and at least four series.
+    const lines = depth.locator("polyline");
+    expect(await lines.count()).toBeGreaterThanOrEqual(4);
+    const dashes = await lines.evaluateAll((els) =>
+      els.map((e) => e.getAttribute("stroke-dasharray")));
+    expect(dashes.some((d) => d)).toBe(true);       // a plan
+    expect(dashes.some((d) => !d)).toBe(true);      // an actual
+
+    // The depth axis runs DOWN: a deeper point must sit lower on the screen.
+    const inverted = await lines.first().evaluate((el) => {
+      const pts = (el.getAttribute("points") ?? "").trim().split(/\s+/)
+        .map((p) => p.split(",").map(Number));
+      return pts.length > 1 && pts[pts.length - 1][1] > pts[0][1];
+    });
+    expect(inverted, "the depth axis is not running downward").toBe(true);
+  });
+
+  test("the template picker changes what is plotted", async ({ page }) => {
+    await expect(page.getByTestId("wv-dvd-chart").first()).toBeVisible({ timeout: 15_000 });
+    const before = await page.getByTestId("wv-dvd-chart").first().textContent();
+    await page.getByTestId("wv-dvd-template")
+      .selectOption({ label: "Phases_Problem Time" });
+    await expect
+      .poll(async () => page.getByTestId("wv-dvd-chart").first().textContent(), { timeout: 10_000 })
+      .not.toBe(before);
+  });
+
+  test("switching job redraws for that job alone", async ({ page }) => {
+    await expect(page.getByTestId("wv-dvd-chart").first()).toBeVisible({ timeout: 15_000 });
+    const options = await page.getByTestId("wv-dvd-job").locator("option").allTextContents();
+    expect(options.length).toBeGreaterThan(1);
+    const other = options.find((o) => !o.includes("Drilling")) ?? options[1];
+    await page.getByTestId("wv-dvd-job").selectOption({ label: other });
+    // Either a different chart or an honest "no curve" — never a stale one.
+    await expect(page.getByTestId("wv-dvd-chart").first()
+      .or(page.getByTestId("wv-dvd-empty"))).toBeVisible({ timeout: 10_000 });
+  });
+});

@@ -309,10 +309,39 @@ export interface WvWellhead {
   components: WvWellheadComp[];
 }
 
+/** One point on a days-vs-depth series. */
+export interface WvDvdPoint { x: number; y: number; label?: string }
+/** An axis: the model's caption, its base unit, and the per-set formats. */
+export interface WvDvdAxis {
+  field: string; label: string; unit?: string; units?: Record<string, UnitFormat>;
+}
+export interface WvDvdSeries {
+  caption: string; x: WvDvdAxis; y: WvDvdAxis;
+  /** "plan" comes from the phase program, "actual" from the daily reports. */
+  kind: "plan" | "actual";
+  points: WvDvdPoint[];
+}
+export interface WvDaysVsDepth {
+  supported: boolean;
+  jobs: { idrec: string; label: string; phases: number; reports: number }[];
+  job: { idrec: string; label: string } | null;
+  templates: { id: string; name: string; folder: string }[];
+  template: { id: string; name: string } | null;
+  series: WvDvdSeries[];
+  /** Series the template asked for that this job has no data for. */
+  unavailable: string[];
+}
+
 const enc = encodeURIComponent;
 
 export const wvDbApi = {
   databases: () => entryApi.get<WvDatabase[]>("/wellview/dbs"),
+
+  /** The drilling curve: WellView's Days vs Depth / Cost chart for a job. */
+  daysVsDepth: (db: string, idwell: string, job?: string, template?: string) =>
+    entryApi.get<WvDaysVsDepth>(
+      `/wellview/dbs/${enc(db)}/days-vs-depth?idwell=${enc(idwell)}`
+      + (job ? `&job=${enc(job)}` : "") + (template ? `&template=${enc(template)}` : "")),
 
   /** The well's wellhead assemblies, their components and outlets. */
   wellheads: (db: string, idwell: string) =>

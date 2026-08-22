@@ -37,6 +37,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { PrismaClient } from "@prisma/client";
 import { requireUser, requireAdmin } from "../entry/auth.js";
 import { resolveTemplateData, iconByName } from "./wellviewSample.js";
+import { daysVsDepth, resolveTemplate, type DvdTemplate } from "../wellview/daysVsDepth.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
@@ -48,6 +49,26 @@ import { closingInventory, transferInventory } from "../wellview/inventory.js";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..", "..");
 const DB_DIR = join(REPO, "sqlite_DB", "wellview");
+const DVDC_JSON = join(REPO, "apps", "web", "public", "wellview-templates", "days-vs-depth.json");
+
+/**
+ * WellView's own Days vs Depth chart templates, as build_dvdc.mjs decoded them.
+ *
+ * Read once and cached. Missing is not an error: the app still charts, it just
+ * has no shipped template to start from — the caller sees an empty list rather
+ * than a 500, the same way an installation with no .dvdc files behaves.
+ */
+let _dvdc: DvdTemplate[] | null = null;
+function dvdTemplates(): DvdTemplate[] {
+  if (_dvdc) return _dvdc;
+  try {
+    const j = JSON.parse(readFileSync(DVDC_JSON, "utf8")) as { templates?: DvdTemplate[] };
+    _dvdc = j.templates ?? [];
+  } catch {
+    _dvdc = [];
+  }
+  return _dvdc;
+}
 
 // ── database registry ─────────────────────────────────────────────────────────
 interface Db {
@@ -1974,6 +1995,74 @@ export async function registerWellviewDbRoutes(
       if (!found) return reply.code(404).send({ error: "no such schematic template" });
       await prisma.wellviewSchematicTemplate.delete({ where: { id: req.params.id } });
       return { deleted: req.params.id };
+    },
+  );
+
+  /**
+   * Days vs Depth / Cost — the drilling curve, from WellView's own templates.
+   *
+   * Peloton.DaysVsDepth.dll draws this from .dvdc templates; the three shipped
+   * ones decode to 19 series and are built to JSON by build_dvdc.mjs. Every
+   * series is a CALCULATED field, so `daysVsDepth` computes it from the base
+   * tables following the model's stated EQNs.
+   *
+   * Scoped to a JOB, because that is what day 0 means. With no job named, the
+   * first job that actually has a curve is used, and the rest are listed so the
+   * caller can offer them.
+   */
+  app.get<{ Params: { db: string }; Querystring: { idwell?: string; job?: string; template?: string } }>(
+    "/entry/wellview/dbs/:db/days-vs-depth",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const idwell = String(req.query.idwell ?? "");
+      if (!idwell) return reply.code(400).send({ error: "idwell is required" });
+      if (!table(d, "wvJob") || !table(d, "wvJobProgramPhase")) {
+        return { supported: false, jobs: [], templates: [], series: [] };
+      }
+
+      const templates = dvdTemplates();
+      const jobs = daysVsDepth(d.ro, idwell, req.query.job || undefined);
+      const tpl = templates.find((t) => t.id === req.query.template) ?? templates[0] ?? null;
+      /*
+       * Default to the job that actually HAS a curve, not the newest one.
+       * A well's most recent job is often a completion or a workover with cost
+       * but no drilling: defaulting to it opens the chart on a near-empty axis
+       * and reads as "this well has no data". The picker still lists them all,
+       * newest first, so the choice stays the user's.
+       */
+      const job = req.query.job
+        ? jobs[0] ?? null
+        : jobs.reduce<(typeof jobs)[number] | null>((best, j) => {
+          const score = (x: typeof j) => tpl
+            ? resolveTemplate(x, tpl, () => ({ label: "" })).series
+              .reduce((a, se) => a + se.points.length, 0)
+            : x.phases.length + x.reports.length;
+          return !best || score(j) > score(best) ? j : best;
+        }, null);
+
+      /** The model's own caption and unit for an axis. */
+      const label = (tbl: string, field: string) => {
+        const mf = modelField(tbl, field);
+        return { label: mf?.label ?? field, unit: mf?.baseUnit ?? undefined,
+          units: mf?.units as Record<string, unknown> | undefined };
+      };
+
+      const resolved = job && tpl ? resolveTemplate(job, tpl, label) : { series: [], empty: [] };
+      return {
+        supported: true,
+        // Listed for the picker; only the selected job is computed in full.
+        jobs: (req.query.job ? daysVsDepth(d.ro, idwell) : jobs)
+          .map((j) => ({ idrec: j.idrec, label: j.label,
+            phases: j.phases.length, reports: j.reports.length })),
+        job: job ? { idrec: job.idrec, label: job.label } : null,
+        templates: templates.map((t) => ({ id: t.id, name: t.name, folder: t.folder })),
+        template: tpl ? { id: tpl.id, name: tpl.name } : null,
+        series: resolved.series,
+        /** Series the template asked for that this job has no data for. */
+        unavailable: resolved.empty,
+      };
     },
   );
 

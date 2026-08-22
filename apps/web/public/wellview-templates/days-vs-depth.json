@@ -1,0 +1,141 @@
+{
+ "generated_from": "WellView_files/custom/daysvdepthcost/**/*.dvdc",
+ "template_count": 3,
+ "templates": [
+  {
+   "id": "Shared Templates/Phases_Plan vs Actual",
+   "folder": "Shared Templates",
+   "name": "Phases_Plan vs Actual",
+   "series": [
+    {
+     "x": "dayjobmlplancalc",
+     "table": "wvjobprogramphase",
+     "y": "depthendplan",
+     "caption": "Planned Likely Cum Days vs Planned End Depth (Phase)"
+    },
+    {
+     "x": "dayjobminplancalc",
+     "table": "wvjobprogramphase",
+     "y": "depthendplan",
+     "caption": "Planned Min Cum Days vs Planned End Depth (Phase)"
+    },
+    {
+     "x": "dayjobmaxplancalc",
+     "table": "wvjobprogramphase",
+     "y": "depthendplan",
+     "caption": "Planned Max Cum Days vs Planned End Depth (Phase)"
+    },
+    {
+     "x": "dayjobmlplancalc",
+     "table": "wvjobprogramphase",
+     "y": "costmlcumcalc",
+     "caption": "Planned Likely Cum Days vs Planned Likely Cum Phase Cost (Phase)"
+    },
+    {
+     "x": "dayjobminplancalc",
+     "table": "wvjobprogramphase",
+     "y": "costmincumcalc",
+     "caption": "Planned Min Cum Days vs Planned Min Cum Phase Cost (Phase)"
+    },
+    {
+     "x": "dayjobmaxplancalc",
+     "table": "wvjobprogramphase",
+     "y": "costmaxcumcalc",
+     "caption": "Planned Max Cum Days vs Planned Max Cum Phase Cost (Phase)"
+    },
+    {
+     "x": "durationtimelogtotcumcalc",
+     "table": "wvjobreport",
+     "y": "depthenddpcalc",
+     "caption": "Cum Time Log Days vs End Depth (Daily Operation)"
+    },
+    {
+     "x": "durationtimelogtotcumcalc",
+     "table": "wvjobreport",
+     "y": "costtodatecalc",
+     "caption": "Cum Time Log Days vs Cum Field Est To Date (Daily Operation)"
+    }
+   ]
+  },
+  {
+   "id": "Shared Templates/Phases_Plan",
+   "folder": "Shared Templates",
+   "name": "Phases_Plan",
+   "series": [
+    {
+     "x": "dayjobmlplancalc",
+     "table": "wvjobprogramphase",
+     "y": "depthendplan",
+     "caption": "Planned Likely Cum Days vs Planned End Depth (Phase)"
+    },
+    {
+     "x": "dayjobmlplancalc",
+     "table": "wvjobprogramphase",
+     "y": "costmlcumcalc",
+     "caption": "Planned Likely Cum Days vs Planned Likely Cum Phase Cost (Phase)"
+    },
+    {
+     "x": "dayjobminplancalc",
+     "table": "wvjobprogramphase",
+     "y": "costmincumcalc",
+     "caption": "Planned Min Cum Days vs Planned Min Cum Phase Cost (Phase)"
+    },
+    {
+     "x": "dayjobmaxplancalc",
+     "table": "wvjobprogramphase",
+     "y": "costmaxcumcalc",
+     "caption": "Planned Max Cum Days vs Planned Max Cum Phase Cost (Phase)"
+    },
+    {
+     "x": "dayjobminplancalc",
+     "table": "wvjobprogramphase",
+     "y": "depthendplan",
+     "caption": "Planned Min Cum Days vs Planned End Depth (Phase)"
+    },
+    {
+     "x": "dayjobmaxplancalc",
+     "table": "wvjobprogramphase",
+     "y": "depthendplan",
+     "caption": "Planned Max Cum Days vs Planned End Depth (Phase)"
+    }
+   ]
+  },
+  {
+   "id": "Shared Templates/Phases_Problem Time",
+   "folder": "Shared Templates",
+   "name": "Phases_Problem Time",
+   "series": [
+    {
+     "x": "dayjobmlplancalc",
+     "table": "wvjobprogramphase",
+     "y": "depthendplan",
+     "caption": "Planned Likely Cum Days vs Planned End Depth (Phase)"
+    },
+    {
+     "x": "dayjobminplancalc",
+     "table": "wvjobprogramphase",
+     "y": "depthendplan",
+     "caption": "Planned Min Cum Days vs Planned End Depth (Phase)"
+    },
+    {
+     "x": "dayjobmaxplancalc",
+     "table": "wvjobprogramphase",
+     "y": "depthendplan",
+     "caption": "Planned Max Cum Days vs Planned End Depth (Phase)"
+    },
+    {
+     "x": "durationtimelogtotcumcalc",
+     "table": "wvjobreport",
+     "y": "depthenddpcalc",
+     "caption": "Cum Time Log Days vs End Depth (Daily Operation)"
+    },
+    {
+     "x": "durnoprobtimecumdayscalc",
+     "table": "wvjobreport",
+     "y": "depthenddpcalc",
+     "caption": "Cum Time Log - Problem vs End Depth (Daily Operation)"
+    }
+   ]
+  }
+ ]
+}
