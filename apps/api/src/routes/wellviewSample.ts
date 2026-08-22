@@ -63,16 +63,84 @@ export const sampleDbPath = (): string | null =>
 
 interface TemplateField { column: string; label_interpreted?: string | null }
 interface TemplateBlock { table: string | null; title: string | null; fields: TemplateField[] }
-interface Template { name: string; html: string; blocks: TemplateBlock[] }
+/** A row filter the template declares: table, field, value. */
+export interface TemplateFilter {
+  table: string; field: string; value: string;
+  /** The model's caption for the field — "Job Type", not "wvtyp". */
+  label?: string;
+}
+interface Template {
+  name: string; html: string; blocks: TemplateBlock[];
+  /** The filters WellView applies before printing; see `readFilters`. */
+  filters: TemplateFilter[];
+}
+
+/**
+ * The template's row filters, taken from the shipped .afr and NOT from guesswork.
+ *
+ * The exporter writes `filters` as a list of string tuples, and its own code
+ * distinguishes them by length: three or more elements is a filter, exactly two
+ * is a record LINK declaration (afr_export.py splits them that way). Of the 93
+ * three-element entries in the corpus, 73 are real — every one
+ * `wvjob.wvtyp = <job type>` — and the other 20 carry a TABLE name where the
+ * field should be, which is the decoder failing on those templates rather than a
+ * filter on a column called "wvfluidanalysis". They are dropped here, by asking
+ * the model whether the named field is really a field of the named table, so a
+ * mis-parse can never become a WHERE clause.
+ */
+function readFilters(raw: unknown): TemplateFilter[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TemplateFilter[] = [];
+  for (const f of raw) {
+    if (!Array.isArray(f) || f.length < 3) continue;
+    const [table, field, value] = f.map((x) => String(x ?? ""));
+    if (!table || !field || !value) continue;
+    if (!modelField(table, field)) continue;
+    out.push({
+      table: table.toLowerCase(), field: field.toLowerCase(), value,
+      label: modelTable(table) ? columnLabel(table, field) : undefined,
+    });
+  }
+  return out;
+}
 
 let _templates: Map<string, Template> | null = null;
 function templates(): Map<string, Template> {
   if (_templates) return _templates;
   const raw = JSON.parse(readFileSync(REPORTS_JSON, "utf-8"));
   _templates = new Map(
-    (raw.reports as Template[]).map((r) => [r.html, { name: r.name, html: r.html, blocks: r.blocks }]),
+    (raw.reports as (Template & { filters?: unknown })[]).map((r) =>
+      [r.html, { name: r.name, html: r.html, blocks: r.blocks, filters: readFilters(r.filters) }]),
   );
   return _templates;
+}
+
+/**
+ * The IDRecParent hops from `fromLc` up to ancestor `toLc`, or null.
+ *
+ * WellView's child→parent link is by table-name PREFIX, so a walk is a sequence
+ * of longest-prefix steps. Returns null rather than a partial chain when any hop
+ * lacks the columns to make the join — a half-built join would silently widen
+ * the result instead of narrowing it.
+ */
+function chainUp(
+  sch: Map<string, { name: string; cols: Map<string, string> }>,
+  fromLc: string,
+  toLc: string,
+): { name: string; idrec: string; parentCol: string }[] | null {
+  const hops: { name: string; idrec: string; parentCol: string }[] = [];
+  let cur = fromLc;
+  while (cur !== toLc) {
+    const ct = sch.get(cur);
+    const parentLc = prefixParent(sch, cur);
+    const parentT = parentLc ? sch.get(parentLc) : null;
+    const parentCol = ct?.cols.get("idrecparent");
+    const idrec = parentT?.cols.get("idrec");
+    if (!ct || !parentT || !parentCol || !idrec) return null;
+    hops.push({ name: parentT.name, idrec, parentCol });
+    cur = parentLc!;
+  }
+  return hops.length ? hops : null;
 }
 
 /** Actual table name (mixed case) by lowercase lookup, with its column set.
@@ -332,6 +400,8 @@ export function resolveTemplateData(
 ): {
   report: string;
   well: { idwell: string; name: string };
+  /** The row filters the template declares (§9.2), so the page can say so. */
+  filters: TemplateFilter[];
   blocks: unknown[];
 } | null {
   const tpl = templates().get(html);
@@ -437,6 +507,8 @@ export function resolveTemplateData(
     }
 
     const hasIdwell = t.cols.has("idwell");
+    const applied: TemplateFilter[] = [];
+    const unapplied: (TemplateFilter & { why: string })[] = [];
     const preds: string[] = hasIdwell ? [`t0."${t.cols.get("idwell")}" = ?`] : [];
     const args: string[] = hasIdwell ? [well] : [];
     let joins = "";
@@ -474,6 +546,51 @@ export function resolveTemplateData(
           preds.push(`${prev}."${sch.get(ancLc)!.cols.get("idrec")}" = ?`);
           args.push(anchor.idrec);
         }
+      }
+    }
+
+    /*
+     * The template's own row filters (§9.2 "Filter and Sort Records").
+     *
+     * 73 of the shipped templates declare one — always a job type — and until
+     * now none of them were applied, so a drilling report opened on a
+     * completion job printed the completion's rows under a drilling heading.
+     * That is worse than printing nothing: the page looks like an answer.
+     *
+     * The match is a case-insensitive PREFIX, which is not a guess: the shipped
+     * values are "drill", "dril", "drill*" and "Completion", and the database
+     * holds "Drilling" and "Completion/Workover". Equality selects nothing.
+     *
+     * A filter reaches a block when the block IS the filtered table or DESCENDS
+     * from it by the IDRecParent chain — the same walk the anchor uses. One that
+     * reaches neither is reported, never silently ignored.
+     */
+    // One counter for the whole block: a template with two filters on the same
+    // block otherwise allocates f1 twice and SQLite rejects the ambiguous name.
+    let fAlias = 0;
+    for (const flt of tpl.filters) {
+      const ft = sch.get(flt.table);
+      const fcol = ft?.cols.get(flt.field);
+      if (!ft || !fcol) { unapplied.push({ ...flt, why: "not a column in this database" }); continue; }
+      const like = `${flt.value.replace(/\*+$/, "").toLowerCase()}%`;
+      if (tname === flt.table) {
+        preds.push(`lower(t0."${fcol}") LIKE ?`);
+        args.push(like);
+        applied.push(flt);
+      } else if (tname.startsWith(flt.table)) {
+        const hops = chainUp(sch, tname, flt.table);
+        if (!hops) { unapplied.push({ ...flt, why: "no parent chain from this block" }); continue; }
+        let prev = "t0";
+        for (const hop of hops) {
+          const alias = `f${++fAlias}`;
+          joins += ` JOIN "${hop.name}" ${alias} ON ${alias}."${hop.idrec}" = ${prev}."${hop.parentCol}"`;
+          prev = alias;
+        }
+        preds.push(`lower(${prev}."${fcol}") LIKE ?`);
+        args.push(like);
+        applied.push(flt);
+      } else {
+        unapplied.push({ ...flt, why: "this block is not under the filtered table" });
       }
     }
 
@@ -535,6 +652,10 @@ export function resolveTemplateData(
         units: modelField(t.name, p.column)?.units,
       })),
       missing,
+      /** The template's row filters honoured for this block (§9.2). */
+      filtersApplied: applied.length ? applied : undefined,
+      /** …and the ones that could not be, each with a reason. */
+      filtersSkipped: unapplied.length ? unapplied : undefined,
       rowCount: total,
       truncated: total > rows.length,
       allNull,
@@ -559,7 +680,16 @@ export function resolveTemplateData(
     ? d.prepare(`SELECT "${hdr.cols.get("wellname") ?? "WellName"}" AS wellname FROM "${hdr.name}" WHERE idwell = ?`).get(well) as
       { wellname: string | null } | undefined
     : undefined;
-  return { report: tpl.name, well: { idwell: well, name: wellRow?.wellname ?? well }, blocks };
+  return {
+    report: tpl.name,
+    well: { idwell: well, name: wellRow?.wellname ?? well },
+    /**
+     * The filters the template declares, so the page can say what it is showing
+     * rather than leave the reader to assume it is everything.
+     */
+    filters: tpl.filters,
+    blocks,
+  };
 }
 
 export async function registerWellviewSampleRoutes(app: FastifyInstance): Promise<void> {

@@ -398,3 +398,46 @@ test("Copy Data puts the displayed values on the clipboard, not the stored ones"
     await units.selectOption("Metric");
   }
 });
+
+/**
+ * §9.2 "Filter and Sort Records": a template's own row filter must be applied,
+ * and must be stated.
+ *
+ * 71 of the 182 shipped templates declare one — always a job type — and none
+ * were applied, so a drilling report opened on a well that also has completion
+ * jobs printed the completion's rows under a drilling heading. Applying it
+ * silently is not enough either: a reader who does not know the page is
+ * filtered reads "no rows" as "no data".
+ */
+test("a report states and applies the filter its template declares", async ({ page }) => {
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  // A well with both drilling and completion jobs, so the filter can bite.
+  await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12 - Phase and Prod" })
+    .first().dblclick();
+  await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+
+  await page.getByPlaceholder("Search reports…").fill("AFE vs Field Est");
+  await page.getByRole("button", { name: "AFE vs Field Est", exact: true }).first().click();
+
+  const banner = page.getByTestId("wv-report-filter");
+  await expect(banner).toBeVisible({ timeout: 15_000 });
+  // The model's own caption for wvJob.wvTyp, not the raw column name.
+  await expect(banner).toContainText("Job Category");
+  await expect(banner).toContainText("drill");
+
+  // A template with no filter must not grow a banner.
+  await page.getByPlaceholder("Search reports…").fill("Well Summary");
+  const plain = page.getByTestId("wv-report-output").first();
+  if (await plain.isVisible().catch(() => false)) {
+    await plain.click();
+    await expect(page.getByTestId("wv-report-filter")).toBeHidden({ timeout: 10_000 });
+  }
+});

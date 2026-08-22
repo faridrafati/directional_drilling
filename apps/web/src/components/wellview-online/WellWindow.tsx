@@ -263,6 +263,10 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
     columns?: { column: string; label: string; unit?: string;
       units?: Record<string, UnitFormat> }[]; missing?: string[];
     rowCount?: number; truncated?: boolean; allNull?: boolean;
+    /** Row filters the template declares and this block honoured (§9.2). */
+    filtersApplied?: { table: string; field: string; value: string }[];
+    /** …and the ones it could not, each with the reason. */
+    filtersSkipped?: { table: string; field: string; value: string; why: string }[];
     rows?: (string | number | null)[][]; rowIds?: (string | null)[]; icons?: (string | null)[];
   }
   const qc = useQueryClient();
@@ -302,8 +306,11 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
 
   const q = useQuery({
     queryKey: ["wvdb", db, "template", html, idwell, anchor?.table ?? "", anchor?.idrec ?? ""],
-    queryFn: () => entryApi.get<{ report: string; well: { name: string }; blocks: BlockData[] }>(
-      wvDbApi.templateDataPath(db, html, idwell, anchor)),
+    queryFn: () => entryApi.get<{
+      report: string; well: { name: string };
+      filters?: { table: string; field: string; value: string; label?: string }[];
+      blocks: BlockData[];
+    }>(wvDbApi.templateDataPath(db, html, idwell, anchor)),
   });
 
   const fmt = (v: string | number | null): string => {
@@ -423,6 +430,21 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                 ? "Click any value to edit it, or press New to add a record."
                 : "Click a block\u2019s title bar to open that subject area in Edit Data."}
             </p>
+            {/*
+              * §9.2: the template's own row filter. It has to be stated, not
+              * just obeyed — a drilling report that quietly hides a well's
+              * completion jobs is right, but a reader who does not know it is
+              * filtered will read "no rows" as "no data".
+              */}
+            {!!data.filters?.length && (
+              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1"
+                data-testid="wv-report-filter">
+                This template filters to{" "}
+                {data.filters.map((f) =>
+                  `${f.label ?? f.field} starting "${f.value.replace(/\*+$/, "")}"`).join(", ")}
+                {" "}— rows outside it are not shown, exactly as WellView prints it.
+              </p>
+            )}
             {data.blocks.map((b, i) => (
               <section key={`${b.table}-${i}`} className="bg-white border border-gray-200 rounded">
                 <button type="button"
