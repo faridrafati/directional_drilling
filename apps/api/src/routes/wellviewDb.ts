@@ -2958,14 +2958,77 @@ export async function registerWellviewDbRoutes(
        */
       let applied = 0;
 
+      /**
+       * Emit one group's criteria, with a CHILD table's test nested inside its
+       * PARENT's rather than beside it.
+       *
+       * Every table used to get its own `EXISTS … WHERE x.idwell = h.idwell`,
+       * correlated on the WELL and nothing else. So "a non-drilling job, run by
+       * this contractor" asked only for a well that has some non-drilling job
+       * and, separately, some rig record naming that contractor — on any job at
+       * all, including the drilling one. The shipped "Rig Contractor" template
+       * returns 8 wells for "Precision" in the sample database and none of the
+       * eight is a well where that contractor ran a non-drilling job.
+       *
+       * The parent is the prefix rule the whole schema is built on
+       * (`TableInfo.parent`): wvJobRig's parent is wvJob, wvTubComp's is wvTub.
+       * A child's EXISTS is correlated to `IDRecParent = <parent alias>.IDRec`,
+       * so the two criteria have to meet on ONE job, ONE string.
+       *
+       * Tables with no prefix relation to each other stay independent, which is
+       * right: "a well with a 7-inch casing and a gas show" is two facts about
+       * the well, not one fact about one record.
+       *
+       * Siblings whose shared PARENT carries no criterion also stay
+       * independent — correlating them would mean inventing a wvJob EXISTS the
+       * user never asked for, and silently narrowing a query to wells where
+       * both happen to hang off the same job.
+       */
       const closeGroup = () => {
         if (!byTable.size) return;
-        const parts: string[] = [];
-        for (const [tname, e] of byTable) {
-          parts.push(
-            `EXISTS (SELECT 1 FROM "${tname}" x WHERE x.idwell = h.idwell AND ${e.preds.join(" AND ")})`);
+        const names = [...byTable.keys()];
+        const used = new Set<string>();
+        let alias = 0;
+        const nextAlias = () => `x${alias++}`;
+
+        /** This table's test, with any child of it nested inside. */
+        const emit = (tname: string, a: string): string => {
+          used.add(tname);
+          const e = byTable.get(tname)!;
+          const parts = [e.preds.join(" AND ").replace(/\{a\}/g, a)];
           groupArgs.push(...e.args);
+          // Children first, so a grandchild lands inside its own parent.
+          for (const child of names) {
+            if (used.has(child)) continue;
+            const ct = table(d, child);
+            if (ct?.parent?.toLowerCase() !== tname.toLowerCase()) continue;
+            const ca = nextAlias();
+            parts.push(`EXISTS (SELECT 1 FROM "${ct.name}" ${ca}`
+              + ` WHERE ${ca}."IDRecParent" = ${a}."IDRec" AND ${emit(child, ca)})`);
+          }
+          return parts.join(" AND ");
+        };
+
+        const parts: string[] = [];
+        for (const tname of names) {
+          if (used.has(tname)) continue;
+          // A table whose parent is also in this group is emitted by that
+          // parent, not here.
+          const t = table(d, tname);
+          const parentInGroup = t?.parent
+            && names.some((n) => n.toLowerCase() === t.parent!.toLowerCase());
+          if (parentInGroup) continue;
+          const a = nextAlias();
+          parts.push(`EXISTS (SELECT 1 FROM "${tname}" ${a} WHERE ${a}.idwell = h.idwell AND ${emit(tname, a)})`);
         }
+        // Anything left is a child whose parent was skipped — emit it alone
+        // rather than dropping the criterion on the floor.
+        for (const tname of names) {
+          if (used.has(tname)) continue;
+          const a = nextAlias();
+          parts.push(`EXISTS (SELECT 1 FROM "${tname}" ${a} WHERE ${a}.idwell = h.idwell AND ${emit(tname, a)})`);
+        }
+
         groupWheres.push(parts.length > 1 ? `(${parts.join(" AND ")})` : parts[0]);
         byTable = new Map();
       };
@@ -2988,7 +3051,7 @@ export async function registerWellviewDbRoutes(
 
         const entry = byTable.get(t.name) ?? { preds: [], args: [] };
         if (c.op === "IS NULL" || c.op === "IS NOT NULL") {
-          entry.preds.push(`x."${col}" ${c.op}`);
+          entry.preds.push(`{a}."${col}" ${c.op}`);
         } else {
           const raw = c.prompts ? supplied[String(i)] : c.value;
           if (raw == null || raw === "") {
@@ -3003,10 +3066,10 @@ export async function registerWellviewDbRoutes(
           }
           if (c.op === "LIKE" || c.op === "NOT LIKE") {
             // §3.3: a partial string matches partially.
-            entry.preds.push(`x."${col}" ${c.op} ? COLLATE NOCASE`);
+            entry.preds.push(`{a}."${col}" ${c.op} ? COLLATE NOCASE`);
             entry.args.push(`%${value}%`);
           } else {
-            entry.preds.push(`x."${col}" ${c.op} ?`);
+            entry.preds.push(`{a}."${col}" ${c.op} ?`);
             entry.args.push(value as string);
           }
         }
