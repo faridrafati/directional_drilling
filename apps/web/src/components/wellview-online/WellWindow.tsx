@@ -1172,7 +1172,21 @@ function SchematicSvg({
   const ods: number[] = [];
   for (const c of [...casings, ...propCasings]) { const o = num(c.maxOd); if (o) ods.push(o); }
   for (const z of sizes) { const o = num(z.Sz); if (o) ods.push(o); }
-  const maxOd = Math.max(4, ...ods);
+  /*
+   * The scale every string's width is drawn against.
+   *
+   * This was `Math.max(4, ...ods)` — a floor that made sense when the number was
+   * INCHES. These ODs are metres: 0.027 to 0.914 across the whole sample, so the
+   * floor won every time and the scale was pinned at 4 whatever the well held.
+   * Everything then drew at about a fifth of the width the layout allows, and
+   * the smallest pipe hit the 4 px minimum and stopped being distinguishable.
+   *
+   * Fixed here rather than separately because the lateral offset below is
+   * derived from these widths: two strings side by side only fit inside the
+   * casing if the casing is drawn the width it should be.
+   */
+  const widest = ods.length ? Math.max(...ods) : 0;
+  const maxOd = widest > 0 ? widest : 1;
   const halfW = (od: number | null) => (od ? Math.max(4, (od / maxOd) * 90) : 30);
 
   const items: React.ReactNode[] = [];
@@ -1236,6 +1250,43 @@ function SchematicSvg({
   const yTop = (r: WvSchematicRow): number => {
     const t = topOf(r);
     return t == null ? TOP : y(t);
+  };
+
+  /**
+   * Which side of the hole a string was run on.
+   *
+   * A dual completion is two strings side by side. Both were drawn on the
+   * centreline, one over the other, so Sample 07's long string to 3,209.9 m and
+   * short string to 3,093.7 m — run the same day, neither pulled — read as a
+   * single string. 16 strings in 6 wells are affected.
+   *
+   * Case-folded because the data is not consistent: "Right" appears 6 times and
+   * "right" twice, "Left" 6 and "left" twice. Anything else, including absent,
+   * is centre — which is what 42 of the sample's strings are, and none of them
+   * may move.
+   */
+  const latSide = (r: WvSchematicRow): -1 | 0 | 1 => {
+    const v = String(r.LatPosition ?? "").trim().toLowerCase();
+    return v === "left" ? -1 : v === "right" ? 1 : 0;
+  };
+  /**
+   * …translated into pixels, and kept INSIDE the pipe it hangs in.
+   *
+   * The gap is the string's own half-width plus two, so a pair never overlaps.
+   * It is then bounded by the narrowest casing the string could be inside, so a
+   * dual completion in a slim hole crowds the centre rather than being drawn
+   * through the casing wall. No vendor rule exists for the spacing — the guide
+   * says only that one string is on the left and a second on the right — so
+   * this is a drawing choice, not a recorded fact.
+   */
+  const innerHalfW = (() => {
+    const w = casings.map((c) => halfW(num(c.maxOd ?? null))).filter((n) => n > 0);
+    return w.length ? Math.min(...w) : 30;
+  })();
+  const latDx = (r: WvSchematicRow, hw: number): number => {
+    const side = latSide(r);
+    if (side === 0) return 0;
+    return side * Math.max(2, Math.min(hw + 2, innerHalfW - hw - 1));
   };
 
   // casings: pair of verticals + shoe triangles; proposed variants dashed
@@ -1423,13 +1474,16 @@ function SchematicSvg({
     const btm = num(t.DepthBtm);
     if (btm == null) return;
     const hw = Math.max(3, halfW(num(t.maxOd ?? null)) * 0.55);
+    const cx = CX + latDx(t, hw);
+    const side = latSide(t);
     items.push(
       <g key={`${proposed ? "ptub" : "tub"}${i}`} className="cursor-pointer" onClick={() => onEditTable("wvTub")}>
         <title>{`${t.Des ?? "Tubing"}${proposed ? " (proposed)" : ""} — `
+          + `${side ? `${side < 0 ? "left" : "right"}, ` : ""}`
           + `${topOf(t) != null ? `hung ${fmtDepth(topOf(t)!)} to ` : ""}${fmtDepth(btm)} (wvTub)`}</title>
-        <line x1={CX - hw} y1={yTop(t)} x2={CX - hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6"
+        <line x1={cx - hw} y1={yTop(t)} x2={cx - hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6"
           strokeDasharray={proposed ? "5 3" : undefined} opacity={proposed ? 0.6 : 1} />
-        <line x1={CX + hw} y1={yTop(t)} x2={CX + hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6"
+        <line x1={cx + hw} y1={yTop(t)} x2={cx + hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6"
           strokeDasharray={proposed ? "5 3" : undefined} opacity={proposed ? 0.6 : 1} />
       </g>,
     );

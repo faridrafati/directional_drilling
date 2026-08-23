@@ -3371,7 +3371,20 @@ export async function registerWellviewDbRoutes(
         }
       };
       const casings = withComps(stringRows(d, "wvCas", idwell), casOd, stringTopByParent(d, "wvCasComp", idwell));
-      const tubings = withComps(stringRows(d, "wvTub", idwell), tubOd, stringTopByParent(d, "wvTubComp", idwell));
+      /*
+       * `LatPosition` — which side of the hole a string was run on.
+       *
+       * A dual completion is two strings side by side, and without this they
+       * were drawn on the same centreline, one over the other, indistinguishable
+       * from a single string. 16 strings in 6 wells carry Left or Right, all of
+       * them still in the hole.
+       *
+       * Requested for tubing only: wvCas carries the column but every value in
+       * it is "Center", and wvOtherInHole's is empty in both databases, so
+       * asking would add a field nothing could use.
+       */
+      const tubings = withComps(stringRows(d, "wvTub", idwell, ["LatPosition"]), tubOd,
+        stringTopByParent(d, "wvTubComp", idwell));
       const rods = withComps(stringRows(d, "wvRod", idwell), null, stringTopByParent(d, "wvRodComp", idwell));
       const other = stringRows(d, "wvOtherInHole", idwell, ["SzODMax", "IconName"]);
       const perfs = stringRows(d, "wvPerforation", idwell, ["DepthTop", "DtTm", "Proposed", "Typ"]);
