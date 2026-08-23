@@ -100,19 +100,39 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
   const [transfer, setTransfer] = useState<string | null>(null);
 
   /** Export: the payload is large, so it is streamed to a file, not held. */
-  const exportWell = async (idwell: string) => {
-    setTransfer("Exporting…");
+  /**
+   * Export the wells that are selected, not just the first one.
+   *
+   * The guide's Exporting Well Files describes choosing a group, and this screen
+   * says "· N selected" in its header while exporting one — so the count on
+   * screen and the file that arrived disagreed, with nothing to say which was
+   * right.
+   *
+   * One file per well, because that is what Import Well reads: the payload is a
+   * single well's records, and a combined document would import as nothing.
+   * Written one at a time and counted, so a browser that blocks the second
+   * download shows a number lower than asked for rather than a bare "Exported."
+   */
+  const exportWells = async (idwells: string[]) => {
+    if (!idwells.length) return;
+    setTransfer(idwells.length > 1 ? `Exporting ${idwells.length} wells…` : "Exporting…");
+    let done = 0;
     try {
-      const blob = await wvDbApi.exportWell(db, idwell);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${idwell.replace(/[^\w.-]+/g, "_")}.wellview.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setTransfer("Exported.");
+      for (const idwell of idwells) {
+        const blob = await wvDbApi.exportWell(db, idwell);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${idwell.replace(/[^\w.-]+/g, "_")}.wellview.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        done++;
+      }
+      setTransfer(done === 1 ? "Exported." : `Exported ${done} wells.`);
     } catch (e) {
-      setTransfer((e as Error).message);
+      // Say how far it got. "Failed" after eight of ten files have landed in the
+      // downloads folder is a worse answer than the count.
+      setTransfer(`${(e as Error).message}${done ? ` — ${done} exported before it stopped.` : ""}`);
     }
   };
 
@@ -328,18 +348,69 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
    * The manual's warning made real: Delete removes the ENTIRE well from the
    * database — every table's rows — not just a shortcut. Hence the name check.
    */
-  async function deleteWell(id: string) {
-    const name = nameOf(allWells.find((w) => idOf(w) === id) ?? { idwell: id });
-    const typed = window.prompt(
-      `This deletes "${name}" from the database — every record in every folder, not just a link. ` +
-      "Type the well name to confirm:");
-    if (typed?.trim() !== name) return;
-    await wvDbApi.deleteWell(db, id);
-    setSelected([]);
-    setMyWells((m) => m.filter((x) => x !== id));
-    setRecent((r) => r.filter((x) => x !== id));
-    await wellsQ.refetch();
+  async function deleteWells(ids: string[]) {
+    if (!ids.length) return;
+    const names = ids.map((id) => nameOf(allWells.find((w) => idOf(w) === id) ?? { idwell: id }));
+
+    /*
+     * The confirmation is deliberately different for one well and for several,
+     * and both are deliberately awkward.
+     *
+     * This button lives in the SELECTION bar, beside "Add to My Wells", which
+     * acts on every selected well — so acting on only the first was the kind of
+     * inconsistency a user discovers by losing something. But delete here means
+     * every record in every folder of every well named, and this app has no
+     * undo, so the guard scales with the blast radius: one well still asks for
+     * its name typed exactly, and several ask for the count, after listing them.
+     */
+    if (ids.length === 1) {
+      const typed = window.prompt(
+        `This deletes "${names[0]}" from the database — every record in every folder, `
+        + "not just a link. Type the well name to confirm:");
+      if (typed?.trim() !== names[0]) return;
+    } else {
+      const shown = names.slice(0, 10).map((n) => `  • ${n}`).join("\n")
+        + (names.length > 10 ? `\n  • …and ${names.length - 10} more` : "");
+      const typed = window.prompt(
+        `This deletes ${ids.length} wells from the database — every record in every `
+        + `folder of each, not just a link. This cannot be undone.\n\n${shown}\n\n`
+        + `Type ${ids.length} to confirm:`);
+      if (typed?.trim() !== String(ids.length)) return;
+    }
+
+    let done = 0;
+    try {
+      for (const id of ids) { await wvDbApi.deleteWell(db, id); done++; }
+    } finally {
+      // Whatever happened, the screen must reflect what is actually gone.
+      const gone = new Set(ids.slice(0, done));
+      setSelected([]);
+      setMyWells((m) => m.filter((x) => !gone.has(x)));
+      setRecent((r) => r.filter((x) => !gone.has(x)));
+      await wellsQ.refetch();
+      if (ids.length > 1) setTransfer(`Deleted ${done} of ${ids.length} wells.`);
+    }
   }
+
+  /**
+   * The wells Copy Well List copies: the highlighted ones, or all of them.
+   *
+   * The guide: "To copy well list information just for wells that are
+   * highlighted, select the wells and press Ctrl+C."
+   *
+   * This mapped `rows` — the whole folder — and never looked at the selection,
+   * while the footer of this very screen read "Data Audit and Copy Well List use
+   * the selection". Data Audit genuinely did. A screen stating a behaviour the
+   * code does not have is worse than a missing feature: a user who highlights
+   * six wells and pastes forty has no reason to check.
+   */
+  const wellsToCopy = () => {
+    if (!selected.length) return rows;
+    const want = new Set(selected);
+    // Kept in the FOLDER's order, not the order they were clicked in: the
+    // clipboard should look like the list it came from.
+    return rows.filter((w) => want.has(idOf(w)));
+  };
 
   function copyWellList() {
     // The heading names a unit, so the value under it has to be in that unit.
@@ -347,7 +418,7 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
       const u = c.unit ? unitLabel(c) : "";
       return u ? `${c.label} (${u})` : c.label;
     }).join("\t");
-    const body = rows.map((w) => columns.map((c) => cell(w, c)).join("\t")).join("\n");
+    const body = wellsToCopy().map((w) => columns.map((c) => cell(w, c)).join("\t")).join("\n");
     void navigator.clipboard.writeText(`${head}\n${body}`).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -376,10 +447,10 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
           onClick={() => void newWell()} />
         <ToolButton label="Data Audit" hint="Check that fields meet the §10.2 business rules"
           onClick={() => onAudit(selected)} />
-        <ToolButton label="Export Well"
-          hint="Download this well — every row in every table — as a portable document"
-          disabled={!primary}
-          onClick={() => primary && void exportWell(primary)} />
+        <ToolButton label={selected.length > 1 ? `Export Wells (${selected.length})` : "Export Well"}
+          hint="Download the selected wells — every row in every table — one document each"
+          disabled={!selected.length}
+          onClick={() => void exportWells(selected)} />
         <ToolButton label="Import Well"
           hint="Bring a well exported from another database into this one"
           onClick={() => importRef.current?.click()} />
@@ -590,7 +661,9 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
               Well List Properties…
             </button>
             <button type="button" className="text-blue-600 hover:underline" onClick={copyWellList}>
-              {copied ? "Copied ✓" : "Copy Well List"}
+              {copied ? "Copied ✓"
+                : selected.length ? `Copy Well List (${selected.length})`
+                  : "Copy Well List"}
             </button>
             <button type="button" className="text-blue-600 hover:underline"
               onClick={() => setSelected(rows.map(idOf))}>
@@ -611,8 +684,8 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
                   </button>
                 )}
                 <button type="button" className="text-red-600 hover:underline ml-auto"
-                  onClick={() => void deleteWell(primary)}>
-                  Delete Well…
+                  onClick={() => void deleteWells(selected)}>
+                  {selected.length > 1 ? `Delete ${selected.length} Wells…` : "Delete Well…"}
                 </button>
               </>
             )}
@@ -674,8 +747,17 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
             )}
           </div>
           <div className="px-2 py-1 border-t border-gray-100 text-[10px] text-gray-400">
-            Double-click a well to open it. Ctrl-click and Shift-click select several — Data Audit and
-            Copy Well List use the selection. {primary ? `Selected: ${nameOf(rows.find((w) => idOf(w) === primary) ?? { idwell: primary })}` : ""}
+            {/*
+              * This sentence used to name two commands as using the selection
+              * when only one of them did. It now names four, and all four do —
+              * which is the only version of this line worth having, because a
+              * user has no way to check it except by losing something.
+              */}
+            Double-click a well to open it. Ctrl-click and Shift-click select several — Data Audit,
+            Copy Well List, Export Wells and Delete use the selection.{" "}
+            {selected.length > 1
+              ? `${selected.length} selected.`
+              : primary ? `Selected: ${nameOf(rows.find((w) => idOf(w) === primary) ?? { idwell: primary })}` : ""}
           </div>
         </section>
       </div>
