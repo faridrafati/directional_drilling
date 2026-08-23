@@ -508,6 +508,15 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
    * over a carried value is just an edit like any other.
    */
   const carrySeed = useMemo(() => {
+    /*
+     * A TRUNCATED FOLDER HAS NO "PREVIOUS RECORD" to carry from.
+     *
+     * The seed copies the last row that was READ, and in a folder capped at 500
+     * that is row 500 of 2,389 — not the record a user just finished, and not
+     * the one WellView would carry from. Seeding from it would put a plausible
+     * wrong date and depth into a new record, which is worse than an empty one.
+     */
+    if (data.truncated) return {} as Row;
     const prev = data.rows[data.rows.length - 1];
     if (!prev) return {} as Row;
     const seed: Row = {};
@@ -880,7 +889,25 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
    * order, which is why Invert exists at all.
    */
   const ordered = !!data.sequenced && data.rows.every((r) => r.IDRec != null);
+  /**
+   * Reordering needs the WHOLE folder, and a truncated read is not it.
+   *
+   * The route renumbers from the list it is given, so sending the first 500 of
+   * 2,389 would write sequence 1..500 over records that are not the first 500
+   * of anything — silently rearranging a string. Refused in the UI rather than
+   * left to fail at the server, so the button explains instead of erroring.
+   *
+   * No folder in either shipped database reaches this: the largest sequenced
+   * one is wvCasCompTally at 222. It is guarded because the two folders that DO
+   * exceed the cap could as easily have been sequenced.
+   */
   async function reorder(order: string[], what: string) {
+    if (data.truncated) {
+      onStatus(`Not reordered — this folder holds ${data.total} records and only the `
+        + `first ${data.rows.length} are loaded. Reordering part of a folder would renumber `
+        + "the wrong records.");
+      return;
+    }
     setBusy(true);
     try {
       const res = await wvDbApi.reorder(db, data.table, {
@@ -929,7 +956,10 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       }).join("\t");
     }).join("\n");
     void navigator.clipboard.writeText(`${head}\n${body}`).then(
-      () => onStatus(`Copied ${data.rows.length} record${data.rows.length === 1 ? "" : "s"} to the clipboard, headings included.`),
+      () => onStatus(data.truncated
+        ? `Copied the first ${data.rows.length} of ${data.total} records to the clipboard, `
+          + "headings included — the folder is larger than one read."
+        : `Copied ${data.rows.length} record${data.rows.length === 1 ? "" : "s"} to the clipboard, headings included.`),
       () => onStatus("The browser refused clipboard access."),
     );
   }
@@ -1230,7 +1260,21 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2 shrink-0 flex-wrap">
         <span className="text-xs font-semibold text-gray-800" title={data.help}>{data.label}</span>
         <span className="text-[10px] text-gray-400 font-mono">{data.table}</span>
-        <span className="text-[10px] text-gray-400 tabular-nums">{data.rows.length} record{data.rows.length === 1 ? "" : "s"}</span>
+        {/*
+          * The count says what is HERE, and admits when that is not all of it.
+          * The report path next door has always been honest about this —
+          * "first N of M rows" — and a folder is no different.
+          */}
+        <span className={`text-[10px] tabular-nums ${data.truncated ? "text-amber-700" : "text-gray-400"}`}
+          data-testid="wv-edit-count"
+          title={data.truncated
+            ? `This folder holds ${data.total} records. The first ${data.rows.length} are shown; `
+              + "editing, copying and reordering apply to those."
+            : undefined}>
+          {data.truncated
+            ? `first ${data.rows.length} of ${data.total} records`
+            : `${data.rows.length} record${data.rows.length === 1 ? "" : "s"}`}
+        </span>
         {carriedCount > 0 && !singleRecord && (
           // The new row arrives pre-filled; say so, or a carried value reads as
           // something the user typed and forgot.

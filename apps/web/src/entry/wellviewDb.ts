@@ -95,6 +95,17 @@ export interface WvRecordColumn {
 export interface WvRecords {
   table: string;
   label: string;
+  /**
+   * Rows in the FOLDER, which is not always rows in this response.
+   *
+   * The server caps a read at 500. Without these the screen printed the number
+   * it received as though it were the number that exists — "500 records" on a
+   * folder holding 2,389 — and Copy Data put those 500 on the clipboard with
+   * nothing to say the rest were missing.
+   */
+  total?: number;
+  /** True when `rows` is the first 500 of `total`. */
+  truncated?: boolean;
   /** Folder help from the data model (§3.11 Folder and Field Help). */
   help?: string;
   /** Section order for the entry form. */

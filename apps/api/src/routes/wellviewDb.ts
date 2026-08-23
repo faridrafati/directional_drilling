@@ -1203,16 +1203,38 @@ export async function registerWellviewDbRoutes(
       if (req.query.idwell && t.hasIdwell) { where.push(`"${t.colSet.get("idwell")}" = ?`); args.push(req.query.idwell); }
       if (req.query.parent && t.hasParent) { where.push(`"${t.colSet.get("idrecparent")}" = ?`); args.push(req.query.parent); }
       const ord = orderClause(t);
+      const ROW_CAP = 500;
       const rows = d.ro.prepare(
         `SELECT ${cols.map((c) => `"${c}"`).join(", ")} FROM "${t.name}"` +
         (where.length ? ` WHERE ${where.join(" AND ")}` : "") +
         (ord ? ` ORDER BY ${ord}` : "") +
-        " LIMIT 500",
+        ` LIMIT ${ROW_CAP}`,
       ).all(...args) as Record<string, unknown>[];
+      /*
+       * HOW MANY THERE REALLY ARE.
+       *
+       * The cap has always been here; what was missing was any way for the
+       * caller to know it had been hit. The screen printed "500 records" as a
+       * fact and Copy Data put 500 rows on the clipboard, on a folder holding
+       * 2,389 — and nothing anywhere said so.
+       *
+       * Counted rather than inferred from a LIMIT+1 probe: the tree already
+       * shows the real number beside the folder, so a grid that could only say
+       * "more than 500" would still disagree with it. The count measures at a
+       * fraction of a millisecond on this database and only runs when the cap
+       * was actually reached.
+       */
+      const total = rows.length < ROW_CAP ? rows.length : Number((d.ro.prepare(
+        `SELECT COUNT(*) c FROM "${t.name}"` + (where.length ? ` WHERE ${where.join(" AND ")}` : ""),
+      ).get(...args) as { c: number }).c);
       const mt = modelTable(t.name);
       return {
         table: t.name,
         label: folderLabel(t.name, t.parent),
+        /** Rows in the folder, not rows in this response. */
+        total,
+        /** True when `rows` is the first `ROW_CAP` of `total`, not all of it. */
+        truncated: total > rows.length,
         help: mt?.help,
         /** Section order for the entry form (§4.3's Well Header sections). */
         fieldGroups: mt?.fieldGroups,
