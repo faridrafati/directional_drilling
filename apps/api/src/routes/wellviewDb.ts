@@ -265,6 +265,44 @@ function linkTargets(d: Db, t: TableInfo, col: string): string[] {
   return seen;
 }
 
+/**
+ * Fill in the `…TK` companion of any link that arrived without one.
+ *
+ * WellView stores a record link as a PAIR — the GUID, and a `…TK` column naming
+ * the target table — and it keeps them together: of 6,275 link values in the
+ * sample database, 6,268 carry their TK, and the seven that do not are all one
+ * polymorphic column. A GUID with no TK is resolvable here only because the
+ * client searches every candidate table for it; the desktop uses the TK to know
+ * where to look, so a row written without one is a row WellView cannot follow.
+ *
+ * Enforced at the write boundary rather than in whichever screen happened to
+ * compose the record. Carry-forward was one way to lose it, but any future
+ * caller that sets a link and forgets its companion is the same bug, and this is
+ * the one place all of them pass through.
+ *
+ * The target is LOOKED UP, not guessed: `linkTargets` gives the candidate
+ * tables and the GUID is found in exactly one of them. If it is in none — a
+ * dangling link, or a table this database does not have — nothing is written.
+ * An invented table name would be worse than the blank it replaces.
+ */
+function fillLinkTks(d: Db, t: TableInfo, values: Record<string, unknown>): void {
+  for (const [col, v] of Object.entries(values)) {
+    if (v == null || v === "" || isTkCol(col) || !isLinkCol(t, col)) continue;
+    const tkCol = t.colSet.get(`${col.toLowerCase()}tk`);
+    if (!tkCol || (values[tkCol] != null && values[tkCol] !== "")) continue;
+    for (const target of linkTargets(d, t, col)) {
+      const tt = table(d, target);
+      if (!tt?.colSet.has("idrec")) continue;
+      try {
+        const hit = d.ro.prepare(
+          `SELECT 1 FROM "${tt.name}" WHERE "${tt.colSet.get("idrec")}" = ? LIMIT 1`,
+        ).get(String(v));
+        if (hit) { values[tkCol] = tt.name.toLowerCase(); break; }
+      } catch { /* a table that cannot be read simply is not the target */ }
+    }
+  }
+}
+
 /** Something readable to identify a record by — mirrors the client's captions. */
 function captionOf(t: TableInfo, row: Record<string, unknown>): string {
   // The model states each table's record caption as a template of its own
@@ -1225,6 +1263,9 @@ export async function registerWellviewDbRoutes(
           if (tk) values[tk] = "wvwellbore";
         }
       }
+      // Any link the caller set keeps its TK companion, whatever composed it.
+      fillLinkTks(d, t, values);
+
       /*
        * A NEW RECORD GOES AT THE END OF ITS FOLDER, and that takes an explicit
        * sequence number.
@@ -1304,14 +1345,23 @@ export async function registerWellviewDbRoutes(
       if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
       const keyCol = t.colSet.get("idrec") ?? (t.name.toLowerCase() === "wvwellheader" ? t.colSet.get("idwell") : null);
       if (!keyCol) return reply.code(400).send({ error: `${t.name} has no record key` });
-      const sets: string[] = [];
-      const args: (string | number | null)[] = [];
+      const patch: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(req.body?.values ?? {})) {
         const actual = t.colSet.get(k.toLowerCase());
         if (!actual || isSysCol(actual) || (isKeyCol(actual) && !isSelfParentLink(t, actual))) continue;
         if (modelField(t.name, actual)?.calculated) continue;   // green = not editable
-        sets.push(`"${actual}" = ?`);
-        args.push((v === "" ? null : v) as string | number | null);
+        patch[actual] = v === "" ? null : v;
+      }
+      // Re-pointing a link on an existing row has the same pair to keep in step
+      // as creating one. Only fills a blank companion; a TK the caller sent
+      // explicitly is left exactly as it came.
+      fillLinkTks(d, t, patch);
+
+      const sets: string[] = [];
+      const args: (string | number | null)[] = [];
+      for (const [col, v] of Object.entries(patch)) {
+        sets.push(`"${col}" = ?`);
+        args.push(v as string | number | null);
       }
       if (!sets.length) return reply.code(400).send({ error: "nothing to update" });
       const user = (req as unknown as { entryUser?: { username?: string } }).entryUser?.username ?? "web";

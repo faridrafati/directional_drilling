@@ -541,9 +541,42 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         seed[c.column] = Number.isFinite(n) ? String(n + step) : v;
       }
     }
+    /*
+     * A CARRIED LINK NEEDS ITS TK COMPANION, or the row is written with a GUID
+     * and no idea what it points at.
+     *
+     * WellView stores a record link as a pair: the GUID, and a `…TK` column
+     * naming the target TABLE. `setLink` keeps them in step when a user picks a
+     * link by hand; carry-forward did not, because the loop above skips every
+     * `c.tk` column — and the model declares no TK field at all, so none could
+     * ever have carried itself.
+     *
+     * The invariant is real and the database proves it: of 6,275 link values in
+     * the sample, 6,268 carry their TK. The seven that do not are all one
+     * polymorphic column. A row this app carried forward would have joined that
+     * handful — resolvable here only because `captionOfLink` searches every
+     * candidate table, and not resolvable at all in the desktop, which uses the
+     * TK to know where to look.
+     *
+     * Copied from the previous row rather than derived: that row's TK is what
+     * the GUID beside it actually points at, and inferring a table name from a
+     * column name would be a guess where an answer is sitting right there.
+     */
+    for (const c of data.columns) {
+      const tkCol = c.link?.tkColumn;
+      if (!tkCol || seed[c.column] == null) continue;
+      const tk = prev[tkCol];
+      if (tk != null && tk !== "") seed[tkCol] = tk;
+    }
     return seed;
   }, [data.rows, data.columns]);
-  const carriedCount = Object.keys(carrySeed).length;
+  /*
+   * Counted for the user, so it counts only what the user can see. A TK rides
+   * along with its link and is never rendered; including it would report two
+   * carried fields where one row of the form changed.
+   */
+  const carriedCount = Object.keys(carrySeed)
+    .filter((k) => !data.columns.find((c) => c.column === k)?.tk).length;
 
   /**
    * The seed as the user will SEE it.
