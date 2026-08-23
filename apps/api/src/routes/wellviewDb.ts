@@ -446,18 +446,53 @@ function buildTree(d: Db, idwell: string | null): TreeNode[] {
 // ── record helpers ────────────────────────────────────────────────────────────
 const newIdRec = () => randomUUID().replace(/-/g, "").toUpperCase();
 
-/** The column to order a folder's records by — dates first, then sequence/depth. */
-function orderColumn(t: TableInfo): string | null {
+/**
+ * The ORDER BY a folder's records are read in.
+ *
+ * THE MODEL ALREADY SAYS. 264 of the 357 tables carry an `sqlOrderBy` — the
+ * vendor's own statement of the order each folder is meant to read in — and it
+ * was extracted by the builder, stored in datamodel.json, and then consulted
+ * nowhere. Every table was ordered by a guess instead.
+ *
+ * The guess is wrong where it matters most. `wvWellboreDirSurveyData` declares
+ * `md`, but it also carries `DtTm` on 1,586 of its 2,019 rows, so the heuristic
+ * below reached for the date first and a 371-station survey came back 33.94,
+ * 42.93, 244.53, 152.75, 97.80 — a depth list in no depth order at all. The
+ * help says plainly: "The survey data records are arranged in order of the
+ * Measured Depth (MD)."
+ *
+ * Validated rather than trusted. Each name is resolved against the table's real
+ * columns and anything that does not resolve is dropped, so a model that names
+ * a column this database does not have degrades to the heuristic instead of
+ * producing SQL that throws. Only `asc`/`desc` are allowed after a name; of the
+ * 264 declared orders, 90 are multi-column, 8 carry a DESC, and none contains
+ * any other character.
+ */
+function orderClause(t: TableInfo): string | null {
   // A SEQUENCED folder is ordered by the user, and that order is the point —
   // a casing string reads shoe-up or shoe-down because someone arranged it. Its
-  // stored sequence therefore beats any date the table also happens to carry.
+  // stored sequence therefore beats anything the model or a date would say.
   if (modelTable(t.name)?.sequenced) {
     const seq = t.colSet.get("sysseq");
-    if (seq) return seq;
+    if (seq) return `"${seq}"`;
   }
+
+  const declared = modelTable(t.name)?.sqlOrderBy;
+  if (declared) {
+    const parts: string[] = [];
+    for (const raw of declared.split(",")) {
+      const m = raw.trim().match(/^([A-Za-z0-9_]+)(?:\s+(asc|desc))?$/i);
+      if (!m) continue;
+      const col = t.colSet.get(m[1].toLowerCase());
+      if (!col) continue;
+      parts.push(`"${col}"${m[2] ? ` ${m[2].toUpperCase()}` : ""}`);
+    }
+    if (parts.length) return parts.join(", ");
+  }
+
   for (const k of ["dttm", "dttmstart", "dttmspud", "dttmrun", "sysseq", "seqno", "depthtop", "depth", "md"]) {
     const c = t.colSet.get(k);
-    if (c) return c;
+    if (c) return `"${c}"`;
   }
   return null;
 }
@@ -1082,11 +1117,11 @@ export async function registerWellviewDbRoutes(
       const args: string[] = [];
       if (req.query.idwell && t.hasIdwell) { where.push(`"${t.colSet.get("idwell")}" = ?`); args.push(req.query.idwell); }
       if (req.query.parent && t.hasParent) { where.push(`"${t.colSet.get("idrecparent")}" = ?`); args.push(req.query.parent); }
-      const ord = orderColumn(t);
+      const ord = orderClause(t);
       const rows = d.ro.prepare(
         `SELECT ${cols.map((c) => `"${c}"`).join(", ")} FROM "${t.name}"` +
         (where.length ? ` WHERE ${where.join(" AND ")}` : "") +
-        (ord ? ` ORDER BY "${ord}"` : "") +
+        (ord ? ` ORDER BY ${ord}` : "") +
         " LIMIT 500",
       ).all(...args) as Record<string, unknown>[];
       const mt = modelTable(t.name);
@@ -1634,9 +1669,9 @@ export async function registerWellviewDbRoutes(
       if (!idCol) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
       const where = req.query.idwell && t.hasIdwell ? "WHERE idwell = ?" : "";
       const args = where ? [String(req.query.idwell)] : [];
-      const ord = orderColumn(t);
+      const ord = orderClause(t);
       const rows = d.ro.prepare(
-        `SELECT * FROM "${t.name}" ${where}${ord ? ` ORDER BY "${ord}"` : ""} LIMIT 300`,
+        `SELECT * FROM "${t.name}" ${where}${ord ? ` ORDER BY ${ord}` : ""} LIMIT 300`,
       ).all(...args) as Record<string, unknown>[];
       return {
         table: t.name,

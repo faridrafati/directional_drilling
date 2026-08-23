@@ -79,6 +79,9 @@ export interface ModelTable {
   labelPlural?: string;
   labelShort?: string;
   help?: string;
+  /** The order the vendor says this folder reads in — "md", "DtTmStart, DtTmEnd".
+   *  Declared on 264 of the 357 tables, and authoritative over any heuristic. */
+  sqlOrderBy?: string;
   /** Record caption template of field names, e.g. "<Des>" or "<DtTmStart>". */
   recordDes?: string;
   calculated?: boolean;
