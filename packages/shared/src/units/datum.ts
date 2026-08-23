@@ -35,14 +35,60 @@
 export const DATUMS = ["OrigKB", "Ground", "MudLine", "CasFlange", "TubHead", "SeaLevel"] as const;
 export type Datum = (typeof DATUMS)[number];
 
+/**
+ * WellView's own names for the datums, from its Select Reference Datum dialog.
+ *
+ * These were guessed before the help file could be read, and two of the guesses
+ * were wrong: Peloton writes "Ground Elevation", not "Ground level", and "Mean
+ * Sea Level", not "Sea level". A user who knows the desktop is looking for the
+ * desktop's words.
+ */
 export const DATUM_LABELS: Record<Datum, string> = {
-  OrigKB: "Original KB",
-  Ground: "Ground level",
-  MudLine: "Mud line",
-  CasFlange: "Casing flange",
-  TubHead: "Tubing head",
-  SeaLevel: "Sea level",
+  OrigKB: "Original KB Elevation",
+  Ground: "Ground Elevation",
+  MudLine: "Mud Line Elevation",
+  CasFlange: "Casing Flange Elevation",
+  TubHead: "Tubing Head Elevation",
+  SeaLevel: "Mean Sea Level Elevation",
 };
+
+/**
+ * The two-or-three letter code WellView appends to a depth's unit.
+ *
+ * A casing shoe at 3,739 m from the casing flange prints as `Btm (mCF)`, and
+ * that suffix is the only thing on screen distinguishing it from 3,739 m from
+ * the kelly bushing. Without it a re-referenced depth is indistinguishable from
+ * an unreferenced one, which is the whole hazard the datum feature creates.
+ *
+ * Read off Peloton's own dialog rather than invented — and worth stating,
+ * because the obvious guesses are wrong: ground is GRD and not GL, mean sea
+ * level is MSL and not SL.
+ */
+export const DATUM_CODES: Record<Datum, string> = {
+  OrigKB: "KB",
+  Ground: "GRD",
+  CasFlange: "CF",
+  TubHead: "TH",
+  MudLine: "ML",
+  SeaLevel: "MSL",
+};
+
+/**
+ * The seventh choice WellView offers, which this app does not.
+ *
+ * "Well Specific Other Elevation (OTH)" reads its datum from whichever
+ * `wvElevationHistory` record the well header's `IDRecElvHistory` points at,
+ * and labels depths with that record's own `ElvOtherLabel` — "KB2", "KB3" — in
+ * single-well views, and "OTH" in multi-well reports where one label cannot
+ * stand for every well.
+ *
+ * It is not offered here because there is nothing to resolve it against:
+ * `wvElevationHistory` has zero rows in both converted databases. Offering a
+ * datum that can only ever refuse would be worse than not offering it. The
+ * model has every field it needs, so this is a data question, not a missing
+ * feature — the same situation as Time Tracks.
+ */
+export const OTHER_ELEVATION_CODE = "OTH";
 
 /**
  * Datums that are legitimately a long way from the kelly bushing.

@@ -40,7 +40,7 @@ import { wvDbApi, type WvRecordColumn, type WvRecords, type WvTreeNode } from ".
 import { usePicklistCatalog } from "../../entry/picklists.js";
 import { useUnitSet, type UnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
-import { toDisplay, fromDisplay, displayUnitFor, formatUnitValue } from "@dd/shared";
+import { toDisplay, fromDisplay, displayUnitLabel, formatUnitValue } from "@dd/shared";
 import type { DatumShift } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
 import { InventoryTransfer } from "./InventoryTransfer.js";
@@ -852,7 +852,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
    */
   function copyDataToClipboard() {
     const head = cols.map((c) => {
-      const u = c.unit ? displayUnitFor(c, unitSet)?.unit ?? c.unit : "";
+      const u = c.unit ? displayUnitLabel(c, unitSet, datumShift) : "";
       return u ? `${c.label} (${u})` : c.label;
     }).join("\t");
     const body = data.rows.map((r) => {
@@ -1211,7 +1211,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                     title={[`${data.table}.${c.column}`, c.help, c.calculated ? "Calculated by WellView." : null]
                       .filter(Boolean).join(" — ")}>
                     {c.label}
-                    {c.unit && <span className="ml-1 font-normal text-gray-400">({displayUnitFor(c, unitSet)?.unit ?? c.unit})</span>}
+                    {c.unit && <span className="ml-1 font-normal text-gray-400">({displayUnitLabel(c, unitSet, datumShift)})</span>}
                   </td>
                   {data.rows.map((r, i) => {
                     const k = keyOf(r);
@@ -1259,7 +1259,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                     {c.globalMetric
                       ? <span className="text-cyan-600" title="Required global metric">&nbsp;◆</span>
                       : c.required ? <span className="text-amber-600" title="Required">&nbsp;*</span> : null}
-                    {c.unit && <span className="ml-1 font-normal text-gray-400">({displayUnitFor(c, unitSet)?.unit ?? c.unit})</span>}
+                    {c.unit && <span className="ml-1 font-normal text-gray-400">({displayUnitLabel(c, unitSet, datumShift)})</span>}
                   </th>
                 ))}
               </tr>
@@ -1612,7 +1612,7 @@ function PasteData({
                             <option value="">— skip —</option>
                             {writable.map((c) => (
                               <option key={c.column} value={c.column}>
-                                {c.label}{c.unit ? ` (${displayUnitFor(c, unitSet)?.unit ?? c.unit})` : ""}
+                                {c.label}{c.unit ? ` (${displayUnitLabel(c, unitSet, datumShift)})` : ""}
                               </option>
                             ))}
                           </select>

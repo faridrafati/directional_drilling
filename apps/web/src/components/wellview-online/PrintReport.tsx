@@ -21,7 +21,7 @@ import { entryApi } from "../../entry/client.js";
 import { wvDbApi } from "../../entry/wellviewDb.js";
 import { useUnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
-import { toDisplay, formatUnitValue, displayUnitFor, type UnitFormat } from "@dd/shared";
+import { toDisplay, formatUnitValue, displayUnitLabel, type UnitFormat } from "@dd/shared";
 
 interface Block {
   table: string | null; title: string | null; exists: boolean; computed: boolean;
@@ -222,7 +222,7 @@ export function PrintReport({
                           <tr>
                             {b.columns.map((c) => (
                               <th key={c.column} className="text-left font-medium border border-gray-300 px-1">
-                                {c.label}{c.unit ? ` (${displayUnitFor(c, unitSet)?.unit ?? c.unit})` : ""}
+                                {c.label}{c.unit ? ` (${displayUnitLabel(c, unitSet, datumShift)})` : ""}
                               </th>
                             ))}
                           </tr>

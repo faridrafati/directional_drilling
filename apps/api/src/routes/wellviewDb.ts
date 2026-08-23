@@ -2192,6 +2192,14 @@ export async function registerWellviewDbRoutes(
               label: columnLabel(t.name, c),
               type: mf?.type ?? "string",
               unit: mf?.baseUnit,
+              /*
+               * Whether this field moves with Tools > Reference Datum, which
+               * decides whether it can be QUERIED at all. Every depth is stored
+               * against the original KB, so a criterion typed while another
+               * datum is selected means one thing to the user and another to
+               * the database. The builder needs to know which fields those are.
+               */
+              applyDatum: mf?.applyDatum || undefined,
             };
           })
           .sort((a, b) => a.label.localeCompare(b.label)),
@@ -3166,7 +3174,11 @@ export async function registerWellviewDbRoutes(
         perforations: perfs, cement, cementStages, zones,
         drillStrings, surveyLinks,
         dates: [...dates].sort(),
-        depth: { unit: depthField?.baseUnit, units: depthField?.units },
+        // `applyDatum` is part of the spec, not decoration: `toDisplay` shifts
+        // nothing without it, so a schematic sent without it silently draws
+        // Original-KB depths while the report beside it is re-referenced.
+        depth: { unit: depthField?.baseUnit, units: depthField?.units,
+          applyDatum: depthField?.applyDatum, datumMode: depthField?.datumMode },
         size: { unit: sizeField?.baseUnit, units: sizeField?.units },
       };
     },

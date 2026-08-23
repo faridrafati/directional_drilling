@@ -212,6 +212,16 @@ export interface WvSurveyStation {
   /** No azimuth was recorded here; the previous bearing was carried. */
   azimuthAssumed: boolean;
 }
+/** One queryable column, as the query builder's field picker sees it. */
+export interface WvQueryField {
+  field: string;
+  label: string;
+  type: string;
+  unit?: string;
+  /** True when the value moves with the reference datum — so, a depth. */
+  applyDatum?: boolean;
+}
+
 export interface WvSurvey {
   survey: string;
   method: string;
@@ -464,7 +474,7 @@ export const wvDbApi = {
       `/wellview/dbs/${enc(db)}/query-fields`),
 
   queryFields: (db: string, table: string) =>
-    entryApi.get<{ table: string; fields: { field: string; label: string; type: string; unit?: string }[] }>(
+    entryApi.get<{ table: string; fields: WvQueryField[] }>(
       `/wellview/dbs/${enc(db)}/query-fields?table=${enc(table)}`),
 
   /** Run criteria that have not been saved — the builder's preview. */

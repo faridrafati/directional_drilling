@@ -30,7 +30,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entryApi } from "../../entry/client.js";
 import { useUnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
-import { toDisplay, fromDisplay, formatUnitValue, displayUnitFor } from "@dd/shared";
+import { toDisplay, fromDisplay, formatUnitValue, displayUnitFor, displayUnitLabel, type DatumShift } from "@dd/shared";
 import type { UnitFormat } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
 import { PrintReport } from "./PrintReport.js";
@@ -636,7 +636,7 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                               {c.label}
                               {c.unit && (
                                 <span className="ml-1 font-normal text-gray-400">
-                                  ({displayUnitFor(c, unitSet)?.unit ?? c.unit})
+                                  ({displayUnitLabel(c, unitSet, datumShiftFor)})
                                 </span>
                               )}
                             </th>
@@ -757,6 +757,15 @@ function SchematicTab({ db, idwell, onEditTable }: {
   db: string; idwell: string; onEditTable: (table: string) => void;
 }) {
   const qc = useQueryClient();
+  /*
+   * The schematic honours Tools > Reference Datum, and the help is explicit
+   * that it must: the datum lets you "view and edit all depth-based values
+   * relative to an alternate datum (for example, in reports, the schematic, and
+   * Edit Data window)". Leaving it out was worse than not having the feature —
+   * a casing shoe read 3,739 mCF in the report and 3,745 m on the drawing of
+   * the same well, with nothing on either to say which datum it came from.
+   */
+  const { shift: datumShift } = useDatumShift(db, idwell);
   const q = useQuery({
     queryKey: ["wvdb", db, "schematic", idwell],
     queryFn: () => wvDbApi.schematic(db, idwell),
@@ -1009,13 +1018,14 @@ function SchematicTab({ db, idwell, onEditTable }: {
         smartScaling={smartScaling} setSmartScaling={setSmartScaling}
         showProposed={showProposed} setShowProposed={setShowProposed} />
       <div className="px-3 py-0.5 text-[10px] text-gray-400 border-b border-gray-50 shrink-0">
-        Click an item to edit its subject area. Widths from component nominal OD, depths as stored.
+        Click an item to edit its subject area. Widths from component nominal OD;
+        depths from the reference datum, which every depth here is labelled with.
       </div>
       <div className="flex-1 overflow-auto" ref={svgBox}>
         <SchematicSvg s={s} date={date} boreId={boreId || null} showProposed={showProposed}
           scale={scale} layers={layers} smartScaling={smartScaling} onEditTable={onEditTable}
           tracks={tracks} stations={trackQ.data?.stations ?? null}
-          surveyName={link?.surveyName ?? null} />
+          surveyName={link?.surveyName ?? null} datumShift={datumShift} />
       </div>
     </div>
   );
@@ -1030,7 +1040,7 @@ function SchematicTab({ db, idwell, onEditTable }: {
  */
 function SchematicSvg({
   s, date, boreId, showProposed, scale, layers, smartScaling, onEditTable,
-  tracks, stations, surveyName,
+  tracks, stations, surveyName, datumShift,
 }: {
   s: WvSchematic; date: string; boreId: string | null; showProposed: boolean;
   scale: number; layers: Record<SchematicLayer, boolean>; smartScaling: boolean;
@@ -1040,6 +1050,8 @@ function SchematicSvg({
   /** The linked survey's stations, or null while loading / when none is linked. */
   stations?: { md: number; tvd: number; inclination: number }[] | null;
   surveyName?: string | null;
+  /** Tools > Reference Datum, resolved for this well. Null while it loads. */
+  datumShift?: DatumShift | null;
 }) {
   /**
    * Every depth drawn here — the axis, the shoe labels, the tooltips — is one
@@ -1049,9 +1061,9 @@ function SchematicSvg({
    */
   const [unitSet] = useUnitSet();
   const depthSpec = s.depth ?? {};
-  const depthUnit = displayUnitFor(depthSpec, unitSet)?.unit ?? depthSpec.unit ?? "";
+  const depthUnit = displayUnitLabel(depthSpec, unitSet, datumShift);
   const fmtDepth = (n: number): string => {
-    const d = toDisplay(n, depthSpec, unitSet);
+    const d = toDisplay(n, depthSpec, unitSet, datumShift);
     return d ? formatUnitValue(d.value, { unit: d.unit, decimals: 1 }) : String(Number(n.toFixed(1)));
   };
   /**
@@ -1393,10 +1405,10 @@ function SchematicSvg({
   // 4000 ft — not in stored metres converted after the fact, which would put
   // them on 1,640.4 and 3,280.8. Each tick converts back to place its line.
   const axis: React.ReactNode[] = [];
-  const shownMax = toDisplay(maxDepth, depthSpec, unitSet)?.value ?? maxDepth;
+  const shownMax = toDisplay(maxDepth, depthSpec, unitSet, datumShift)?.value ?? maxDepth;
   const step = niceStep(shownMax);
   for (let t = 0; t <= shownMax; t += step) {
-    const base = fromDisplay(String(t), depthSpec, unitSet) ?? t;
+    const base = fromDisplay(String(t), depthSpec, unitSet, datumShift) ?? t;
     axis.push(
       <g key={`ax${t}`}>
         <line x1={30} y1={y(base)} x2={36} y2={y(base)} stroke="#9ca3af" strokeWidth="1" />
@@ -1440,8 +1452,8 @@ function SchematicSvg({
           <polyline fill="none" stroke="#0f766e" strokeWidth="1.2"
             points={pts.map((st) => {
               const v = t.get(st as never);
-              const shown = t.spec.unit ? toDisplay(v, t.spec, unitSet)?.value ?? v : v;
-              const shownHi = t.spec.unit ? toDisplay(hi, t.spec, unitSet)?.value ?? hi : hi;
+              const shown = t.spec.unit ? toDisplay(v, t.spec, unitSet, datumShift)?.value ?? v : v;
+              const shownHi = t.spec.unit ? toDisplay(hi, t.spec, unitSet, datumShift)?.value ?? hi : hi;
               const x = x0 + 3 + (shown / (shownHi || 1)) * (TRACK_W - 12);
               return `${x},${y(Math.min(st.md, maxDepth))}`;
             }).join(" ")} />
@@ -1602,7 +1614,7 @@ function SurveyTab({ db, idwell, onEditTable }: {
                       {c.label}
                       {c.unit && (
                         <span className="ml-1 font-normal text-gray-400">
-                          ({displayUnitFor(c, unitSet)?.unit ?? c.unit})
+                          ({displayUnitLabel(c, unitSet, datumShift)})
                         </span>
                       )}
                     </th>

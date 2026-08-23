@@ -13,7 +13,7 @@
  * label it honestly instead of printing a mis-scaled number.
  */
 import { convertUnit } from "./wellview.js";
-import { applyDatumShift, type DatumShift, type DatumMode } from "./datum.js";
+import { applyDatumShift, DATUM_CODES, type DatumShift, type DatumMode } from "./datum.js";
 
 /** How one unit set shows one field: the unit, and the model's format for it. */
 export interface UnitFormat {
@@ -56,6 +56,42 @@ export function displayUnitFor(spec: FieldUnitSpec, unitSet: string): UnitFormat
   const target = spec.units?.[unitSet];
   if (!target?.unit) return { unit: base };
   return target;
+}
+
+/**
+ * The unit label to print beside a field — with the datum code, when the field
+ * is one that moves with the datum.
+ *
+ * WellView writes `Set Depth (mCF)` and `Top (mCF)`, not `(m)`: the code goes
+ * INSIDE the parentheses, fused to the unit. Peloton's own help circles those
+ * two headings in its Reference Datum examples, which is a fair signal of how
+ * much it matters. A depth of 3,739 m from the casing flange and 3,739 m from
+ * the kelly bushing are different places; the suffix is the only thing on
+ * screen that says which one is meant.
+ *
+ * Three things deliberately keep a plain unit:
+ *   - a field with no `applyDatum`, which does not move (a length, a diameter);
+ *   - `datumMode: "invariant"`, which the model marks as not shifting even
+ *     though it is a depth-like number;
+ *   - a shift that could not be RESOLVED, because the well has no such
+ *     elevation. Labelling those `mCF` would claim a re-reference that did not
+ *     happen, which is the one failure worse than not labelling at all.
+ */
+export function displayUnitLabel(
+  spec: FieldUnitSpec,
+  unitSet: string,
+  // Only the datum and whether it resolved matter here, never the offset — so a
+  // multi-well grid, which has one header over many wells and therefore many
+  // offsets, can label its column without pretending to a single shift.
+  datum?: Pick<DatumShift, "datum" | "resolved"> | null,
+): string {
+  const target = displayUnitFor(spec, unitSet);
+  const unit = target?.unit ?? spec.unit ?? "";
+  if (!unit || !spec.applyDatum) return unit;
+  if ((spec.datumMode ?? "depth") === "invariant") return unit;
+  if (!datum || !datum.resolved) return unit;
+  const code = DATUM_CODES[datum.datum];
+  return code ? `${unit}${code}` : unit;
 }
 
 /**

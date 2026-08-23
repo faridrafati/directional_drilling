@@ -18,10 +18,23 @@
  * Nothing is saved until it has been previewed: the Run button reports how many
  * wells the criteria find, so a query that matches everything or nothing is
  * visible before it is given a name.
+ *
+ * DEPTHS CANNOT BE QUERIED FROM ANOTHER DATUM. WellView's own help is flat
+ * about it: "You can query depths only when you are using Original KB Elevation
+ * for reference datum. All depths are stored relative to the original KB in the
+ * database. The query engine can run against these values. If you select a
+ * different reference datum for reference, the query datum cannot determine the
+ * specific datum offsets for each well." The offset is per WELL, and a query
+ * runs across all of them at once, so there is no single number to shift the
+ * criterion by. The builder therefore refuses depth fields while another datum
+ * is selected rather than matching a casing-flange number against kelly-bushing
+ * values and returning a confident, wrong list of wells.
  */
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { wvDbApi, type WvCriterion, type WvSavedQuery } from "../../entry/wellviewDb.js";
+import { useDatum } from "../../entry/datum.js";
+import { DATUM_LABELS } from "@dd/shared";
 
 const OPS = [
   { op: "=", label: "is" },
@@ -47,6 +60,8 @@ interface Props {
 
 export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
   const qc = useQueryClient();
+  const [datum] = useDatum();
+  const depthsQueryable = datum === "OrigKB";
   const [name, setName] = useState(editing?.name ?? "");
   const [category, setCategory] = useState(editing?.category ?? "");
   const [criteria, setCriteria] = useState<WvCriterion[]>(
@@ -182,6 +197,16 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
 
           <div>
             <p className="text-xs font-medium text-gray-800">Criteria</p>
+            {!depthsQueryable && (
+              <p className="mb-1.5 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800"
+                data-testid="wv-qb-datum-notice">
+                Depth fields cannot be queried while the reference datum is
+                <b> {DATUM_LABELS[datum]}</b>. Depths are stored from the original KB and the
+                offset differs per well, so there is no single number to compare against. Switch
+                the datum back to <b>Original KB Elevation</b> to query on depth — everything
+                else can be queried from any datum.
+              </p>
+            )}
             <p className="text-[11px] text-gray-500 mb-1.5">
               Lines joined by <b>And</b> must all hold; an <b>Or</b> starts a new alternative, and a
               well matches if any alternative does. Lines on the <b>same table</b> must be satisfied
@@ -216,6 +241,7 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
                     ))}
                   </select>
                   <FieldPicker db={db} table={c.table} value={c.field}
+                    depthsQueryable={depthsQueryable}
                     onChange={(field) => set(i, { field })} />
                   <select value={c.op} onChange={(e) => set(i, { op: e.target.value })}
                     data-testid="wv-qb-op"
@@ -320,8 +346,11 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
 }
 
 /** The columns of one table, by the model's captions. */
-function FieldPicker({ db, table, value, onChange }: {
-  db: string; table: string; value: string; onChange: (f: string) => void;
+function FieldPicker({ db, table, value, depthsQueryable, onChange }: {
+  db: string; table: string; value: string;
+  /** False when another reference datum is selected; depth fields are then unusable. */
+  depthsQueryable: boolean;
+  onChange: (f: string) => void;
 }) {
   const q = useQuery({
     queryKey: ["wvdb", db, "query-fields", table],
@@ -334,9 +363,17 @@ function FieldPicker({ db, table, value, onChange }: {
       data-testid="wv-qb-field"
       className="h-8 border border-gray-300 rounded px-1 text-xs bg-white min-w-[10rem] disabled:bg-gray-50">
       <option value="">{table ? "Field…" : "—"}</option>
-      {(q.data?.fields ?? []).map((f) => (
-        <option key={f.field} value={f.field}>{f.label}</option>
-      ))}
+      {(q.data?.fields ?? []).map((f) => {
+        // Disabled rather than hidden: a field that vanished from the list would
+        // read as "this table has no depth", which is a different and wrong
+        // statement. The label says why it cannot be picked.
+        const blocked = !!f.applyDatum && !depthsQueryable;
+        return (
+          <option key={f.field} value={f.field} disabled={blocked}>
+            {f.label}{blocked ? "  — needs Original KB" : ""}
+          </option>
+        );
+      })}
     </select>
   );
 }
