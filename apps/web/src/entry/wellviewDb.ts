@@ -305,6 +305,15 @@ export interface WvMultiBlock {
   rows: (string | number | null)[][];
   /** Which well each row came from, aligned with `rows` — its datum key. */
   rowWells?: string[];
+  /**
+   * The template's own row filters, and the ones that could not be applied.
+   *
+   * A report that quietly drops its filters is indistinguishable from one that
+   * has none — which is how three differently-named rig reports came to return
+   * the same 33 rows. Both lists are shown.
+   */
+  filtersApplied?: string[];
+  filtersSkipped?: string[];
   rowCount: number;
   truncated: boolean;
   /** Set when the template predates this database's schema. */

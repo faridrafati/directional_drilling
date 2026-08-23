@@ -119,7 +119,7 @@ These write into the same SQLite files the desktop reads. They are first because
 - **Measured:** "Drilling Rigs with query", "Completion Rigs with query" and "Rigs with query" all return the same 33 rows / 7 columns with identical leading rows over 25 wells — where the database holds Drilling 22, Completion/Workover 10, Abandon 1. "Drill String Equipment with Query" returns 1,581 rows where **0** satisfy its stated criteria.
 - **No notice is given.** `MultiReports.tsx:288-349` renders nothing, while the single-well path (`wellviewSample.ts:588-628`) reports `unapplied` reasons and the Excel extract (`xlExtract.ts:90-92`) warns.
 - **User cannot:** tell two differently-named reports apart, or know that the one they ran was unfiltered.
-- **Size: medium** — re-run the `.afm` export carrying `filters`, then apply them in the shape the single-well resolver already uses.
+- **Size: medium.** *(Stated fix corrected 2026-08-24: it does NOT need the Python export re-run. The filter section is decodable directly — `scripts/wellview-db/build_afm_filters.mjs` reads it in ~150 lines of JS and merges into the committed JSON. The Python detector was also wrong: `afr_parse.py:317-329` only fires on fields named `wv*`, which is why it finds `wvjob.wvtyp` and misses the rest.)*
 
 ### 1.4 Query criteria on a parent and its child table are not joined
 

@@ -11,7 +11,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -56,6 +56,18 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "comp"
+    }
+   ],
+   "filtersSkipped": [
+    "wvjobrig.contractor — no value",
+    "wvjobrig.rigno — no value"
    ]
   },
   {
@@ -64,7 +76,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -119,6 +131,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "NOT LIKE",
+     "value": "drill"
+    }
    ]
   },
   {
@@ -127,7 +147,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template portrait.afm",
    "blocks": [
@@ -255,6 +275,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "NOT LIKE",
+     "value": "drill"
+    }
    ]
   },
   {
@@ -263,7 +291,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -336,7 +364,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape legal.afm",
    "blocks": [
@@ -416,6 +444,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvstimtreat",
+     "field": "typ",
+     "op": "LIKE",
+     "value": "frac"
+    }
    ]
   },
   {
@@ -424,7 +460,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -482,7 +518,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -545,7 +581,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -605,6 +641,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvperforation",
+     "field": "shotdensity",
+     "op": "IS NOT NULL",
+     "value": null
+    }
    ]
   },
   {
@@ -613,7 +657,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -663,6 +707,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvtubcomp",
+     "field": "des",
+     "op": "LIKE",
+     "value": "pump"
+    }
    ]
   },
   {
@@ -671,7 +723,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -734,7 +786,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -797,7 +849,7 @@
    "folder": "Completion",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -865,7 +917,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape legal.afm",
    "blocks": [
@@ -973,7 +1025,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -1026,7 +1078,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -1066,6 +1118,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "drill"
+    }
    ]
   },
   {
@@ -1074,7 +1134,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -1139,6 +1199,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "drill*"
+    }
    ]
   },
   {
@@ -1147,7 +1215,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template portrait.afm",
    "blocks": [
@@ -1273,6 +1341,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "drill*"
+    }
    ]
   },
   {
@@ -1281,7 +1357,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -1336,6 +1412,20 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjobdrillstringcomp",
+     "field": "des",
+     "op": "LIKE",
+     "value": "36\" Hole Opener"
+    },
+    {
+     "table": "wvjobdrillstringcomp",
+     "field": "make",
+     "op": "LIKE",
+     "value": "Anadrill"
+    }
    ]
   },
   {
@@ -1344,7 +1434,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -1419,6 +1509,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "drill"
+    }
    ]
   },
   {
@@ -1427,7 +1525,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -1487,6 +1585,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "drill"
+    }
    ]
   },
   {
@@ -1495,7 +1601,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -1583,7 +1689,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -1628,6 +1734,18 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjob",
+     "field": "wvtyp",
+     "op": "LIKE",
+     "value": "drill"
+    }
+   ],
+   "filtersSkipped": [
+    "wvjobrig.contractor — no value",
+    "wvjobrig.rigno — no value"
    ]
   },
   {
@@ -1636,7 +1754,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -1704,7 +1822,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template portrait.afm",
    "blocks": [
@@ -1762,7 +1880,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape legal.afm",
    "blocks": [
@@ -1920,7 +2038,7 @@
    "folder": "Drilling",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -1985,6 +2103,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvjob",
+     "field": "jobtyp",
+     "op": "LIKE",
+     "value": "drill"
+    }
    ]
   },
   {
@@ -1993,7 +2119,7 @@
    "folder": "Geology",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -2112,7 +2238,7 @@
    "folder": "Geology",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -2177,6 +2303,9 @@
       }
      ]
     }
+   ],
+   "filtersSkipped": [
+    "wvwellboreformation.depthdrillingtop — operator 4 is not understood"
    ]
   },
   {
@@ -2185,7 +2314,7 @@
    "folder": "Geology",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -2258,7 +2387,7 @@
    "folder": "Master Templates",
    "multi": true,
    "master": true,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "legal",
    "parent_template": "",
    "blocks": []
@@ -2269,7 +2398,7 @@
    "folder": "Master Templates",
    "multi": true,
    "master": true,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "",
    "blocks": []
@@ -2280,7 +2409,7 @@
    "folder": "Master Templates",
    "multi": true,
    "master": true,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "",
    "blocks": []
@@ -2291,7 +2420,7 @@
    "folder": "Phase Analysis, Lessons & Problems",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -2359,7 +2488,7 @@
    "folder": "Phase Analysis, Lessons & Problems",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -2437,7 +2566,7 @@
    "folder": "Phase Analysis, Lessons & Problems",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -2525,7 +2654,7 @@
    "folder": "Production",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -2583,7 +2712,7 @@
    "folder": "Production",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template portrait.afm",
    "blocks": [
@@ -2742,6 +2871,26 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvtub",
+     "field": "dttmpull",
+     "op": "IS NULL",
+     "value": null
+    },
+    {
+     "table": "wvrod",
+     "field": "dttmpull",
+     "op": "IS NULL",
+     "value": null
+    },
+    {
+     "table": "wvotherinhole",
+     "field": "dttmpull",
+     "op": "IS NULL",
+     "value": null
+    }
    ]
   },
   {
@@ -2750,7 +2899,7 @@
    "folder": "Production",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template portrait.afm",
    "blocks": [
@@ -2813,7 +2962,7 @@
    "folder": "Production",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -2886,7 +3035,7 @@
    "folder": "Production",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -2941,6 +3090,14 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvtubcomp",
+     "field": "des",
+     "op": "LIKE",
+     "value": "packer"
+    }
    ]
   },
   {
@@ -2949,7 +3106,7 @@
    "folder": "Production",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template portrait.afm",
    "blocks": [
@@ -3027,7 +3184,7 @@
    "folder": "Production",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template portrait.afm",
    "blocks": [
@@ -3067,6 +3224,20 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvtestequip",
+     "field": "testtyp",
+     "op": "LIKE",
+     "value": "scvf"
+    },
+    {
+     "table": "wvtestequip",
+     "field": "testtyp",
+     "op": "LIKE",
+     "value": "vent flow"
+    }
    ]
   },
   {
@@ -3075,7 +3246,7 @@
    "folder": "Production",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3168,7 +3339,7 @@
    "folder": "Production",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3236,7 +3407,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3314,7 +3485,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3362,7 +3533,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template portrait.afm",
    "blocks": [
@@ -3521,6 +3692,26 @@
       }
      ]
     }
+   ],
+   "filters": [
+    {
+     "table": "wvtub",
+     "field": "dttmpull",
+     "op": "IS NULL",
+     "value": null
+    },
+    {
+     "table": "wvrod",
+     "field": "dttmpull",
+     "op": "IS NULL",
+     "value": null
+    },
+    {
+     "table": "wvotherinhole",
+     "field": "dttmpull",
+     "op": "IS NULL",
+     "value": null
+    }
    ]
   },
   {
@@ -3529,7 +3720,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3597,7 +3788,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3665,7 +3856,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3713,7 +3904,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3786,7 +3977,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3831,6 +4022,10 @@
       }
      ]
     }
+   ],
+   "filtersSkipped": [
+    "wvjobrig.contractor — no value",
+    "wvjobrig.rigno — no value"
    ]
   },
   {
@@ -3839,7 +4034,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3902,7 +4097,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -3985,7 +4180,7 @@
    "folder": "Summary",
    "multi": true,
    "master": false,
-   "format_version": 3.0,
+   "format_version": 3,
    "paper": "letter",
    "parent_template": "multi template landscape.afm",
    "blocks": [
@@ -4064,7 +4259,7 @@
    "folder": "Tasks",
    "multi": true,
    "master": false,
-   "format_version": 2.0,
+   "format_version": 2,
    "paper": null,
    "parent_template": "multi template landscape.afr",
    "blocks": [
@@ -4203,7 +4398,7 @@
    "folder": "Tasks",
    "multi": true,
    "master": false,
-   "format_version": 2.0,
+   "format_version": 2,
    "paper": null,
    "parent_template": "multi template landscape.afr",
    "blocks": [

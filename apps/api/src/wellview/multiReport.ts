@@ -33,11 +33,23 @@ export interface MultiTemplateBlock {
   title: string | null;
   fields: MultiTemplateField[];
 }
+/** One filter a template carries, decoded from its .afm by build_afm_filters.mjs. */
+export interface MultiFilter {
+  table: string;
+  field: string;
+  op: "LIKE" | "NOT LIKE" | "IS NULL" | "IS NOT NULL";
+  /** Null for the null tests. WellView's wildcard is `*`, not `%`. */
+  value: string | null;
+}
 export interface MultiTemplate {
   html: string;
   name: string;
   folder?: string;
   format_version?: number;
+  /** Row filters from the template. Absent means the template has none. */
+  filters?: MultiFilter[];
+  /** Filters that could not be read, with the reason — reported, never applied. */
+  filtersSkipped?: string[];
   blocks: MultiTemplateBlock[];
 }
 
@@ -64,6 +76,10 @@ export interface MultiBlockResult {
   table: string | null;
   title: string | null;
   exists: boolean;
+  /** Filters applied to this block, in the words the screen can print. */
+  filtersApplied?: string[];
+  /** …and the ones that were not, with why. */
+  filtersSkipped?: string[];
   columns: MultiColumn[];
   /** Which well each row came from, aligned with `rows`. Its datum key. */
   rowWells?: string[];
@@ -93,6 +109,41 @@ function schemaOf(d: DatabaseSync) {
 }
 
 /**
+ * The chain of tables from `from` up to `to`, by the prefix rule.
+ *
+ * WellView names a child table with its parent's name as a prefix — wvJobRig
+ * under wvJob, wvJobReportTimeLog under wvJobReport under wvJob — and the
+ * parent of a table is the LONGEST proper prefix that is itself a table.
+ *
+ * This is needed because a template's filter names a table that is often not
+ * the block's own. "Drilling Rigs with query" prints wvJobRig rows and filters
+ * on wvJob.wvTyp: the filter is a fact about the JOB each rig record hangs off.
+ * Matching filters to blocks by name alone applied none of them.
+ *
+ * Returns the tables between the two, nearest first, or null when `to` is not
+ * an ancestor of `from` — in which case the filter is not about this block and
+ * is left for whichever block it does belong to.
+ */
+function chainUp(sch: Map<string, { name: string; cols: Map<string, string> }>,
+  from: string, to: string): string[] | null {
+  const chain: string[] = [];
+  let cur = from.toLowerCase();
+  const target = to.toLowerCase();
+  for (let guard = 0; guard < 8; guard++) {
+    if (cur === target) return chain;
+    let parent: string | null = null;
+    for (let n = cur.length - 1; n > 2; n--) {
+      const cand = cur.slice(0, n);
+      if (sch.has(cand)) { parent = cand; break; }
+    }
+    if (!parent) return null;
+    chain.push(parent);
+    cur = parent;
+  }
+  return null;
+}
+
+/**
  * Run one multi-well template block over a set of wells.
  *
  * Wells are bound as parameters, never interpolated, and the set is capped by
@@ -107,6 +158,17 @@ export function resolveMultiTemplate(
 ): { report: string; name: string; wells: number; blocks: MultiBlockResult[] } {
   const sch = schemaOf(d);
   const well = sch.get(WELL_TABLE);
+  /*
+   * The template's row filters, and the ones that could not be read.
+   *
+   * Per BLOCK, not per template: a filter names its own table, so a template
+   * whose blocks are wvJob, wvJobReport and wvJobReportTimeLog can carry a
+   * filter that narrows one of them and leaves the others whole. That makes a
+   * report internally uneven, which is what the file says and not this app's
+   * choice to smooth over.
+   */
+  const filters = tpl.filters ?? [];
+  const skippedFilters = tpl.filtersSkipped ?? [];
 
   const blocks = tpl.blocks.map((b): MultiBlockResult => {
     const tname = (b.table ?? "").toLowerCase();
@@ -243,19 +305,111 @@ export function resolveMultiTemplate(
      */
     const idwellSel = `t0."${t.cols.get("idwell")}" AS __idwell`;
 
+    /*
+     * THE TEMPLATE'S OWN ROW FILTERS.
+     *
+     * Every multi-well report used to run as `WHERE idwell IN (…)` and return
+     * the whole table, so "Drilling Rigs with query", "Completion Rigs with
+     * query" and "Rigs with query" produced identical output on a database
+     * holding 22 drilling jobs and 10 completion ones.
+     *
+     * CONJUNCTION IS A HEURISTIC AND MUST BE READ AS ONE. The .afm carries a
+     * second int32 per record that takes 0 and 2, and its meaning could not be
+     * established: 2 appears on records with no value and on two that have one.
+     * So the rule here was chosen by testing all three candidates against every
+     * shipped template and keeping the only one that never empties a report
+     * which returns rows today:
+     *
+     *   AND everything      empties 2 (SCVF, Drill String Equipment)
+     *   OR within a field   empties 1 (Drill String Equipment)
+     *   OR within a table   empties 0        <- this one
+     *
+     * SCVF is the clearest case: two filters on the same field, "scvf" and
+     * "vent flow". No row is both, so AND cannot be what was meant.
+     */
+    /*
+     * A filter applies to this block when it names the block's own table OR any
+     * table above it. 15 of the 24 shipped filters name an ancestor, not the
+     * block — "Drilling Rigs with query" prints wvJobRig and filters wvJob.
+     */
+    const forThis = (filters ?? [])
+      .map((f) => ({ f, chain: chainUp(sch, t.name, f.table) }))
+      .filter((x): x is { f: MultiFilter; chain: string[] } => x.chain !== null);
+    const filterArgs: string[] = [];
+    const filterApplied: string[] = [];
+    const filterSkipped: string[] = [...(skippedFilters ?? [])];
+    const filterOrs: string[] = [];
+    let fx = 0;
+    for (const { f, chain } of forThis) {
+      const owner = chain.length ? sch.get(chain[chain.length - 1]) : t;
+      const col = owner?.cols.get(f.field.toLowerCase());
+      if (!owner || !col) {
+        filterSkipped.push(`${f.table}.${f.field} — not a column in this database`);
+        continue;
+      }
+      // The alias the predicate is written against: t0 when the filter is on
+      // this block's own table, otherwise the last hop of the chain.
+      const a = chain.length ? `f${fx}_${chain.length - 1}` : "t0";
+      let pred: string;
+      if (f.op === "IS NULL") {
+        // "Still in the hole": WellView writes an empty string as often as a
+        // null, and a report that showed pulled equipment would be wrong.
+        pred = `(${a}."${col}" IS NULL OR ${a}."${col}" = '')`;
+        filterApplied.push(`${f.field} is empty`);
+      } else if (f.op === "IS NOT NULL") {
+        pred = `(${a}."${col}" IS NOT NULL AND ${a}."${col}" <> '')`;
+        filterApplied.push(`${f.field} is set`);
+      } else {
+        // WellView's wildcard is `*`; SQL's is `%`. Untranslated, the shipped
+        // value "drill*" matches nothing and empties two reports.
+        pred = `${a}."${col}" ${f.op} ? COLLATE NOCASE`;
+        filterArgs.push(`%${String(f.value ?? "").replace(/\*/g, "%")}%`.replace(/%%+/g, "%"));
+        filterApplied.push(`${f.field} ${f.op.toLowerCase()} "${f.value}"`);
+      }
+
+      if (!chain.length) { filterOrs.push(pred); fx++; continue; }
+      // Walk up: t0 -> its parent -> … -> the filter's table, then test there.
+      let joins = "";
+      let prev = "t0";
+      chain.forEach((name, k) => {
+        const ct = sch.get(name)!;
+        const al = `f${fx}_${k}`;
+        joins += k === 0
+          ? ` FROM "${ct.name}" ${al}`
+          : ` JOIN "${ct.name}" ${al} ON ${al}."IDRec" = ${prev}."IDRecParent"`;
+        prev = al;
+      });
+      filterOrs.push(`EXISTS (SELECT 1${joins} WHERE f${fx}_0."IDRec" = t0."IDRecParent" AND ${pred})`);
+      fx++;
+    }
+    const filterWhere = filterOrs.length
+      ? ` AND (${filterOrs.join(" OR ")})`
+      : "";
+
     const sel = present.map((r) => `${r.alias}."${r.actual}"`);
     const placeholders = idwells.map(() => "?").join(", ");
     const sql = `SELECT ${[...lead, idwellSel, ...sel].join(", ")}
                    FROM "${t.name}" t0${wellJoin}${linkJoins}
-                  WHERE t0."${t.cols.get("idwell")}" IN (${placeholders})`;
+                  WHERE t0."${t.cols.get("idwell")}" IN (${placeholders})${filterWhere}`;
 
     let raw: Record<string, unknown>[] = [];
     let total = 0;
     try {
+      /*
+       * THE COUNT CARRIES THE SAME FILTERS AS THE SELECT.
+       *
+       * It does not need the joins — those are all LEFT and cannot change how
+       * many rows t0 has — but it absolutely needs the filters, which are on t0
+       * and do. Without them `rowCount` reports the unfiltered size beside a
+       * filtered list, so a report showing 28 rows announces 112 and "truncated"
+       * turns on for a result that is complete. That is the same class of lie
+       * this whole change is closing, pointed the other way.
+       */
       total = (d.prepare(
-        `SELECT COUNT(*) c FROM "${t.name}" t0 WHERE t0."${t.cols.get("idwell")}" IN (${placeholders})`,
-      ).get(...idwells) as { c: number }).c;
-      raw = d.prepare(`${sql} LIMIT ${rowCap}`).all(...idwells) as Record<string, unknown>[];
+        `SELECT COUNT(*) c FROM "${t.name}" t0`
+        + ` WHERE t0."${t.cols.get("idwell")}" IN (${placeholders})${filterWhere}`,
+      ).get(...idwells, ...filterArgs) as { c: number }).c;
+      raw = d.prepare(`${sql} LIMIT ${rowCap}`).all(...idwells, ...filterArgs) as Record<string, unknown>[];
     } catch {
       return { table: t.name, title: b.title, exists: true, columns: [], missing,
                rows: [], rowCount: 0, truncated: false, schemaDrift: drift, printTimeNote: printTime };
@@ -286,6 +440,8 @@ export function resolveMultiTemplate(
       table: t.name,
       title: b.title,
       exists: true,
+      filtersApplied: filterApplied.length ? filterApplied : undefined,
+      filtersSkipped: filterSkipped.length ? filterSkipped : undefined,
       columns,
       missing,
       rows: raw.map((row) => keys.map((k) => (row[k] ?? null) as string | number | null)),

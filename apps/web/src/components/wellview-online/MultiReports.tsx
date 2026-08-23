@@ -340,6 +340,26 @@ export function MultiReports({ db, wells, wellName, onClose }: Props) {
                       {b.printTimeNote && (
                         <div className="px-3 py-2 text-[11px] text-gray-600 bg-gray-50">{b.printTimeNote}</div>
                       )}
+                      {/*
+                        * What the template asked for, and what it got.
+                        *
+                        * Named rather than counted: "filtered" tells a reader
+                        * nothing they can check, and this is the report whose
+                        * whole failure was being indistinguishable from another.
+                        */}
+                      {b.filtersApplied?.length && (
+                        <div className="px-3 py-1.5 text-[11px] text-blue-800 bg-blue-50"
+                          data-testid="wv-mr-filters">
+                          Filtered by the template: {b.filtersApplied.join(", ")}.
+                        </div>
+                      )}
+                      {b.filtersSkipped?.length && (
+                        <div className="px-3 py-1.5 text-[11px] text-amber-800 bg-amber-50"
+                          data-testid="wv-mr-filters-skipped">
+                          Not applied — {b.filtersSkipped.join("; ")}. These rows are unfiltered
+                          by that criterion.
+                        </div>
+                      )}
                       {!b.exists ? (
                         <div className="px-3 py-2 text-[11px] text-gray-400">Table not present in this database.</div>
                       ) : b.rowCount === 0 ? (
