@@ -1208,19 +1208,52 @@ function SchematicSvg({
     );
   }
 
+  /**
+   * Where a string is drawn FROM.
+   *
+   * WellView stores no top for a string — the guide says to enter "the set
+   * depth or bottom of the string" — so the top is summed from the components
+   * that were recorded, and the payload carries it as `DepthTopCalc`.
+   *
+   * Drawing every string from surface put steel on the diagram that nobody
+   * entered: a liner with a 3,627 m shoe and 1,609 m of pipe was drawn with
+   * 2,018 m that is not there, and a 120 m isolation string at 4,220 m was
+   * drawn as 4.1 km of tubing. 56 of the sample's 169 strings start below zero;
+   * 30 of them by more than 50 m.
+   *
+   * Falls back to the surface when nothing was recorded to sum, which is the
+   * old behaviour and the only honest answer when the tally is absent entirely.
+   */
+  const topOf = (r: WvSchematicRow): number | null => {
+    const t = num(r.DepthTopCalc ?? null);
+    // A metre is the threshold for "hung", not zero. A tally that sums to 0.04 m
+    // short of the shoe is a rounding artefact of the joint lengths, not a
+    // string hanging 4 cm down — and labelling it "hung 0.0" reads as nonsense
+    // next to a real liner hung at 2,017.8.
+    return t != null && t >= 1 ? t : null;
+  };
+  /** …and where that lands on the drawing. */
+  const yTop = (r: WvSchematicRow): number => {
+    const t = topOf(r);
+    return t == null ? TOP : y(t);
+  };
+
   // casings: pair of verticals + shoe triangles; proposed variants dashed
   const drawCasing = (c: WvSchematicRow & { maxOd?: number | null }, i: number, proposed: boolean) => {
     const btm = num(c.DepthBtm);
     if (btm == null) return;
     const hw = halfW(num(c.maxOd ?? null));
     const yb = y(btm);
+    const yt = yTop(c);
+    const hung = topOf(c);
     const stroke = proposed ? "#9ca3af" : "#111827";
     const dash = proposed ? "6 3" : undefined;
     items.push(
       <g key={`${proposed ? "pcas" : "cas"}${i}`} className="cursor-pointer" onClick={() => onEditTable("wvCas")}>
-        <title>{`${c.Des ?? "Casing"}${proposed ? " (proposed)" : ""} — shoe ${fmtDepth(btm)} (wvCas)`}</title>
-        <line x1={CX - hw} y1={TOP} x2={CX - hw} y2={yb} stroke={stroke} strokeWidth="2" strokeDasharray={dash} />
-        <line x1={CX + hw} y1={TOP} x2={CX + hw} y2={yb} stroke={stroke} strokeWidth="2" strokeDasharray={dash} />
+        <title>{`${c.Des ?? "Casing"}${proposed ? " (proposed)" : ""} — `
+          + `${hung != null ? `hung ${fmtDepth(hung)} to ` : ""}shoe ${fmtDepth(btm)} (wvCas)`}</title>
+        <line x1={CX - hw} y1={yt} x2={CX - hw} y2={yb} stroke={stroke} strokeWidth="2" strokeDasharray={dash} />
+        <line x1={CX + hw} y1={yt} x2={CX + hw} y2={yb} stroke={stroke} strokeWidth="2" strokeDasharray={dash} />
         <path d={`M ${CX - hw} ${yb} l -7 0 l 7 -9 z`} fill={stroke} />
         <path d={`M ${CX + hw} ${yb} l 7 0 l -7 -9 z`} fill={stroke} />
         <text x={CX - hw - 10} y={yb + 4} fontSize="9" fill={proposed ? "#9ca3af" : "#374151"} textAnchor="end">
@@ -1347,10 +1380,11 @@ function SchematicSvg({
     const hw = Math.max(3, halfW(num(t.maxOd ?? null)) * 0.55);
     items.push(
       <g key={`${proposed ? "ptub" : "tub"}${i}`} className="cursor-pointer" onClick={() => onEditTable("wvTub")}>
-        <title>{`${t.Des ?? "Tubing"}${proposed ? " (proposed)" : ""} — ${btm} (wvTub)`}</title>
-        <line x1={CX - hw} y1={TOP} x2={CX - hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6"
+        <title>{`${t.Des ?? "Tubing"}${proposed ? " (proposed)" : ""} — `
+          + `${topOf(t) != null ? `hung ${fmtDepth(topOf(t)!)} to ` : ""}${fmtDepth(btm)} (wvTub)`}</title>
+        <line x1={CX - hw} y1={yTop(t)} x2={CX - hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6"
           strokeDasharray={proposed ? "5 3" : undefined} opacity={proposed ? 0.6 : 1} />
-        <line x1={CX + hw} y1={TOP} x2={CX + hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6"
+        <line x1={CX + hw} y1={yTop(t)} x2={CX + hw} y2={y(btm)} stroke="#2563eb" strokeWidth="1.6"
           strokeDasharray={proposed ? "5 3" : undefined} opacity={proposed ? 0.6 : 1} />
       </g>,
     );
@@ -1363,9 +1397,10 @@ function SchematicSvg({
     const btm = num(r.DepthBtm);
     if (btm == null) continue;
     items.push(
-      <line key={`rod${i}`} x1={CX} y1={TOP} x2={CX} y2={y(btm)} stroke="#6b7280" strokeWidth="1"
+      <line key={`rod${i}`} x1={CX} y1={yTop(r)} x2={CX} y2={y(btm)} stroke="#6b7280" strokeWidth="1"
         strokeDasharray="4 2" className="cursor-pointer" onClick={() => onEditTable("wvRod")}>
-        <title>{`${r.Des ?? "Rod string"} — ${btm} (wvRod)`}</title>
+        <title>{`${r.Des ?? "Rod string"} — `
+          + `${topOf(r) != null ? `hung ${fmtDepth(topOf(r)!)} to ` : ""}${fmtDepth(btm)} (wvRod)`}</title>
       </line>,
     );
   }

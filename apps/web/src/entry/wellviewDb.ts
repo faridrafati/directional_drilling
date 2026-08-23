@@ -128,7 +128,20 @@ export interface WvAuditResult {
 }
 
 /** One string/item on the schematic; keys mirror the wv table columns. */
-export type WvSchematicRow = Record<string, string | number | null> & { IDRec?: string };
+export type WvSchematicRow = Record<string, string | number | null> & {
+  IDRec?: string;
+  /**
+   * Where the string starts, summed from the component lengths recorded for it.
+   *
+   * WellView stores no top — the guide says to enter "the set depth or bottom
+   * of the string" — so this is DepthBtm less the steel that was entered. Null
+   * when no component carries a length, in which case the drawing has nothing
+   * to go on and starts at surface.
+   */
+  DepthTopCalc?: number | null;
+  /** The steel DepthTopCalc was derived from, for the tooltip's working. */
+  steelLength?: number | null;
+};
 export interface WvSchematic {
   wellbores: WvSchematicRow[];
   sizes: WvSchematicRow[];

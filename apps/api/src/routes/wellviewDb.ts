@@ -916,6 +916,43 @@ function stringRows(d: Db, tname: string, idwell: string, extra: string[] = []):
   });
 }
 
+/**
+ * Where a string actually STARTS, summed from the steel that was recorded.
+ *
+ * WellView stores no top. The guide says what to enter: "the string name, the
+ * date the string was run, and the set depth or BOTTOM of the string" — the top
+ * follows from the components, which stack up from the shoe.
+ *
+ * Without it every string was drawn from surface, and that is not a rounding
+ * error. A liner with a 3,627 m shoe and 1,609 m of pipe was drawn with 2,018 m
+ * of steel that is not there; a "Lower Isolation String" of 120 m at a 4,220 m
+ * shoe was drawn as 4.1 km of tubing. All 13 of the sample's other-in-hole items
+ * — bridge plugs, whipstocks, packers — were drawn from surface to their setting
+ * depth. 69 of 182 strings start somewhere other than zero.
+ *
+ * WHAT IS DRAWN IS WHAT IS RECORDED, deliberately. One well in the sample has a
+ * partial tally: all four of its casings, the conductor included, compute a top
+ * near 421 m, and a conductor pipe cannot hang at 421 m. Showing that gap is
+ * still better than closing it with steel nobody entered — the gap is visible
+ * and questionable, the invented pipe is neither. Left as a null when no
+ * component carries a length, so the caller keeps its old behaviour rather than
+ * collapsing the string to a point.
+ */
+function stringTopByParent(d: Db, compTable: string, idwell: string): Map<string, number> {
+  const t = table(d, compTable);
+  const out = new Map<string, number>();
+  if (!t) return out;
+  const len = t.colSet.get("length");
+  const par = t.colSet.get("idrecparent");
+  if (!len || !par) return out;
+  const rows = d.ro.prepare(
+    `SELECT "${par}" p, SUM(CAST("${len}" AS REAL)) m FROM "${t.name}"
+      WHERE idwell = ? AND "${len}" IS NOT NULL GROUP BY "${par}"`,
+  ).all(idwell) as { p: string; m: number }[];
+  for (const r of rows) if (Number.isFinite(r.m) && r.m > 0) out.set(String(r.p), r.m);
+  return out;
+}
+
 /** Max component OD per parent string, for honest widths on the drawing. */
 function maxOdByParent(d: Db, compTable: string, idwell: string): Map<string, number> {
   const t = table(d, compTable);
@@ -3308,8 +3345,22 @@ export async function registerWellviewDbRoutes(
       if (!idwell) return reply.code(400).send({ error: "idwell is required" });
       const casOd = maxOdByParent(d, "wvCasComp", idwell);
       const tubOd = maxOdByParent(d, "wvTubComp", idwell);
-      const withOd = (rows: Record<string, unknown>[], od: Map<string, number>) =>
-        rows.map((r) => ({ ...r, maxOd: od.get(String(r.IDRec)) ?? null }));
+      /**
+       * A string carries its own top and the steel it was summed from, so the
+       * drawing can show the length and the tooltip can show the working.
+       */
+      const withComps = (
+        rows: Record<string, unknown>[],
+        od: Map<string, number> | null,
+        len: Map<string, number>,
+      ) => rows.map((r) => {
+        const steel = len.get(String(r.IDRec)) ?? null;
+        const btm = Number(r.DepthBtm);
+        // Never above surface: a tally longer than the hole is bad data, and a
+        // string drawn from a negative depth is worse than one drawn from zero.
+        const top = steel != null && Number.isFinite(btm) ? Math.max(0, btm - steel) : null;
+        return { ...r, maxOd: od ? od.get(String(r.IDRec)) ?? null : null, steelLength: steel, DepthTopCalc: top };
+      });
       const bores = stringRows(d, "wvWellbore", idwell, ["KickOffDepth", "IDRecParent", "ProfileTyp"]);
       const sizes = stringRows(d, "wvWellboreSize", idwell, ["DepthTopActual", "DepthBtmActual", "Sz", "DtTmStart", "DtTmEnd", "IDRecParent"]);
       const dates = new Set<string>();
@@ -3319,9 +3370,9 @@ export async function registerWellviewDbRoutes(
           if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) dates.add(v.slice(0, 10));
         }
       };
-      const casings = withOd(stringRows(d, "wvCas", idwell), casOd);
-      const tubings = withOd(stringRows(d, "wvTub", idwell), tubOd);
-      const rods = stringRows(d, "wvRod", idwell);
+      const casings = withComps(stringRows(d, "wvCas", idwell), casOd, stringTopByParent(d, "wvCasComp", idwell));
+      const tubings = withComps(stringRows(d, "wvTub", idwell), tubOd, stringTopByParent(d, "wvTubComp", idwell));
+      const rods = withComps(stringRows(d, "wvRod", idwell), null, stringTopByParent(d, "wvRodComp", idwell));
       const other = stringRows(d, "wvOtherInHole", idwell, ["SzODMax", "IconName"]);
       const perfs = stringRows(d, "wvPerforation", idwell, ["DepthTop", "DtTm", "Proposed", "Typ"]);
       const cement = stringRows(d, "wvCement", idwell, ["IDRecString", "DtTmStart", "Proposed"]);
