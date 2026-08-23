@@ -484,8 +484,87 @@ const HIDDEN_TABLES = /^wv(sys|externaldata|units)/i;
 
 interface TreeNode { table: string; label: string; count: number; children: TreeNode[] }
 
+/**
+ * Folders that hang off a parent NAMED IN THE DATA rather than by the prefix
+ * rule, keyed by the parent table they attach under.
+ *
+ * Most of the schema nests by name — wvJobRig under wvJob — and `buildTree`
+ * walks that. A handful do not: they carry a `TblKeyParent` column holding the
+ * name of whichever table each row belongs to. Those tables are nobody's prefix
+ * child and have a parent of their own, so they were neither a top-level folder
+ * nor anyone's child, and the subject tree — the ONLY navigation Edit Data has —
+ * could not reach them at all.
+ *
+ * Nine safety-incident comments exist in the sample database and no screen in
+ * this app could show them.
+ *
+ * Two rules, both read from data rather than hardcoded:
+ *
+ *   1. `TblKeyParent` values actually present. wvComment's nine rows all say
+ *      `wvJobSafetyIncident`, so that is where the folder belongs.
+ *   2. For a table with no rows to speak for it, the model's own pick-list. The
+ *      ten wvLoc* survey tables are named by `wvWellHeader.LegalSurveyTyp`,
+ *      whose help says "Define this field in order to access location tables" —
+ *      so the folder appears under the header once a well has chosen its survey
+ *      system, and the other nine stay out of the way.
+ */
+function dataParents(d: Db, idwell: string | null): Map<string, TableInfo[]> {
+  const sch = schema(d);
+  const out = new Map<string, TableInfo[]>();
+  const add = (parent: string, child: TableInfo) => {
+    const key = parent.toLowerCase();
+    const list = out.get(key) ?? [];
+    if (!list.some((x) => x.name === child.name)) list.push(child);
+    out.set(key, list);
+  };
+
+  for (const t of sch.values()) {
+    if (!t.hasIdwell || HIDDEN_TABLES.test(t.name)) continue;
+    const tkp = t.colSet.get("tblkeyparent");
+    if (!tkp || t.parent) continue;                 // prefix children are fine already
+    if (t.name.toLowerCase() === "wvattachment") continue;  // has its own screen
+
+    let placed = false;
+    try {
+      const rows = d.ro.prepare(
+        `SELECT DISTINCT lower("${tkp}") v FROM "${t.name}"`
+        + (idwell && t.hasIdwell ? " WHERE idwell = ?" : "") + " LIMIT 8",
+      ).all(...(idwell && t.hasIdwell ? [idwell] : [])) as { v: string }[];
+      for (const r of rows) {
+        const parent = r.v && sch.get(r.v);
+        if (parent) { add(parent.name, t); placed = true; }
+      }
+    } catch { /* unreadable column: fall through to the model */ }
+    if (placed) continue;
+
+    // No rows to say where it goes — ask the model which field names it, and
+    // attach only where a well has actually chosen it.
+    for (const [ownerName, owner] of sch) {
+      const mt = modelTable(owner.name);
+      if (!mt) continue;
+      for (const [fieldName, f] of Object.entries(mt.fields ?? {})) {
+        const names = (f.modelList ?? [])
+          .filter((i): i is { value: string; label: string } => typeof i !== "string")
+          .map((i) => i.value.toLowerCase());
+        if (!names.includes(t.name.toLowerCase())) continue;
+        const col = owner.colSet.get(fieldName.toLowerCase());
+        if (!col) continue;
+        try {
+          const hit = d.ro.prepare(
+            `SELECT 1 FROM "${owner.name}" WHERE lower("${col}") = ?`
+            + (idwell && owner.hasIdwell ? " AND idwell = ?" : "") + " LIMIT 1",
+          ).get(t.name.toLowerCase(), ...(idwell && owner.hasIdwell ? [idwell] : []));
+          if (hit) add(ownerName, t);
+        } catch { /* not a readable column */ }
+      }
+    }
+  }
+  return out;
+}
+
 function buildTree(d: Db, idwell: string | null): TreeNode[] {
   const sch = schema(d);
+  const extra = dataParents(d, idwell);
   const count = (t: TableInfo): number => {
     try {
       if (idwell && t.hasIdwell) {
@@ -498,8 +577,10 @@ function buildTree(d: Db, idwell: string | null): TreeNode[] {
     table: t.name,
     label: folderLabel(t.name, t.parent),
     count: count(t),
-    children: t.children
-      .map((c) => sch.get(c.toLowerCase())!)
+    children: [
+      ...t.children.map((c) => sch.get(c.toLowerCase())!),
+      ...(extra.get(t.name.toLowerCase()) ?? []),
+    ]
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(node),
   });

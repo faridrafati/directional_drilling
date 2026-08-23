@@ -337,7 +337,7 @@ function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentP
     queryFn: () => wvDbApi.records(db, table, {
       idwell, parent: parentIdrec ?? undefined, system: showSystem,
     }),
-    enabled: !chainBroken || ancestors.length === 0,
+    enabled: true,
   });
 
   const data = recordsQ.data;
@@ -347,7 +347,21 @@ function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentP
     onDirty();
   };
 
-  if (ancestors.length && chainBroken) {
+  /*
+   * A BROKEN PARENT CHAIN IS NOT THE SAME AS AN EMPTY FOLDER, and this used to
+   * treat them as one.
+   *
+   * When an ancestor folder has no record, this returned "add the parent record
+   * first" and fetched nothing. Usually right. But wvComment holds nine rows in
+   * the sample database whose IDRecParent points at wvJobSafetyIncident records
+   * that are NOT in this export — so the subject tree counts five on this well
+   * and the pane said the well had none. Both cannot be true.
+   *
+   * The rows win. They are shown, with a notice saying what is actually wrong,
+   * because data nobody can reach is the thing this whole exercise is about.
+   * The original message still stands when the folder really is empty.
+   */
+  if (ancestors.length && chainBroken && !(recordsQ.data?.rows.length)) {
     const broken = ancestorQueries.find((a) => !a.idrec);
     return (
       <div className="p-4 text-sm text-gray-500">
@@ -357,6 +371,7 @@ function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentP
       </div>
     );
   }
+  const orphaned = ancestors.length > 0 && chainBroken && !!recordsQ.data?.rows.length;
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -376,6 +391,16 @@ function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentP
                 className="px-1 rounded border border-gray-300 disabled:opacity-30">›</button>
             </span>
           ))}
+        </div>
+      )}
+
+      {orphaned && (
+        <div className="px-3 py-1.5 text-[11px] text-amber-800 bg-amber-50 border-b border-amber-200 shrink-0"
+          data-testid="wv-edit-orphaned">
+          These records name a parent in{" "}
+          <b>{ancestorQueries.find((a) => !a.idrec)?.label ?? "another folder"}</b>{" "}
+          that is not in this database, so nothing links to them. They are shown here because they
+          exist; they cannot be reached the ordinary way.
         </div>
       )}
 
