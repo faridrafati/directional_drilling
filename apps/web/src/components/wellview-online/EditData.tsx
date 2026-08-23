@@ -949,6 +949,40 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   const setGhostValue = (col: string, v: string | null) =>
     setGhost((g) => ({ ...g, [col]: v }));
 
+  /**
+   * The approved list of a field, as the two things it is: what to STORE and
+   * what to SHOW.
+   *
+   * Most entries are one string doing both jobs. The `mdllistwithtables` ones
+   * are not: WellView stores the detail TABLE name and shows a caption, so
+   * wvTubComp.CompSubTyp holds `wvtubcomppacker` and reads "Packer". Rendering
+   * the stored string raw put a table name in front of the user on 123 of the
+   * sample's rows, and writing the caption back produced a row the desktop
+   * cannot map to its detail table.
+   *
+   * Matched case-insensitively because the data is not consistent about it —
+   * the same column holds "Tubing" and "tubing", "Other" and "other", and
+   * `wvTubCompPacker` alongside `wvtubcomppacker`.
+   */
+  const listOf = (c: WvRecordColumn) => {
+    const items = c.modelList ?? [];
+    const labels = items.map((i) => (typeof i === "string" ? i : i.label));
+    const toStore = new Map<string, string>();
+    const toShow = new Map<string, string>();
+    for (const i of items) {
+      if (typeof i === "string") continue;
+      toStore.set(i.label.toLowerCase(), i.value);
+      toShow.set(i.value.toLowerCase(), i.label);
+    }
+    return { labels, toStore, toShow, mapped: toStore.size > 0 };
+  };
+  /** Stored → what the user sees. */
+  const showListValue = (c: WvRecordColumn, v: string) =>
+    listOf(c).toShow.get(v.toLowerCase()) ?? v;
+  /** What the user typed or picked → what gets stored. */
+  const storeListValue = (c: WvRecordColumn, v: string) =>
+    listOf(c).toStore.get(v.toLowerCase()) ?? v;
+
   /** Set a LINK column: the GUID plus its TK companion (target table name). */
   const setLink = (key: string | null, c: WvRecordColumn, idrec: string | null, targetTable: string | null) => {
     const write = (col: string, v: string | null) =>
@@ -1069,7 +1103,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
      * first is how a typo already in the data becomes a recommendation, so the
      * two are labelled differently and the approved list wins.
      */
-    const approved = c.modelList?.length ? c.modelList : null;
+    const approved = c.modelList?.length ? listOf(c).labels : null;
     const seeded = approved ?? lookupFor.get(c.column.toLowerCase());
     const hasLookup = !!seeded || !!c.library;
     const listId = seeded ? `wv-lu-${data.table}-${c.column}` : undefined;
@@ -1077,13 +1111,14 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     return (
       <div className={hasLookup ? "relative flex items-center" : undefined}>
         <input
-          value={val}
+          value={approved ? showListValue(c, val) : val}
           list={listId}
           placeholder={isGhost ? "new…" : undefined}
           onFocus={() => focusHelp(c)}
-          onChange={(e) => (isGhost
-            ? setGhostValue(c.column, e.target.value)
-            : setValue(key!, c.column, e.target.value))}
+          onChange={(e) => {
+            const v = approved ? storeListValue(c, e.target.value) : e.target.value;
+            if (isGhost) setGhostValue(c.column, v); else setValue(key!, c.column, v);
+          }}
           className={`w-full min-w-[7rem] px-1.5 py-0.5 text-[11px] border rounded
             focus:bg-white focus:border-blue-400 focus:outline-none ${
               fieldTone(c, val)
@@ -1113,7 +1148,8 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                 seeded={seeded ?? null}
                 approved={!!approved}
                 onPick={(v) => {
-                  if (isGhost) setGhostValue(c.column, v); else setValue(key!, c.column, v);
+                  const stored = approved ? storeListValue(c, v) : v;
+                  if (isGhost) setGhostValue(c.column, stored); else setValue(key!, c.column, stored);
                   setPopover(null);
                 }}
                 onClose={() => setPopover(null)}

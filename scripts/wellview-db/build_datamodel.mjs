@@ -234,7 +234,25 @@ for (const m of xml.matchAll(/<(afmtable|afmfieldunitformat|afmunitset|afmfield|
     // offering that as a value to type would be nonsense.
     const isValueList = /^mdllist/i.test(currentField?.lookupTyp ?? "");
     if (currentField && a.listitem && isValueList) {
-      (currentField.modelList ??= []).push(a.listitem);
+      /*
+       * `idrectable` MATTERS, and dropping it stored the wrong string.
+       *
+       * On a `mdllistwithtables` field an entry can name a DETAIL TABLE:
+       *   <afmfieldlookuplist listitem="Packer" idrectable="wvTubCompPacker" />
+       * and what WellView stores in the column for that entry is the TABLE
+       * NAME, not the caption. The data is unambiguous — wvTubComp.CompSubTyp
+       * holds "wvtubcomppacker" 27 times and "wvtubcompmandrel" 18 times, while
+       * the entries with no idrectable ("Tubing", "Nipple", "Anchor") are
+       * stored as their caption.
+       *
+       * Keeping only `listitem` therefore lost the stored value for exactly the
+       * entries that have one: the app displayed a raw table name where the
+       * desktop shows "Packer", and writing the caption back produced a row the
+       * desktop cannot map to its detail table. An entry is emitted as a plain
+       * string when the two are the same thing, and as a pair when they differ.
+       */
+      (currentField.modelList ??= []).push(
+        a.idrectable ? { value: a.idrectable, label: a.listitem } : a.listitem);
     }
     continue;
   }

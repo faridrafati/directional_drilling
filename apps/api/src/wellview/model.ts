@@ -49,7 +49,8 @@ export interface ModelField {
    * `mdllistwithtables` and their 119 values are in the model itself — those
    * ARE the sanctioned list, and must not be presented as merely "in use".
    */
-  modelList?: string[];
+  /** Approved values; a pair when the stored value differs from the caption. */
+  modelList?: (string | { value: string; label: string })[];
   libTable?: string;
   libField?: string;
   baseUnit?: string;

@@ -88,7 +88,7 @@ export interface WvRecordColumn {
    * there the app can only offer the values already in the database. Showing
    * those as if they were sanctioned is how a typo becomes a recommendation.
    */
-  modelList?: string[];
+  modelList?: ModelListItem[];
   /** The rule only warns; it does not block. */
   warnOnly?: boolean;
 }
@@ -213,6 +213,16 @@ export interface WvSurveyStation {
   azimuthAssumed: boolean;
 }
 /** One queryable column, as the query builder's field picker sees it. */
+/**
+ * One approved value from the data model.
+ *
+ * A plain string when the value and the caption are the same thing. A pair when
+ * they are not: a `mdllistwithtables` entry names a DETAIL TABLE, and WellView
+ * stores the table name while showing the caption — "Packer" on screen,
+ * `wvTubCompPacker` in the column.
+ */
+export type ModelListItem = string | { value: string; label: string };
+
 export interface WvQueryField {
   field: string;
   label: string;
