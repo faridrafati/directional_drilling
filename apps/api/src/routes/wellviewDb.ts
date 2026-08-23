@@ -2575,6 +2575,19 @@ export async function registerWellviewDbRoutes(
                * the database. The builder needs to know which fields those are.
                */
               applyDatum: mf?.applyDatum || undefined,
+              /*
+               * The per-set units, so the builder can say what the base unit is
+               * IN TERMS OF the one the user is reading everywhere else.
+               *
+               * The guide is explicit that the value typed here is not
+               * converted — "Value 1 and Value 2 must be in base units" — and
+               * the app obeys that. What it never did was SAY so: the picker
+               * showed "Casing Pressure" and the box took a bare number, while
+               * every other screen in the app was showing that field in psi.
+               * PresCas > 2000 finds one well; the 2000 psi the user meant is
+               * 13,790 kPa and finds none.
+               */
+              units: mf?.units,
             };
           })
           .sort((a, b) => a.label.localeCompare(b.label)),

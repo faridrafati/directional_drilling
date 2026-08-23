@@ -30,10 +30,11 @@
  * is selected rather than matching a casing-flange number against kelly-bushing
  * values and returning a confident, wrong list of wells.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { wvDbApi, type WvCriterion, type WvSavedQuery } from "../../entry/wellviewDb.js";
+import { wvDbApi, type WvCriterion, type WvQueryField, type WvSavedQuery } from "../../entry/wellviewDb.js";
 import { useDatum } from "../../entry/datum.js";
+import { useUnitSet } from "../../entry/unitSet.js";
 import { DATUM_LABELS } from "@dd/shared";
 
 const OPS = [
@@ -78,6 +79,12 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const [sql, setSql] = useState("");
+  /**
+   * The chosen field per criterion row, so the value box can say which unit it
+   * is asking for. Keyed by row index, which is what `set(i, …)` uses.
+   */
+  const [fieldOf, setFieldOf] = useState<Record<number, WvQueryField | null>>({});
+  const [unitSet] = useUnitSet();
 
   /**
    * §8.1's "Paste From Criteria" — the grid above, written out as SQL.
@@ -263,7 +270,8 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
                   </select>
                   <FieldPicker db={db} table={c.table} value={c.field}
                     depthsQueryable={depthsQueryable}
-                    onChange={(field) => set(i, { field })} />
+                    onChange={(field) => set(i, { field })}
+                    onField={(f) => setFieldOf((m) => (m[i]?.field === f?.field ? m : { ...m, [i]: f }))} />
                   <select value={c.op} onChange={(e) => set(i, { op: e.target.value })}
                     data-testid="wv-qb-op"
                     className="h-8 border border-gray-300 rounded px-1 text-xs bg-white">
@@ -276,8 +284,40 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
                         asked when it runs
                       </span>
                     ) : (
-                      <ValueBox db={db} table={c.table} field={c.field} value={c.value ?? ""}
-                        onChange={(v) => set(i, { value: v })} />
+                      <>
+                        <ValueBox db={db} table={c.table} field={c.field} value={c.value ?? ""}
+                          onChange={(v) => set(i, { value: v })} />
+                        {/*
+                          * WHAT UNIT THE BOX WANTS.
+                          *
+                          * The guide: "Value 1 and Value 2 must be in base
+                          * units." The app obeys that — it never converts what
+                          * is typed here — but it used to take the number in
+                          * silence while every other screen showed the field in
+                          * the user's own set. wvJobReport.PresCas is stored in
+                          * kPa and displayed in psi, so a criterion of 2000
+                          * finds one well and the 2000 psi that was meant is
+                          * 13,790 kPa and finds none.
+                          *
+                          * Naming the set's own unit as well, when it differs,
+                          * is what makes the number actionable rather than just
+                          * labelled.
+                          */}
+                        {(() => {
+                          const f = fieldOf[i];
+                          if (!f?.unit) return null;
+                          const shown = f.units?.[unitSet]?.unit;
+                          return (
+                            <span className="text-[10px] text-amber-700 whitespace-nowrap"
+                              data-testid="wv-qb-unit-hint"
+                              title={shown && shown !== f.unit
+                                ? `Stored in ${f.unit}. Your unit set shows this field in ${shown}, but a criterion is read in ${f.unit} — the guide: "Value 1 and Value 2 must be in base units."`
+                                : `Stored in ${f.unit}, which is how a criterion is read.`}>
+                              in {f.unit}{shown && shown !== f.unit ? `, not ${shown}` : ""}
+                            </span>
+                          );
+                        })()}
+                      </>
                     )
                   )}
                   {NEEDS_VALUE(c.op) && (
@@ -381,11 +421,13 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
 }
 
 /** The columns of one table, by the model's captions. */
-function FieldPicker({ db, table, value, depthsQueryable, onChange }: {
+function FieldPicker({ db, table, value, depthsQueryable, onChange, onField }: {
   db: string; table: string; value: string;
   /** False when another reference datum is selected; depth fields are then unusable. */
   depthsQueryable: boolean;
   onChange: (f: string) => void;
+  /** The chosen field's definition, so the value box can name its unit. */
+  onField?: (f: WvQueryField | null) => void;
 }) {
   const q = useQuery({
     queryKey: ["wvdb", db, "query-fields", table],
@@ -393,6 +435,9 @@ function FieldPicker({ db, table, value, depthsQueryable, onChange }: {
     enabled: !!table,
     staleTime: Infinity,
   });
+  const chosen = (q.data?.fields ?? []).find((f) => f.field === value) ?? null;
+  useEffect(() => { onField?.(chosen); }, [chosen?.field, chosen?.unit]);  // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} disabled={!table}
       data-testid="wv-qb-field"
@@ -405,7 +450,7 @@ function FieldPicker({ db, table, value, depthsQueryable, onChange }: {
         const blocked = !!f.applyDatum && !depthsQueryable;
         return (
           <option key={f.field} value={f.field} disabled={blocked}>
-            {f.label}{blocked ? "  — needs Original KB" : ""}
+            {f.label}{f.unit ? ` (${f.unit})` : ""}{blocked ? "  — needs Original KB" : ""}
           </option>
         );
       })}

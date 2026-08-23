@@ -809,7 +809,9 @@ test("the query builder authors And/Or, prompts, lookups and Custom SQL", async 
 
   await page.getByTestId("wv-qb-add").click();
   await expect(page.getByTestId("wv-qb-conj")).toHaveCount(1);
-  await setRow(1, "Perforations", "Top Depth", undefined);
+  // The field label now carries the base unit — the value box is read in that
+  // unit and never converted, so the picker says which one before you type.
+  await setRow(1, "Perforations", "Top Depth (m)", undefined);
   await page.getByTestId("wv-qb-op").nth(1).selectOption("IS NOT NULL");
 
   // And narrows, Or widens — the same two lines, one selector apart.

@@ -250,7 +250,10 @@ export interface WvQueryField {
   field: string;
   label: string;
   type: string;
+  /** The unit the value is STORED in, which is the unit a criterion is read in. */
   unit?: string;
+  /** What each unit set shows it as — so the box can name both. */
+  units?: Record<string, UnitFormat>;
   /** True when the value moves with the reference datum — so, a depth. */
   applyDatum?: boolean;
 }
