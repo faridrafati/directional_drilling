@@ -275,6 +275,66 @@ test.describe("WellView Online — a dropped column is visible", () => {
   });
 });
 
+/**
+ * A zone's Current Status, which WellView works out from its status history.
+ *
+ * "Most recent status by date. EQN: <wvzonestatus.status>." — a pick, not a
+ * total and not arithmetic, so neither of the two calculated shapes this app
+ * had could produce it and the column printed blank on every row.
+ *
+ * "Zone History" is the ideal check because it prints the ANSWER and the
+ * EVIDENCE on one page: the Zone block's computed columns above, the whole
+ * wvZoneStatus history below. The two have to agree by eye.
+ */
+test.describe("WellView Online — a zone's current status", () => {
+  test("computes it from the history printed underneath it", async ({ page }) => {
+    await page.goto("/wellview");
+    await page.getByRole("heading", { name: "WellView" }).waitFor();
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    if (await signIn.isVisible().catch(() => false)) {
+      await page.getByLabel("User name").fill(USER);
+      await page.getByLabel("Password").fill(PASSWORD);
+      await signIn.click();
+    }
+    await page.getByTestId("wv-db-wv9.0_Sample").click();
+    await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-well-row")
+      .filter({ hasText: "Sample 18 - Phase and Prod" }).first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+
+    const search = page.getByPlaceholder(/search|filter/i).first();
+    if (await search.isVisible().catch(() => false)) await search.fill("Zone History");
+    await page.getByText("Zone History", { exact: true }).first().click();
+
+    // Both columns arrive, and are marked as computed — green is WellView's own
+    // convention for a value it worked out rather than one somebody entered.
+    const derived = page.getByTestId("wv-derived-col");
+    await expect(derived.filter({ hasText: "Current Status" }).first())
+      .toBeVisible({ timeout: 20_000 });
+    const labels = await derived.allTextContents();
+    expect(labels).toContain("Current Status");
+    expect(labels).toContain("Current Status Date");
+
+    // The four zones on this well, each against the LAST status in its history.
+    const zoneBlock = page.locator("table").first();
+    const row = (name: string) => zoneBlock.locator("tbody tr").filter({ hasText: name });
+    await expect(row("Lower Mannville")).toContainText("Abandoned");
+    await expect(row("Lower Mannville")).toContainText("1993-11-15");
+    await expect(row("Livingstone A")).toContainText("Pumping - Rod");
+    await expect(row("Livingstone A")).toContainText("2003-11-01");
+
+    // Lower Mannville's history also holds a 1993-09-01 "Flowing". Picking that
+    // would mean the ordering is wrong, so the older one must NOT be the answer.
+    await expect(row("Lower Mannville")).not.toContainText("Flowing");
+
+    // …and the evidence is on the page: the status history block below.
+    const statusBlock = page.locator("table").nth(1);
+    await expect(statusBlock).toContainText("1993-09-01");
+    await expect(statusBlock).toContainText("1993-11-15");
+    await expect(statusBlock).toContainText("2003-11-01");
+  });
+});
+
 test.describe("WellView Online — days vs depth", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/wellview");

@@ -38,7 +38,9 @@ import type { PrismaClient } from "@prisma/client";
 import { requireUser, requireAdmin } from "../entry/auth.js";
 import { resolveTemplateData, iconByName } from "./wellviewSample.js";
 import { daysVsDepth, resolveTemplate, type DvdTemplate } from "../wellview/daysVsDepth.js";
-import { calcFieldsFor, computeRow, calcAggregatesFor, sumChildren } from "../wellview/calcFields.js";
+import {
+  calcFieldsFor, computeRow, calcAggregatesFor, sumChildren, calcLatestFor, latestChildren,
+} from "../wellview/calcFields.js";
 import { appFrame, WELL_FILE_EXTENSION } from "../wellview/appframe.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
@@ -1295,10 +1297,12 @@ export async function registerWellviewDbRoutes(
       const cols = t.cols.filter((c) => showSys || !isSysCol(c));
       // The model-calculated fields this table can carry, appended after the
       // stored columns; they have no column of their own in the database.
-      // Two kinds: arithmetic over the row itself, and totals over child rows.
+      // Three kinds: arithmetic over the row itself, totals over child rows,
+      // and the value on the most recent child by date.
       const computed = [
         ...calcFieldsFor(t.name).map((c) => ({ field: c.field, label: c.label, eqn: c.eqn })),
         ...calcAggregatesFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+        ...calcLatestFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
       ];
       const where: string[] = [];
       const args: string[] = [];
@@ -1435,6 +1439,9 @@ export async function registerWellviewDbRoutes(
           const totals = idCol && req.query.idwell
             ? sumChildren(d.ro, t.name, req.query.idwell, rows.map((r) => String(r[idCol] ?? "")))
             : new Map<string, Record<string, number>>();
+          const picks = idCol && req.query.idwell
+            ? latestChildren(d.ro, t.name, req.query.idwell, rows.map((r) => String(r[idCol] ?? "")))
+            : new Map<string, Record<string, string | number>>();
           return rows.map((r) => {
             const out: Record<string, string | number | null> = {};
             for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
@@ -1442,6 +1449,7 @@ export async function registerWellviewDbRoutes(
             // grid shows a blank rather than a zero nobody measured.
             for (const [k, v] of Object.entries(computeRow(t.name, r))) out[k] = v;
             for (const [k, v] of Object.entries(totals.get(String(r[idCol ?? ""] ?? "")) ?? {})) out[k] = v;
+            for (const [k, v] of Object.entries(picks.get(String(r[idCol ?? ""] ?? "")) ?? {})) out[k] = v;
             return out;
           });
         })(),
@@ -3413,6 +3421,7 @@ export async function registerWellviewDbRoutes(
         if (t.colSet.has(f.toLowerCase())) continue;
         if (calcFieldsFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
         if (calcAggregatesFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
+        if (calcLatestFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
         bad.push(`${b.table}.${f} is neither a column here nor a field this app can compute`);
       }
     }

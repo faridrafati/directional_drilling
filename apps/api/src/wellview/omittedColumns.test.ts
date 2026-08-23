@@ -8,10 +8,13 @@
  *
  * The one label that did exist — "Not in this database", on the multi-well
  * screen — was wrong for every column it was ever shown under. The model says
- * what they are: of the 350 distinct columns the 182 shipped templates drop,
- * 262 carry `calculated: true` (WellView works the value out when the report
+ * what they are: of the 346 distinct columns the 182 shipped templates drop,
+ * 258 carry `calculated: true` (WellView works the value out when the report
  * prints and stores it nowhere) and NOT ONE is a stored column this database
  * lacks. The remaining 88 are fields the model does not put on that table.
+ *
+ * Those first two numbers FALL as fields are taught — they were 350 and 262
+ * when this landed, before "most recent child by date" filled five of them.
  *
  * This is the smallest item in Tier 3 and the one that matters most: it turns
  * every other blank column in the tier from silent into visible.
@@ -50,8 +53,16 @@ beforeAll(() => {
     .reports as { html: string }[]).map((r) => r.html);
 });
 
-/** Every block of every shipped template, resolved against one well. */
+let _blocks: { html: string; block: Block }[] | null = null;
+
+/**
+ * Every block of every shipped template, resolved against one well.
+ *
+ * Memoised: resolving 182 templates takes seconds and is deterministic, and six
+ * tests want the same answer. Without this the file alone ran for eight minutes.
+ */
 function allBlocks(): { html: string; block: Block }[] {
+  if (_blocks) return _blocks;
   const out: { html: string; block: Block }[] = [];
   for (const html of ids) {
     let r;
@@ -59,20 +70,27 @@ function allBlocks(): { html: string; block: Block }[] {
     if (!r) continue;
     for (const b of r.blocks as Block[]) out.push({ html, block: b });
   }
+  _blocks = out;
   return out;
 }
 
 d("a dropped column is explained rather than silently absent", () => {
-  it("is not a rare case — 116 of 182 templates print one", () => {
+  it("is not a rare case — 114 of 182 templates print one", () => {
+    // These counts are a MEASUREMENT of how much this app cannot yet fill, so
+    // they fall as fields become computable: 116 templates / 276 blocks / 350
+    // columns when this landed, 114 / 273 / 346 once "most recent child by
+    // date" was taught. A number moving DOWN here is progress; a number moving
+    // up means a regression, which is why each is pinned exactly rather than as
+    // a bound.
     const blocks = allBlocks();
     const withDrop = blocks.filter((b) => b.block.missing?.length);
     const tpls = new Set(withDrop.map((b) => b.html));
     const cols = new Set(withDrop.flatMap((b) => b.block.missing!.map((c) => `${b.block.table}.${c}`)));
 
     expect(blocks.length, "blocks across the shipped templates").toBe(738);
-    expect(withDrop.length, "blocks dropping at least one column").toBe(276);
-    expect(tpls.size, "templates dropping at least one column").toBe(116);
-    expect(cols.size, "distinct table.column dropped").toBe(350);
+    expect(withDrop.length, "blocks dropping at least one column").toBe(273);
+    expect(tpls.size, "templates dropping at least one column").toBe(114);
+    expect(cols.size, "distinct table.column dropped").toBe(346);
   }, 300_000);
 
   it("explains every one of them — none can be dropped without a reason", () => {
@@ -89,7 +107,9 @@ d("a dropped column is explained rather than silently absent", () => {
 
   it('proves "not in this database" was true of none of them', () => {
     // The claim the old label made, measured. If any dropped column were a
-    // stored column the database lacks, it would show up here.
+    // stored column the database lacks, it would show up here. The calculated
+    // count falls as fields are taught: 262 when this landed, 258 after the
+    // five "most recent child" fields.
     const model = JSON.parse(readFileSync(join(TEMPLATES, "datamodel.json"), "utf8"));
     const field = (t: string, c: string) => {
       const tk = Object.keys(model.tables).find((k) => k.toLowerCase() === t.toLowerCase());
@@ -112,7 +132,7 @@ d("a dropped column is explained rather than silently absent", () => {
       else if (f.calculated === true) calculated++;
       else storedButAbsent++;
     }
-    expect(calculated, "WellView calculates these at print time").toBe(262);
+    expect(calculated, "WellView calculates these at print time").toBe(258);
     expect(storedButAbsent, "stored columns this database lacks").toBe(0);
     expect(notAFieldOfThatTable, "not a field of that table in the model").toBe(88);
   }, 300_000);

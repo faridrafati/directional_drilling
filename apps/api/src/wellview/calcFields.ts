@@ -513,5 +513,186 @@ export function sumChildren(
   return out;
 }
 
+/* ───────────────────────── most recent child by date ───────────────────────── */
+
+/**
+ * "The value on the child row that is most recent by date."
+ *
+ * A third shape, kept separate from the arithmetic and from the totals because
+ * it is neither: nothing is added and nothing is evaluated — one child row is
+ * chosen and one of its values is read.
+ *
+ * WellView calls it out in prose rather than in an EQN clause, so the help text
+ * is the specification: "Most recent status by date. EQN: <wvzonestatus.status>."
+ *
+ * WHICH DATE ORDERS THE CHILDREN. If the referenced field is itself a datetime,
+ * it orders itself — "Latest date/time … <child.dttmend>" is the maximum of
+ * that column and nothing else is involved. Otherwise the child's own `DtTm`
+ * orders it, which is the column WellView puts on every history table for
+ * exactly this purpose.
+ *
+ * WHAT IS REFUSED, and why each refusal matters:
+ *
+ *   - Any help carrying a CONDITION or a second term — "If <…depthtop> and
+ *     <…depthbtm> are populated, they are included", "excludes drilling
+ *     parameters that…", "Latest date from <a> or <b>", "… + <RecurFrequency>".
+ *     Each changes the answer, and a plain most-recent pick would be confidently
+ *     wrong rather than blank. wvPerforation.CurrentStatusCalc is the one that
+ *     costs something: two perforations in the sample carry statuses over more
+ *     than one depth interval, so their current status is not a single value.
+ *   - A child that is not a prefix DESCENDANT. A bit's runs hang off it by
+ *     record link, not by name, so wvJobDrillBit's "latest run" is a different
+ *     lookup and is left alone.
+ *   - A tie. Two children with the same date leave the answer undefined, so
+ *     none is given rather than one picked by row order.
+ *   - A child with no date at all. 33 of the 50 perforations that have statuses
+ *     have no date on any of them; "most recent" cannot be answered there, and
+ *     an arbitrary pick would read as a fact.
+ */
+export interface CalcLatest {
+  table: string;
+  field: string;
+  label: string;
+  /** The model's own sentence, for the tooltip. */
+  eqn: string;
+  /** The child table looked in, as the model spells it. */
+  childTable: string;
+  /** The child column whose value is taken, lowercased. */
+  childField: string;
+  /** The child column that orders the rows, lowercased. */
+  orderBy: string;
+}
+
+let _latest: Map<string, CalcLatest[]> | null = null;
+
+/** The phrasings WellView uses for this shape, and nothing looser. */
+const LATEST_RE = /(most recent|latest)\b/i;
+/**
+ * A clause that makes the answer something other than a plain pick. Matched on
+ * the WHOLE help text, so a qualifier anywhere disqualifies the field.
+ */
+const QUALIFIED_RE = /\bif\b|\bexclude|\bconcatenat|\bor\b|\+|\bmore than one\b/i;
+/** Exactly one <table.field> reference, or this is not a single pick. */
+const REF_RE = /<([a-z0-9_]+)\.([a-z0-9_]+)>/gi;
+
+/** Fields computable as a most-recent child pick, by lowercased parent table. */
+export function calcLatest(): Map<string, CalcLatest[]> {
+  if (_latest) return _latest;
+  const reg = new Map<string, CalcLatest[]>();
+  const tabs = allModelTables();
+
+  for (const [tLc, t] of Object.entries(tabs)) {
+    if (/calc$/.test(tLc)) continue;
+    for (const [fLc, f] of Object.entries(t.fields)) {
+      if (!f.calculated || !f.help) continue;
+      if (!LATEST_RE.test(f.help)) continue;
+      if (QUALIFIED_RE.test(f.help)) continue;
+
+      const refs = [...f.help.matchAll(REF_RE)];
+      if (refs.length !== 1) continue;
+      const childLc = refs[0][1].toLowerCase();
+      const colLc = refs[0][2].toLowerCase();
+
+      // Prefix descendant, never the table itself.
+      if (childLc === tLc || !childLc.startsWith(tLc) || !tabs[childLc]) continue;
+
+      const cf = modelField(childLc, colLc);
+      if (!cf || cf.calculated) continue;
+
+      // A datetime orders itself; anything else needs the child's own DtTm.
+      const orderBy = cf.type === "datetime" ? colLc : "dttm";
+      if (orderBy !== colLc && !modelField(childLc, "dttm")) continue;
+
+      const list = reg.get(tLc) ?? [];
+      list.push({
+        table: t.table,
+        field: fLc,
+        label: f.label ?? fLc,
+        eqn: f.help.replace(/\s+/g, " ").trim(),
+        childTable: tabs[childLc].table,
+        childField: colLc,
+        orderBy,
+      });
+      reg.set(tLc, list);
+    }
+  }
+  _latest = reg;
+  return reg;
+}
+
+/** The most-recent picks of one table, or an empty list. */
+export function calcLatestFor(table: string): CalcLatest[] {
+  return calcLatest().get(table.toLowerCase()) ?? [];
+}
+
+/** Total across every table — pinned by the tests. */
+export function calcLatestCount(): number {
+  let n = 0;
+  for (const l of calcLatest().values()) n += l.length;
+  return n;
+}
+
+/**
+ * Resolve each most-recent pick for a whole page of parents at once.
+ *
+ * ONE query per field, grouped by parent — the same discipline as sumChildren,
+ * for the same reason: a per-row lookup falls over on a real database.
+ *
+ * A parent is ABSENT from the result rather than null when there is no answer:
+ * no children, no dated child, or a tie for most recent. WellView leaves the
+ * cell blank in each case and so does this.
+ */
+export function latestChildren(
+  db: AggQuery,
+  table: string,
+  idwell: string,
+  parentIds: string[],
+): Map<string, Record<string, string | number>> {
+  const out = new Map<string, Record<string, string | number>>();
+  const picks = calcLatestFor(table);
+  if (!picks.length || !parentIds.length) return out;
+  const ids = [...new Set(parentIds.filter(Boolean))];
+  if (!ids.length) return out;
+  const holes = ids.map(() => "?").join(", ");
+
+  for (const p of picks) {
+    try {
+      /*
+       * The candidates are read and resolved here rather than in SQL. A
+       * GROUP BY with MAX() would hand back the winning date but not reliably
+       * the row it came from, and detecting a TIE — which has to suppress the
+       * answer — takes the rows themselves.
+       */
+      const rows = db.prepare(
+        `SELECT "IDRecParent" AS p, "${p.orderBy}" AS d, "${p.childField}" AS v
+           FROM "${p.childTable}"
+          WHERE idwell = ? AND "IDRecParent" IN (${holes})
+            AND "${p.orderBy}" IS NOT NULL AND "${p.orderBy}" <> ''`,
+      ).all(idwell, ...ids) as { p: string; d: string; v: string | number | null }[];
+
+      const best = new Map<string, { d: string; v: string | number | null; tied: boolean }>();
+      for (const r of rows) {
+        const key = String(r.p ?? "");
+        const cur = best.get(key);
+        if (!cur || r.d > cur.d) best.set(key, { d: r.d, v: r.v, tied: false });
+        else if (r.d === cur.d && r.v !== cur.v) cur.tied = true;
+      }
+      for (const [parent, b] of best) {
+        if (b.tied || b.v == null || b.v === "") continue;
+        const rec = out.get(parent) ?? {};
+        rec[p.field] = b.v;
+        out.set(parent, rec);
+      }
+    } catch {
+      // A table or column this database does not have: the field stays absent,
+      // which is the same answer as "no status was recorded".
+    }
+  }
+  return out;
+}
+
+/** Reset the most-recent cache — tests only. */
+export function _resetLatest(): void { _latest = null; }
+
 /** Reset the aggregate cache — tests only. */
 export function _resetAggregates(): void { _aggregates = null; }

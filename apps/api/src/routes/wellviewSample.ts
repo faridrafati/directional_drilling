@@ -33,7 +33,9 @@ import { requireUser } from "../entry/auth.js";
 import { columnLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
 import { classifyOmitted, omittedSummary } from "../wellview/omitted.js";
 import { computeCalc, calcMissingScope } from "../wellview/calc.js";
-import { calcFieldsFor, computeRow, calcAggregatesFor, sumChildren } from "../wellview/calcFields.js";
+import {
+  calcFieldsFor, computeRow, calcAggregatesFor, sumChildren, calcLatestFor, latestChildren,
+} from "../wellview/calcFields.js";
 // Importing the registry is what registers it; nothing else references the module.
 import "../wellview/calcDerivations.js";
 
@@ -534,8 +536,12 @@ export function resolveTemplateData(
     // Totals over child rows are computed the same way but need the database,
     // so they are resolved per block after the rows are read.
     const aggregable = new Map(calcAggregatesFor(t.name).map((a) => [a.field.toLowerCase(), a]));
+    // …and "the value on the most recent child by date", which is a pick over
+    // the children rather than a total, so it needs the database in the same
+    // way and is resolved alongside them.
+    const pickable = new Map(calcLatestFor(t.name).map((a) => [a.field.toLowerCase(), a]));
     const derivable = (c: string) =>
-      computable.has(c.toLowerCase()) || aggregable.has(c.toLowerCase());
+      computable.has(c.toLowerCase()) || aggregable.has(c.toLowerCase()) || pickable.has(c.toLowerCase());
     const derivedCols = wanted.filter((w) => w.actual == null && derivable(w.column));
     const missing = wanted.filter((w) => w.actual == null && !derivable(w.column))
       .map((w) => w.column);
@@ -698,6 +704,9 @@ export function resolveTemplateData(
     const blockTotals = idColName && hasIdwell
       ? sumChildren(d, t.name, well, rows.map(idOfRow))
       : new Map<string, Record<string, number>>();
+    const blockPicks = idColName && hasIdwell
+      ? latestChildren(d, t.name, well, rows.map(idOfRow))
+      : new Map<string, Record<string, string | number>>();
     const shaped = rows.map((r) => [
       ...present.map((p) => {
         const raw = shapeValue(r[p.actual!]);
@@ -716,12 +725,15 @@ export function resolveTemplateData(
       ...(() => {
         const computedRow = computeRow(t.name, r);
         const mine = blockTotals.get(idOfRow(r)) ?? {};
+        const picked = blockPicks.get(idOfRow(r)) ?? {};
         return derivedCols.map((w) => {
           const lc = w.column.toLowerCase();
           const arith = computable.get(lc);
           if (arith) return computedRow[arith.field] ?? null;
           const agg = aggregable.get(lc);
-          return agg ? mine[agg.field] ?? null : null;
+          if (agg) return mine[agg.field] ?? null;
+          const pick = pickable.get(lc);
+          return pick ? picked[pick.field] ?? null : null;
         });
       })(),
     ]);
@@ -748,7 +760,7 @@ export function resolveTemplateData(
         // rather than let them pass for stored measurements.
         ...derivedCols.map((w) => {
           const lc = w.column.toLowerCase();
-          const cf = computable.get(lc) ?? aggregable.get(lc)!;
+          const cf = computable.get(lc) ?? aggregable.get(lc) ?? pickable.get(lc)!;
           return {
             column: cf.field,
             label: cf.label,

@@ -3,17 +3,18 @@
  *
  * The list of dropped columns was always computed and always returned. What was
  * never returned is the reason — and without it the only label in the app said
- * "Not in this database", which is wrong for 262 of the 350 columns the 182
+ * "Not in this database", which is wrong for 258 of the 346 columns the 182
  * shipped templates drop, and right for none of them. Not one is a stored
  * column this database lacks.
  *
- * Measured against the sample: 116 of 182 templates print at least one dropped
- * column, 276 of 738 blocks, 350 distinct table.column pairs. "Daily Drilling",
- * the most-used sheet in the product, drops 29.
+ * Measured against the sample: 114 of 182 templates print at least one dropped
+ * column, 273 of 738 blocks, 346 distinct table.column pairs. "Daily Drilling",
+ * the most-used sheet in the product, drops 29. These counts fall as fields
+ * become computable — they were 116 / 276 / 350 when this was written.
  *
  * The model settles what they are:
  *
- *   262  `calculated: true` — WellView works the value out when the report
+ *   258  `calculated: true` — WellView works the value out when the report
  *        prints, from the equation in the field's own help text, and stores it
  *        nowhere. This app has not been taught that equation.
  *     0  a stored column the database is missing.
