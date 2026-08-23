@@ -223,6 +223,16 @@ export interface WvSurveyStation {
  */
 export type ModelListItem = string | { value: string; label: string };
 
+/** What deleting a record would cost, asked before the confirm. */
+export interface WvDeletePreflight {
+  /** The record plus every descendant that would go with it. */
+  records: number;
+  children: { table: string; label: string; count: number }[];
+  /** Anything outside the subtree still pointing at it. Blocks the delete. */
+  referencedBy: { table: string; label: string; column: string; count: number }[];
+  canDelete: boolean;
+}
+
 export interface WvQueryField {
   field: string;
   label: string;
@@ -591,6 +601,11 @@ export const wvDbApi = {
 
   remove: (db: string, table: string, idrec: string) =>
     entryApi.del<{ removed: number }>(`/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}`),
+
+  /** What a delete would take with it, and whether it is allowed at all. */
+  deletePreflight: (db: string, table: string, idrec: string) =>
+    entryApi.get<WvDeletePreflight>(
+      `/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}/delete-preflight`),
 
   audit: (db: string, wells?: string[]) =>
     entryApi.get<WvAuditResult>(

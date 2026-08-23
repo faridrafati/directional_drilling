@@ -470,6 +470,130 @@ function shapeValue(v: unknown): string | number | null {
 }
 
 /** Cascade delete: the record, then every child record in prefix-child tables. */
+/**
+ * Who can point AT each table: every (table, link column) whose target includes
+ * it, indexed once per database.
+ *
+ * Built because the naive question — "does anything reference this record?" —
+ * costs a scan of all 146 link columns in the schema, which measured at 1.6
+ * seconds. Nobody waits that long to be told whether a delete is safe, and a
+ * check that is too slow to run is a check that gets skipped.
+ */
+const _inbound = new Map<string, Map<string, { table: string; column: string }[]>>();
+function inboundLinks(d: Db): Map<string, { table: string; column: string }[]> {
+  const hit = _inbound.get(d.id);
+  if (hit) return hit;
+  const out = new Map<string, { table: string; column: string }[]>();
+  for (const t of schema(d).values()) {
+    for (const c of t.cols) {
+      if (isTkCol(c) || isKeyCol(c) || !isLinkCol(t, c)) continue;
+      for (const target of linkTargets(d, t, c)) {
+        const key = target.toLowerCase();
+        const list = out.get(key) ?? [];
+        list.push({ table: t.name, column: c });
+        out.set(key, list);
+      }
+    }
+  }
+  _inbound.set(d.id, out);
+  return out;
+}
+
+/** A link column named so a user can find it: "Zone", not "<capl>". */
+function linkFieldName(table: string, column: string): string {
+  const label = columnLabel(table, column);
+  if (label && !/^<.*>$/.test(label) && label.toLowerCase() !== "record") return label;
+  return column.replace(/^idrec/i, "") || column;
+}
+
+/** The whole subtree a delete would remove: this record and every descendant. */
+function deleteSubtree(d: Db, t: TableInfo, idrec: string): { table: TableInfo; ids: string[] }[] {
+  const sch = schema(d);
+  const out: { table: TableInfo; ids: string[] }[] = [{ table: t, ids: [idrec] }];
+  const walk = (parent: TableInfo, parentIds: string[]) => {
+    if (!parentIds.length) return;
+    for (const childName of parent.children) {
+      const child = sch.get(childName.toLowerCase());
+      if (!child?.colSet.has("idrec") || !child.hasParent) continue;
+      const idCol = child.colSet.get("idrec")!;
+      const parCol = child.colSet.get("idrecparent")!;
+      const marks = parentIds.map(() => "?").join(", ");
+      const ids = (d.ro.prepare(
+        `SELECT "${idCol}" AS id FROM "${child.name}" WHERE "${parCol}" IN (${marks})`,
+      ).all(...parentIds) as { id: string }[]).map((r) => String(r.id));
+      if (!ids.length) continue;
+      out.push({ table: child, ids });
+      walk(child, ids);
+    }
+  };
+  walk(t, [idrec]);
+  return out;
+}
+
+/**
+ * What a delete would cost, before it happens.
+ *
+ * The help asks for both halves of this. "A warning message lists the
+ * subfolders that are affected" — so the subtree is enumerated by table rather
+ * than summarised as a number after the fact. And "You cannot delete a record
+ * that has fields associated to it … You must first remove the associations
+ * before you delete the record" — so anything still pointing at the record, or
+ * at anything under it, is found and named.
+ *
+ * References from INSIDE the subtree do not count: a child pointing at its own
+ * parent goes away with it, and refusing on that would make some records
+ * undeletable.
+ */
+function deletePreflight(d: Db, t: TableInfo, idrec: string) {
+  const subtree = deleteSubtree(d, t, idrec);
+  const inSubtree = new Map<string, Set<string>>();
+  for (const s of subtree) {
+    inSubtree.set(s.table.name.toLowerCase(), new Set(s.ids));
+  }
+
+  const children = subtree.slice(1).map((s) => ({
+    table: s.table.name, label: folderLabel(s.table.name, null), count: s.ids.length,
+  }));
+
+  const index = inboundLinks(d);
+  const referencedBy: { table: string; label: string; column: string; count: number }[] = [];
+  for (const s of subtree) {
+    for (const src of index.get(s.table.name.toLowerCase()) ?? []) {
+      const st = table(d, src.table);
+      if (!st) continue;
+      const idCol = st.colSet.get("idrec");
+      const marks = s.ids.map(() => "?").join(", ");
+      let rows: { id: unknown }[];
+      try {
+        rows = d.ro.prepare(
+          `SELECT ${idCol ? `"${idCol}"` : "NULL"} AS id FROM "${st.name}" WHERE "${src.column}" IN (${marks})`,
+        ).all(...s.ids) as { id: unknown }[];
+      } catch { continue; }
+      // A row that is itself being deleted is not a reason to refuse.
+      const mine = inSubtree.get(st.name.toLowerCase());
+      const outside = rows.filter((r) => !(mine && r.id != null && mine.has(String(r.id))));
+      if (!outside.length) continue;
+      const existing = referencedBy.find((x) => x.table === st.name && x.column === src.column);
+      if (existing) existing.count += outside.length;
+      else referencedBy.push({
+        table: st.name, label: folderLabel(st.name, null),
+        // The model's caption for a link field is often the literal "<capl>",
+        // its placeholder for "show the linked record's own caption" — which
+        // renders as "Record" and tells a user nothing about WHICH link is
+        // holding on. The column name without its IDRec prefix does: "Zone".
+        column: linkFieldName(st.name, src.column), count: outside.length,
+      });
+    }
+  }
+
+  return {
+    records: subtree.reduce((n, s) => n + s.ids.length, 0),
+    children,
+    referencedBy,
+    canDelete: referencedBy.length === 0,
+  };
+}
+
 function deleteRecord(d: Db, t: TableInfo, idrec: string): number {
   const sch = schema(d);
   const w = writable(d);
@@ -1442,6 +1566,27 @@ export async function registerWellviewDbRoutes(
   );
 
   /** Delete a record and, per the manual, everything in its subfolders. */
+  /**
+   * What deleting this record would cost — asked before the confirm, not after.
+   *
+   * The help: "A warning message lists the subfolders that are affected." The
+   * app used to show a fixed sentence that named nothing and report the count
+   * once the rows were already gone, which is the wrong order for a decision
+   * that cannot be undone.
+   */
+  app.get<{ Params: { db: string; table: string; idrec: string } }>(
+    "/entry/wellview/dbs/:db/records/:table/:idrec/delete-preflight",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, req.params.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
+      if (!t.colSet.has("idrec")) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
+      return deletePreflight(d, t, req.params.idrec);
+    },
+  );
+
   app.delete<{ Params: { db: string; table: string; idrec: string } }>(
     "/entry/wellview/dbs/:db/records/:table/:idrec",
     { preHandler: WELLVIEW_GUARD },
@@ -1451,7 +1596,25 @@ export async function registerWellviewDbRoutes(
       const t = table(d, req.params.table);
       if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
       if (!t.colSet.has("idrec")) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
-      return { removed: deleteRecord(d, t, req.params.idrec) };
+      /*
+       * "You cannot delete a record that has fields associated to it … You must
+       * first remove the associations before you delete the record."
+       *
+       * Refused rather than cascaded. The alternative is 34 wvPerforation rows
+       * left pointing at a zone that no longer exists — links this app can no
+       * longer caption and the desktop cannot follow — and no way back, because
+       * there is no undo. A refusal costs a user one step; the cascade costs
+       * them data they cannot see is gone.
+       */
+      const pre = deletePreflight(d, t, req.params.idrec);
+      if (!pre.canDelete) {
+        return reply.code(409).send({
+          error: "still referenced",
+          referencedBy: pre.referencedBy,
+          records: pre.records,
+        });
+      }
+      return { removed: deleteRecord(d, t, req.params.idrec), records: pre.records };
     },
   );
 

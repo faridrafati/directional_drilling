@@ -824,13 +824,44 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     }
   }
 
+  /**
+   * Delete, with the two things the help asks for and this had neither of.
+   *
+   * "A warning message lists the subfolders that are affected" — so the cost is
+   * fetched and NAMED before the confirm, not counted afterwards. A casing
+   * string carries 222 tally rows; "records in its subfolders are deleted with
+   * it" does not convey that, and there is no undo to fall back on.
+   *
+   * "You cannot delete a record that has fields associated to it … You must
+   * first remove the associations before you delete the record" — so a record
+   * something still points at is refused, and the refusal says what is holding
+   * on. The server refuses too; this is so the user finds out before the
+   * confirm rather than after it.
+   */
   async function remove(row: Row) {
     const idrec = String(row.IDRec ?? "");
     if (!idrec) return;
-    // The manual warns: deleting removes subfolder records too. Say so.
-    if (!window.confirm("Delete this record? Records in its subfolders are deleted with it.")) return;
     setBusy(true);
     try {
+      const pre = await wvDbApi.deletePreflight(db, data.table, idrec);
+
+      if (!pre.canDelete) {
+        const held = pre.referencedBy
+          .map((r) => `${r.count} ${r.label} (${r.column})`)
+          .join(", ");
+        onStatus(`Not deleted — this record is still linked from ${held}. `
+          + "Clear those links first, then delete it.");
+        return;
+      }
+
+      const lines = pre.children.length
+        ? pre.children.map((c) => `  • ${c.count} ${c.label}`).join("\n")
+        : "  • nothing in its subfolders";
+      const ok = window.confirm(
+        `Delete this record and everything under it?\n\n${lines}\n\n`
+        + `${pre.records} record${pre.records === 1 ? "" : "s"} in total. This cannot be undone.`);
+      if (!ok) return;
+
       const res = await wvDbApi.remove(db, data.table, idrec);
       onSaved();
       onStatus(`Deleted ${res.removed} record${res.removed === 1 ? "" : "s"} (including subfolders).`);
