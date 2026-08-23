@@ -364,10 +364,24 @@ export function resolveDateValue(raw: string, now = new Date()): string | null {
   const iso = (d: Date) => `${d.toISOString().slice(0, 19)}Z`;
   const s = raw.trim();
 
-  const rel = s.match(/^<(today|now)>\s*([+-]\s*[\d.]+)?$/i);
+  /*
+   * `<utcnow>` and `<utctoday>` are accepted alongside `<now>` and `<today>`.
+   *
+   * The guide documents all four as custom query tags, with worked examples
+   * (`<utcnow>-10`, `<utctoday>-5`). Only two were matched, and a criterion that
+   * did not match was dropped onto `skipped` WHILE THE REST OF THE QUERY STILL
+   * RAN — so the user got a plausible list scoped by everything except the date
+   * they asked for.
+   *
+   * They are aliases here rather than a separate branch because this function
+   * already computes in UTC throughout: `setUTCHours` for the day boundary and
+   * `toISOString` for the result. `<now>` and `<utcnow>` were never going to
+   * differ; the only bug was refusing to read one of the spellings.
+   */
+  const rel = s.match(/^<(utctoday|utcnow|today|now)>\s*([+-]\s*[\d.]+)?$/i);
   if (rel) {
     const base = new Date(now);
-    if (rel[1].toLowerCase() === "today") base.setUTCHours(0, 0, 0, 0);
+    if (/today$/i.test(rel[1])) base.setUTCHours(0, 0, 0, 0);
     if (rel[2]) {
       const days = Number(rel[2].replace(/\s+/g, ""));
       if (!Number.isFinite(days)) return null;
@@ -1027,9 +1041,23 @@ export async function registerWellviewDbRoutes(
       let where = "";
       const args: string[] = [];
       const lookin = req.query.lookin ? t.colSet.get(req.query.lookin.toLowerCase()) : null;
-      if (lookin && req.query.lookfor) {
-        where = `WHERE "${lookin}" LIKE ?`;
-        args.push(`%${req.query.lookfor}%`);
+      /*
+       * SPACES SEPARATE CRITERIA, they are not part of the text.
+       *
+       * §"What's New in WellView 9.0": "You can now search applicable fields for
+       * multiple criteria in quick queries. Enter the words separated by a
+       * space. Each well, site, or rig meeting each search criteria appears in
+       * the results." Its worked example searches Well Name for "1 sample" and
+       * prints thirteen wells.
+       *
+       * Matching the whole string returned NONE of them — no well is called
+       * "…1 sample…". Every word is its own LIKE, ANDed, which returns the
+       * help's list.
+       */
+      const words = (req.query.lookfor ?? "").trim().split(/\s+/).filter(Boolean);
+      if (lookin && words.length) {
+        where = `WHERE ${words.map(() => `"${lookin}" LIKE ?`).join(" AND ")}`;
+        for (const w of words) args.push(`%${w}%`);
       }
       const rows = d.ro.prepare(`SELECT ${sel} FROM "${t.name}" ${where} ORDER BY "${t.colSet.get("wellname")}"`)
         .all(...args) as Record<string, unknown>[];

@@ -105,16 +105,37 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
       for (const c of g) {
         const preds = byTable.get(c.table) ?? [];
         if (c.op === "IS NULL" || c.op === "IS NOT NULL") preds.push(`x."${c.field}" ${c.op}`);
-        else if (c.prompts) preds.push(`x."${c.field}" ${c.op} :${c.field}`);
+        // A PROMPTING criterion cannot become a named parameter here.
+        //
+        // This SQL is pasted into the editor and run as a plain string with no
+        // parameters bound, and node:sqlite does not throw on an unbound named
+        // parameter — it returns no rows. So ":Field" turned "show me this SQL"
+        // into a query that silently answers "0 wells", indistinguishable from
+        // a real empty result.
+        //
+        // The value the user has typed is inlined instead, exactly as every
+        // other criterion is; the file's own note says values are inlined
+        // "because a placeholder they had to fill in would defeat it". A prompt
+        // with nothing typed yet is dropped and reported, rather than pasted as
+        // SQL that cannot run.
+        // Nothing typed yet: drop it. The caller names what it dropped.
+        else if (c.prompts && (c.value ?? "").trim() === "") { /* no predicate */ }
+        else if (c.prompts) preds.push(`x."${c.field}" ${c.op} ${lit(c.value ?? "")}`);
         else if (c.op === "LIKE" || c.op === "NOT LIKE") {
           preds.push(`x."${c.field}" ${c.op} ${lit(`%${c.value ?? ""}%`)}`);
         } else preds.push(`x."${c.field}" ${c.op} ${lit(c.value ?? "")}`);
         byTable.set(c.table, preds);
       }
-      const parts = [...byTable.entries()].map(([t, preds]) =>
+      // A table left with no predicates — every criterion on it was an
+      // unfilled prompt — must not become "… WHERE x.idwell = h.idwell AND )".
+      const parts = [...byTable.entries()].filter(([, preds]) => preds.length).map(([t, preds]) =>
         `EXISTS (SELECT 1 FROM "${t}" x WHERE x.idwell = h.idwell AND ${preds.join(" AND ")})`);
+      if (!parts.length) return null;
       return parts.length > 1 ? `(${parts.join("\n     AND ")})` : parts[0];
-    });
+    }).filter((g): g is string => g !== null);
+    // Nothing left to ask. Returning empty SQL beats "WHERE" with no condition,
+    // which would select every well and look like a working query.
+    if (!groupSql.length) return "";
     return `SELECT h.idwell, h."WellName"\n  FROM "wvWellHeader" h\n WHERE ${groupSql.join("\n    OR ")}`;
   };
 
@@ -302,7 +323,21 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
             </p>
             <div className="flex items-center gap-1.5 mb-1.5">
               <button type="button" data-testid="wv-qb-sql-paste"
-                onClick={() => setSql(sqlFromCriteria(complete))}
+                onClick={() => {
+                  // A prompting criterion has no value until the query runs, so
+                  // there is nothing to inline for it here. Say which ones were
+                  // left out rather than pasting SQL that quietly asks less than
+                  // the criteria above it do.
+                  const unfilled = complete.filter(
+                    (c) => c.prompts && (c.value ?? "").trim() === "");
+                  const out = sqlFromCriteria(complete);
+                  setSql(out);
+                  setError(unfilled.length
+                    ? `Pasted without ${unfilled.map((c) => c.field).join(", ")} — `
+                      + `${unfilled.length === 1 ? "that criterion prompts" : "those criteria prompt"} `
+                      + "for a value, and SQL cannot ask. Type a value above to include it."
+                    : null);
+                }}
                 disabled={!complete.length}
                 title="Paste From Criteria (§8.1) — start from the lines above"
                 className="h-7 px-2 text-[11px] rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-40">
