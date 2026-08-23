@@ -374,7 +374,13 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
     columns?: { column: string; label: string; unit?: string;
       units?: Record<string, UnitFormat>;
       /** Computed here from the model equation, not stored in the database. */
-      derived?: boolean; eqn?: string }[]; missing?: string[];
+      derived?: boolean; eqn?: string }[];
+    /** Columns the template prints that came back blank. */
+    missing?: string[];
+    /** …and why each one did, straight from the model. */
+    omitted?: { column: string; label: string; calculated: boolean; note?: string }[];
+    /** The one line to show under the block, composed by the API. */
+    omittedNote?: string;
     rowCount?: number; truncated?: boolean; allNull?: boolean;
     /** Row filters the template declares and this block honoured (§9.2). */
     filtersApplied?: { table: string; field: string; value: string }[];
@@ -643,8 +649,13 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                     (a chart or an image list), which this app does not reproduce.
                   </div>
                 ) : (b.columns?.length ?? 0) === 0 ? (
-                  <div className="px-3 py-2 text-[11px] text-gray-400">
-                    None of this block's columns exist in the stored table.
+                  /* "exist in the stored table" was true and unhelpful: for most
+                     of these blocks every column is one WellView calculates when
+                     the report prints, so the reader was told the data does not
+                     exist when what is true is that this app does not work it
+                     out. The model's own answer is now printed instead. */
+                  <div className="px-3 py-2 text-[11px] text-gray-400" data-testid="wv-report-omitted">
+                    {b.omittedNote ?? "None of this block's columns could be filled from this database."}
                   </div>
                 ) : (b.rowCount ?? 0) === 0 ? (
                   <div className="px-3 py-2 text-[11px] text-gray-400">
@@ -751,6 +762,21 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                         })}
                       </tbody>
                     </table>
+
+                    {/*
+                      * A COLUMN DROPPED FROM A BLOCK THAT STILL HAS COLUMNS.
+                      *
+                      * This was the silent case: the table renders, one heading
+                      * short of the desktop's, with nothing to say a column was
+                      * ever there. 276 of the 738 blocks the shipped templates
+                      * define are in it; "Daily Drilling" alone drops 29.
+                      */}
+                    {!!b.omitted?.length && (
+                      <div className="px-3 py-1.5 text-[10px] text-gray-400 border-t border-gray-100"
+                        data-testid="wv-report-omitted">
+                        {b.omittedNote}
+                      </div>
+                    )}
                   </div>
                 )}
               </section>

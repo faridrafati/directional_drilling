@@ -202,6 +202,79 @@ test.describe("WellView Online — wellhead", () => {
  * axis runs downward, that plan and actual are told apart, and that the
  * template picker actually changes the plot.
  */
+/**
+ * A column a report drops says so.
+ *
+ * The API always knew which columns it could not fill and always returned the
+ * list; no report screen ever printed it, so a sheet came out one column
+ * narrower than the desktop's with nothing to say a column had been there. 116
+ * of the 182 shipped templates print at least one; "Daily Drilling" drops 29.
+ */
+test.describe("WellView Online — a dropped column is visible", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/wellview");
+    await page.getByRole("heading", { name: "WellView" }).waitFor();
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    if (await signIn.isVisible().catch(() => false)) {
+      await page.getByLabel("User name").fill(USER);
+      await page.getByLabel("Password").fill(PASSWORD);
+      await signIn.click();
+    }
+    await page.getByTestId("wv-db-wv9.0_Sample").click();
+    await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12" }).first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    const search = page.getByPlaceholder(/search|filter/i).first();
+    if (await search.isVisible().catch(() => false)) await search.fill("Daily Drilling");
+    await page.getByText("Daily Drilling", { exact: true }).first().click();
+  });
+
+  test("names the columns WellView calculates at print time", async ({ page }) => {
+    const notes = page.getByTestId("wv-report-omitted");
+    await expect(notes.first()).toBeVisible({ timeout: 20_000 });
+    expect(await notes.count()).toBeGreaterThan(1);
+
+    // Named by their CAPTION — "AFE Number" is the heading a reader recognises,
+    // "afenumbercalc" tells them nothing about which column went blank.
+    const first = notes.first();
+    await expect(first).toContainText("WellView calculates when the report prints");
+    await expect(first).toContainText("AFE Number");
+
+    // The old label claimed the opposite of the truth and must not come back:
+    // not one dropped column is a stored column this database lacks.
+    for (const t of await notes.allTextContents()) {
+      expect(t.toLowerCase()).not.toContain("not in this database");
+    }
+  });
+
+  test('only says "blank below" where a table is actually drawn', async ({ page }) => {
+    await expect(page.getByTestId("wv-report-omitted").first()).toBeVisible({ timeout: 20_000 });
+    const notes = page.getByTestId("wv-report-omitted");
+    for (let i = 0; i < await notes.count(); i++) {
+      const n = notes.nth(i);
+      const saysBelow = (await n.textContent())!.includes("blank below");
+      // The note sits inside the block; the block draws a table or it does not.
+      const hasTable = await n.locator("xpath=..").locator("table").count() > 0;
+      expect(saysBelow, `note ${i}: points below ${hasTable ? "a table" : "nothing"}`).toBe(hasTable);
+    }
+  });
+
+  test("the printed sheet carries the note too", async ({ page }) => {
+    // The printed page is the copy that gets handed to someone, so it is the
+    // one that must not overstate what the app filled in.
+    await page.getByRole("button", { name: "Print" }).first().click();
+    await expect(page.getByTestId("wv-print-build")).toBeVisible({ timeout: 20_000 });
+    const picks = page.getByTestId("wv-print-pick");
+    if (await picks.count()) await picks.first().check();
+    await page.getByTestId("wv-print-build").click();
+    await expect(page.getByTestId("wv-print-sheet").first()).toBeVisible({ timeout: 25_000 });
+
+    const printed = page.getByTestId("wv-print-omitted");
+    await expect(printed.first()).toBeVisible({ timeout: 20_000 });
+    await expect(printed.first()).toContainText(/WellView calculates|not a field of this table/);
+  });
+});
+
 test.describe("WellView Online — days vs depth", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/wellview");

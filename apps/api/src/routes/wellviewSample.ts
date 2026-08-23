@@ -31,6 +31,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance } from "fastify";
 import { requireUser } from "../entry/auth.js";
 import { columnLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
+import { classifyOmitted, omittedSummary } from "../wellview/omitted.js";
 import { computeCalc, calcMissingScope } from "../wellview/calc.js";
 import { calcFieldsFor, computeRow, calcAggregatesFor, sumChildren } from "../wellview/calcFields.js";
 // Importing the registry is what registers it; nothing else references the module.
@@ -466,6 +467,11 @@ export function resolveTemplateData(
         const asked = b.fields.map((f) => byName.get(f.column.toLowerCase())).filter((c) => c != null);
         const columns = asked.length ? asked : derived.columns;
         const keys = columns.map((c) => c!.column);
+        const derivedMissing = b.fields
+          .filter((f) => !byName.has(f.column.toLowerCase()))
+          .map((f) => f.column);
+        const derivedOmitted = classifyOmitted(
+          derivedMissing.map((c) => ({ column: c, table: derived.table })));
         return {
           table: derived.table,
           title: blockTitle(b),
@@ -477,9 +483,9 @@ export function resolveTemplateData(
           // block's do — the client renders both through the same path.
           rows: derived.rows.map((r) => keys.map((k) => (r[k] ?? null) as string | number | null)),
           rowCount: derived.rowCount,
-          missing: b.fields
-            .filter((f) => !byName.has(f.column.toLowerCase()))
-            .map((f) => f.column),
+          missing: derivedMissing,
+          omitted: derivedOmitted,
+          omittedNote: omittedSummary(derivedOmitted, derived.rows.length > 0),
           unsupported: derived.unsupported,
           verifiedBy: derived.verifiedBy,
         };
@@ -533,10 +539,17 @@ export function resolveTemplateData(
     const derivedCols = wanted.filter((w) => w.actual == null && derivable(w.column));
     const missing = wanted.filter((w) => w.actual == null && !derivable(w.column))
       .map((w) => w.column);
+    // …and WHY each is blank. Derived from `missing`, so a column can never be
+    // dropped from the page and left out of the explanation.
+    const omittedCols = classifyOmitted(missing.map((c) => ({ column: c, table: t.name })));
     // A block whose ONLY columns are derivable still has nothing to select
     // from, so it is treated as empty rather than queried for zero columns.
     if (present.length === 0) {
-      return { table: t.name, title: blockTitle(b), exists: true, computed: false, contentOnly, columns: [], missing, rowCount: 0, rows: [] };
+      return {
+        table: t.name, title: blockTitle(b), exists: true, computed: false, contentOnly,
+        columns: [], missing, omitted: omittedCols, omittedNote: omittedSummary(omittedCols, false),
+        rowCount: 0, rows: [],
+      };
     }
 
     const hasIdwell = t.cols.has("idwell");
@@ -747,6 +760,10 @@ export function resolveTemplateData(
         }),
       ],
       missing,
+      /** …and why each one is blank, so the page can say so. */
+      omitted: omittedCols,
+      /** One line the report page prints under the block. */
+      omittedNote: omittedSummary(omittedCols, !allNull && total > 0),
       /** The template's row filters honoured for this block (§9.2). */
       filtersApplied: applied.length ? applied : undefined,
       /** …and the ones that could not be, each with a reason. */

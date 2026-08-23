@@ -29,7 +29,13 @@ interface Block {
   columns?: { column: string; label: string; unit?: string; units?: Record<string, UnitFormat>;
               applyDatum?: boolean; datumMode?: "up" | "invariant" }[];
   rows?: (string | number | null)[][];
-  rowCount?: number; missing?: string[];
+  rowCount?: number;
+  /** Columns the template prints that came back blank. */
+  missing?: string[];
+  /** …and why each one did. */
+  omitted?: { column: string; label: string; calculated: boolean; note?: string }[];
+  /** The one line to print under the block, already composed by the API. */
+  omittedNote?: string;
 }
 interface Sheet { key: string; caption: string; blocks: Block[] }
 
@@ -251,6 +257,32 @@ export function PrintReport({
                           ))}
                         </tbody>
                       </table>
+                    )}
+
+                    {/*
+                      * A COLUMN THAT WAS DROPPED SAYS SO.
+                      *
+                      * The API always knew which columns it could not fill and
+                      * always returned the list; this page never printed it. So
+                      * a sheet came out one column narrower than the desktop's
+                      * with nothing on the page to say a column was ever there.
+                      * 116 of the 182 shipped templates print at least one such
+                      * column; "Daily Drilling" drops 29 of them.
+                      *
+                      * This is the smallest fix in the tier and the one that
+                      * matters most, because it turns every other blank column
+                      * from silent into visible.
+                      *
+                      * It prints WITH the sheet rather than being screen-only:
+                      * the printed page is the thing that gets handed to
+                      * someone, and it is the copy that must not overstate what
+                      * the app knows.
+                      */}
+                    {!!b.omitted?.length && (
+                      <p className="text-[9px] text-gray-500 italic mt-0.5"
+                        data-testid="wv-print-omitted">
+                        {b.omittedNote ?? `Blank: ${b.omitted.map((o) => o.label).join(", ")}.`}
+                      </p>
                     )}
                   </div>
                 ))}

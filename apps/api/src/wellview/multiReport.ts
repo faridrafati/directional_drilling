@@ -21,6 +21,7 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 import { columnLabel, modelField, modelTable } from "./model.js";
+import { classifyOmitted, type OmittedColumn } from "./omitted.js";
 
 export interface MultiTemplateField {
   column: string;
@@ -83,8 +84,10 @@ export interface MultiBlockResult {
   columns: MultiColumn[];
   /** Which well each row came from, aligned with `rows`. Its datum key. */
   rowWells?: string[];
-  /** Columns the template prints that this database does not have. */
+  /** Columns the template prints that came back blank. */
   missing: string[];
+  /** …and why each one did, so the page never has to guess. */
+  omitted?: OmittedColumn[];
   rows: (string | number | null)[][];
   rowCount: number;
   truncated: boolean;
@@ -252,12 +255,15 @@ export function resolveMultiTemplate(
      */
     const unknown: string[] = [];
     let computed = 0;
-    for (const r of resolved) {
-      if (r.actual != null) continue;
-      const owner = (r.field.source_table ?? tname) || tname;
-      const mf = modelField(owner, r.field.column);
-      if (mf?.calculated) computed++;
-      else unknown.push(r.field.column);
+    // The owner is the table the field is a field OF, which is not always the
+    // block's: a block prints columns from linked records, and asking the wrong
+    // table would report a real calculated field as unknown.
+    const omitted = classifyOmitted(resolved
+      .filter((r) => r.actual == null)
+      .map((r) => ({ column: r.field.column, table: (r.field.source_table ?? tname) || tname })));
+    for (const o of omitted) {
+      if (o.calculated) computed++;
+      else unknown.push(o.column);
     }
     const drift = unknown.length && unknown.length >= Math.max(3, resolved.length / 2)
       ? `${unknown.length} of ${resolved.length} columns this template prints are not in this `
@@ -271,7 +277,8 @@ export function resolveMultiTemplate(
     if (!hasIdwell || present.length === 0 || idwells.length === 0) {
       return {
         table: t.name, title: b.title, exists: true,
-        columns: [], missing, rows: [], rowCount: 0, truncated: false, schemaDrift: drift, printTimeNote: printTime,
+        columns: [], missing, omitted, rows: [], rowCount: 0, truncated: false,
+        schemaDrift: drift, printTimeNote: printTime,
       };
     }
 
@@ -412,7 +419,7 @@ export function resolveMultiTemplate(
       raw = d.prepare(`${sql} LIMIT ${rowCap}`).all(...idwells, ...filterArgs) as Record<string, unknown>[];
     } catch {
       return { table: t.name, title: b.title, exists: true, columns: [], missing,
-               rows: [], rowCount: 0, truncated: false, schemaDrift: drift, printTimeNote: printTime };
+               omitted, rows: [], rowCount: 0, truncated: false, schemaDrift: drift, printTimeNote: printTime };
     }
 
     const columns: MultiColumn[] = [];
@@ -449,6 +456,7 @@ export function resolveMultiTemplate(
       rowWells: raw.map((row) => String(row.__idwell ?? "")),
       rowCount: total,
       truncated: total > raw.length,
+      omitted,
       schemaDrift: drift,
       printTimeNote: printTime,
     };

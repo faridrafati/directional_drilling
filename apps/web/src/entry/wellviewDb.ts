@@ -302,6 +302,8 @@ export interface WvMultiBlock {
     fromWell?: boolean;
   }[];
   missing: string[];
+  /** Why each dropped column is blank — the model's own answer. */
+  omitted?: { column: string; label: string; calculated: boolean; note?: string }[];
   rows: (string | number | null)[][];
   /** Which well each row came from, aligned with `rows` — its datum key. */
   rowWells?: string[];
@@ -344,6 +346,8 @@ export interface WvXlResult {
   rowCount: number;
   truncated: boolean;
   missing: string[];
+  /** Why each dropped column is blank — the model's own answer. */
+  omitted?: { column: string; label: string; calculated: boolean; note?: string }[];
   applied: { table: string; field: string; value: string }[];
   notes: string[];
 }

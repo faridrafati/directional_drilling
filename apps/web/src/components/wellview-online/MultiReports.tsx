@@ -11,13 +11,32 @@
  */
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { wvDbApi, type WvMultiReport, type WvXlReport } from "../../entry/wellviewDb.js";
+import { wvDbApi, type WvMultiReport, type WvXlReport, type WvXlResult } from "../../entry/wellviewDb.js";
 import { useUnitSet } from "../../entry/unitSet.js";
 import { useDatum } from "../../entry/datum.js";
 import {
   toDisplay, formatUnitValue, displayUnitFor, displayUnitLabel, datumShift,
   type DatumShift, type WellElevations,
 } from "@dd/shared";
+
+/**
+ * The blank columns on an extract, named under the reason the model gives.
+ *
+ * This line used to read "not in this database", which is true of none of them:
+ * of the 350 columns the shipped templates drop, 262 are values WellView
+ * calculates when the report prints and 0 are stored columns this database
+ * lacks. The rest are fields the model does not put on that table, which is a
+ * different statement and is made as one.
+ */
+function xlOmittedNote(d: WvXlResult): string {
+  const om = d.omitted ?? d.missing.map((c) => ({ column: c, label: c, calculated: false }));
+  const calc = om.filter((o) => o.calculated);
+  const other = om.filter((o) => !o.calculated);
+  const parts: string[] = [];
+  if (calc.length) parts.push(`calculated by WellView at print time: ${calc.map((o) => o.label).join(", ")}`);
+  if (other.length) parts.push(`no such column on this table: ${other.map((o) => o.column).join(", ")}`);
+  return parts.join(" · ");
+}
 
 interface Props {
   db: string;
@@ -269,7 +288,7 @@ export function MultiReports({ db, wells, wellName, onClose }: Props) {
                       {xlQ.data.rowCount} row{xlQ.data.rowCount === 1 ? "" : "s"} over {xlQ.data.wells} well
                       {xlQ.data.wells === 1 ? "" : "s"}
                       {xlQ.data.truncated ? ` · showing the first ${xlQ.data.rows.length}` : ""}
-                      {xlQ.data.missing.length ? ` · not in this database: ${xlQ.data.missing.join(", ")}` : ""}
+                      {xlQ.data.missing.length ? ` · ${xlOmittedNote(xlQ.data)}` : ""}
                     </p>
                     {xlQ.data.rowCount === 0 ? (
                       <p className="text-sm text-gray-400">No rows for the selected wells.</p>
@@ -399,11 +418,34 @@ export function MultiReports({ db, wells, wellName, onClose }: Props) {
                           </table>
                         </div>
                       )}
-                      {b.missing.length > 0 && !b.schemaDrift && (
-                        <div className="px-3 py-1.5 text-[10px] text-gray-400 border-t border-gray-100">
-                          Not in this database: {b.missing.join(", ")}
-                        </div>
-                      )}
+                      {/*
+                        * "Not in this database" was wrong for every column it
+                        * was ever shown under: of the 350 the shipped templates
+                        * drop, 262 are values WellView calculates at print time
+                        * and 0 are stored columns this database lacks. It also
+                        * contradicted the print-time note two lines above,
+                        * which had already explained the same columns.
+                        *
+                        * Now each is named under the reason the model gives.
+                        */}
+                      {b.missing.length > 0 && !b.schemaDrift && (() => {
+                        const om = b.omitted ?? b.missing.map((c) => ({
+                          column: c, label: c, calculated: false,
+                        }));
+                        const calc = om.filter((o) => o.calculated);
+                        const other = om.filter((o) => !o.calculated);
+                        return (
+                          <div className="px-3 py-1.5 text-[10px] text-gray-400 border-t border-gray-100 space-y-0.5"
+                            data-testid="wv-multi-omitted">
+                            {calc.length > 0 && (
+                              <div>Calculated by WellView at print time: {calc.map((o) => o.label).join(", ")}</div>
+                            )}
+                            {other.length > 0 && (
+                              <div>No such column on this table: {other.map((o) => o.column).join(", ")}</div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </section>
                   ))}
                 </>

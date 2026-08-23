@@ -16,6 +16,7 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 import { columnLabel, modelField, modelTable } from "./model.js";
+import { classifyOmitted, type OmittedColumn } from "./omitted.js";
 import { computeCalc, calcDerivation } from "./calc.js";
 
 export interface XlField {
@@ -57,6 +58,8 @@ export interface XlResult {
   rowCount: number;
   truncated: boolean;
   missing: string[];
+  /** …and why each is blank, since "not in this database" is true of none. */
+  omitted?: OmittedColumn[];
   /** Criteria actually applied. */
   applied: XlCriterion[];
   notes: string[];
@@ -181,9 +184,13 @@ export function resolveXlExtract(
   });
   const present = resolved.filter((r) => r.actual);
   const missing = resolved.filter((r) => !r.actual).map((r) => r.f.column);
+  // The owner is the table the field belongs to, which for an extract is often
+  // the well header rather than the block's own table.
+  const omitted = classifyOmitted(resolved.filter((r) => !r.actual)
+    .map((r) => ({ column: r.f.column, table: (r.f.source_table || tname).toLowerCase() })));
   if (!present.length) {
-    notes.push("None of this extract's columns exist in this database.");
-    return { ...base, missing, notes };
+    notes.push("None of this extract's columns could be filled from this database.");
+    return { ...base, missing, omitted, notes };
   }
 
   const wellJoin = well
@@ -220,7 +227,7 @@ export function resolveXlExtract(
     ).all(...args) as Record<string, unknown>[];
   } catch {
     notes.push("This extract could not be run against this database.");
-    return { ...base, missing, applied, notes };
+    return { ...base, missing, omitted, applied, notes };
   }
 
   const columns: XlColumn[] = [];
@@ -244,6 +251,7 @@ export function resolveXlExtract(
     rowCount: total,
     truncated: total > raw.length,
     missing,
+    omitted,
     applied,
     notes,
   };

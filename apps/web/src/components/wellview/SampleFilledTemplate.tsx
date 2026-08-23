@@ -22,6 +22,10 @@ interface BlockData {
   computed: boolean;
   columns?: { column: string; label: string }[];
   missing?: string[];
+  /** Why each dropped column is blank — the model's own answer. */
+  omitted?: { column: string; label: string; calculated: boolean; note?: string }[];
+  /** The composed one-liner, when the API sent one. */
+  omittedNote?: string;
   rowCount?: number;
   truncated?: boolean;
   allNull?: boolean;
@@ -97,8 +101,9 @@ export function SampleFilledTemplate({ html, well }: { html: string; well: strin
               </div>
             ) : (b.columns?.length ?? 0) === 0 ? (
               <div className="px-3 py-2 text-[11px] text-gray-400">
-                None of this block's columns exist in the stored table
+                None of this block's columns could be filled
                 {b.missing?.length ? ` (${b.missing.join(", ")})` : ""}.
+                {b.omittedNote ? ` ${b.omittedNote}` : ""}
               </div>
             ) : (b.rowCount ?? 0) === 0 ? (
               <div className="px-3 py-2 text-[11px] text-gray-400">No rows for this well.</div>
@@ -146,9 +151,17 @@ export function SampleFilledTemplate({ html, well }: { html: string; well: strin
               </div>
             )}
 
+            {/*
+              * "Not in the stored table" is literally true and still misleads:
+              * 262 of the 350 columns the shipped templates drop are values
+              * WellView calculates when the report prints, so the reader was
+              * told the data does not exist when what is true is that this app
+              * does not compute it.
+              */}
             {b.exists && (b.missing?.length ?? 0) > 0 && (b.columns?.length ?? 0) > 0 && (
-              <div className="px-2 py-1 text-[10px] text-gray-400 border-t border-gray-100">
-                Not in the stored table: {b.missing!.join(", ")}
+              <div className="px-2 py-1 text-[10px] text-gray-400 border-t border-gray-100"
+                data-testid="wv-sample-omitted">
+                {b.omittedNote ?? `Blank: ${b.missing!.join(", ")}.`}
               </div>
             )}
           </section>
