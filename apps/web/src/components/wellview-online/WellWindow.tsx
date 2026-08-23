@@ -1277,6 +1277,31 @@ function SchematicSvg({
      * its full height after the plug was drilled is the complaint the guide is
      * answering.
      */
+    /*
+     * …AND WHICH OF THE THREE KINDS IT IS.
+     *
+     * The guide: "There are three types of cement: Casing cement, Plugs,
+     * Squeezes … WellView draws the applicable icon on the schematic using the
+     * type you select for the record."
+     *
+     * All three were drawn identically, as two hatched strips in the ANNULUS —
+     * cement behind pipe. A plug is not behind pipe: it fills the bore, and the
+     * whole reason to look at one on a schematic is that it is in the way of a
+     * re-entry. A squeeze is neither: it is cement forced out through the wall
+     * at an interval. 36 of the sample's 113 cement records are one of the two
+     * that were being drawn as the third.
+     *
+     * The stored value is a table name or a caption depending on the row —
+     * "casing", "Casing", "plug", "Plug", "squeeze" all occur — so it is
+     * matched case-insensitively on a substring rather than compared.
+     */
+    const cementKind = (m: WvSchematicRow): "plug" | "squeeze" | "casing" => {
+      const t = `${m.CementTyp ?? ""} ${m.CementSubTyp ?? ""}`.toLowerCase();
+      if (t.includes("squeeze")) return "squeeze";
+      if (t.includes("plug")) return "plug";
+      return "casing";
+    };
+
     const stages = cementStages.filter(
       (m) => String(m.IDRecString ?? "") === String(c.IDRec ?? "-"));
     stages.forEach((m, k) => {
@@ -1288,15 +1313,35 @@ function SchematicSvg({
       if (from >= btm) return;                       // wholly drilled out
       const y0 = y(from), y1 = y(btm);
       if (y1 <= y0) return;
+      const kind = cementKind(m);
+      const label = kind === "plug" ? "Cement plug" : kind === "squeeze" ? "Squeeze" : "Cement stage";
       items.push(
         <g key={`cem${i}-${k}`} className="cursor-pointer" onClick={() => onEditTable("wvCementStage")}>
           <title>
-            {`${m.Des ?? "Cement stage"} — ${fmtDepth(top)} to ${fmtDepth(btm)}`
+            {`${m.Des ?? label} — ${label.toLowerCase()}, ${fmtDepth(top)} to ${fmtDepth(btm)}`
               + (drilled != null ? `, drilled out to ${fmtDepth(drilled)}` : "")
               + ` (wvCementStage)`}
           </title>
-          <rect x={CX + hw + 1} y={y0} width={5} height={y1 - y0} fill="url(#cemhatch)" />
-          <rect x={CX - hw - 6} y={y0} width={5} height={y1 - y0} fill="url(#cemhatch)" />
+          {kind === "plug" ? (
+            /* A PLUG FILLS THE BORE, so it is drawn across it — pipe width and
+               all. Drawn behind nothing: it is the thing in the way. */
+            <rect x={CX - hw} y={y0} width={hw * 2} height={y1 - y0} fill="url(#cemhatch)" />
+          ) : kind === "squeeze" ? (
+            /* A SQUEEZE went out THROUGH the wall at this interval: hatched in
+               the annulus like casing cement, but bracketed so it reads as a
+               placed interval rather than a column standing on a shoe. */
+            <>
+              <rect x={CX + hw + 1} y={y0} width={5} height={y1 - y0} fill="url(#cemhatch)" />
+              <rect x={CX - hw - 6} y={y0} width={5} height={y1 - y0} fill="url(#cemhatch)" />
+              <line x1={CX - hw - 8} x2={CX + hw + 8} y1={y0} y2={y0} stroke="#b45309" strokeWidth="1.2" />
+              <line x1={CX - hw - 8} x2={CX + hw + 8} y1={y1} y2={y1} stroke="#b45309" strokeWidth="1.2" />
+            </>
+          ) : (
+            <>
+              <rect x={CX + hw + 1} y={y0} width={5} height={y1 - y0} fill="url(#cemhatch)" />
+              <rect x={CX - hw - 6} y={y0} width={5} height={y1 - y0} fill="url(#cemhatch)" />
+            </>
+          )}
           {drilled != null && (
             /* the drill-out depth, so a shortened column is legible as such */
             <line x1={CX - hw - 8} x2={CX + hw + 8} y1={y(Math.max(top, drilled))}

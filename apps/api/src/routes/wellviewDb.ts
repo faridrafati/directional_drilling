@@ -3375,7 +3375,8 @@ export async function registerWellviewDbRoutes(
       const rods = withComps(stringRows(d, "wvRod", idwell), null, stringTopByParent(d, "wvRodComp", idwell));
       const other = stringRows(d, "wvOtherInHole", idwell, ["SzODMax", "IconName"]);
       const perfs = stringRows(d, "wvPerforation", idwell, ["DepthTop", "DtTm", "Proposed", "Typ"]);
-      const cement = stringRows(d, "wvCement", idwell, ["IDRecString", "DtTmStart", "Proposed"]);
+      const cement = stringRows(d, "wvCement", idwell,
+        ["IDRecString", "DtTmStart", "Proposed", "CementTyp", "CementSubTyp"]);
       /*
        * Cement STAGES, which are where the depths live (§7.2 "Cement
        * Information Not Visible — in the Cement Stages folder, make sure that
@@ -3409,6 +3410,19 @@ export async function registerWellviewDbRoutes(
         sel.push(cs ? `c."${cs}" AS "IDRecString"` : `NULL AS "IDRecString"`);
         sel.push(cd ? `c."${cd}" AS "DtTmStart"` : `NULL AS "DtTmStart"`);
         sel.push(cp ? `c."${cp}" AS "Proposed"` : `NULL AS "Proposed"`);
+        /*
+         * WHICH OF THE THREE KINDS OF CEMENT this is.
+         *
+         * The guide: "There are three types of cement: Casing cement, Plugs,
+         * Squeezes … WellView draws the applicable icon on the schematic using
+         * the type you select for the record." Without it every stage was drawn
+         * as annular cement behind pipe, and a plug across the wellbore is not
+         * behind pipe — it is in the way, which is the fact a re-entry turns on.
+         * The sample holds 77 casing, 25 plug and 11 squeeze.
+         */
+        const ct = col(cem, "cementtyp"), cst = col(cem, "cementsubtyp");
+        sel.push(ct ? `c."${ct}" AS "CementTyp"` : `NULL AS "CementTyp"`);
+        sel.push(cst ? `c."${cst}" AS "CementSubTyp"` : `NULL AS "CementSubTyp"`);
         try {
           return (d.ro.prepare(
             `SELECT ${sel.join(", ")} FROM "${st.name}" s
