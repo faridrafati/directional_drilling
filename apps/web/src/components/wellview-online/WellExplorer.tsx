@@ -110,11 +110,22 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
    *
    * One file per well, because that is what Import Well reads: the payload is a
    * single well's records, and a combined document would import as nothing.
-   * Written one at a time and counted, so a browser that blocks the second
-   * download shows a number lower than asked for rather than a bare "Exported."
+   *
+   * THE COUNT IS WELLS FETCHED, NOT FILES SAVED, and the wording says so. An
+   * earlier version of this comment claimed the count would come out lower if a
+   * browser blocked the downloads — it will not. A blocked `a.click()` neither
+   * throws nor rejects, so the loop completes either way and only the user's
+   * downloads folder knows the difference. Since the app cannot tell, it does
+   * not say; forty wells asks first instead.
    */
   const exportWells = async (idwells: string[]) => {
     if (!idwells.length) return;
+    // Browsers throttle or silently block a run of programmatic downloads, and
+    // the app cannot detect it — so ask before starting one, rather than
+    // reporting a success it cannot verify.
+    if (idwells.length > 5 && !window.confirm(
+      `This saves ${idwells.length} separate files, one per well. `
+      + "Your browser may ask to allow multiple downloads. Continue?")) return;
     setTransfer(idwells.length > 1 ? `Exporting ${idwells.length} wells…` : "Exporting…");
     let done = 0;
     try {
@@ -128,7 +139,8 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
         URL.revokeObjectURL(url);
         done++;
       }
-      setTransfer(done === 1 ? "Exported." : `Exported ${done} wells.`);
+      setTransfer(done === 1 ? "Exported."
+        : `Exported ${done} wells — ${done} files, if your browser allowed them all.`);
     } catch (e) {
       // Say how far it got. "Failed" after eight of ten files have landed in the
       // downloads folder is a worse answer than the count.
@@ -374,13 +386,24 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
       const typed = window.prompt(
         `This deletes ${ids.length} wells from the database — every record in every `
         + `folder of each, not just a link. This cannot be undone.\n\n${shown}\n\n`
-        + `Type ${ids.length} to confirm:`);
-      if (typed?.trim() !== String(ids.length)) return;
+        + `Type "delete ${ids.length} wells" to confirm:`);
+      // A phrase, not the number that is printed two lines above it. The
+      // single-well branch asks for the well's name typed exactly; the branch
+      // that removes forty must not be the easier one to get through.
+      if (typed?.trim().toLowerCase() !== `delete ${ids.length} wells`) return;
     }
 
     let done = 0;
+    let failure: string | null = null;
     try {
       for (const id of ids) { await wvDbApi.deleteWell(db, id); done++; }
+    } catch (e) {
+      // Without this the rejection escapes `void deleteWells(...)` and nothing
+      // reaches the screen at all — and the status line below used to be gated
+      // on a multi-well selection, so a single failed delete said nothing
+      // whatsoever. A delete that did not happen must never look like one that
+      // did.
+      failure = (e as Error).message;
     } finally {
       // Whatever happened, the screen must reflect what is actually gone.
       const gone = new Set(ids.slice(0, done));
@@ -388,7 +411,9 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
       setMyWells((m) => m.filter((x) => !gone.has(x)));
       setRecent((r) => r.filter((x) => !gone.has(x)));
       await wellsQ.refetch();
-      if (ids.length > 1) setTransfer(`Deleted ${done} of ${ids.length} wells.`);
+      setTransfer(failure
+        ? `Delete stopped after ${done} of ${ids.length}: ${failure}`
+        : ids.length > 1 ? `Deleted ${ids.length} wells.` : "Well deleted.");
     }
   }
 
@@ -424,6 +449,32 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
       setTimeout(() => setCopied(false), 1500);
     });
   }
+
+  /**
+   * Ctrl+C copies the well list, because the guide names that key.
+   *
+   * "To copy well list information just for wells that are highlighted, select
+   * the wells and press Ctrl+C." The button existed; the keystroke the guide
+   * actually tells a user to press did not.
+   *
+   * Ignored while the focus is in a field — Ctrl+C there means copy the text
+   * the user selected, and stealing it would be a worse bug than not having
+   * the shortcut.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "c") return;
+      const el = e.target as HTMLElement | null;
+      if (el && /^(input|textarea|select)$/i.test(el.tagName)) return;
+      if (el?.isContentEditable) return;
+      if (window.getSelection()?.toString()) return;   // a real text selection wins
+      e.preventDefault();
+      copyWellList();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
 
   const primary = selected[0] ?? null;
   const folderBtn = (active: boolean) =>
@@ -754,7 +805,8 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
               * user has no way to check it except by losing something.
               */}
             Double-click a well to open it. Ctrl-click and Shift-click select several — Data Audit,
-            Copy Well List, Export Wells and Delete use the selection.{" "}
+            Copy Well List (or Ctrl-C), Export Wells, Multi Well Reports, My Wells and Delete all
+            use the selection.{" "}
             {selected.length > 1
               ? `${selected.length} selected.`
               : primary ? `Selected: ${nameOf(rows.find((w) => idOf(w) === primary) ?? { idwell: primary })}` : ""}
