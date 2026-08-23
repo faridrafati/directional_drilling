@@ -1225,6 +1225,38 @@ export async function registerWellviewDbRoutes(
           if (tk) values[tk] = "wvwellbore";
         }
       }
+      /*
+       * A NEW RECORD GOES AT THE END OF ITS FOLDER, and that takes an explicit
+       * sequence number.
+       *
+       * `orderColumn` sorts a sequenced folder by `sysSeq` ascending, and SQLite
+       * sorts NULL FIRST — so a row inserted without one does not land at the
+       * bottom, it jumps to the top. On a casing tally that puts a newly added
+       * joint above the shoe, and the string reads in the wrong order from that
+       * moment on, in every report and on the schematic.
+       *
+       * Nothing in either converted database has a null `sysSeq` (776 of 776
+       * wvCasCompTally rows carry one), so every such row would be this app's,
+       * and the desktop would show it the same way.
+       *
+       * The scope is the folder, not the table: MAX within this well and this
+       * parent. Same rule the paste route already uses for a pasted block —
+       * a single Add is that block with one row in it.
+       */
+      const seqColIns = t.colSet.get("sysseq");
+      if (seqColIns && values[seqColIns] == null) {
+        const where: string[] = [];
+        const args: string[] = [];
+        const idwCol = t.colSet.get("idwell");
+        if (idwCol && idwell) { where.push(`"${idwCol}" = ?`); args.push(idwell); }
+        const parCol = t.colSet.get("idrecparent");
+        if (parCol && req.body?.parent) { where.push(`"${parCol}" = ?`); args.push(req.body.parent); }
+        const max = d.ro.prepare(
+          `SELECT MAX("${seqColIns}") AS m FROM "${t.name}"${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`,
+        ).get(...args) as { m: number | null };
+        values[seqColIns] = Number(max?.m ?? 0) + 1;
+      }
+
       const cols = Object.keys(values);
 
       if (!cols.length) return reply.code(400).send({ error: "nothing to insert" });
