@@ -4,7 +4,7 @@
  * schematic and data auditor. Same authenticated transport as every /entry/*
  * call.
  */
-import type { UnitFormat } from "@dd/shared";
+import type { UnitFormat, WellElevations } from "@dd/shared";
 import { entryApi } from "./client.js";
 
 export interface WvDatabase { id: string; file: string; wells: number; sizeBytes: number }
@@ -267,9 +267,17 @@ export interface WvMultiBlock {
   table: string | null;
   title: string | null;
   exists: boolean;
-  columns: { column: string; label: string; unit?: string; units?: Record<string, UnitFormat>; fromWell?: boolean }[];
+  columns: {
+    column: string; label: string; unit?: string; units?: Record<string, UnitFormat>;
+    /** Measured from the reference datum, and how it responds to one. */
+    applyDatum?: boolean;
+    datumMode?: "depth" | "up" | "invariant";
+    fromWell?: boolean;
+  }[];
   missing: string[];
   rows: (string | number | null)[][];
+  /** Which well each row came from, aligned with `rows` — its datum key. */
+  rowWells?: string[];
   rowCount: number;
   truncated: boolean;
   /** Set when the template predates this database's schema. */
@@ -282,6 +290,8 @@ export interface WvMultiResult {
   name: string;
   wells: number;
   blocks: WvMultiBlock[];
+  /** Per-well reference elevations, keyed by idwell. One offset per ROW. */
+  elevations?: Record<string, WellElevations>;
 }
 
 

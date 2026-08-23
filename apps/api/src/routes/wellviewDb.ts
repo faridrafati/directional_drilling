@@ -303,6 +303,42 @@ function fillLinkTks(d: Db, t: TableInfo, values: Record<string, unknown>): void
   }
 }
 
+/**
+ * Every well's reference elevations, keyed by idwell.
+ *
+ * The grids that span WELLS — the Explorer list and multi-well reports — cannot
+ * use a single datum offset, because each row is a different well with its own
+ * kelly bushing. The shift is per row, so the elevations travel with the
+ * payload and are read in one pass rather than one request per well.
+ *
+ * `idwells` narrows it when the caller already knows which wells it is showing;
+ * omitting it reads them all, which is what the Explorer needs.
+ */
+function wellElevations(d: Db, idwells?: string[]): Map<string, Record<string, number | null>> {
+  const out = new Map<string, Record<string, number | null>>();
+  const t = table(d, "wvWellHeader");
+  if (!t) return out;
+  const cols: [string, string][] = ([
+    ["OrigKB", "elvorigkb"], ["Ground", "elvground"], ["MudLine", "elvmudline"],
+    ["CasFlange", "elvcasflange"], ["TubHead", "elvtubhead"],
+  ] as [string, string][]).filter(([, c]) => t.colSet.get(c));
+  if (!cols.length) return out;
+
+  const sel = ["idwell", ...cols.map(([, c]) => t.colSet.get(c)!)].map((c) => `"${c}"`).join(", ");
+  const where = idwells?.length ? ` WHERE "idwell" IN (${idwells.map(() => "?").join(", ")})` : "";
+  const rows = d.ro.prepare(`SELECT ${sel} FROM "${t.name}"${where}`)
+    .all(...(idwells ?? [])) as Record<string, unknown>[];
+  for (const r of rows) {
+    const e: Record<string, number | null> = {};
+    for (const [key, c] of cols) {
+      const v = r[t.colSet.get(c)!];
+      e[key] = typeof v === "number" && Number.isFinite(v) ? v : null;
+    }
+    out.set(String(r.idwell), e);
+  }
+  return out;
+}
+
 /** Something readable to identify a record by — mirrors the client's captions. */
 function captionOf(t: TableInfo, row: Record<string, unknown>): string {
   // The model states each table's record caption as a template of its own
@@ -1068,23 +1104,7 @@ export async function registerWellviewDbRoutes(
        * single datum offset cannot serve it — the shift is per row. Read here in
        * one pass rather than one request per well.
        */
-       const elvCols: [string, string][] = ([
-         ["OrigKB", "elvorigkb"], ["Ground", "elvground"], ["MudLine", "elvmudline"],
-         ["CasFlange", "elvcasflange"], ["TubHead", "elvtubhead"],
-       ] as [string, string][]).filter(([, c]) => t.colSet.get(c));
-       const elvBy = new Map<string, Record<string, number | null>>();
-       if (elvCols.length) {
-         const sel2 = ["idwell", ...elvCols.map(([, c]) => t.colSet.get(c)!)]
-           .map((c) => `"${c}"`).join(", ");
-         for (const r of d.ro.prepare(`SELECT ${sel2} FROM "${t.name}"`).all() as Record<string, unknown>[]) {
-           const e: Record<string, number | null> = {};
-           for (const [key, c] of elvCols) {
-             const v = r[t.colSet.get(c)!];
-             e[key] = typeof v === "number" && Number.isFinite(v) ? v : null;
-           }
-           elvBy.set(String(r.idwell), e);
-         }
-       }
+       const elvBy = wellElevations(d);
 
       return {
         columns: wanted.map((c) => {
@@ -2016,7 +2036,17 @@ export async function registerWellviewDbRoutes(
       const wells = String(req.query.wells ?? "").split(",").map((w) => w.trim()).filter(Boolean);
       // A bounded set: the query binds one parameter per well.
       if (wells.length > 500) return reply.code(400).send({ error: "at most 500 wells at a time" });
-      return resolveMultiTemplate(d.ro, tpl, wells);
+      return {
+        ...resolveMultiTemplate(d.ro, tpl, wells),
+        /*
+         * The elevations each ROW needs to be re-referenced.
+         *
+         * A multi-well report spans wells, so one header cannot carry one datum
+         * offset — the shift is per row, keyed by the row's own well. Narrowed
+         * to the wells actually being reported on rather than reading them all.
+         */
+        elevations: Object.fromEntries(wellElevations(d, wells)),
+      };
     },
   );
 

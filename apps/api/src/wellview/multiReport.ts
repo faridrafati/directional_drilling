@@ -46,6 +46,16 @@ export interface MultiColumn {
   label: string;
   unit?: string;
   units?: Record<string, unknown>;
+  /**
+   * Measured from the reference datum, and how it responds.
+   *
+   * Carried for the same reason the unit is: without them the client cannot
+   * shift, so a multi-well report printed stored Original-KB metres while the
+   * single-well report of the same field on the same well printed `mCF` — two
+   * different datums on two screens, and only one of them saying so.
+   */
+  applyDatum?: boolean;
+  datumMode?: "depth" | "up" | "invariant";
   /** Read from wvWellHeader rather than the block's own table. */
   fromWell?: boolean;
 }
@@ -55,6 +65,8 @@ export interface MultiBlockResult {
   title: string | null;
   exists: boolean;
   columns: MultiColumn[];
+  /** Which well each row came from, aligned with `rows`. Its datum key. */
+  rowWells?: string[];
   /** Columns the template prints that this database does not have. */
   missing: string[];
   rows: (string | number | null)[][];
@@ -217,10 +229,23 @@ export function resolveMultiTemplate(
       && r.actual!.toLowerCase() === "wellname");
     const lead = !printsWellName && well?.cols.has("wellname")
       ? [`w."${well.cols.get("wellname")}" AS __wellname`] : [];
+    /*
+     * WHICH WELL each row came from, as plumbing rather than a column.
+     *
+     * One header spans many wells, so there is no single datum offset the
+     * client can apply — the shift has to be looked up per row, and that needs
+     * the row's idwell.
+     *
+     * Kept OUT of `lead`, which is not just a SELECT list: `lead.length` is
+     * what decides whether the well name becomes a printed column, so adding
+     * anything to it would print a name column on templates that already have
+     * one. It travels beside the rows instead, in `rowWells`.
+     */
+    const idwellSel = `t0."${t.cols.get("idwell")}" AS __idwell`;
 
     const sel = present.map((r) => `${r.alias}."${r.actual}"`);
     const placeholders = idwells.map(() => "?").join(", ");
-    const sql = `SELECT ${[...lead, ...sel].join(", ")}
+    const sql = `SELECT ${[...lead, idwellSel, ...sel].join(", ")}
                    FROM "${t.name}" t0${wellJoin}${linkJoins}
                   WHERE t0."${t.cols.get("idwell")}" IN (${placeholders})`;
 
@@ -250,6 +275,8 @@ export function resolveMultiTemplate(
           : (r.field.label_interpreted || r.field.column),
         unit: mf?.baseUnit,
         units: mf?.units as Record<string, unknown> | undefined,
+        applyDatum: mf?.applyDatum || undefined,
+        datumMode: mf?.datumMode,
         fromWell: r.from === "well" || undefined,
       });
     }
@@ -262,6 +289,8 @@ export function resolveMultiTemplate(
       columns,
       missing,
       rows: raw.map((row) => keys.map((k) => (row[k] ?? null) as string | number | null)),
+      /** Row i belongs to well rowWells[i] — the key to its datum offset. */
+      rowWells: raw.map((row) => String(row.__idwell ?? "")),
       rowCount: total,
       truncated: total > raw.length,
       schemaDrift: drift,

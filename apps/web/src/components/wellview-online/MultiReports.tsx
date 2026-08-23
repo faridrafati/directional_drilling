@@ -13,7 +13,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { wvDbApi, type WvMultiReport, type WvXlReport } from "../../entry/wellviewDb.js";
 import { useUnitSet } from "../../entry/unitSet.js";
-import { toDisplay, formatUnitValue, displayUnitFor } from "@dd/shared";
+import { useDatum } from "../../entry/datum.js";
+import {
+  toDisplay, formatUnitValue, displayUnitFor, displayUnitLabel, datumShift,
+  type DatumShift, type WellElevations,
+} from "@dd/shared";
 
 interface Props {
   db: string;
@@ -24,6 +28,8 @@ interface Props {
 
 export function MultiReports({ db, wells, wellName, onClose }: Props) {
   const [unitSet] = useUnitSet();
+  // Tools > Reference Datum. The offset is per ROW here, not per screen.
+  const [datum] = useDatum();
   const [html, setHtml] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   /** WellView ships two kinds here: .afm reports and .afmxl Excel extracts. */
@@ -102,12 +108,44 @@ export function MultiReports({ db, wells, wellName, onClose }: Props) {
 
   const total = (listQ.data?.reports ?? []).filter((r) => r.blocks.length > 0).length;
 
-  /** Numbers print in the reader's unit set, exactly as every other grid. */
-  const cell = (v: string | number | null, c: { unit?: string; units?: Record<string, unknown> }) => {
+  /**
+   * The datum offset for ONE row, which is the only scope it can have here.
+   *
+   * A multi-well report spans wells, so there is no single shift for the grid:
+   * every row is a different well with its own kelly bushing. The elevations
+   * travel with the payload and are resolved per row.
+   */
+  const shiftFor = (elev: Record<string, WellElevations> | undefined, idwell: string | undefined):
+    DatumShift | null => {
+    if (datum === "OrigKB") return datumShift({}, "OrigKB");
+    const e = idwell ? elev?.[idwell] : undefined;
+    return e ? datumShift(e, datum) : null;
+  };
+
+  /**
+   * Numbers print in the reader's unit set and from the chosen datum, exactly
+   * as every other grid.
+   *
+   * The `*` is WellView's own: "If you view multi well reports for wells that
+   * do not have the reference datum selected, then the * symbol appears in
+   * place of the relative depth." It is shown rather than the stored value
+   * because a KB depth printed in a column headed `mCF`, among rows that really
+   * are in CF, is worse than an admitted gap.
+   */
+  const cell = (
+    v: string | number | null,
+    c: { unit?: string; units?: Record<string, unknown>; applyDatum?: boolean },
+    shift?: DatumShift | null,
+  ) => {
     if (v == null || v === "") return <span className="text-gray-300">—</span>;
     const n = Number(v);
     if (c.unit && Number.isFinite(n)) {
-      const d = toDisplay(n, c as never, unitSet);
+      if (c.applyDatum && datum !== "OrigKB" && !shift?.resolved) {
+        return <span className="text-amber-600" title={
+          shift?.reason ?? `This well has no ${datum} elevation, so its depths cannot be re-referenced.`
+        }>*</span>;
+      }
+      const d = toDisplay(n, c as never, unitSet, shift);
       if (d) return formatUnitValue(d.value, d);
     }
     const m = String(v).match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
@@ -319,7 +357,7 @@ export function MultiReports({ db, wells, wellName, onClose }: Props) {
                                     {c.label}
                                     {c.unit && (
                                       <span className="ml-1 font-normal text-gray-400">
-                                        ({displayUnitFor(c, unitSet)?.unit ?? c.unit})
+                                        ({displayUnitLabel(c, unitSet, { datum, resolved: true })})
                                       </span>
                                     )}
                                   </th>
@@ -331,7 +369,8 @@ export function MultiReports({ db, wells, wellName, onClose }: Props) {
                                 <tr key={ri} className={ri % 2 ? "bg-gray-50" : ""}>
                                   {row.map((v, ci) => (
                                     <td key={ci} className="px-2 py-0.5 whitespace-nowrap text-gray-800">
-                                      {cell(v, b.columns[ci])}
+                                      {cell(v, b.columns[ci],
+                                        shiftFor(runQ.data?.elevations, b.rowWells?.[ri]))}
                                     </td>
                                   ))}
                                 </tr>
