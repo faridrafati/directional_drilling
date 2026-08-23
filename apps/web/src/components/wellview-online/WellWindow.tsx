@@ -30,7 +30,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entryApi } from "../../entry/client.js";
 import { useUnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
-import { toDisplay, fromDisplay, formatUnitValue, displayUnitFor, displayUnitLabel, type DatumShift } from "@dd/shared";
+import { toDisplay, fromDisplay, formatUnitValue, formatUnitList, displayUnitFor, displayUnitLabel, type DatumShift } from "@dd/shared";
 import type { UnitFormat } from "@dd/shared";
 import { Attachments, Thumb } from "./Attachments.js";
 import { PrintReport } from "./PrintReport.js";
@@ -373,6 +373,12 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
     needsScope?: string[];
     columns?: { column: string; label: string; unit?: string;
       units?: Record<string, UnitFormat>;
+      /**
+       * A list-valued column — a bit's nozzles. It carries NO `unit` of its
+       * own: each ITEM does, because a one-item list is a bare number that a
+       * column unit would convert a second time.
+       */
+      list?: boolean; itemUnit?: string; itemUnits?: Record<string, UnitFormat>;
       /** Computed here from the model equation, not stored in the database. */
       derived?: boolean; eqn?: string }[];
     /** Columns the template prints that came back blank. */
@@ -386,7 +392,7 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
     filtersApplied?: { table: string; field: string; value: string }[];
     /** …and the ones it could not, each with the reason. */
     filtersSkipped?: { table: string; field: string; value: string; why: string }[];
-    rows?: (string | number | null)[][]; rowIds?: (string | null)[]; icons?: (string | null)[];
+    rows?: (string | number | number[] | null)[][]; rowIds?: (string | null)[]; icons?: (string | null)[];
   }
   const qc = useQueryClient();
   const [unitSet] = useUnitSet();
@@ -729,6 +735,12 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                                 // A value whose column carries a unit is shown in
                                 // the user's set; the rest print as stored.
                                 const shown = (() => {
+                                  // A list-valued column carries no unit of its
+                                  // own — each item does. See formatUnitList.
+                                  if (Array.isArray(v)) {
+                                    return formatUnitList(
+                                      v, { unit: meta?.itemUnit, units: meta?.itemUnits }, unitSet);
+                                  }
                                   if (meta?.unit && v != null && v !== "") {
                                     const n = Number(v);
                                     if (Number.isFinite(n)) {

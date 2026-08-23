@@ -21,14 +21,22 @@ import { entryApi } from "../../entry/client.js";
 import { wvDbApi } from "../../entry/wellviewDb.js";
 import { useUnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
-import { toDisplay, formatUnitValue, displayUnitLabel, type UnitFormat } from "@dd/shared";
+import { toDisplay, formatUnitValue, formatUnitList, displayUnitLabel, type UnitFormat } from "@dd/shared";
 
 interface Block {
   table: string | null; title: string | null; exists: boolean; computed: boolean;
   derived?: boolean; contentOnly?: boolean;
-  columns?: { column: string; label: string; unit?: string; units?: Record<string, UnitFormat>;
-              applyDatum?: boolean; datumMode?: "up" | "invariant" }[];
-  rows?: (string | number | null)[][];
+  columns?: {
+    column: string; label: string; unit?: string; units?: Record<string, UnitFormat>;
+    applyDatum?: boolean; datumMode?: "up" | "invariant";
+    /**
+     * A list-valued column — a bit's nozzles. It carries NO `unit` of its own:
+     * each ITEM does, because a one-item list is a bare number and a column
+     * unit would convert it a second time.
+     */
+    list?: boolean; itemUnit?: string; itemUnits?: Record<string, UnitFormat>;
+  }[];
+  rows?: (string | number | number[] | null)[][];
   rowCount?: number;
   /** Columns the template prints that came back blank. */
   missing?: string[];
@@ -123,8 +131,19 @@ export function PrintReport({
     setTimeout(() => window.print(), 250);
   };
 
-  const cell = (v: string | number | null, c: NonNullable<Block["columns"]>[number]) => {
+  const cell = (v: string | number | number[] | null, c: NonNullable<Block["columns"]>[number]) => {
     if (v == null || v === "") return "";
+    /*
+     * A LIST is converted item by item, in the item's own unit.
+     *
+     * "Bit nozzles run" is three 20/32" jets: "20-20-20" to a US reader and
+     * "15.9-15.9-15.9" to a metric one. The API cannot compose that — it has no
+     * unit set — so it ships the base metres and the formatting happens here.
+     * The separator is this app's choice; Peloton states one nowhere.
+     */
+    if (Array.isArray(v)) {
+      return formatUnitList(v, { unit: c.itemUnit, units: c.itemUnits }, unitSet);
+    }
     const n = Number(v);
     if (c.unit && Number.isFinite(n)) {
       const d = toDisplay(n, c, unitSet, datumShift);

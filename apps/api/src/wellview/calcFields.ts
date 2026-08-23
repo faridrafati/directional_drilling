@@ -694,5 +694,214 @@ export function latestChildren(
 /** Reset the most-recent cache — tests only. */
 export function _resetLatest(): void { _latest = null; }
 
+/* ─────────────────────── named formulas over child rows ─────────────────────── */
+
+/**
+ * Two equations written out by hand, each bound to one field.
+ *
+ * A bit's total flow area is "Sum of [pi*((<…dia>)/2)^2]" and its nozzle list is
+ * "Concatenated <…dia>." — neither survives `tokenise`, which has no literals,
+ * no functions and no exponent, and neither matches AGG_RE. Nine shipped
+ * templates print one, thirteen references in all, and every one was blank.
+ *
+ * WHY THESE ARE HAND-WRITTEN RATHER THAN PARSED. Both shapes are singletons: a
+ * scan of all 357 tables finds exactly one field whose equation multiplies by
+ * pi under a sum, and one whose equation is a bare concatenation of a child
+ * column. Teaching `tokenise` about `pi`, `^` and `[…]` would widen what the
+ * evaluator silently accepts across all 1,810 calculated fields without
+ * widening what has been checked — the exact thing this module's header exists
+ * to refuse. Two named entries cost two tests; a general parser costs an audit.
+ *
+ * EACH ENTRY IS PINNED TO THE MODEL'S EXACT HELP STRING. If Peloton changes the
+ * equation, the entry stops matching and the field goes back to blank rather
+ * than quietly continuing to run arithmetic the model no longer states.
+ */
+export interface CalcNamed {
+  table: string;
+  field: string;
+  label: string;
+  /** The model's own sentence, for the tooltip. */
+  eqn: string;
+  /** The child table read, as the model spells it. */
+  childTable: string;
+  /** The child column read, lowercased. */
+  childField: string;
+  /**
+   * A stored column on the PARENT that replaces the computation outright.
+   *
+   * Not a fallback and not a cross-check — the model states a precedence:
+   * "If <wvjobdrillstring.bitTFA> is entered, it overrides this calculation."
+   * On the ten sample strings that carry both, the entered value and the
+   * nozzle sum disagree by ratios from 0.749 to 3.241 with no constant
+   * between them, which is why precedence is the whole answer and averaging,
+   * warning or "correcting" either number would all be wrong.
+   *
+   * ONE TENSION, LEFT VISIBLE. The stored column's own help reads "TFA for
+   * bits without nozzles", which can be read as an instruction to enter it
+   * only when there are none — under which those ten strings should show the
+   * nozzle sum instead. The two sentences are followed here in the order the
+   * model gives them: the calculated field's own help states the rule for the
+   * calculated field, and it says override. It decides 10 of the 150 filled
+   * rows, and on one of them (bit "RR6") the two readings differ by a factor
+   * of 3.2, so this is a reading and not a certainty.
+   */
+  overrideWith?: string;
+  /** How the child values combine into the answer. */
+  kind: "areaOfCircles" | "list";
+  /** The unit an individual child value carries, for a list-valued result. */
+  itemOf?: { table: string; field: string };
+}
+
+/** The exact help text each entry is licensed by. A change here revokes it. */
+const NAMED: (Omit<CalcNamed, "label"> & { helpIs: string })[] = [
+  {
+    table: "wvJobDrillString",
+    field: "bittfacalc",
+    eqn: "Sum of [pi*((<wvjobdrillstringbitnozzle.dia>)/2)^2]",
+    helpIs: "Total fluid circulating area for the bit for this string. EQN: Sum of "
+      + "[pi*((<wvjobdrillstringbitnozzle.dia>)/2)^2]. If <wvjobdrillstring.bitTFA> "
+      + "is entered, it overrides this calculation.",
+    childTable: "wvJobDrillStringBitNozzle",
+    childField: "dia",
+    overrideWith: "bittfa",
+    kind: "areaOfCircles",
+  },
+  {
+    table: "wvJobDrillString",
+    field: "bitnozzlecalc",
+    eqn: "Concatenated <wvjobdrillstringbitnozzle.dia>",
+    helpIs: "Bit nozzles run. EQN: Concatenated <wvjobdrillstringbitnozzle.dia>.",
+    childTable: "wvJobDrillStringBitNozzle",
+    childField: "dia",
+    kind: "list",
+    itemOf: { table: "wvJobDrillStringBitNozzle", field: "dia" },
+  },
+];
+
+let _named: Map<string, CalcNamed[]> | null = null;
+
+/** The named formulas, by lowercased parent table. */
+export function calcNamed(): Map<string, CalcNamed[]> {
+  if (_named) return _named;
+  const reg = new Map<string, CalcNamed[]>();
+  for (const n of NAMED) {
+    const f = modelField(n.table, n.field);
+    // The licence check: the model must still say what this entry implements.
+    if (!f?.calculated) continue;
+    if ((f.help ?? "").replace(/\s+/g, " ").trim() !== n.helpIs) continue;
+    if (!modelField(n.childTable, n.childField)) continue;
+    const key = n.table.toLowerCase();
+    const { helpIs: _drop, ...rest } = n;
+    reg.set(key, [...(reg.get(key) ?? []), { ...rest, label: f.label ?? n.field }]);
+  }
+  _named = reg;
+  return reg;
+}
+
+/** The named formulas of one table, or an empty list. */
+export function calcNamedFor(table: string): CalcNamed[] {
+  return calcNamed().get(table.toLowerCase()) ?? [];
+}
+
+/** Total across every table — pinned by the tests. */
+export function calcNamedCount(): number {
+  let n = 0;
+  for (const l of calcNamed().values()) n += l.length;
+  return n;
+}
+
+/**
+ * Resolve each named formula for a whole page of parents at once.
+ *
+ * ONE query per entry plus ONE for the override column, both grouped by parent
+ * — the same discipline as sumChildren and latestChildren, for the same reason.
+ *
+ * The override is read HERE rather than off the caller's row on purpose. No
+ * template in any of the three template files selects `BitTFA`, so a caller
+ * that relied on its own SELECT would silently never see it: the override would
+ * read as handled and never fire, and ten strings would print a nozzle sum
+ * where WellView prints the entered value — one of them out by a factor of 3.2.
+ *
+ * A parent with no answer is ABSENT rather than null or zero. A 0.00 in² total
+ * flow area reads as a measured, plugged bit.
+ */
+export function namedChildren(
+  db: AggQuery,
+  table: string,
+  idwell: string,
+  parentIds: string[],
+): Map<string, Record<string, number | number[]>> {
+  const out = new Map<string, Record<string, number | number[]>>();
+  const named = calcNamedFor(table);
+  if (!named.length || !parentIds.length) return out;
+  const ids = [...new Set(parentIds.filter(Boolean))];
+  if (!ids.length) return out;
+  const holes = ids.map(() => "?").join(", ");
+  const put = (parent: string, field: string, v: number | number[]) => {
+    const rec = out.get(parent) ?? {};
+    rec[field] = v;
+    out.set(parent, rec);
+  };
+
+  for (const n of named) {
+    try {
+      /*
+       * The child values, in a DETERMINISTIC order — which is not the same as
+       * the right order, and the difference is worth stating.
+       *
+       * The model marks wvJobDrillStringBitNozzle sequenced, so sysSeq is the
+       * licensed key. But sysSeq is null on 562 of the sample's 595 nozzle rows
+       * and only 11 of 142 strings populate it at all, so for almost every
+       * string the sort is a no-op and whatever the scan returns wins. That
+       * matters: 60 of 138 strings run mixed nozzle sizes, so a reordering is
+       * visible on the page as a different list.
+       *
+       * IDRec breaks the tie, matching daysVsDepth.ts. What WellView itself
+       * orders these by is not stated anywhere this app can read — no more than
+       * the separator is — so this is a stable choice, not a recovered fact.
+       */
+      const rows = db.prepare(
+        `SELECT "IDRecParent" AS p, "${n.childField}" AS v FROM "${n.childTable}"
+           WHERE idwell = ? AND "IDRecParent" IN (${holes}) AND "${n.childField}" IS NOT NULL
+           ORDER BY COALESCE("sysSeq", 999999), "IDRec"`,
+      ).all(idwell, ...ids) as { p: string; v: number | null }[];
+
+      const byParent = new Map<string, number[]>();
+      for (const r of rows) {
+        const v = Number(r.v);
+        if (!Number.isFinite(v)) continue;
+        const key = String(r.p ?? "");
+        byParent.set(key, [...(byParent.get(key) ?? []), v]);
+      }
+
+      for (const [parent, vals] of byParent) {
+        if (!vals.length) continue;
+        if (n.kind === "list") { put(parent, n.field, vals); continue; }
+        // areaOfCircles: Σ π(d/2)². The diameters are base metres, so the sum
+        // is base m², which is what the model declares this field to be.
+        put(parent, n.field, vals.reduce((a, d) => a + Math.PI * (d / 2) ** 2, 0));
+      }
+
+      // …and the entered value wins wherever there is one.
+      if (n.overrideWith) {
+        for (const r of db.prepare(
+          `SELECT "IDRec" AS p, "${n.overrideWith}" AS v FROM "${n.table}"
+             WHERE idwell = ? AND "IDRec" IN (${holes}) AND "${n.overrideWith}" IS NOT NULL`,
+        ).all(idwell, ...ids) as { p: string; v: number | null }[]) {
+          const v = Number(r.v);
+          if (Number.isFinite(v)) put(String(r.p ?? ""), n.field, v);
+        }
+      }
+    } catch {
+      // A table or column this database does not have: the field stays absent,
+      // which is the same answer as "no nozzles were recorded".
+    }
+  }
+  return out;
+}
+
+/** Reset the named-formula cache — tests only. */
+export function _resetNamed(): void { _named = null; }
+
 /** Reset the aggregate cache — tests only. */
 export function _resetAggregates(): void { _aggregates = null; }

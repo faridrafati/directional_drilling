@@ -9,7 +9,7 @@
  * The one label that did exist — "Not in this database", on the multi-well
  * screen — was wrong for every column it was ever shown under. The model says
  * what they are: of the 346 distinct columns the 182 shipped templates drop,
- * 258 carry `calculated: true` (WellView works the value out when the report
+ * 256 carry `calculated: true` (WellView works the value out when the report
  * prints and stores it nowhere) and NOT ONE is a stored column this database
  * lacks. The remaining 88 are fields the model does not put on that table.
  *
@@ -78,9 +78,9 @@ d("a dropped column is explained rather than silently absent", () => {
   it("is not a rare case — 114 of 182 templates print one", () => {
     // These counts are a MEASUREMENT of how much this app cannot yet fill, so
     // they fall as fields become computable: 116 templates / 276 blocks / 350
-    // columns when this landed, 114 / 273 / 346 once "most recent child by
-    // date" was taught. A number moving DOWN here is progress; a number moving
-    // up means a regression, which is why each is pinned exactly rather than as
+    // columns when this landed; 114 / 273 / 344 after "most recent child by
+    // date" and the two bit-nozzle formulas. A number moving DOWN is progress; up
+    // means a regression, which is why each is pinned exactly rather than as
     // a bound.
     const blocks = allBlocks();
     const withDrop = blocks.filter((b) => b.block.missing?.length);
@@ -90,7 +90,7 @@ d("a dropped column is explained rather than silently absent", () => {
     expect(blocks.length, "blocks across the shipped templates").toBe(738);
     expect(withDrop.length, "blocks dropping at least one column").toBe(273);
     expect(tpls.size, "templates dropping at least one column").toBe(114);
-    expect(cols.size, "distinct table.column dropped").toBe(346);
+    expect(cols.size, "distinct table.column dropped").toBe(344);
   }, 300_000);
 
   it("explains every one of them — none can be dropped without a reason", () => {
@@ -132,7 +132,7 @@ d("a dropped column is explained rather than silently absent", () => {
       else if (f.calculated === true) calculated++;
       else storedButAbsent++;
     }
-    expect(calculated, "WellView calculates these at print time").toBe(258);
+    expect(calculated, "WellView calculates these at print time").toBe(256);
     expect(storedButAbsent, "stored columns this database lacks").toBe(0);
     expect(notAFieldOfThatTable, "not a field of that table in the model").toBe(88);
   }, 300_000);
@@ -198,11 +198,11 @@ d("a dropped column is explained rather than silently absent", () => {
     expect(clean!.block.omittedNote).toBeUndefined();
   }, 300_000);
 
-  it("Daily Drilling, the most-used sheet, drops 29 and names them all", () => {
+  it("Daily Drilling, the most-used sheet, drops 27 and names them all", () => {
     const r = resolveTemplateData(db, "Drilling/Daily Input/Daily Drilling.html", wells[0])!;
     const cols = new Set((r.blocks as Block[])
       .flatMap((b) => (b.missing ?? []).map((c) => `${b.table}.${c}`)));
-    expect(cols.size).toBe(29);
+    expect(cols.size).toBe(27);
     for (const b of r.blocks as Block[]) {
       if (!(b.missing ?? []).length) continue;
       expect(b.omittedNote).toBeTruthy();

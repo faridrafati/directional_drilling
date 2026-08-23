@@ -240,3 +240,53 @@ export function parseNumber(text: string): number | null {
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
+
+/**
+ * A LIST-valued field, rendered in the user's unit set.
+ *
+ * "Bit nozzles run" is the only one today: three 20/32" jets read "20-20-20" to
+ * a US user and "15.9-15.9-15.9" to a metric one. The API ships the base metres
+ * because it has no unit set of its own, and the conversion happens here.
+ *
+ * The unit belongs to the ITEM, never to the column. A one-item list is a bare
+ * number, so a column-level unit would convert it a second time while a
+ * multi-item list — not a number — would escape conversion entirely and print
+ * raw metres. Passing the item spec keeps both cases on the same path.
+ *
+ * The separator is this app's choice. Peloton states one nowhere: not in the
+ * field's help, not in the data model, and not in the help topic for bit
+ * nozzles — unlike its sibling concatenations, which quote theirs.
+ *
+ * TRUNCATION SAYS SO. One drill string in the sample carries 160 nozzle rows,
+ * which render to 479 characters and would break any column they landed in. A
+ * cut is therefore unavoidable — but a silent one would misreport the bit, so
+ * the count that did not fit is printed instead of being dropped quietly. The
+ * cap is this app's layout choice, not a WellView rule.
+ */
+export function formatUnitList(
+  values: number[],
+  item: FieldUnitSpec,
+  unitSet: string,
+  maxChars = 100,
+): string {
+  if (!values.length) return "";
+  const parts = values.map((v) => {
+    const d = item.unit ? toDisplay(v, item, unitSet) : null;
+    return d ? formatUnitValue(d.value, d) : String(v);
+  });
+  const joined = parts.join("-");
+  if (joined.length <= maxChars) return joined;
+
+  // Keep whole items, never half a number, and name what was left out.
+  let kept = 0;
+  let len = 0;
+  while (kept < parts.length) {
+    const next = len + parts[kept].length + (kept ? 1 : 0);
+    if (next > maxChars - 12) break;
+    len = next;
+    kept++;
+  }
+  if (kept === 0) kept = 1;
+  const rest = parts.length - kept;
+  return `${parts.slice(0, kept).join("-")} +${rest} more`;
+}

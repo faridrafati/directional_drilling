@@ -35,6 +35,7 @@ import { classifyOmitted, omittedSummary } from "../wellview/omitted.js";
 import { computeCalc, calcMissingScope } from "../wellview/calc.js";
 import {
   calcFieldsFor, computeRow, calcAggregatesFor, sumChildren, calcLatestFor, latestChildren,
+  calcNamedFor, namedChildren,
 } from "../wellview/calcFields.js";
 // Importing the registry is what registers it; nothing else references the module.
 import "../wellview/calcDerivations.js";
@@ -540,8 +541,11 @@ export function resolveTemplateData(
     // the children rather than a total, so it needs the database in the same
     // way and is resolved alongside them.
     const pickable = new Map(calcLatestFor(t.name).map((a) => [a.field.toLowerCase(), a]));
+    // …and the two hand-written formulas, which read the children too.
+    const nameable = new Map(calcNamedFor(t.name).map((a) => [a.field.toLowerCase(), a]));
     const derivable = (c: string) =>
-      computable.has(c.toLowerCase()) || aggregable.has(c.toLowerCase()) || pickable.has(c.toLowerCase());
+      computable.has(c.toLowerCase()) || aggregable.has(c.toLowerCase())
+      || pickable.has(c.toLowerCase()) || nameable.has(c.toLowerCase());
     const derivedCols = wanted.filter((w) => w.actual == null && derivable(w.column));
     const missing = wanted.filter((w) => w.actual == null && !derivable(w.column))
       .map((w) => w.column);
@@ -707,6 +711,9 @@ export function resolveTemplateData(
     const blockPicks = idColName && hasIdwell
       ? latestChildren(d, t.name, well, rows.map(idOfRow))
       : new Map<string, Record<string, string | number>>();
+    const blockNamed = idColName && hasIdwell
+      ? namedChildren(d, t.name, well, rows.map(idOfRow))
+      : new Map<string, Record<string, number | number[]>>();
     const shaped = rows.map((r) => [
       ...present.map((p) => {
         const raw = shapeValue(r[p.actual!]);
@@ -726,6 +733,7 @@ export function resolveTemplateData(
         const computedRow = computeRow(t.name, r);
         const mine = blockTotals.get(idOfRow(r)) ?? {};
         const picked = blockPicks.get(idOfRow(r)) ?? {};
+        const named = blockNamed.get(idOfRow(r)) ?? {};
         return derivedCols.map((w) => {
           const lc = w.column.toLowerCase();
           const arith = computable.get(lc);
@@ -733,7 +741,9 @@ export function resolveTemplateData(
           const agg = aggregable.get(lc);
           if (agg) return mine[agg.field] ?? null;
           const pick = pickable.get(lc);
-          return pick ? picked[pick.field] ?? null : null;
+          if (pick) return picked[pick.field] ?? null;
+          const nm = nameable.get(lc);
+          return nm ? named[nm.field] ?? null : null;
         });
       })(),
     ]);
@@ -760,7 +770,32 @@ export function resolveTemplateData(
         // rather than let them pass for stored measurements.
         ...derivedCols.map((w) => {
           const lc = w.column.toLowerCase();
-          const cf = computable.get(lc) ?? aggregable.get(lc) ?? pickable.get(lc)!;
+          const cf = computable.get(lc) ?? aggregable.get(lc) ?? pickable.get(lc)
+            ?? nameable.get(lc)!;
+          const nm = nameable.get(lc);
+          /*
+           * A LIST-VALUED column must not declare a unit of its own.
+           *
+           * The client converts any cell whose column carries a `unit` and whose
+           * text reads as a number. A one-nozzle list is a bare number and would
+           * be converted twice; a three-nozzle list is not and would print raw
+           * metres. So the unit travels as an ITEM spec instead, and the client
+           * maps it over the array. The sample cannot expose this — every string
+           * in it has at least two nozzles — which is exactly why it is written
+           * down rather than left to testing.
+           */
+          if (nm?.kind === "list") {
+            const item = nm.itemOf ? modelField(nm.itemOf.table, nm.itemOf.field) : undefined;
+            return {
+              column: cf.field,
+              label: cf.label,
+              list: true as const,
+              itemUnit: item?.baseUnit,
+              itemUnits: item?.units,
+              derived: true as const,
+              eqn: cf.eqn,
+            };
+          }
           return {
             column: cf.field,
             label: cf.label,
