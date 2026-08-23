@@ -431,11 +431,24 @@ export interface WvWellheadComp {
   idrec: string; des: string | null;
   fields: WvWellheadField[]; outlets: WvWellheadOutlet[];
 }
+/** An image recorded against a wellhead — metadata only; bytes on demand. */
+export interface WvWellheadAttachment {
+  idrec: string;
+  des: string | null;
+  extension: string | null;
+  bytes: number;
+  mime: string | null;
+  kind: string;
+  /** True only when the magic number says it really is a raster image. */
+  inline: boolean;
+}
 export interface WvWellhead {
   idrec: string;
   /** The assembly picture WellView recorded, already resolved to a file. */
   icon: string | null;
   iconName: string | null;
+  /** Diagrams or photographs of this assembly, if any were attached. */
+  attachments?: WvWellheadAttachment[];
   /** The job this head was installed on, named rather than a GUID. */
   job: string | null;
   fields: WvWellheadField[];

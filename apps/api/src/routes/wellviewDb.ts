@@ -2896,6 +2896,58 @@ export async function registerWellviewDbRoutes(
       const comp = table(d, "wvWellheadComp");
       const outlet = table(d, "wvWellheadCompOutlet");
 
+      /*
+       * THE PICTURES OF THIS WELLHEAD.
+       *
+       * The tab drew the vendor clip-art and nothing else, while eight images of
+       * these assemblies sat in wvAttachment across five wells — "Wellhead_01"
+       * at 227 KB, "Cameron S Wellhead", a 692 KB bitmap. They are engineering
+       * diagrams, not photographs: Sample 15's wellhead carries the comment
+       * "refer to attached diagram", and this screen had nothing to refer to.
+       *
+       * They were reachable through Edit Data > Attachments, so nothing was
+       * lost; this is simply the one screen where someone looking at a wellhead
+       * expects to find a picture of it.
+       *
+       * Only the bytes needed to identify the file are read — its length and
+       * first 64 bytes — because a listing that inlined 692 KB per row would be
+       * unusable. The blob itself comes from the attachment content route,
+       * which is what the client already uses everywhere else.
+       */
+      const att = table(d, "wvAttachment");
+      const attBlob = att?.colSet.get("attachblob");
+      const attByHead = new Map<string, Record<string, unknown>[]>();
+      if (att && att.colSet.get("tblkeyparent") && att.colSet.get("idrecparent")) {
+        const extra = attBlob
+          ? `, length("${attBlob}") AS __bytes, substr("${attBlob}", 1, 64) AS __head`
+          : ", 0 AS __bytes, NULL AS __head";
+        try {
+          const rows = d.ro.prepare(
+            `SELECT *${extra} FROM "${att.name}"`
+            + ` WHERE lower("${att.colSet.get("tblkeyparent")}") = 'wvwellhead'`
+            + ` AND "${att.colSet.get("idwell")}" = ?`,
+          ).all(idwell) as Record<string, unknown>[];
+          for (const r of rows) {
+            const key = String(r[att.colSet.get("idrecparent")!] ?? "");
+            attByHead.set(key, [...(attByHead.get(key) ?? []), r]);
+          }
+        } catch { /* no attachment table worth reading */ }
+      }
+      const attFor = (headId: string) => (attByHead.get(headId) ?? []).map((r) => {
+        const col = (c: string) => att!.colSet.get(c) ?? c;
+        const sniffed = sniff(r.__head as Uint8Array | null);
+        return {
+          idrec: String(r[col("idrec")] ?? ""),
+          des: r[col("des")] ?? null,
+          extension: r[col("attachextension")] ?? null,
+          bytes: Number(r.__bytes ?? 0),
+          mime: sniffed.mime,
+          kind: sniffed.label,
+          /** True only when the magic number says it really is a raster image. */
+          inline: sniffed.inline,
+        };
+      });
+
       const heads = d.ro.prepare(
         `SELECT * FROM "${head.name}" WHERE "${head.colSet.get("idwell")}" = ?`).all(idwell) as Record<string, unknown>[];
 
@@ -2942,6 +2994,8 @@ export async function registerWellviewDbRoutes(
             iconName: h[head.colSet.get("iconname") ?? "IconName"] ?? null,
             /** The job this head was installed on, by name rather than by GUID. */
             job: jobLabel(h[head.colSet.get("idrecjob") ?? "IDRecJob"] as string | null),
+            /** Images recorded against this head, metadata only. */
+            attachments: attFor(id),
             fields: describe(head.name, h),
             components: comps.map((c) => {
               const cid = String(c[comp!.colSet.get("idrec") ?? "IDRec"] ?? "");

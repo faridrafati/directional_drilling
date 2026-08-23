@@ -32,7 +32,7 @@ import { useUnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
 import { toDisplay, fromDisplay, formatUnitValue, displayUnitFor, displayUnitLabel, type DatumShift } from "@dd/shared";
 import type { UnitFormat } from "@dd/shared";
-import { Attachments } from "./Attachments.js";
+import { Attachments, Thumb } from "./Attachments.js";
 import { PrintReport } from "./PrintReport.js";
 import { wvDbApi, type WvSchematic, type WvSchematicRow,
   type WvWellhead, type WvWellheadField,
@@ -2050,6 +2050,8 @@ function WellheadTab({ db, idwell, onEditTable }: {
     queryFn: () => wvDbApi.wellheads(db, idwell),
   });
   const [openId, setOpenId] = useState<string | null>(null);
+  /** The photograph being viewed full size, as an object URL. */
+  const [zoom, setZoom] = useState<string | null>(null);
 
 /**
    * A recorded value, rendered the way the model says it should be read.
@@ -2154,6 +2156,50 @@ function WellheadTab({ db, idwell, onEditTable }: {
                 </div>
               </div>
 
+              {/*
+                * THE PICTURES OF THIS ASSEMBLY.
+                *
+                * Above is the vendor clip-art WellView records — a drawing of the
+                * TYPE of head, identical for every well that chose it. These are
+                * the files attached to THIS one: in the sample, ABB and Vetco
+                * wellhead diagrams. Sample 15's own Comment field reads "refer to
+                * attached diagram", and until now this screen had nothing to
+                * refer to.
+                *
+                * Called images rather than photographs because that is what they
+                * are; nothing here assumes a camera took them.
+                *
+                * Only what the magic number confirms is an image is shown as one.
+                * Anything else is named and left to the Attachments screen,
+                * because a broken <img> would claim a picture exists and then
+                * fail to show it.
+                */}
+              {!!h.attachments?.length && (
+                <div className="border-t border-gray-100 px-3 py-2" data-testid="wv-wh-images">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1.5">
+                    Attached {h.attachments.length === 1 ? "image" : "images"}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {h.attachments.filter((a) => a.inline).map((a) => (
+                      <figure key={a.idrec} data-testid="wv-wh-image" className="min-w-0">
+                        <Thumb db={db} a={a} onOpen={setZoom} />
+                        <figcaption className="text-[10px] text-gray-500 truncate mt-0.5"
+                          title={a.des ?? undefined}>
+                          {a.des ?? "attachment"}
+                        </figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                  {h.attachments.some((a) => !a.inline) && (
+                    <div className="text-[10px] text-gray-400 mt-1.5" data-testid="wv-wh-image-other">
+                      {h.attachments.filter((a) => !a.inline)
+                        .map((a) => `${a.des ?? "attachment"} (${a.kind})`).join(", ")}
+                      {" — open from Attachments."}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {open && (
                 <div className="border-t border-gray-100 bg-gray-50 p-3 space-y-2">
                   {h.components.map((c) => (
@@ -2179,6 +2225,13 @@ function WellheadTab({ db, idwell, onEditTable }: {
           );
         })}
       </div>
+
+      {zoom && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6"
+          data-testid="wv-wh-zoom" onClick={() => setZoom(null)}>
+          <img src={zoom} alt="" className="max-h-full max-w-full object-contain" />
+        </div>
+      )}
     </div>
   );
 }

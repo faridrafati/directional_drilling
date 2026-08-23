@@ -137,6 +137,52 @@ test.describe("WellView Online — wellhead", () => {
     await expect(page.getByTestId("wv-wh-comp").first()).toContainText("Xmas Tree");
   });
 
+  test("shows the diagrams attached to the assembly, and opens one full size", async ({ page }) => {
+    // "Sample 16" carries three ABB wellhead drawings in wvAttachment. They were
+    // always reachable through Edit Data > Attachments and never appeared here,
+    // which is the screen you are on when you want to look at one.
+    await page.getByTestId("wv-well-row")
+      .filter({ hasText: "Sample 16 - Phase and Prod" }).first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-tab-wellhead").click();
+    await expect(page.getByTestId("wv-wh-head")).toHaveCount(1, { timeout: 15_000 });
+
+    const shots = page.getByTestId("wv-wh-image");
+    await expect(shots).toHaveCount(3, { timeout: 15_000 });
+    await expect(page.getByTestId("wv-wh-images")).toContainText("Attached images");
+
+    // Each must DECODE. A listed-but-broken image is worse than not listing it:
+    // it claims a picture exists and then fails to show it. Polled for the same
+    // reason as the clip-art above — visibility precedes decode.
+    for (let i = 0; i < 3; i++) {
+      const img = shots.nth(i).locator("img");
+      await expect(img).toBeVisible({ timeout: 15_000 });
+      await expect.poll(async () => img.evaluate((el) => (el as HTMLImageElement).naturalWidth),
+        { timeout: 15_000 }).toBeGreaterThan(0);
+    }
+    await expect(shots.first()).toContainText("wh3");
+
+    // Clicking one opens it full size, and clicking away closes it.
+    await shots.first().locator("img").click();
+    const zoom = page.getByTestId("wv-wh-zoom");
+    await expect(zoom).toBeVisible({ timeout: 10_000 });
+    await expect.poll(async () => zoom.locator("img").evaluate((el) => (el as HTMLImageElement).naturalWidth),
+      { timeout: 10_000 }).toBeGreaterThan(0);
+    await zoom.click({ position: { x: 5, y: 5 } });
+    await expect(zoom).toBeHidden({ timeout: 10_000 });
+  });
+
+  test("shows no image strip on a wellhead that has none", async ({ page }) => {
+    // The clip-art stays — that is recorded on the head itself, not attached.
+    await page.getByTestId("wv-well-row")
+      .filter({ hasText: "Complex Gravel Pack Assembly" }).first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-tab-wellhead").click();
+    await expect(page.getByTestId("wv-wh-head")).toHaveCount(1, { timeout: 15_000 });
+    await expect(page.getByTestId("wv-wh-icon").first()).toBeVisible();
+    await expect(page.getByTestId("wv-wh-images")).toHaveCount(0);
+  });
+
   test("says so plainly when a well has no wellhead", async ({ page }) => {
     // "Sample 04 - Offshore" has no wvWellhead row at all.
     await page.getByTestId("wv-well-row").filter({ hasText: "Sample 04 - Offshore" }).first().dblclick();

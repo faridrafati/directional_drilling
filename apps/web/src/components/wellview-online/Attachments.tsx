@@ -23,8 +23,19 @@ const kb = (n: number) => n >= 1024 * 1024
   ? `${(n / 1024 / 1024).toFixed(1)} MB`
   : `${Math.max(1, Math.round(n / 1024))} KB`;
 
-/** One image, fetched authenticated and released on unmount. */
-function Thumb({ db, a, onOpen }: { db: string; a: WvAttachment; onOpen: (url: string) => void }) {
+/**
+ * One image, fetched authenticated and released on unmount.
+ *
+ * Exported so the Wellhead tab shows its images the same way. The blob has
+ * to be fetched rather than linked — an <img src> at the API would be
+ * unauthenticated — and the object URL has to be revoked, which is precisely
+ * the pair of details a second copy would get wrong.
+ */
+export function Thumb({ db, a, onOpen }: {
+  db: string;
+  a: Pick<WvAttachment, "idrec" | "des">;
+  onOpen: (url: string) => void;
+}) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
