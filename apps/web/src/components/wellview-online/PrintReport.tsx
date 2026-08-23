@@ -86,8 +86,22 @@ export function PrintReport({
         const r = wanted[i];
         setProgress(`Building ${i + 1} of ${wanted.length}…`);
         const anchor = level && r.idrec ? { table: level.table, idrec: r.idrec } : null;
+        /*
+         * A SAVED REPORT HAS ITS OWN DATA ROUTE, and Print did not use it.
+         *
+         * `html` is the literal `saved:<id>` for a report the user designed.
+         * `templateDataPath` looks that up among the 182 SHIPPED templates,
+         * finds nothing, and the server answers 404 "no template with
+         * html=saved:<id>" — which landed in this component's error line.
+         *
+         * So Print failed for every saved report, whatever was in it. The
+         * viewer beside it has always branched here; only Print did not, and
+         * the feature looked complete until the last click.
+         */
         const data = await entryApi.get<{ blocks: Block[] }>(
-          wvDbApi.templateDataPath(db, html, idwell, anchor));
+          html.startsWith("saved:")
+            ? wvDbApi.savedReportDataPath(db, html.slice(6), idwell, anchor)
+            : wvDbApi.templateDataPath(db, html, idwell, anchor));
         out.push({ key: r.idrec || "well", caption: r.caption, blocks: data.blocks ?? [] });
       }
     } catch (e) {

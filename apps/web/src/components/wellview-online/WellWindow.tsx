@@ -222,7 +222,30 @@ function ReportsTab({ db, idwell, onEditTable, onEditRecord }: {
                 None yet. New designs a report from this database&rsquo;s subject areas.
               </p>
             )}
-            {mine.map((r) => (
+            {/*
+              * SAVED REPORTS GROUP BY THE CATEGORY THEY WERE GIVEN.
+              *
+              * The editor asks for a category, the server stores it and orders
+              * by it, and the list rendered one flat run of names — so the
+              * question was asked and the answer thrown away. The shipped 182
+              * in this same sidebar have always been grouped by their folder.
+              *
+              * The server defaults a blank one to "Saved", so every report
+              * lands under a heading and none goes missing.
+              */}
+            {[...mine.reduce((m, r) => {
+              const k = r.category?.trim() || "Saved";
+              return m.set(k, [...(m.get(k) ?? []), r]);
+            }, new Map<string, typeof mine>())].map(([cat, list]) => (
+              <div key={cat}>
+                {/* One category and nothing to compare it with reads as noise,
+                    so the heading appears only once there is a choice. */}
+                {mine.length > list.length && (
+                  <div className="px-2 pt-1.5 pb-0.5 text-[9px] uppercase tracking-wide text-gray-400">
+                    {cat}
+                  </div>
+                )}
+                {list.map((r) => (
               <div key={r.id} className="flex items-center gap-1 group">
                 <button type="button" onClick={() => setSelected(`saved:${r.id}`)}
                   data-testid="wv-report-saved"
@@ -240,6 +263,8 @@ function ReportsTab({ db, idwell, onEditTable, onEditRecord }: {
                   className="h-5 px-1 text-[10px] text-gray-400 hover:text-red-700 opacity-0 group-hover:opacity-100">
                   ×
                 </button>
+              </div>
+                ))}
               </div>
             ))}
           </div>
@@ -368,14 +393,42 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
   // First resolve WITHOUT an anchor to learn which tables the template uses.
   const probeQ = useQuery({
     queryKey: ["wvdb", db, "template", html, idwell, "probe"],
-    queryFn: () => entryApi.get<{ blocks: BlockData[] }>(html.startsWith("saved:")
-      ? wvDbApi.savedReportDataPath(db, html.slice(6), idwell)
-      : wvDbApi.templateDataPath(db, html, idwell)),
+    queryFn: () => entryApi.get<{ blocks: BlockData[]; saved?: { anchor?: string | null } }>(
+      html.startsWith("saved:")
+        ? wvDbApi.savedReportDataPath(db, html.slice(6), idwell)
+        : wvDbApi.templateDataPath(db, html, idwell)),
     staleTime: 60_000,
   });
   const tables = (probeQ.data?.blocks ?? []).map((b) => (b.table ?? "").toLowerCase());
-  const usesJob = tables.some((t) => t.startsWith("wvjob"));
-  const usesDay = tables.some((t) => t.startsWith("wvjobreport"));
+
+  /*
+   * THE SAVED REPORT'S OWN ANCHOR DECIDES ITS SELECTORS.
+   *
+   * The guide: "The anchor table is the table the report engine uses to split
+   * reports … Any data blocks that are children of the anchor table are
+   * automatically filtered based on that record."
+   *
+   * The editor asks for an anchor, the server stores it and sends it back, and
+   * the toolbar was sniffing block table names instead — so a report anchored
+   * on the Job got no Job selector when its blocks happened to be wvCas, and a
+   * report anchored on nothing got a Day selector anyway. The setting existed
+   * and did nothing.
+   *
+   * Sniffing stays as the fallback: the 182 shipped templates carry no anchor
+   * of their own, and that is what has always driven their selectors.
+   */
+  const isSaved = !!probeQ.data?.saved;
+  const savedAnchor = probeQ.data?.saved?.anchor?.toLowerCase() ?? null;
+  // A saved report's anchor is authoritative INCLUDING when it is none: the
+  // editor's first option reads "None — one report for the whole well", so
+  // falling back to sniffing there would hand back the selectors the user just
+  // turned off. Only a shipped template, which has no anchor concept, sniffs.
+  const usesJob = isSaved
+    ? !!savedAnchor && savedAnchor.startsWith("wvjob")
+    : tables.some((t) => t.startsWith("wvjob"));
+  const usesDay = isSaved
+    ? !!savedAnchor && savedAnchor.startsWith("wvjobreport")
+    : tables.some((t) => t.startsWith("wvjobreport"));
 
   // §3.8 "Select a Report": the Jobs / Daily Operation Reports list boxes.
   const jobsQ = useQuery({

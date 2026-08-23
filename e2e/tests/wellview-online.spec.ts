@@ -908,6 +908,21 @@ test("designs, saves, renders and edits a report of one's own", async ({ page })
     await expect(page.locator("body")).toContainText(name, { timeout: 15_000 });
     await expect(page.locator("body")).toContainText(/\d+ of \d+ blocks have rows/);
 
+    /*
+     * AND IT PRINTS. This step is the whole reason the bug survived: the test
+     * designed, saved, viewed and edited a report and never pressed Print, so
+     * "print anything you built" failed for every saved report — `html` is
+     * `saved:<id>` and the print path looked it up among the shipped templates,
+     * got a 404 and showed it as a red error line.
+     */
+    await page.getByTestId("wv-print-open").click();
+    await expect(page.getByTestId("wv-print-build")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-print-build").click();
+    await expect(page.getByTestId("wv-print-sheet").first()).toBeVisible({ timeout: 30_000 });
+    // A 404 would land in the error line rather than producing a sheet.
+    await expect(page.locator("body")).not.toContainText("no template with html=saved:");
+    await page.getByTestId("wv-print-close").click();
+
     // Editing reopens it with what was saved, rather than a blank form.
     await page.getByTestId("wv-report-edit").first().click({ force: true });
     await expect(page.getByTestId("wv-re-name")).toHaveValue(name);
@@ -915,6 +930,18 @@ test("designs, saves, renders and edits a report of one's own", async ({ page })
     await expect(page.getByTestId("wv-re-field")).toHaveCount(2);
     await page.getByTestId("wv-re-close").click();
   } finally {
+    /*
+     * Close whatever is open before deleting.
+     *
+     * When a step above fails, the print or editor overlay is still up and it
+     * covers the delete button — so the cleanup silently failed and left the
+     * report in the database for the next run to trip over. Found exactly that
+     * way while proving the Print step catches its bug.
+     */
+    for (const id of ["wv-print-close", "wv-re-close"]) {
+      const btn = page.getByTestId(id);
+      if (await btn.count().catch(() => 0)) await btn.first().click({ force: true }).catch(() => {});
+    }
     const row = page.getByTestId("wv-report-saved").filter({ hasText: name });
     if (await row.count()) {
       await page.getByTestId("wv-report-delete").first().click({ force: true });
