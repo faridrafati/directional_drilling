@@ -242,8 +242,29 @@ const LINK_TARGETS: Record<string, string[]> = {
 function linkTargets(d: Db, t: TableInfo, col: string): string[] {
   const sch = schema(d);
   const resolve = (n: string) => sch.get(n.toLowerCase())?.name ?? null;
-  const tk = t.colSet.get(`${col.toLowerCase()}tk`);
   const seen: string[] = [];
+
+  /*
+   * THE MODEL SAYS WHICH TABLES A LINK MAY POINT AT, and it is asked first.
+   *
+   * A `foreignidrec` field carries one `<afmfieldlookuplist idrectable="…">`
+   * per permitted target. The app used to guess from a hand-written map of 14
+   * name suffixes with a `wv` + suffix fallback, and sixteen columns fell
+   * through it — there is no table called `wvitem`, `wvgauge` or
+   * `wvfaileditem`, so `linkTargets` returned nothing, the picker showed no
+   * candidates, and the empty state told the user to "enter the linked folder
+   * first" when the folders were already full.
+   *
+   * `wvJobIntervalProblem.IDRecFailedItem` alone may point at fourteen tables.
+   * No suffix map was ever going to get that.
+   */
+  for (const cand of modelField(t.name, col)?.linkTargets ?? []) {
+    const hit = resolve(cand);
+    if (hit && !seen.includes(hit)) seen.push(hit);
+  }
+  if (seen.length) return seen;
+
+  const tk = t.colSet.get(`${col.toLowerCase()}tk`);
   if (tk) {
     try {
       const rows = d.ro.prepare(

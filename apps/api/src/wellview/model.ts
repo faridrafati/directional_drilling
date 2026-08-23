@@ -49,6 +49,13 @@ export interface ModelField {
    * `mdllistwithtables` and their 119 values are in the model itself — those
    * ARE the sanctioned list, and must not be presented as merely "in use".
    */
+  /**
+   * The tables a record link may point at, as the model declares them.
+   *
+   * 188 link fields carry theirs; 15 are polymorphic, and one
+   * (wvJobIntervalProblem.IDRecFailedItem) names fourteen tables.
+   */
+  linkTargets?: string[];
   /** Approved values; a pair when the stored value differs from the caption. */
   modelList?: (string | { value: string; label: string })[];
   libTable?: string;

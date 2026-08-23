@@ -1610,11 +1610,26 @@ function LinkPopover({ targets, cands, onPick, onClose }: {
             </div>
           );
         })}
-        {targets.every((t) => !(cands[t] ?? []).length) && (
-          <div className="px-2 py-1.5 text-[11px] text-gray-400">
-            No candidate records on this well yet — enter the linked folder first.
+        {/*
+          * TWO DIFFERENT EMPTY STATES, and they used to share one sentence.
+          *
+          * "enter the linked folder first" is only true when there IS a folder
+          * and it is empty. When no target table could be resolved at all,
+          * `targets` is [] and `every` is vacuously true — so the message
+          * appeared on sixteen columns whose folders were already full, naming
+          * a cause that was false and an action that could not help.
+          */}
+        {!targets.length ? (
+          <div className="px-2 py-1.5 text-[11px] text-amber-700">
+            This app cannot tell which folder this link points at, so it has
+            nothing to offer. The GUID can still be typed if you have it.
           </div>
-        )}
+        ) : targets.every((t) => !(cands[t] ?? []).length) ? (
+          <div className="px-2 py-1.5 text-[11px] text-gray-400">
+            No records yet in {targets.length === 1 ? "that folder" : "those folders"} for
+            this well — {targets.join(", ")}. Enter one there first.
+          </div>
+        ) : null}
       </div>
     </div>
   );

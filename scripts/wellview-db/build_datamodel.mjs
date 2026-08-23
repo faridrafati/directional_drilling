@@ -253,6 +253,27 @@ for (const m of xml.matchAll(/<(afmtable|afmfieldunitformat|afmunitset|afmfield|
        */
       (currentField.modelList ??= []).push(
         a.idrectable ? { value: a.idrectable, label: a.listitem } : a.listitem);
+    } else if (currentField && a.idrectable && !a.listitem
+      && /^foreignidrec$/i.test(currentField.lookupTyp ?? "")) {
+      /*
+       * WHICH TABLES A RECORD LINK MAY POINT AT — the vendor's own answer.
+       *
+       * A `foreignidrec` field carries one `<afmfieldlookuplist idrectable="…">`
+       * per permitted target and no `listitem`, because the target is a TABLE
+       * and not a value to type:
+       *
+       *   <afmfieldlookuplist idrectable="wvCas" idrectableancestorfilter="wvWellHeader" />
+       *
+       * 190 of the 195 link fields with children declare theirs this way,
+       * including every polymorphic one. The app was guessing instead, from a
+       * hand-written map of 14 name suffixes, and sixteen columns fell through
+       * it — `IDRecItem` alone may point at seven tables and the guess resolved
+       * none of them, so the picker offered nothing and blamed the user.
+       *
+       * `idrectableancestorfilter` is not kept: it says the candidates are
+       * scoped to the well, which is what the candidate query already does.
+       */
+      (currentField.linkTargets ??= []).push(a.idrectable);
     }
     continue;
   }
