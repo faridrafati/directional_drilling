@@ -19,10 +19,22 @@
  * which is not a quantity anyone can act on. They are reported as skipped, with
  * the balance, so the gap is visible rather than quietly rounded to zero.
  *
- * The transfer WRITES: a product row on the destination job if that product is
- * not already there, and one amount row carrying the whole balance as RECEIVED,
- * dated as the user chooses — the guide is explicit that the date decides which
- * report it lands on.
+ * A TRANSFER HAS TWO SIDES, and the guide states both: "The balance of
+ * inventory from the source well is transferred to the target well. A record is
+ * entered in the source well with returned amount equal to the balance."
+ *
+ * So the transfer WRITES:
+ *   - on the DESTINATION: a product row on the target job if that product is not
+ *     already there, and one amount row carrying the whole balance as RECEIVED,
+ *     dated as the user chooses — the date decides which report it lands on;
+ *   - on the SOURCE: one amount row against the same product carrying the same
+ *     quantity as RETURNED, which takes its closing balance to zero.
+ *
+ * The source row is not bookkeeping neatness. A closing balance is
+ * received − returned − consumed, so without it the source still reads as
+ * holding stock that is now on another pad: the same material can be transferred
+ * off the same well again and again, and every well ever transferred from is
+ * overstated by the whole amount.
  */
 import type { DatabaseSync } from "node:sqlite";
 
@@ -170,6 +182,20 @@ export function transferInventory(
         opts.toWell, opts.newIdRec(), productId, opts.dtTm, item.balance,
         "Transferred inventory",
       );
+      /*
+       * …and the other side of it, on the SOURCE product. Same quantity, same
+       * timestamp, recorded as RETURNED so the source's closing balance lands
+       * on zero. Inside the same transaction as the destination write: a
+       * transfer that moved stock out without taking it off the source is
+       * exactly the double-count this exists to prevent.
+       */
+      d.prepare(`
+        INSERT INTO "${set.amount}" (idwell, IDRec, IDRecParent, DtTm, Returned, Note)
+        VALUES (?, ?, ?, ?, ?, ?)`).run(
+        opts.fromWell, opts.newIdRec(), item.idrec, opts.dtTm, item.balance,
+        "Transferred inventory",
+      );
+
       res.transferred.push({
         des: item.des, kind: item.kind, quantity: item.balance, unit: item.unitLabel,
       });

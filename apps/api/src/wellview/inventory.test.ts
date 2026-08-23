@@ -2,11 +2,12 @@
  * Mud Inventory Transfer.
  *
  * The arithmetic is one subtraction, so what these test is the judgement around
- * it: that a NEGATIVE closing balance is never carried across — 225 of the
- * sample's products are negative because consumption was recorded against a
- * receipt nobody entered, and opening a well with minus nine sacks of gel is
- * not a quantity anyone can act on — and that a partial failure leaves nothing
- * behind.
+ * it: that a transfer takes the stock OFF the source as well as putting it on
+ * the destination, that a NEGATIVE closing balance is never carried across —
+ * 225 of the sample's products are negative because consumption was recorded
+ * against a receipt nobody entered, and opening a well with minus nine sacks of
+ * gel is not a quantity anyone can act on — and that a partial failure leaves
+ * nothing behind.
  *
  * Writes go to a COPY. A test that mutates the user's database is not a test.
  */
@@ -48,6 +49,44 @@ d("mud inventory transfer", () => {
     toJob = job.IDRec;
   });
   afterAll(() => { db?.close(); try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } });
+
+  it("takes the stock off the source, not just onto the destination", () => {
+    // The guide states both halves: "The balance of inventory from the source
+    // well is transferred to the target well. A record is entered in the source
+    // well with returned amount equal to the balance."
+    //
+    // Without the source row a closing balance never moves, so the same
+    // material can be transferred off the same well repeatedly and every well
+    // ever transferred from is overstated by the whole amount. That is the bug
+    // this pins, and it is invisible unless the SOURCE is re-read afterwards.
+    const before = closingInventory(db, fromWell).filter((i) => i.transferable);
+    expect(before.length).toBeGreaterThan(0);
+    const moved = before.slice(0, 3);
+
+    const res = transferInventory(db, {
+      fromWell, toWell, toJob, dtTm: "2020-01-01T00:00:00Z",
+      items: moved.map((i) => i.idrec), newIdRec,
+    });
+    expect(res.transferred.length).toBe(moved.length);
+
+    const after = new Map(closingInventory(db, fromWell).map((i) => [i.idrec, i]));
+    for (const i of moved) {
+      const now = after.get(i.idrec)!;
+      // The returned column carries the whole balance…
+      expect(now.returned, i.des ?? i.idrec).toBeCloseTo(i.returned + i.balance, 9);
+      // …so nothing is left to transfer a second time.
+      expect(now.balance, i.des ?? i.idrec).toBeCloseTo(0, 9);
+      expect(now.transferable).toBe(false);
+    }
+
+    // Transferring again finds nothing to move rather than moving it twice.
+    const twice = transferInventory(db, {
+      fromWell, toWell, toJob, dtTm: "2020-01-02T00:00:00Z",
+      items: moved.map((i) => i.idrec), newIdRec,
+    });
+    expect(twice.transferred).toEqual([]);
+    expect(twice.skipped.length).toBe(moved.length);
+  });
 
   it("computes the closing balance as received minus returned minus consumed", () => {
     const inv = closingInventory(db, fromWell);
