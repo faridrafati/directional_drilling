@@ -7,15 +7,17 @@
   161 claims were raised and each was adversarially re-checked against the code
   before being kept: 129 confirmed, 5 deliberate, 27 dismissed.
 
-  Line numbers are as of ef2da5e. Items 0.2, 1.1 (single-well half) and the
-  Schematics datum finding are already FIXED — see f048b52 and ef2da5e.
+  Line numbers are as of ef2da5e and have drifted. Tiers 0, 1 and 2 are now
+  closed, and Tier 3 is under way; the Status ledger below carries the verified
+  commit for each, and flags the two places where this document is WRONG about
+  the data (items 1.3 and 2.6).
 -->
 
 # What to Build Next in WellView Online
 
 **Source:** 161 claims adversarially re-checked across 14 sections of Peloton's own decoded user guide. 129 confirmed, 5 deliberate, 27 dismissed. Deduplicated below to ~80 distinct issues in five tiers.
 
-**Line numbers are as of HEAD** except where noted. Eight files are modified in the working tree by a concurrent session; see "Live status" below.
+**Line numbers were accurate when this was written** and have drifted since, as the fixes below landed. Treat them as a starting point, not a citation — the Status ledger under this section records what is closed.
 
 ---
 
@@ -36,16 +38,65 @@ Fix those two habits and the app is faithful nearly everywhere it matters.
 
 ---
 
-## Live status: three findings were fixed while this was being written
+## Status: Tiers 0, 1 and 2 are closed; Tier 3 is in progress
 
-A concurrent session has, in the uncommitted working tree:
+The "live status" note this section used to carry described three fixes as
+uncommitted. They landed long ago. What follows is the committed ledger, every
+hash verified against `git log` rather than recalled.
 
-- **Wired the reference datum into the schematic** (`WellWindow.tsx:768, 1028, 1043-1066, 1408-1456`; payload `applyDatum`/`datumMode` added at `wellviewDb.ts:3174-3181`). The Schematics finding is closed.
-- **Wired `DATUM_CODES` into unit headings** — new `displayUnitLabel()` at `packages/shared/src/units/wellview-display.ts:61-93`, consumed at `WellWindow.tsx:639/1617`, `PrintReport.tsx:225`, `EditData.tsx:855/1214/1262/1615`. Depths now print `(mCF)`, not `(m)`. Closed for single-well views.
-- **Blocked depth fields in the query builder while another datum is selected** (`QueryBuilder.tsx:20-30, 63-64, 200-210, 349-380`; `applyDatum` added to `/query-fields` at `wellviewDb.ts:2195-2202`). This went further than the audit asked — the audit had dismissed it.
-- Corrected `DATUM_LABELS` to Peloton's dialog wording.
+**TIER 0 — 5 of 5 done.** `4f22a3e` a record link is a pair, and both halves get
+written · `ef2da5e` a new record joins the end of its folder, not the top ·
+`fd2e958` an inventory transfer takes the stock off the source well too ·
+`bc43ec2` an approved value that names a table stores the table and shows the
+caption · `e358b1c` a delete says what it will cost, and refuses to strand a
+link. A real UNDO stack is deliberately left — it was split out as a larger job.
 
-**Consequence: item 1.1 below got worse, not better.** Multi-well reports are now the only surface that neither shifts depths nor labels them.
+**TIER 1 — 13 of 13 done.** `f048b52` the reference datum made visible and
+stopped from corrupting queries (the three findings the old note described) ·
+`58d055e` folders read in the order the model declares · `bb55ffb` three query
+answers that were confidently wrong · `331c82f` multi-well reports read from the
+chosen datum · `96c705c` a string drawn from where its steel starts ·
+`e85250d` a cement plug drawn across the bore · `9a9f921` + `6f3329e` the
+Explorer's selection commands (the second corrects three defects in the first,
+one of them a comment that stated behaviour the code did not have) · `f74f263`
+a dual completion drawn as two strings, and the width scale · `f55c608` a query
+on a parent and its child meeting on one record · `141fdd9` a query criterion
+saying which unit it is read in · `7be87fa` a folder larger than one read saying
+so · `02d884e` multi-well reports applying the filters their templates carry.
+
+**Item 1.3 in this document is WRONG** and is corrected in-repo: it does not need
+`afm_export.py` re-run. `scripts/wellview-db/build_afm_filters.mjs` decodes the
+`.afm` filter section in about 150 lines of JavaScript.
+
+**TIER 2 — 6 of 6 done.** `d7947f4` closes 2.1, 2.2 and 2.3 together (a saved
+report can be printed; the anchor drives the selectors; the category is shown) ·
+`4f0a218` 2.4 a record link knows its target tables · `615ede2` 2.5 the folders
+whose parent is named in the data · `c691a8f` 2.6 a wellhead shows the files
+attached to it.
+
+**Item 2.6 in this document is WRONG about the data.** It says "eleven
+photographs across seven wells". Measured: **eight images across five wells**,
+seven of which have a live `wvWellhead` parent. They are ABB and Vetco
+engineering *diagrams*, not photographs — Sample 15's wellhead carries the
+comment "refer to attached diagram".
+
+**TIER 3 — 3.0 and 3.3 done.** `9aaf8a1` a column a report drops says so, and
+says why · `2012386` a zone knows its current status, from its own history.
+
+3.0's own numbers are worth keeping because everything else in the tier is
+measured against them. Of the columns the 182 shipped templates print and this
+app cannot fill: **0** are stored columns the database lacks, so the label the
+app used to show — "Not in this database" — was right about none of them. The
+counts fall as fields are taught, and are pinned exactly in
+`omittedColumns.test.ts` so that a number moving *up* fails the build:
+
+| | when 3.0 landed | after 3.3 |
+|---|---|---|
+| templates dropping ≥1 column | 116 of 182 | 114 |
+| blocks dropping ≥1 column | 276 of 738 | 273 |
+| distinct table.column dropped | 350 | 346 |
+| …of those, `calculated: true` | 262 | 258 |
+| …not a field of that table | 88 | 88 |
 
 ---
 
@@ -409,7 +460,7 @@ Coverage evidence, not recommendations. **Five findings were withdrawn as DELIBE
 - Swab cumulative oil/BS&W/total — `calcFields.ts:358-368` names and refuses the self-table running-total shape by name.
 - Export encryption — `transfer.ts:30`: "The wire format. Deliberately plain, so it can be read and diffed."
 
-**Twenty-seven further claims were dismissed as not worth acting on**, the notable ones: spell check (browsers do it, with Ignore and Add-to-dictionary); "Show All Fields" vs "Show System Fields" (four fields total, two of them links into other Peloton products); per-field date/time format; the Between operator (the guide's *own* operator reference for the criteria builder lists exactly the app's ten); user profiles (the export ships no profile definitions at all); cement on tubing and annular fluids (0 rows in both databases); Group by Well in multi-well reports (no shipped `.afm` shown to be authored grouped); the schematic's zoom-region and right-click menu, loop-play delay, fonts and colours, and job selector; the templates-pane divider; F1/Ctrl+E/Ctrl+S; wireframe icons; the per-station `CalcOverride` gate (4 of 2,019 stations carry an override, and all 4 have the flag set, so output is byte-identical); the inventory source-job picker (no well in either database holds inventory on more than one job); Table Settings and the printed blank record; the Quick Query Clear button; and the depth/datum query warning — which the concurrent session has since implemented anyway, more strictly than the audit asked.
+**Twenty-seven further claims were dismissed as not worth acting on**, the notable ones: spell check (browsers do it, with Ignore and Add-to-dictionary); "Show All Fields" vs "Show System Fields" (four fields total, two of them links into other Peloton products); per-field date/time format; the Between operator (the guide's *own* operator reference for the criteria builder lists exactly the app's ten); user profiles (the export ships no profile definitions at all); cement on tubing and annular fluids (0 rows in both databases); Group by Well in multi-well reports (no shipped `.afm` shown to be authored grouped); the schematic's zoom-region and right-click menu, loop-play delay, fonts and colours, and job selector; the templates-pane divider; F1/Ctrl+E/Ctrl+S; wireframe icons; the per-station `CalcOverride` gate (4 of 2,019 stations carry an override, and all 4 have the flag set, so output is byte-identical); the inventory source-job picker (no well in either database holds inventory on more than one job); Table Settings and the printed blank record; the Quick Query Clear button; and the depth/datum query warning — which was implemented anyway in `f048b52`, more strictly than the audit asked.
 
 One code-hygiene item with no user consequence: `WellWindow.tsx:587-591` is unreachable — both `contentOnly` branches were added in the same commit (`e0055ec`), so the second has never executed.
 
