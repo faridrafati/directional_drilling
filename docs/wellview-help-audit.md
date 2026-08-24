@@ -303,6 +303,50 @@ These write into the same SQLite files the desktop reads. They are first because
 
 # TIER 3 — Blank columns on reports WellView fills
 
+> **DONE, all nine (2026-08-24).** `9aaf8a1` 3.0 · `2012386` 3.3 · `0c6acee` 3.4 ·
+> `6e01aba` 3.6 + 3.7 · `465cf19` 3.1 · `85a4373` 3.8 · `02c6180` 3.5 · `45deb6d` 3.2.
+>
+> **Where this tier's own text was wrong**, corrected in the commits rather than here:
+>
+> - **3.5** says these fields "carry prose help with no `EQN`". True of the two tally
+>   fields; false of everything they hang from. `wvCasComp.DepthBtmCalc`,
+>   `LengthCumCalc`, `DepthTopCalc` and `LengthTallyCalc` all state their equations —
+>   and `LengthTallyCalc` states the JointRun rule that decides the whole item.
+> - **3.8** says the output format "is specified nowhere … or any Peloton DLL".
+>   `Peloton.CalcEngine.WellView90.dll` carries the method's literal set as one
+>   contiguous run in its string heap. It was missed by scanning ASCII; .NET stores
+>   literals as **UTF-16**. Any future "nothing references X" claim over
+>   `WellView_files` needs `grep -a` for the templates and a UTF-16 pass for the
+>   assemblies — both failure modes are now demonstrated in this repo.
+> - **3.1** cites `calcFields.ts:417` and `:22`. Neither is reached: `AGG_RE` is
+>   anchored at both ends and every time-log equation carries trailing prose, so the
+>   refusal happens at the regex, not the self-reference guard. It also under-counts
+>   the scope, and it reads the `daysVsDepth` comment as a blanket refusal when that
+>   comment scopes itself to the chart and asserts the very premise a clock needs.
+> - **3.4** says "595 nozzle rows carry Dia and Typ". `Typ` is null on all 595. It
+>   also calls the stored `BitTFA` a *fallback*; the model states a *precedence*, and
+>   the two differ on exactly the ten strings that carry both.
+> - **3.7** is rated "small". Steps 1 and 2 are; the report it names is multi-well and
+>   `multiReport.ts` has no calculated-field path at all, so that column is still
+>   blank. Not a failure of the fix — a mis-scoped ticket.
+>
+> **The prerequisite it did not know it had.** Edit Data had never rendered a
+> calculated field: the API sent `computedColumns` with a comment saying the client
+> drew them read-only, and nothing on that side ever read the list. Every green cell
+> this tier produced would have been invisible in the folders. Fixed in `6e01aba`.
+>
+> **3.0's counters are the running scoreboard**, pinned in `omittedColumns.test.ts`:
+> 116 templates / 276 blocks / 350 columns when the tier opened, **110 / 256 / 328**
+> when it closed. Daily Drilling went from 29 dropped columns to 24. Down is
+> progress; up is a regression.
+>
+> **Deliberately left, each with its reason in the commit:** `costcumcalc` (sysSeq is
+> not unique within a report on 23 of 58, so the running total is undefined) ·
+> the multi-well and Excel derived-column paths · tally `VolumeDispCum`/`WeightCum`
+> (no per-joint OD, ID or weight columns exist) · `RunNoCalc` (the sequence rule is
+> not stated) · `wvPerforation.CurrentStatusCalc` (its partial-interval rule changes
+> the answer on two sample perforations).
+
 `calcFields.ts:11-45` states its scope boundary and refuses everything outside one shape. That is a defensible decision, and two findings were correctly classed **deliberate** under it (the `wvWellbore` Directional Calculated Values, the swab running totals). The items below are shapes the module already handles or nearly handles, and each is a column a shipped template prints.
 
 ### 3.0 Do this first: a dropped column disappears without trace on printed reports
