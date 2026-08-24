@@ -3,7 +3,7 @@
  *
  * Left side: well folders — Recently Opened Wells (last 20, kept automatically),
  * My Wells (the user's shortcuts, up to 100), All Wells, the group folders made
- * by "Group by Properties" (up to four levels, each ascending or descending),
+ * by "Group by Properties" (each level ascending or descending),
  * and Quick Query (§3.3): pick a well-header field, type a full or partial
  * value, refresh.
  *
@@ -55,6 +55,30 @@ interface Props {
   /** Back to the Open Database window. */
   onChangeDatabase: () => void;
 }
+
+/*
+ * THE GUIDE'S OWN LIMITS, which this file had set lower.
+ *
+ * "The My Wells, My Sites, and My Rigs folder can contain up to 1,000 items"
+ * and "The Recently Opened Wells folder lists the last 50 wells you opened" —
+ * both from WellView 9.0's own help. These were 100 and 20, and the My Wells
+ * one truncated silently, so adding the 101st well removed the first without
+ * saying so. Both lists are arrays of GUIDs in localStorage; the lower numbers
+ * bought nothing.
+ */
+const MY_WELLS_CAP = 1000;
+const RECENT_CAP = 50;
+
+/**
+ * How deep Group by Properties goes.
+ *
+ * 9.0's Explorer Enhancements topic lists "The Group By hierarchy can be more
+ * than four levels" among the version's new additions, so four is the OLD
+ * limit. Eight is this app's choice of "more than four" — a hierarchy deeper
+ * than that groups wells into leaves of one, and the dialog has to fit on a
+ * screen. Stated here rather than left as a bare number.
+ */
+const GROUP_LEVELS = 8;
 
 const store = {
   get<T>(key: string, fallback: T): T {
@@ -134,7 +158,24 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${idwell.replace(/[^\w.-]+/g, "_")}.wellview.json`;
+        /*
+         * NAMED BY THE WELL, not by its key.
+         *
+         * The server already builds a proper name into Content-Disposition —
+         * and it can never apply, because the body is fetched as a blob and
+         * saved through an anchor, which takes its filename from `download`
+         * alone. So forty exported wells arrived as forty 32-character hex
+         * GUIDs, indistinguishable without opening them. The list on screen
+         * knows every well's name; it just was not asked.
+         *
+         * The key stays on the end as a short suffix: two wells can share a
+         * name, and a file that silently overwrote another would be worse than
+         * an ugly one. MultiReports.tsx already names its CSV this way.
+         */
+        const well = allWells.find((w) => idOf(w) === idwell);
+        const label = (well ? nameOf(well) : idwell).trim() || idwell;
+        const safe = label.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80);
+        a.download = `${safe || "well"}_${idwell.slice(0, 8)}.wellview.json`;
         a.click();
         URL.revokeObjectURL(url);
         done++;
@@ -339,7 +380,9 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
   }
 
   function openWell(id: string) {
-    setRecent((r) => [id, ...r.filter((x) => x !== id)].slice(0, 20));
+    // "The Recently Opened Wells folder lists the last 50 wells you opened in
+    // WellView" — the guide's own number, where this kept 20.
+    setRecent((r) => [id, ...r.filter((x) => x !== id)].slice(0, RECENT_CAP));
     onOpen(id);
   }
 
@@ -730,7 +773,8 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
                   </button>
                 ) : (
                   <button type="button" className="text-blue-600 hover:underline"
-                    onClick={() => setMyWells((m) => [...new Set([...m, ...selected])].slice(0, 100))}>
+                    onClick={() => setMyWells((m) =>
+                      [...new Set([...m, ...selected])].slice(0, MY_WELLS_CAP))}>
                     Add to My Wells
                   </button>
                 )}
@@ -867,7 +911,7 @@ function SearchIcon() {
   );
 }
 
-/** Nested group folders (up to four levels, per the manual). */
+/** Nested group folders. 9.0 allows more than four levels; see GROUP_LEVELS. */
 function GroupFolders({ nodes, depth, active, onPick, lowestOnly }: {
   nodes: { value: string; path: (string | null)[]; count: number; children: GroupFolders_Node[] }[];
   depth: number;
@@ -975,7 +1019,14 @@ function WellListProperties({ all, displayed, onApply, onClose }: {
   );
 }
 
-/** §3.2 "Add and Edit a Well Group" — group by up to four header fields. */
+/**
+ * §3.2 "Add and Edit a Well Group" — group by header fields.
+ *
+ * Not four. That limit was justified in this file as "per the manual", and the
+ * manual it cites is an earlier one: 9.0's own Explorer Enhancements topic
+ * lists, among the new additions, "The Group By hierarchy can be more than four
+ * levels."
+ */
 function GroupByProperties({ all, groups, lowestOnly, onApply, onClose }: {
   all: WvHeaderColumn[];
   groups: GroupSpec[];
@@ -990,13 +1041,13 @@ function GroupByProperties({ all, groups, lowestOnly, onApply, onClose }: {
       const next = [...ls];
       if (spec === null) next.splice(i);
       else next[i] = spec;
-      return next.slice(0, 4);
+      return next.slice(0, GROUP_LEVELS);
     });
-  const rows = [...levels, ...(levels.length < 4 ? [null] : [])];
+  const rows = [...levels, ...(levels.length < GROUP_LEVELS ? [null] : [])];
   return (
     <Dialog title="Group by Properties" onClose={onClose}>
       <p className="text-[11px] text-gray-500 mb-2">
-        Group wells by any field in the well header record — up to four levels, each ascending or
+        Group wells by any field in the well header record — up to {GROUP_LEVELS} levels, each ascending or
         descending. Select &lt;none&gt; to remove a level.
       </p>
       <div className="space-y-1.5">

@@ -534,6 +534,67 @@ test.describe("WellView Online — the time log's clock", () => {
   });
 });
 
+/**
+ * A tab keeps what you chose on it.
+ *
+ * The five tabs are a conditional render, so leaving one unmounts it and every
+ * selection in it resets. The schematic's date is the one the audit singles
+ * out — a well can carry fourteen of them and the only way back is stepping the
+ * player through the others, on every edit cycle — but the wellbore filter, the
+ * layers, the zoom, the survey being viewed, the days-vs-depth job and the
+ * SELECTED REPORT all went the same way.
+ */
+test.describe("WellView Online — a tab keeps its selections", () => {
+  test("the schematic is still on the date you left it on", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto("/wellview");
+    await page.getByRole("heading", { name: "WellView" }).waitFor();
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    if (await signIn.isVisible().catch(() => false)) {
+      await page.getByLabel("User name").fill(USER);
+      await page.getByLabel("Password").fill(PASSWORD);
+      await signIn.click();
+    }
+    await page.getByTestId("wv-db-wv9.0_Sample").click();
+    await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-well-row")
+      .filter({ hasText: "Sample 02 - Drilling operations" }).first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByTestId("wv-tab-schematic").click();
+    await expect(page.locator("svg").first()).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(1500);
+
+    const dateOnPage = async () => {
+      const t = (await page.locator("body").textContent()) ?? "";
+      return (t.match(/\d{4}-\d{2}-\d{2}/) ?? ["(none)"])[0];
+    };
+    const arrival = await dateOnPage();
+
+    // Step the date player back until the date changes — otherwise "kept" would
+    // be trivially true, because the tab reopens on the latest date anyway.
+    const back = page.locator("button").filter({ hasText: /^‹$|^◀$|^<$/ }).first();
+    await expect(back).toBeVisible({ timeout: 10_000 });
+    let chosen = arrival;
+    for (let i = 0; i < 4 && chosen === arrival; i++) {
+      await back.click();
+      await page.waitForTimeout(700);
+      chosen = await dateOnPage();
+    }
+    expect(chosen, "the player moved off the latest date").not.toBe(arrival);
+
+    // Leave and come back.
+    await page.getByTestId("wv-tab-wellhead").click();
+    await expect(page.getByTestId("wv-tab-schematic")).toBeVisible();
+    await page.waitForTimeout(1000);
+    await page.getByTestId("wv-tab-schematic").click();
+    await expect(page.locator("svg").first()).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(1500);
+
+    expect(await dateOnPage(), "the date survived the round trip").toBe(chosen);
+  });
+});
+
 test.describe("WellView Online — days vs depth", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/wellview");

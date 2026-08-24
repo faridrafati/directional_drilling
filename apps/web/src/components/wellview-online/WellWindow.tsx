@@ -58,8 +58,48 @@ interface Props {
   onEditRecord: (table: string, idrec: string, column: string | null) => void;
 }
 
+/**
+ * A tab's own selections, kept across a tab switch.
+ *
+ * The five tabs are a conditional render, so switching away UNMOUNTS one and
+ * every `useState` in it goes back to its initial value. The schematic's date
+ * is the one that hurts most — a well can carry fourteen of them, and the only
+ * way back to the one you were looking at is stepping the player through the
+ * others, on every single edit cycle. But it is not alone: the wellbore filter,
+ * the layer switches, the zoom, the survey being viewed, the days-vs-depth job
+ * and template, and the SELECTED REPORT all reset the same way.
+ *
+ * Keeping all five tabs mounted would fix it and cost five payloads on every
+ * well instead of one, so the state moves out instead. The store lives in the
+ * open well's window and dies with it: switching wells is meant to start clean,
+ * switching tabs is not.
+ */
+function useTabState<T>(
+  store: Map<string, unknown>,
+  key: string,
+  initial: T,
+): [T, (next: T | ((prev: T) => T)) => void] {
+  const [value, setValue] = useState<T>(() => (store.has(key) ? store.get(key) as T : initial));
+  const set = (next: T | ((prev: T) => T)) => {
+    setValue((prev) => {
+      const v = typeof next === "function" ? (next as (p: T) => T)(prev) : next;
+      store.set(key, v);
+      return v;
+    });
+  };
+  return [value, set];
+}
+
 export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditRecord }: Props) {
   const [tab, setTab] = useState<"reports" | "schematic" | "survey" | "wellhead" | "dvd">("reports");
+  /*
+   * One store for every tab's selections, emptied when the WELL changes.
+   * A different well is a different subject and should start clean; a
+   * different tab of the same well is not.
+   */
+  const tabStore = useRef(new Map<string, unknown>());
+  const lastWell = useRef(idwell);
+  if (lastWell.current !== idwell) { tabStore.current.clear(); lastWell.current = idwell; }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -96,14 +136,15 @@ export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditR
       </div>
 
       {tab === "reports"
-        ? <ReportsTab db={db} idwell={idwell} onEditTable={onEditTable} onEditRecord={onEditRecord} />
+        ? <ReportsTab db={db} idwell={idwell} store={tabStore.current}
+            onEditTable={onEditTable} onEditRecord={onEditRecord} />
         : tab === "schematic"
-          ? <SchematicTab db={db} idwell={idwell} onEditTable={onEditTable} />
+          ? <SchematicTab db={db} idwell={idwell} store={tabStore.current} onEditTable={onEditTable} />
           : tab === "survey"
-            ? <SurveyTab db={db} idwell={idwell} onEditTable={onEditTable} />
+            ? <SurveyTab db={db} idwell={idwell} store={tabStore.current} onEditTable={onEditTable} />
             : tab === "wellhead"
               ? <WellheadTab db={db} idwell={idwell} onEditTable={onEditTable} />
-              : <DaysVsDepthTab db={db} idwell={idwell} onEditTable={onEditTable} />}
+              : <DaysVsDepthTab db={db} idwell={idwell} store={tabStore.current} onEditTable={onEditTable} />}
     </div>
   );
 }
@@ -119,14 +160,15 @@ export function WellWindow({ db, idwell, wellName, onClose, onEditTable, onEditR
 const INPUT_FOLDER = /(Job Setup|General Input|Daily Input)/i;
 const isInputReport = (r: { html: string }) => INPUT_FOLDER.test(r.html);
 
-function ReportsTab({ db, idwell, onEditTable, onEditRecord }: {
+function ReportsTab({ db, idwell, store, onEditTable, onEditRecord }: {
   db: string;
   idwell: string;
+  store: Map<string, unknown>;
   onEditTable: (table: string) => void;
   onEditRecord: (table: string, idrec: string, column: string | null) => void;
 }) {
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useTabState<string | null>(store, "reports.selected", null);
   const qcReports = useQueryClient();
   /** Show only the input reports — "where do I enter data?" in one click. */
   const [entryOnly, setEntryOnly] = useState(false);
@@ -844,8 +886,8 @@ function inHole(row: WvSchematicRow, date: string): boolean {
 const isProposed = (row: WvSchematicRow): boolean =>
   !dstr(row.DtTmRun) && String(row.ProposedRun ?? "") === "1";
 
-function SchematicTab({ db, idwell, onEditTable }: {
-  db: string; idwell: string; onEditTable: (table: string) => void;
+function SchematicTab({ db, idwell, store, onEditTable }: {
+  db: string; idwell: string; store: Map<string, unknown>; onEditTable: (table: string) => void;
 }) {
   const qc = useQueryClient();
   /*
@@ -861,25 +903,26 @@ function SchematicTab({ db, idwell, onEditTable }: {
     queryKey: ["wvdb", db, "schematic", idwell],
     queryFn: () => wvDbApi.schematic(db, idwell),
   });
-  const [dateIx, setDateIx] = useState<number | null>(null);   // null = latest
+  const [dateIx, setDateIx] = useTabState<number | null>(store, "schematic.dateIx", null); // null = latest
   const [playing, setPlaying] = useState(false);
-  const [boreId, setBoreId] = useState<string>("");            // "" = all wellbores
-  const [showProposed, setShowProposed] = useState(false);
-  const [scale, setScale] = useState(1);
+  const [boreId, setBoreId] = useTabState(store, "schematic.bore", "");       // "" = all wellbores
+  const [showProposed, setShowProposed] = useTabState(store, "schematic.proposed", false);
+  const [scale, setScale] = useTabState(store, "schematic.scale", 1);
   /**
    * §8.3 "group lists": which kinds of downhole item the view draws. A
    * completions template shows tubing, rods and perforations; a drilling one
    * shows casing and hole sizes. Everything on by default — a template is a
    * narrowing of the full picture, not a prerequisite for seeing it.
    */
-  const [layers, setLayers] = useState<Record<SchematicLayer, boolean>>(ALL_LAYERS);
+  const [layers, setLayers] = useTabState<Record<SchematicLayer, boolean>>(
+    store, "schematic.layers", ALL_LAYERS);
   /**
    * §8.3 SmartScaling: "adjusts the view so that only equipment that appears on
    * the selected date is used in the scaling algorithm." Off, the axis spans
    * the deepest item the well ever had, so an early date draws as a sliver at
    * the top of a mostly empty track.
    */
-  const [smartScaling, setSmartScaling] = useState(false);
+  const [smartScaling, setSmartScaling] = useTabState(store, "schematic.smart", false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const svgBox = useRef<HTMLDivElement | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -1742,10 +1785,10 @@ function niceStep(max: number): number {
  * COMPUTED here — the same green the Edit Data grid gives a calculated field —
  * so nothing on this page is mistaken for something the database stores.
  */
-function SurveyTab({ db, idwell, onEditTable }: {
-  db: string; idwell: string; onEditTable: (table: string) => void;
+function SurveyTab({ db, idwell, store, onEditTable }: {
+  db: string; idwell: string; store: Map<string, unknown>; onEditTable: (table: string) => void;
 }) {
-  const [surveyId, setSurveyId] = useState<string>("");
+  const [surveyId, setSurveyId] = useTabState(store, "survey.id", "");
   const [unitSet] = useUnitSet();
   const { shift: datumShift } = useDatumShift(db, idwell);
 
@@ -2292,14 +2335,14 @@ const DVD_COLORS = ["#1d4ed8", "#0891b2", "#7c3aed", "#059669", "#d97706", "#dc2
  * curve as the hole going down over time, and an upward depth axis reverses the
  * meaning of every slope on it.
  */
-function DaysVsDepthTab({ db, idwell, onEditTable }: {
-  db: string; idwell: string; onEditTable: (table: string) => void;
+function DaysVsDepthTab({ db, idwell, store, onEditTable }: {
+  db: string; idwell: string; store: Map<string, unknown>; onEditTable: (table: string) => void;
 }) {
   const qc = useQueryClient();
   const [unitSet] = useUnitSet();
   const { shift: datumShift } = useDatumShift(db, idwell);
-  const [job, setJob] = useState<string>("");
-  const [template, setTemplate] = useState<string>("");
+  const [job, setJob] = useTabState(store, "dvd.job", "");
+  const [template, setTemplate] = useTabState(store, "dvd.template", "");
   const q = useQuery({
     queryKey: ["wvdb", db, "dvd", idwell, job, template],
     queryFn: () => wvDbApi.daysVsDepth(db, idwell, job || undefined, template || undefined),
