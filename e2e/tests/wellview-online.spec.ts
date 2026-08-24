@@ -417,21 +417,80 @@ test.describe("WellView Online — the time log's clock", () => {
     if (await search.isVisible().catch(() => false)) await search.fill("Daily Drilling");
     await page.getByText("Daily Drilling", { exact: true }).first().click();
 
-    // The clock is anchored on a DAY, so one has to be chosen; with no anchor
-    // there is no report start and the three columns stay honestly blank.
-    const sels = page.locator("select");
-    for (let i = 0; i < await sels.count(); i++) {
-      const opts = await sels.nth(i).locator("option").allTextContents();
-      if (opts.length > 1 && !/100%|Metric|US|Datum|Elevation/i.test(opts.join(" "))) {
-        await sels.nth(i).selectOption({ index: 1 }).catch(() => {});
-        await page.waitForTimeout(1200);
+    /*
+     * The clock is anchored on a DAY, so a job and then a day have to be
+     * chosen — in that order, because the day selector does not exist until a
+     * job is picked. With no day the three columns stay honestly blank, which
+     * is the feature working and not something to navigate around.
+     */
+    const selectWith = async (marker: RegExp) => {
+      const all = page.locator("select");
+      for (let i = 0; i < await all.count(); i++) {
+        const opts = await all.nth(i).locator("option").allTextContents();
+        if (opts.some((o) => marker.test(o))) return all.nth(i);
       }
-    }
+      return null;
+    };
+
+    // The toolbar arrives with the report, not with the page.
+    await expect(page.getByText(/blocks have rows|Select a report/).first())
+      .toBeVisible({ timeout: 30_000 });
+    await expect.poll(async () => (await selectWith(/all jobs/i)) !== null,
+      { timeout: 30_000 }).toBe(true);
+    const job = await selectWith(/all jobs/i);
+    expect(job, "the job selector").toBeTruthy();
+    await job!.selectOption({ index: 1 });
+    await page.waitForTimeout(2000);
 
     // Wait for the report to finish assembling before scanning it: this well's
     // Daily Drilling has sixteen blocks and the anchor change re-fetches them.
     await expect(page.locator("table").first()).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(1500);
+
+    /*
+     * Find a DAY whose log actually carries a clock.
+     *
+     * Not every day has one, and that is the feature working: a report whose
+     * entries have no unique sequence, or that hits a blank duration, is
+     * refused rather than clocked. Which day the selector lands on first is not
+     * something this test should depend on, so it steps through them until it
+     * finds one — and fails if none of them has a clock, which would mean the
+     * feature is not working at all.
+     */
+    const dayFor = async () => selectWith(/all days/i);
+    const timeLog = async () => {
+      const tables = page.locator("table");
+      for (let t = 0; t < await tables.count(); t++) {
+        const th = (await tables.nth(t).locator("thead th").allTextContents()).filter(Boolean);
+        const si = th.findIndex((h) => /^Start Date/.test(h));
+        const ei = th.findIndex((h) => /^End Date/.test(h));
+        const ci = th.findIndex((h) => /^Cum Duration/.test(h));
+        if (si >= 0 && ei >= 0 && ci >= 0) return { table: tables.nth(t), si, ei, ci };
+      }
+      return null;
+    };
+
+    const day = await dayFor();
+    let block = await timeLog();
+    let clocked = false;
+    const tries = day ? Math.min(8, await day.locator("option").count()) : 1;
+    for (let attempt = 0; attempt < tries; attempt++) {
+      block = await timeLog();
+      if (block) {
+        const first = (await block.table.locator("tbody tr").first().locator("td")
+          .allTextContents()).map((x) => x.trim());
+        const start = first[block.si];
+        if (start && start !== "—" && await block.table.locator("tbody tr").count() > 3) {
+          clocked = true;
+          break;
+        }
+      }
+      if (!day || attempt + 1 >= tries) break;
+      // Index 0 is "All days"; the real days start at 1.
+      await day.selectOption({ index: attempt + 1 }).catch(() => {});
+      await page.waitForTimeout(2000);
+    }
+    expect(clocked, "a day whose time log carries a clock").toBe(true);
 
     // Find the time-log table by its own columns.
     const tables = page.locator("table");
@@ -797,7 +856,10 @@ test("a report fills the fields WellView computes at print time", async ({ page 
 
   const derived = page.getByTestId("wv-derived-col");
   await expect(derived.first()).toBeVisible({ timeout: 15_000 });
-  await expect(derived).toHaveCount(2);
+  // At least two, not exactly two: the count rises every time the calc engine
+  // learns another shape, and pinning it exactly makes an unrelated improvement
+  // look like a break. What matters is that the named ones are there.
+  expect(await derived.count()).toBeGreaterThanOrEqual(2);
   const heads = (await derived.allTextContents()).map((h) => h.replace(/\s+/g, " ").trim());
   expect(heads.join(" ")).toContain("Interval Depth Drilled");
   expect(heads.join(" ")).toContain("Interval ROP");
@@ -985,13 +1047,19 @@ test("a report totals child rows for a calculated column", async ({ page }) => {
 
   const derived = page.getByTestId("wv-derived-col");
   await expect(derived.first()).toBeVisible({ timeout: 15_000 });
-  await expect(derived.first()).toContainText("String Length");
+  // Found by NAME, not by position: more columns are computed than when this
+  // was written, so "the first derived column" is no longer this one.
+  const stringLength = derived.filter({ hasText: "String Length" }).first();
+  await expect(stringLength).toBeVisible({ timeout: 15_000 });
   // The heading carries the equation, so a total is traceable to its source.
-  expect(await derived.first().getAttribute("title")).toContain("wvtubcomp.length");
+  // Matched case-insensitively: the tooltip now spells the child table the way
+  // the MODEL spells it rather than the way the help text happened to.
+  expect((await stringLength.getAttribute("title") ?? "").toLowerCase())
+    .toContain("wvtubcomp.length");
 
   // And it carries numbers, not a column of blanks — the whole point.
-  const table = derived.first().locator("xpath=ancestor::table[1]");
-  const idx = await derived.first().evaluate((el) =>
+  const table = stringLength.locator("xpath=ancestor::table[1]");
+  const idx = await stringLength.evaluate((el) =>
     Array.from(el.parentElement!.children).indexOf(el));
   const cells = await table.locator(`tbody tr td:nth-child(${idx + 1})`).allTextContents();
   expect(cells.filter((c) => /\d/.test(c)).length).toBeGreaterThan(3);
