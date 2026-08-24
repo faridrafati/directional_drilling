@@ -47,7 +47,7 @@ import { mudLimits, mudOutOfRange, type OutOfRange } from "../wellview/mudOutOfR
 import { stackFieldsFor, stackRows, type StackRow } from "../wellview/stringStack.js";
 import { appFrame, WELL_FILE_EXTENSION } from "../wellview/appframe.js";
 import { columnLabel, folderLabel, modelField, modelTable, orderByFor, renderRecordDes } from "../wellview/model.js";
-import { computeSurvey } from "@dd/shared";
+import { computeSurvey, closureOf } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
 import { resolveXlExtract, type XlTemplate } from "../wellview/xlExtract.js";
 import { sniff, safeFilename, attachmentHeaders, MAX_ATTACHMENT_BYTES } from "../wellview/attachments.js";
@@ -2060,6 +2060,11 @@ export async function registerWellviewDbRoutes(
       // bearing carried. Their TVD is sound; their NS/EW rest on that carry,
       // so the count is reported rather than left for the reader to notice.
       const assumedAzimuth = results.filter((r) => r.azimuthAssumed).length;
+      // computeSurvey falls back to the closure direction itself; this reads
+      // back what it decided so the page can say which direction was used.
+      const derivedVsDirection = vs.vsDirection == null && results.some((r) => r.vsDirectionDerived)
+        ? closureOf(results)?.direction ?? null
+        : null;
       return {
         survey: idrec,
         method: "minimum curvature",
@@ -2081,9 +2086,26 @@ export async function registerWellviewDbRoutes(
         /** Stated, not hidden: what was left out and what is not attempted. */
         excludedBadStations: dropped,
         assumedAzimuth,
-        verticalSection: vs.vsDirection == null
-          ? "no vertical section direction on the wellbore — VS not computed"
-          : null,
+        /*
+         * WHICH DIRECTION THE VERTICAL SECTION IS MEASURED ALONG.
+         *
+         * Only three of the sample's 41 surveyed wellbores carry a direction
+         * of their own. For the rest WellView works out a CLOSURE direction —
+         * "the azimuth that describes a straight line between the starting
+         * point of the wellbore and the end point" — and measures along that.
+         * The reader is told which of the two they are looking at, because the
+         * derived one is a reconstruction: on the three wellbores that carry
+         * both, it lands 0.21 and 1.27 degrees from the entered value on two,
+         * and 29.79 degrees away on the third.
+         */
+        verticalSection: vs.vsDirection != null
+          ? null
+          : derivedVsDirection != null
+            ? `no vertical section direction on the wellbore — VS is measured along the `
+              + `closure direction, ${derivedVsDirection.toFixed(2)}°, which is the bearing `
+              + `from the first station to the last`
+            : "no vertical section direction on the wellbore, and none could be derived "
+              + "from the survey — VS not computed",
         notes: [
           "TVD, NS, EW, VS, departure, dogleg and the rates are computed here — WellView computes them at print time and stores none of them.",
           "Declination and convergence are not applied: azimuths are used exactly as stored.",

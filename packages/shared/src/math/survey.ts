@@ -85,6 +85,12 @@ export interface SurveyResult {
   dls: number | null;
   /** Vertical section — null when the wellbore has no VS direction. */
   vs: number | null;
+  /**
+   * True when `vs` was measured along a CLOSURE direction this app worked out,
+   * because the wellbore carries no vertical-section direction of its own.
+   * WellView does the same; the reader still has to be told which it is.
+   */
+  vsDirectionDerived?: boolean;
   /** Degrees of inclination / azimuth change per unit measured depth. */
   buildRate: number | null;
   turnRate: number | null;
@@ -240,5 +246,109 @@ export function computeSurvey(
     prevAzi = azi;
   }
 
+  /*
+   * NOBODY ENTERED A VS DIRECTION, so WellView works one out.
+   *
+   * "If you do not enter the Vertical Section Direction, WellView calculates a
+   * Closure Direction, and the Vertical Section is then calculated along this
+   * direction" — Peloton's own help. Without it the column is blank on 38 of
+   * the sample's 41 surveyed wellbores, because only three carry an entered
+   * direction.
+   *
+   * It runs here, after the integration, because closure is the bearing from
+   * the first station to the last and neither position is known until the whole
+   * survey has been walked. `closureOf` decides whether the survey supports one
+   * at all; where it does not, the column stays blank exactly as before.
+   */
+  if (!vsOk) {
+    const closure = closureOf(out);
+    if (closure) {
+      const dir = closure.direction * RAD;
+      const on = options.vsOriginNs ?? 0;
+      const oe = options.vsOriginEw ?? 0;
+      for (const r of out) {
+        r.vs = (r.ns - on) * Math.cos(dir) + (r.ew - oe) * Math.sin(dir);
+        r.vsDirectionDerived = true;
+      }
+    }
+  }
+
   return out;
+}
+
+/**
+ * The direction a vertical section is measured along, when nobody entered one.
+ *
+ * Peloton's own help states the rule, and states it precisely:
+ *
+ *   "The Vertical Section field in the Survey Data folder is calculated along
+ *    the Vertical Section Direction, which you enter in the Wellbore folder. If
+ *    you do not enter the Vertical Section Direction, WellView calculates a
+ *    Closure Direction, and the Vertical Section is then calculated along this
+ *    direction. The Closure Direction is the azimuth that describes a straight
+ *    line between the starting point of the wellbore and the end point of the
+ *    wellbore."
+ *
+ * So: the bearing from the first station to the last. Nothing is invented here
+ * except the refusals, and those are stated.
+ *
+ * WHEN IT REFUSES, and why each case matters more than it looks:
+ *
+ *  - A survey with no recorded bearing. Five of the sample's thirty surveys
+ *    have a null azimuth on every station and six more on some, and the
+ *    integration already flags those stations. A closure drawn through assumed
+ *    bearings is a closure through an assumption.
+ *  - A survey whose every azimuth is stored as EXACTLY ZERO. One survey in the
+ *    sample has twenty-seven such stations with a maximum inclination of two
+ *    degrees: a vertical hole whose bearings were never recorded and were
+ *    written as zero rather than left blank. Nothing in the values distinguishes
+ *    that from a hole that genuinely runs due north, so the null-azimuth guard
+ *    cannot see it and this one is needed as well. Left alone it yields a
+ *    closure direction of exactly 0.00 degrees and a fully populated vertical
+ *    section column for a well that does not have one.
+ *  - A hole that does not go anywhere. Below a stated inclination there is no
+ *    meaningful direction to project onto, and the closure azimuth is whatever
+ *    the survey noise happened to add up to.
+ *
+ * HOW FAR TO TRUST IT. Three wellbores in the sample carry a human-entered VS
+ * direction, and they are the only check available: closure lands 0.21 and 1.27
+ * degrees from the entered value on two of them, and 29.79 degrees away on the
+ * third. That is the honest calibration — good, not exact — and it is why the
+ * derived direction is reported as derived rather than presented as the
+ * wellbore's own.
+ */
+
+/** Below this inclination a wellbore has no direction worth projecting onto. */
+const VERTICAL_DEG = 5;
+
+export interface ClosureResult {
+  /** Azimuth from the first station to the last, in degrees [0, 360). */
+  direction: number;
+  /** Straight-line horizontal distance between them. */
+  distance: number;
+}
+
+/**
+ * The closure of an already-integrated survey, or null when it has none.
+ *
+ * @param stations the integrated result, in measured-depth order.
+ */
+export function closureOf(stations: SurveyResult[]): ClosureResult | null {
+  if (stations.length < 2) return null;
+  // A bearing anywhere in the survey was assumed: the path is not known.
+  if (stations.some((s) => s.azimuthAssumed)) return null;
+  // Every azimuth stored as exactly zero is an unrecorded bearing, not north.
+  if (stations.every((s) => s.azimuth === 0)) return null;
+  // A hole that never leaves vertical has no direction to speak of.
+  if (!stations.some((s) => s.inclination >= VERTICAL_DEG)) return null;
+
+  const a = stations[0];
+  const b = stations[stations.length - 1];
+  const dn = b.ns - a.ns;
+  const de = b.ew - a.ew;
+  const distance = Math.hypot(dn, de);
+  if (!(distance > 0)) return null;
+
+  const direction = (Math.atan2(de, dn) / RAD + 360) % 360;
+  return { direction, distance };
 }
