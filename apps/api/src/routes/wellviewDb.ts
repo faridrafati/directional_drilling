@@ -43,6 +43,7 @@ import {
   calcNamedFor, namedChildren, calcOverAggregatesFor, overAggregates,
   calcLookupsFor, linkedValues,
 } from "../wellview/calcFields.js";
+import { mudLimits, mudOutOfRange, type OutOfRange } from "../wellview/mudOutOfRange.js";
 import { appFrame, WELL_FILE_EXTENSION } from "../wellview/appframe.js";
 import { columnLabel, folderLabel, modelField, modelTable, orderByFor, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
@@ -1292,6 +1293,15 @@ export async function registerWellviewDbRoutes(
         ...calcNamedFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
         ...calcOverAggregatesFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
         ...calcLookupsFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+        // …and the mud check's own out-of-range summary, which is one hand
+        // written comparison against the mud program. See mudOutOfRange.ts.
+        ...(t.name.toLowerCase() === "wvjobreportmudchk" && modelField(t.name, "outofrangecalc")
+          ? [{
+            field: "outofrangecalc",
+            label: modelField(t.name, "outofrangecalc")?.label ?? "Out of Range",
+            eqn: modelField(t.name, "outofrangecalc")?.help ?? "",
+          }]
+          : []),
       ];
       const where: string[] = [];
       const args: string[] = [];
@@ -1439,6 +1449,15 @@ export async function registerWellviewDbRoutes(
           const looked = idCol && req.query.idwell
             ? linkedValues(d.ro, t.name, req.query.idwell, rows.map((r) => String(r[idCol] ?? "")))
             : new Map<string, Record<string, string | number>>();
+          const ranged = idCol && req.query.idwell && t.name.toLowerCase() === "wvjobreportmudchk"
+            ? (() => {
+              const prog = table(d, "wvJobProgramMud");
+              if (!prog) return new Map<string, OutOfRange>();
+              return mudOutOfRange(d.ro, req.query.idwell,
+                rows.map((r) => String(r[idCol] ?? "")),
+                mudLimits(t.colSet, prog.colSet));
+            })()
+            : new Map<string, OutOfRange>();
           return rows.map((r) => {
             const out: Record<string, string | number | number[] | null> = {};
             for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
@@ -1453,6 +1472,11 @@ export async function registerWellviewDbRoutes(
               out[k] = v as number | number[];
             }
             for (const [k, v] of Object.entries(looked.get(String(r[idCol ?? ""] ?? "")) ?? {})) out[k] = v;
+            // A check with no matching program row is ABSENT from `ranged` and
+            // keeps a blank cell: there was nothing to be out of range OF,
+            // which is not the same as having been checked and passed.
+            const oor = ranged.get(String(r[idCol ?? ""] ?? ""));
+            if (oor) out.outofrangecalc = oor.text;
             // …and arithmetic over those totals, which needs them to exist first.
             for (const [k, v] of Object.entries(overAggregates(
               t.name,
