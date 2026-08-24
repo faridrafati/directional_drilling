@@ -37,10 +37,18 @@ const stringsOf = (idwell: string) =>
     .map((r) => r.IDRec);
 
 d("a bit's total flow area", () => {
-  it("registers exactly the two hand-written formulas", () => {
+  it("registers the hand-written formulas, its own two among them", () => {
     const all = [...calcNamed()].flatMap(([t, l]) => l.map((n) => `${t}.${n.field}`)).sort();
-    expect(all).toEqual(["wvjobdrillstring.bitnozzlecalc", "wvjobdrillstring.bittfacalc"]);
-    expect(calcNamedCount()).toBe(2);
+    expect(all).toEqual([
+      "wvjobdrillstring.bitnozzlecalc",
+      "wvjobdrillstring.bittfacalc",
+      // A recurring cost line joined the same registry later; it is listed here
+      // so the count is a statement about the whole registry, not a guess.
+      "wvjobreportcostrental.costrentalcalc",
+    ]);
+    expect(calcNamedCount()).toBe(3);
+    expect(calcNamedFor("wvJobDrillString").map((n) => n.field).sort())
+      .toEqual(["bitnozzlecalc", "bittfacalc"]);
   });
 
   it("is licensed by the model's exact help, so a changed equation revokes it", () => {

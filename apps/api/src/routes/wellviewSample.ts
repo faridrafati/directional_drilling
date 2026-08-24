@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance } from "fastify";
 import { requireUser } from "../entry/auth.js";
-import { columnLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
+import { columnLabel, modelField, modelTable, orderByFor, renderRecordDes } from "../wellview/model.js";
 import { classifyOmitted, omittedSummary } from "../wellview/omitted.js";
 import { computeCalc, calcMissingScope } from "../wellview/calc.js";
 import {
@@ -38,6 +38,7 @@ import {
   calcNamedFor, namedChildren, calcOverAggregatesFor, overAggregates,
   calcLookupsFor, linkedValues,
 } from "../wellview/calcFields.js";
+import { timeLogClock, type TimeLogClockRow } from "../wellview/timeLogClock.js";
 // Importing the registry is what registers it; nothing else references the module.
 import "../wellview/calcDerivations.js";
 
@@ -270,14 +271,12 @@ function shapeValue(v: unknown): string | number | null {
   return v as string | number;
 }
 
-/** The column to order a block's rows by — a date if it has one, else sequence. */
-function orderColumn(cols: Map<string, string>): string | null {
-  for (const k of ["dttm", "dttmstart", "dttmspud", "seqno", "depthtop", "md", "depth"]) {
-    const c = cols.get(k);
-    if (c) return c;
-  }
-  return null;
-}
+/*
+ * The order a block's rows are read in now comes from `orderByFor`, which is
+ * the same rule Edit Data uses. The list this file used to keep consulted no
+ * metadata at all: it missed every SEQUENCED folder — the user's own
+ * arrangement — and every table whose order the model states outright.
+ */
 
 /**
  * Replace the GUIDs of record-LINK columns with the linked record's caption.
@@ -548,10 +547,16 @@ export function resolveTemplateData(
     const overable = new Map(calcOverAggregatesFor(t.name).map((a) => [a.field.toLowerCase(), a]));
     // …and a value read from one linked record.
     const lookable = new Map(calcLookupsFor(t.name).map((a) => [a.field.toLowerCase(), a]));
+    // …and the Time Log's three clock fields, which are one hand-written
+    // derivation over an ordered running total. See timeLogClock.ts.
+    const clockable = t.name.toLowerCase() === "wvjobreporttimelog"
+      ? new Set(["dttmstartcalc", "dttmendcalc", "sumofdurationcalc"])
+      : new Set<string>();
     const derivable = (c: string) =>
       computable.has(c.toLowerCase()) || aggregable.has(c.toLowerCase())
       || pickable.has(c.toLowerCase()) || nameable.has(c.toLowerCase())
-      || overable.has(c.toLowerCase()) || lookable.has(c.toLowerCase());
+      || overable.has(c.toLowerCase()) || lookable.has(c.toLowerCase())
+      || clockable.has(c.toLowerCase());
     const derivedCols = wanted.filter((w) => w.actual == null && derivable(w.column));
     const missing = wanted.filter((w) => w.actual == null && !derivable(w.column))
       .map((w) => w.column);
@@ -658,7 +663,7 @@ export function resolveTemplateData(
 
     const where = preds.length ? ` WHERE ${preds.join(" AND ")}` : "";
     const total = (d.prepare(`SELECT COUNT(*) c FROM "${t.name}" t0${joins}${where}`).get(...args) as { c: number }).c;
-    const ord = orderColumn(t.cols);
+    const ord = orderByFor(t.name, t.cols, "t0");
     const sel = present.map((p) => `t0."${p.actual}"`).join(", ");
     const desCol = t.cols.get("des");
     const withDes = desCol && COMPONENT_TABLE.test(t.name) && !present.some((p) => p.actual === desCol)
@@ -692,7 +697,7 @@ export function resolveTemplateData(
     const withNeeds = needCols.length
       ? `${withTk}, ${[...new Set(needCols)].map((c) => `t0."${c}"`).join(", ")}` : withTk;
     const rows = d.prepare(
-      `SELECT ${withNeeds} FROM "${t.name}" t0${joins}${where}${ord ? ` ORDER BY t0."${ord}"` : ""} LIMIT ${ROW_CAP}`,
+      `SELECT ${withNeeds} FROM "${t.name}" t0${joins}${where}${ord ? ` ORDER BY ${ord}` : ""} LIMIT ${ROW_CAP}`,
     ).all(...args) as Record<string, unknown>[];
 
     const decorate = desCol != null && COMPONENT_TABLE.test(t.name);
@@ -725,6 +730,19 @@ export function resolveTemplateData(
     const blockLooked = idColName && hasIdwell
       ? linkedValues(d, t.name, well, rows.map(idOfRow))
       : new Map<string, Record<string, string | number>>();
+    /*
+     * The daily Time Log's clock, which is scoped to ONE report.
+     *
+     * It cannot be computed well-wide: every entry's start is the report's own
+     * start plus the durations before it, so without knowing which report the
+     * block is showing there is no anchor. The toolbar's Day selection is that
+     * anchor, and when there is none the three columns stay blank and say so —
+     * which is honest, because the answer genuinely depends on it.
+     */
+    const idreport = anchorIds.get("wvjobreport") ?? null;
+    const blockClock = t.name.toLowerCase() === "wvjobreporttimelog" && idreport
+      ? timeLogClock(d, well, idreport)
+      : new Map<string, TimeLogClockRow>();
     const shaped = rows.map((r) => [
       ...present.map((p) => {
         const raw = shapeValue(r[p.actual!]);
@@ -750,6 +768,7 @@ export function resolveTemplateData(
         const overAgg = overAggregates(
           t.name, mine, blockSums.counts.get(idOfRow(r)) ?? {});
         const looked = blockLooked.get(idOfRow(r)) ?? {};
+        const clocked = blockClock.get(idOfRow(r)) ?? {};
         return derivedCols.map((w) => {
           const lc = w.column.toLowerCase();
           const arith = computable.get(lc);
@@ -763,7 +782,11 @@ export function resolveTemplateData(
           const oa = overable.get(lc);
           if (oa) return overAgg[oa.field] ?? null;
           const lk = lookable.get(lc);
-          return lk ? looked[lk.field] ?? null : null;
+          if (lk) return looked[lk.field] ?? null;
+          if (clockable.has(lc)) {
+            return (clocked as Record<string, string | number | null>)[lc] ?? null;
+          }
+          return null;
         });
       })(),
     ]);
@@ -790,6 +813,20 @@ export function resolveTemplateData(
         // rather than let them pass for stored measurements.
         ...derivedCols.map((w) => {
           const lc = w.column.toLowerCase();
+          if (clockable.has(lc)) {
+            // The Time Log's clock fields: their labels and units come from the
+            // model like any other, but they have no registry entry because
+            // they are one derivation producing three values together.
+            const mf = modelField(t.name, w.column);
+            return {
+              column: w.column,
+              label: mf?.label ?? w.label,
+              unit: mf?.baseUnit,
+              units: mf?.units,
+              derived: true as const,
+              eqn: mf?.help ?? "",
+            };
+          }
           const cf = computable.get(lc) ?? aggregable.get(lc) ?? pickable.get(lc)
             ?? nameable.get(lc) ?? overable.get(lc) ?? lookable.get(lc)!;
           const nm = nameable.get(lc);

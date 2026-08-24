@@ -240,3 +240,60 @@ export function renderRecordDes(
     .replace(/\s{2,}/g, " ")
     .trim() || null;
 }
+
+/**
+ * The order a folder's rows are read in — ONE rule, for every screen.
+ *
+ * There were two. Edit Data consulted the model; the report path had its own
+ * shorter list of likely column names and consulted nothing. So a folder and
+ * the report printed from it could disagree, and 89 of the sample's populated
+ * tables were affected — 80 of them ordered by nothing at all on a report,
+ * which means whatever the scan returned. The daily Time Log, 6,942 rows across
+ * 736 reports, printed in storage order on all eight templates that carry it.
+ *
+ * The precedence, in the order WellView's own metadata states it:
+ *
+ *   1. A SEQUENCED folder is arranged by the user, and that arrangement is the
+ *      point — a casing string reads shoe-up or shoe-down because someone put
+ *      it that way. Its stored sequence beats anything a date could say.
+ *   2. The model's own `sqlOrderBy`, which is Peloton's answer for the rest.
+ *      wvWellboreDirSurveyData declares `md`, and a survey read by date rather
+ *      than by depth is not a survey.
+ *   3. Failing both, a likely column: a date, a sequence number, a depth.
+ *
+ * Returns the body of an ORDER BY, already quoted, or null when the table gives
+ * no basis for one — in which case the caller must not invent an order either.
+ */
+export function orderByFor(
+  tableName: string,
+  cols: Map<string, string>,
+  /** Table alias to qualify with, for a query that joins. */
+  alias?: string,
+): string | null {
+  const t = modelTable(tableName);
+  const q = (c: string) => (alias ? `${alias}."${c}"` : `"${c}"`);
+
+  if (t?.sequenced) {
+    const seq = cols.get("sysseq");
+    if (seq) return q(seq);
+  }
+
+  const declared = t?.sqlOrderBy;
+  if (declared) {
+    const parts: string[] = [];
+    for (const raw of declared.split(",")) {
+      const m = raw.trim().match(/^([A-Za-z0-9_]+)(?:\s+(asc|desc))?$/i);
+      if (!m) continue;
+      const col = cols.get(m[1].toLowerCase());
+      if (!col) continue;
+      parts.push(`${q(col)}${m[2] ? ` ${m[2].toUpperCase()}` : ""}`);
+    }
+    if (parts.length) return parts.join(", ");
+  }
+
+  for (const k of ["dttm", "dttmstart", "dttmspud", "dttmrun", "sysseq", "seqno", "depthtop", "depth", "md"]) {
+    const c = cols.get(k);
+    if (c) return q(c);
+  }
+  return null;
+}

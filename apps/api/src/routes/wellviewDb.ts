@@ -44,7 +44,7 @@ import {
   calcLookupsFor, linkedValues,
 } from "../wellview/calcFields.js";
 import { appFrame, WELL_FILE_EXTENSION } from "../wellview/appframe.js";
-import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
+import { columnLabel, folderLabel, modelField, modelTable, orderByFor, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
 import { resolveXlExtract, type XlTemplate } from "../wellview/xlExtract.js";
@@ -624,33 +624,16 @@ const newIdRec = () => randomUUID().replace(/-/g, "").toUpperCase();
  * 264 declared orders, 90 are multi-column, 8 carry a DESC, and none contains
  * any other character.
  */
+/*
+ * One rule, shared with the report path.
+ *
+ * It used to live here alone, and the report path kept a shorter list of likely
+ * column names that consulted no metadata — so a folder and a report printed
+ * from it could list the same rows in different orders, on 89 of the sample's
+ * populated tables.
+ */
 function orderClause(t: TableInfo): string | null {
-  // A SEQUENCED folder is ordered by the user, and that order is the point —
-  // a casing string reads shoe-up or shoe-down because someone arranged it. Its
-  // stored sequence therefore beats anything the model or a date would say.
-  if (modelTable(t.name)?.sequenced) {
-    const seq = t.colSet.get("sysseq");
-    if (seq) return `"${seq}"`;
-  }
-
-  const declared = modelTable(t.name)?.sqlOrderBy;
-  if (declared) {
-    const parts: string[] = [];
-    for (const raw of declared.split(",")) {
-      const m = raw.trim().match(/^([A-Za-z0-9_]+)(?:\s+(asc|desc))?$/i);
-      if (!m) continue;
-      const col = t.colSet.get(m[1].toLowerCase());
-      if (!col) continue;
-      parts.push(`"${col}"${m[2] ? ` ${m[2].toUpperCase()}` : ""}`);
-    }
-    if (parts.length) return parts.join(", ");
-  }
-
-  for (const k of ["dttm", "dttmstart", "dttmspud", "dttmrun", "sysseq", "seqno", "depthtop", "depth", "md"]) {
-    const c = t.colSet.get(k);
-    if (c) return `"${c}"`;
-  }
-  return null;
+  return orderByFor(t.name, t.colSet);
 }
 
 function shapeValue(v: unknown): string | number | null {

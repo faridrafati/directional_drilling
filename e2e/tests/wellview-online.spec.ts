@@ -385,6 +385,96 @@ test.describe("WellView Online — a folder's calculated fields", () => {
   });
 });
 
+/**
+ * The daily Time Log's clock.
+ *
+ * The entries carry a duration and nothing else. WellView derives the start and
+ * end when a report prints — the report's own start, plus the durations before
+ * each entry — and eight shipped daily templates printed a duration column with
+ * no clock beside it.
+ *
+ * Every entry must start exactly where the one before it ended. That is the
+ * whole claim, and it is visible on the page.
+ */
+test.describe("WellView Online — the time log's clock", () => {
+  test("starts each entry where the previous one ended", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto("/wellview");
+    await page.getByRole("heading", { name: "WellView" }).waitFor();
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    if (await signIn.isVisible().catch(() => false)) {
+      await page.getByLabel("User name").fill(USER);
+      await page.getByLabel("Password").fill(PASSWORD);
+      await signIn.click();
+    }
+    await page.getByTestId("wv-db-wv9.0_Sample").click();
+    await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-well-row")
+      .filter({ hasText: "Sample 16 - Phase and Prod" }).first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+
+    const search = page.getByPlaceholder(/search|filter/i).first();
+    if (await search.isVisible().catch(() => false)) await search.fill("Daily Drilling");
+    await page.getByText("Daily Drilling", { exact: true }).first().click();
+
+    // The clock is anchored on a DAY, so one has to be chosen; with no anchor
+    // there is no report start and the three columns stay honestly blank.
+    const sels = page.locator("select");
+    for (let i = 0; i < await sels.count(); i++) {
+      const opts = await sels.nth(i).locator("option").allTextContents();
+      if (opts.length > 1 && !/100%|Metric|US|Datum|Elevation/i.test(opts.join(" "))) {
+        await sels.nth(i).selectOption({ index: 1 }).catch(() => {});
+        await page.waitForTimeout(1200);
+      }
+    }
+
+    // Wait for the report to finish assembling before scanning it: this well's
+    // Daily Drilling has sixteen blocks and the anchor change re-fetches them.
+    await expect(page.locator("table").first()).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(1500);
+
+    // Find the time-log table by its own columns.
+    const tables = page.locator("table");
+    let found = false;
+    for (let t = 0; t < await tables.count(); t++) {
+      const th = (await tables.nth(t).locator("thead th").allTextContents()).filter(Boolean);
+      const si = th.findIndex((h) => /^Start Date/.test(h));
+      const ei = th.findIndex((h) => /^End Date/.test(h));
+      const ci = th.findIndex((h) => /^Cum Duration/.test(h));
+      if (si < 0 || ei < 0 || ci < 0) continue;
+      found = true;
+
+      const rows = tables.nth(t).locator("tbody tr");
+      const rc = await rows.count();
+      expect(rc).toBeGreaterThan(3);
+
+      const cells = async (r: number) =>
+        (await rows.nth(r).locator("td").allTextContents()).map((x) => x.trim());
+
+      // Every entry begins where the previous ended. A date printed at midnight
+      // shows as the date alone, so compare on the leading date-and-time.
+      let prevEnd: string | null = null;
+      let chained = 0;
+      for (let r = 0; r < Math.min(rc, 8); r++) {
+        const c = await cells(r);
+        const start = c[si], end = c[ei];
+        if (!start || start === "—") break;
+        if (prevEnd) { expect(start, `row ${r} continues the log`).toBe(prevEnd); chained++; }
+        prevEnd = end;
+      }
+      expect(chained, "entries chained end-to-start").toBeGreaterThan(2);
+
+      // …and the cumulative column really is cumulative.
+      const first = await cells(0);
+      const second = await cells(1);
+      expect(Number(first[ci])).toBeGreaterThan(0);
+      expect(Number(second[ci])).toBeGreaterThan(Number(first[ci]));
+      break;
+    }
+    expect(found, "the time-log block prints its clock columns").toBe(true);
+  });
+});
+
 test.describe("WellView Online — days vs depth", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/wellview");
