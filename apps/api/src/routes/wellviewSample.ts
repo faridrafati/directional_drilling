@@ -39,6 +39,7 @@ import {
   calcLookupsFor, linkedValues,
 } from "../wellview/calcFields.js";
 import { timeLogClock, type TimeLogClockRow } from "../wellview/timeLogClock.js";
+import { stackFieldsFor, stackRows, type StackRow } from "../wellview/stringStack.js";
 // Importing the registry is what registers it; nothing else references the module.
 import "../wellview/calcDerivations.js";
 
@@ -552,11 +553,13 @@ export function resolveTemplateData(
     const clockable = t.name.toLowerCase() === "wvjobreporttimelog"
       ? new Set(["dttmstartcalc", "dttmendcalc", "sumofdurationcalc"])
       : new Set<string>();
+    // …and where each piece of a casing or tubing string sits in the hole.
+    const stackable = new Set(stackFieldsFor(t.name));
     const derivable = (c: string) =>
       computable.has(c.toLowerCase()) || aggregable.has(c.toLowerCase())
       || pickable.has(c.toLowerCase()) || nameable.has(c.toLowerCase())
       || overable.has(c.toLowerCase()) || lookable.has(c.toLowerCase())
-      || clockable.has(c.toLowerCase());
+      || clockable.has(c.toLowerCase()) || stackable.has(c.toLowerCase());
     const derivedCols = wanted.filter((w) => w.actual == null && derivable(w.column));
     const missing = wanted.filter((w) => w.actual == null && !derivable(w.column))
       .map((w) => w.column);
@@ -743,6 +746,9 @@ export function resolveTemplateData(
     const blockClock = t.name.toLowerCase() === "wvjobreporttimelog" && idreport
       ? timeLogClock(d, well, idreport)
       : new Map<string, TimeLogClockRow>();
+    const blockStack = idColName && hasIdwell && stackable.size
+      ? stackRows(d, t.name, well, rows.map(idOfRow))
+      : new Map<string, StackRow>();
     const shaped = rows.map((r) => [
       ...present.map((p) => {
         const raw = shapeValue(r[p.actual!]);
@@ -769,6 +775,7 @@ export function resolveTemplateData(
           t.name, mine, blockSums.counts.get(idOfRow(r)) ?? {});
         const looked = blockLooked.get(idOfRow(r)) ?? {};
         const clocked = blockClock.get(idOfRow(r)) ?? {};
+        const stacked = blockStack.get(idOfRow(r)) ?? {};
         return derivedCols.map((w) => {
           const lc = w.column.toLowerCase();
           const arith = computable.get(lc);
@@ -785,6 +792,9 @@ export function resolveTemplateData(
           if (lk) return looked[lk.field] ?? null;
           if (clockable.has(lc)) {
             return (clocked as Record<string, string | number | null>)[lc] ?? null;
+          }
+          if (stackable.has(lc)) {
+            return (stacked as Record<string, number | null | undefined>)[lc] ?? null;
           }
           return null;
         });
@@ -813,7 +823,7 @@ export function resolveTemplateData(
         // rather than let them pass for stored measurements.
         ...derivedCols.map((w) => {
           const lc = w.column.toLowerCase();
-          if (clockable.has(lc)) {
+          if (clockable.has(lc) || stackable.has(lc)) {
             // The Time Log's clock fields: their labels and units come from the
             // model like any other, but they have no registry entry because
             // they are one derivation producing three values together.

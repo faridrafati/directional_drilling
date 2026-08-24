@@ -44,6 +44,7 @@ import {
   calcLookupsFor, linkedValues,
 } from "../wellview/calcFields.js";
 import { mudLimits, mudOutOfRange, type OutOfRange } from "../wellview/mudOutOfRange.js";
+import { stackFieldsFor, stackRows, type StackRow } from "../wellview/stringStack.js";
 import { appFrame, WELL_FILE_EXTENSION } from "../wellview/appframe.js";
 import { columnLabel, folderLabel, modelField, modelTable, orderByFor, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey } from "@dd/shared";
@@ -1293,6 +1294,13 @@ export async function registerWellviewDbRoutes(
         ...calcNamedFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
         ...calcOverAggregatesFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
         ...calcLookupsFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+        // …where each piece of a casing or tubing string sits in the hole,
+        // which is one walk up the stack from the shoe. See stringStack.ts.
+        ...stackFieldsFor(t.name).map((f) => ({
+          field: f,
+          label: modelField(t.name, f)?.label ?? f,
+          eqn: modelField(t.name, f)?.help ?? "",
+        })),
         // …and the mud check's own out-of-range summary, which is one hand
         // written comparison against the mud program. See mudOutOfRange.ts.
         ...(t.name.toLowerCase() === "wvjobreportmudchk" && modelField(t.name, "outofrangecalc")
@@ -1458,6 +1466,9 @@ export async function registerWellviewDbRoutes(
                 mudLimits(t.colSet, prog.colSet));
             })()
             : new Map<string, OutOfRange>();
+          const stacked = idCol && req.query.idwell && stackFieldsFor(t.name).length
+            ? stackRows(d.ro, t.name, req.query.idwell, rows.map((r) => String(r[idCol] ?? "")))
+            : new Map<string, StackRow>();
           return rows.map((r) => {
             const out: Record<string, string | number | number[] | null> = {};
             for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
@@ -1477,6 +1488,8 @@ export async function registerWellviewDbRoutes(
             // which is not the same as having been checked and passed.
             const oor = ranged.get(String(r[idCol ?? ""] ?? ""));
             if (oor) out.outofrangecalc = oor.text;
+            const st = stacked.get(String(r[idCol ?? ""] ?? ""));
+            if (st) for (const [k, v] of Object.entries(st)) { if (v != null) out[k] = v; }
             // …and arithmetic over those totals, which needs them to exist first.
             for (const [k, v] of Object.entries(overAggregates(
               t.name,
