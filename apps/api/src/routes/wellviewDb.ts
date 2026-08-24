@@ -39,8 +39,9 @@ import { requireUser, requireAdmin } from "../entry/auth.js";
 import { resolveTemplateData, iconByName } from "./wellviewSample.js";
 import { daysVsDepth, resolveTemplate, type DvdTemplate } from "../wellview/daysVsDepth.js";
 import {
-  calcFieldsFor, computeRow, calcAggregatesFor, sumChildren, calcLatestFor, latestChildren,
-  calcNamedFor, namedChildren,
+  calcFieldsFor, computeRow, calcAggregatesFor, sumChildrenDetailed, calcLatestFor, latestChildren,
+  calcNamedFor, namedChildren, calcOverAggregatesFor, overAggregates,
+  calcLookupsFor, linkedValues,
 } from "../wellview/calcFields.js";
 import { appFrame, WELL_FILE_EXTENSION } from "../wellview/appframe.js";
 import { columnLabel, folderLabel, modelField, modelTable, renderRecordDes } from "../wellview/model.js";
@@ -1306,6 +1307,8 @@ export async function registerWellviewDbRoutes(
         ...calcAggregatesFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
         ...calcLatestFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
         ...calcNamedFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+        ...calcOverAggregatesFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+        ...calcLookupsFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
       ];
       const where: string[] = [];
       const args: string[] = [];
@@ -1439,15 +1442,20 @@ export async function registerWellviewDbRoutes(
            * sample database and not fine on a real one.
            */
           const idCol = t.colSet.get("idrec");
-          const totals = idCol && req.query.idwell
-            ? sumChildren(d.ro, t.name, req.query.idwell, rows.map((r) => String(r[idCol] ?? "")))
-            : new Map<string, Record<string, number>>();
+          const sums = idCol && req.query.idwell
+            ? sumChildrenDetailed(d.ro, t.name, req.query.idwell, rows.map((r) => String(r[idCol] ?? "")))
+            : { totals: new Map<string, Record<string, number>>(),
+                counts: new Map<string, Record<string, number>>() };
+          const totals = sums.totals;
           const picks = idCol && req.query.idwell
             ? latestChildren(d.ro, t.name, req.query.idwell, rows.map((r) => String(r[idCol] ?? "")))
             : new Map<string, Record<string, string | number>>();
           const named = idCol && req.query.idwell
             ? namedChildren(d.ro, t.name, req.query.idwell, rows.map((r) => String(r[idCol] ?? "")))
             : new Map<string, Record<string, number | number[]>>();
+          const looked = idCol && req.query.idwell
+            ? linkedValues(d.ro, t.name, req.query.idwell, rows.map((r) => String(r[idCol] ?? "")))
+            : new Map<string, Record<string, string | number>>();
           return rows.map((r) => {
             const out: Record<string, string | number | number[] | null> = {};
             for (const [k, v] of Object.entries(r)) out[k] = shapeValue(v);
@@ -1461,6 +1469,13 @@ export async function registerWellviewDbRoutes(
               // own unit, the same way the report does.
               out[k] = v as number | number[];
             }
+            for (const [k, v] of Object.entries(looked.get(String(r[idCol ?? ""] ?? "")) ?? {})) out[k] = v;
+            // …and arithmetic over those totals, which needs them to exist first.
+            for (const [k, v] of Object.entries(overAggregates(
+              t.name,
+              totals.get(String(r[idCol ?? ""] ?? "")) ?? {},
+              sums.counts.get(String(r[idCol ?? ""] ?? "")) ?? {},
+            ))) out[k] = v;
             return out;
           });
         })(),
@@ -3434,6 +3449,8 @@ export async function registerWellviewDbRoutes(
         if (calcAggregatesFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
         if (calcLatestFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
         if (calcNamedFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
+        if (calcOverAggregatesFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
+        if (calcLookupsFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
         bad.push(`${b.table}.${f} is neither a column here nor a field this app can compute`);
       }
     }

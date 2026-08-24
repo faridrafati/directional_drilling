@@ -206,8 +206,12 @@ describe("aggregates over child rows", () => {
   it("admits a known set and refuses the rest", () => {
     // 52 equations have the "Sum of <x.y>" shape; 41 name a prefix-descendant
     // with numeric ends; 33 survive the chain rule as well.
-    expect(calcAggregateCount()).toBe(33);
-    expect(calcAggregates().size).toBe(12);
+    //
+    // Six more arrive through the bare form — a help text that states the
+    // aggregate without an "EQN:" marker, which `eqnOf` could not see. Two of
+    // those six also need the model's one wrong child-table name resolved.
+    expect(calcAggregateCount()).toBe(39);
+    expect(calcAggregates().size).toBe(14);
   });
 
   it("REFUSES a self-referencing running total", () => {

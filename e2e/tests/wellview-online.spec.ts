@@ -335,6 +335,56 @@ test.describe("WellView Online — a zone's current status", () => {
   });
 });
 
+/**
+ * The calculated fields a folder carries, in Edit Data.
+ *
+ * The server had always sent them — `computedColumns`, the model-calculated
+ * fields whose values it works out because WellView computes them at print time
+ * and stores them nowhere. Nothing on this side ever read that list, so a
+ * folder's green cells were invisible however many of them the app learned to
+ * compute.
+ *
+ * A service contract is the clearest case: 29 of them in the sample, every one
+ * with evaluation children carrying real Score and ScoreMax, and three blank
+ * columns where WellView shows a rating.
+ */
+test.describe("WellView Online — a folder's calculated fields", () => {
+  test("shows a contractor's score, its maximum, and the percentage", async ({ page }) => {
+    await page.goto("/wellview");
+    await page.getByRole("heading", { name: "WellView" }).waitFor();
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    if (await signIn.isVisible().catch(() => false)) {
+      await page.getByLabel("User name").fill(USER);
+      await page.getByLabel("Password").fill(PASSWORD);
+      await signIn.click();
+    }
+    await page.getByTestId("wv-db-wv9.0_Sample").click();
+    await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-well-row")
+      .filter({ hasText: "Sample 18 - Phase and Prod" }).first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: "Edit Data" }).first().click();
+    await page.getByText(/Service Contractors/i).first().click();
+
+    const head = page.locator("thead").last();
+    await expect(head).toContainText("Total Score", { timeout: 20_000 });
+    await expect(head).toContainText("Max Possible Score");
+
+    // The ratio is stored as a PROPORTION and its unit is Proportion → %, so
+    // the heading carries the per-cent sign and the value must be converted to
+    // match it. Printing the raw 0.7 under a "(%)" heading says the contractor
+    // scored seven tenths of one per cent.
+    await expect(head).toContainText("%");
+
+    const row = page.locator("tbody tr").first();
+    await expect(row).toContainText("21");
+    await expect(row).toContainText("30");
+    await expect(row).toContainText("70");
+    // 0.7 under a per-cent heading is the failure this is here to catch.
+    await expect(row).not.toContainText("0.7");
+  });
+});
+
 test.describe("WellView Online — days vs depth", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/wellview");

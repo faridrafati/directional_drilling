@@ -34,8 +34,9 @@ import { columnLabel, modelField, modelTable, renderRecordDes } from "../wellvie
 import { classifyOmitted, omittedSummary } from "../wellview/omitted.js";
 import { computeCalc, calcMissingScope } from "../wellview/calc.js";
 import {
-  calcFieldsFor, computeRow, calcAggregatesFor, sumChildren, calcLatestFor, latestChildren,
-  calcNamedFor, namedChildren,
+  calcFieldsFor, computeRow, calcAggregatesFor, sumChildrenDetailed, calcLatestFor, latestChildren,
+  calcNamedFor, namedChildren, calcOverAggregatesFor, overAggregates,
+  calcLookupsFor, linkedValues,
 } from "../wellview/calcFields.js";
 // Importing the registry is what registers it; nothing else references the module.
 import "../wellview/calcDerivations.js";
@@ -543,9 +544,14 @@ export function resolveTemplateData(
     const pickable = new Map(calcLatestFor(t.name).map((a) => [a.field.toLowerCase(), a]));
     // …and the two hand-written formulas, which read the children too.
     const nameable = new Map(calcNamedFor(t.name).map((a) => [a.field.toLowerCase(), a]));
+    // …and arithmetic over those totals, which can only run once they exist.
+    const overable = new Map(calcOverAggregatesFor(t.name).map((a) => [a.field.toLowerCase(), a]));
+    // …and a value read from one linked record.
+    const lookable = new Map(calcLookupsFor(t.name).map((a) => [a.field.toLowerCase(), a]));
     const derivable = (c: string) =>
       computable.has(c.toLowerCase()) || aggregable.has(c.toLowerCase())
-      || pickable.has(c.toLowerCase()) || nameable.has(c.toLowerCase());
+      || pickable.has(c.toLowerCase()) || nameable.has(c.toLowerCase())
+      || overable.has(c.toLowerCase()) || lookable.has(c.toLowerCase());
     const derivedCols = wanted.filter((w) => w.actual == null && derivable(w.column));
     const missing = wanted.filter((w) => w.actual == null && !derivable(w.column))
       .map((w) => w.column);
@@ -705,15 +711,20 @@ export function resolveTemplateData(
     const idColName = t.cols.get("idrec");
     const idOfRow = (x: Record<string, unknown>) =>
       String(x.__idrec ?? (idColName ? x[idColName] : "") ?? "");
-    const blockTotals = idColName && hasIdwell
-      ? sumChildren(d, t.name, well, rows.map(idOfRow))
-      : new Map<string, Record<string, number>>();
+    const blockSums = idColName && hasIdwell
+      ? sumChildrenDetailed(d, t.name, well, rows.map(idOfRow))
+      : { totals: new Map<string, Record<string, number>>(),
+          counts: new Map<string, Record<string, number>>() };
+    const blockTotals = blockSums.totals;
     const blockPicks = idColName && hasIdwell
       ? latestChildren(d, t.name, well, rows.map(idOfRow))
       : new Map<string, Record<string, string | number>>();
     const blockNamed = idColName && hasIdwell
       ? namedChildren(d, t.name, well, rows.map(idOfRow))
       : new Map<string, Record<string, number | number[]>>();
+    const blockLooked = idColName && hasIdwell
+      ? linkedValues(d, t.name, well, rows.map(idOfRow))
+      : new Map<string, Record<string, string | number>>();
     const shaped = rows.map((r) => [
       ...present.map((p) => {
         const raw = shapeValue(r[p.actual!]);
@@ -734,6 +745,11 @@ export function resolveTemplateData(
         const mine = blockTotals.get(idOfRow(r)) ?? {};
         const picked = blockPicks.get(idOfRow(r)) ?? {};
         const named = blockNamed.get(idOfRow(r)) ?? {};
+        // Arithmetic over this row's own child totals — evaluated AFTER them,
+        // which is the whole reason it cannot live with the row arithmetic.
+        const overAgg = overAggregates(
+          t.name, mine, blockSums.counts.get(idOfRow(r)) ?? {});
+        const looked = blockLooked.get(idOfRow(r)) ?? {};
         return derivedCols.map((w) => {
           const lc = w.column.toLowerCase();
           const arith = computable.get(lc);
@@ -743,7 +759,11 @@ export function resolveTemplateData(
           const pick = pickable.get(lc);
           if (pick) return picked[pick.field] ?? null;
           const nm = nameable.get(lc);
-          return nm ? named[nm.field] ?? null : null;
+          if (nm) return named[nm.field] ?? null;
+          const oa = overable.get(lc);
+          if (oa) return overAgg[oa.field] ?? null;
+          const lk = lookable.get(lc);
+          return lk ? looked[lk.field] ?? null : null;
         });
       })(),
     ]);
@@ -771,7 +791,7 @@ export function resolveTemplateData(
         ...derivedCols.map((w) => {
           const lc = w.column.toLowerCase();
           const cf = computable.get(lc) ?? aggregable.get(lc) ?? pickable.get(lc)
-            ?? nameable.get(lc)!;
+            ?? nameable.get(lc) ?? overable.get(lc) ?? lookable.get(lc)!;
           const nm = nameable.get(lc);
           /*
            * A LIST-VALUED column must not declare a unit of its own.

@@ -337,7 +337,7 @@ function PencilIcon() {
 }
 
 /** Caption for a job/day record in the anchor selectors. */
-function anchorCaption(row: Record<string, string | number | null>): string {
+function anchorCaption(row: Record<string, string | number | number[] | null>): string {
   for (const k of ["DtTmStart", "DtTm", "Des", "JobTyp1", "Com"]) {
     const v = row[k];
     if (v != null && v !== "") {

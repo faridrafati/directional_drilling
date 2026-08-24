@@ -387,6 +387,16 @@ let _aggregates: Map<string, CalcAggregate[]> | null = null;
 const AGG_RE = /^(?:sum|cum|total)\s+of\s+<([a-z0-9_]+)\.([a-z0-9_]+)>\s*\.?$/i;
 
 /**
+ * Child-table names the model gets wrong, resolved by hand.
+ *
+ * One entry, and it stays one entry. See the comment at the point of use for
+ * why a general prefix rule was measured and rejected.
+ */
+const CHILD_ALIAS: Record<string, string> = {
+  wvjobservicecontractevaldata: "wvjobservicecontracteval",
+};
+
+/**
  * The aggregates this module can compute, by lowercased parent table.
  *
  * Same discipline as the arithmetic: one shape, everything else refused. The
@@ -408,10 +418,42 @@ export function calcAggregates(): Map<string, CalcAggregate[]> {
     for (const [fLc, f] of Object.entries(t.fields)) {
       if (!f.calculated || !f.help) continue;
       if (!NUMERIC.has(f.type ?? "")) continue;
-      const eqn = eqnOf(f.help);
+      /*
+       * Some help texts state the aggregate WITHOUT the "EQN:" marker —
+       * wvJobServiceContract.ScoreCalc is simply "Sum of
+       * <wvJobServiceContractEvalData.Score>". eqnOf looks for the marker and
+       * returns null, so the shape test below was never reached.
+       *
+       * The fallback is applied HERE and not inside eqnOf, so it cannot leak
+       * into the arithmetic path. AGG_RE is anchored at both ends and the
+       * descendant guard still runs, so a whole-help match cannot admit
+       * anything the marked form would not. Measured: exactly 6 fields in the
+       * model gain admission this way.
+       */
+      const whole = f.help.replace(/\s+/g, " ").trim();
+      const eqn = eqnOf(f.help) ?? (AGG_RE.test(whole) ? whole : null);
       const m = eqn?.match(AGG_RE);
       if (!eqn || !m) continue;
-      const childLc = m[1].toLowerCase(), colLc = m[2].toLowerCase();
+      let childLc = m[1].toLowerCase();
+      const colLc = m[2].toLowerCase();
+      /*
+       * ONE name in the model points at a table that does not exist.
+       *
+       * wvJobServiceContract.ScoreCalc and ScoreMaxCalc both name
+       * wvJobServiceContractEvalData, which is in neither the model's 357
+       * tables nor any converted database. The real child is
+       * wvJobServiceContractEval, whose Score and ScoreMax are the stored
+       * doubles the sum is over. A typo in Peloton's own model, and the
+       * difference between 29 rated contracts and 29 blank ones.
+       *
+       * An explicit one-entry map, NOT a general rule. The obvious general
+       * rule — resolve a dangling name to the longest model table that is a
+       * strict prefix of it — was measured against all 13 dangling names in
+       * the model: it produces exactly these same two entries and MIS-resolves
+       * five others (wvJobServiceEvalData would become wvJob). It would buy
+       * nothing and arm a future model change.
+       */
+      if (!tabs[childLc]) childLc = CHILD_ALIAS[childLc] ?? childLc;
       // Prefix-descendant, and not the table itself: a self-reference is the
       // running-total sense, not a child total.
       if (childLc === tLc || !childLc.startsWith(tLc) || !tabs[childLc]) continue;
@@ -423,7 +465,9 @@ export function calcAggregates(): Map<string, CalcAggregate[]> {
         table: t.table,
         field: fLc,
         label: f.label ?? fLc,
-        eqn,
+        // The RESOLVED name, so a tooltip never quotes a table that does not
+        // exist while the query reads one that does.
+        eqn: eqn.replace(new RegExp(`<${m[1]}\\.`, "i"), `<${tabs[childLc].table}.`),
         childTable: tabs[childLc].table,
         childField: colLc,
         childCalculated: !!cf.calculated,
@@ -473,27 +517,54 @@ export function sumChildren(
   idwell: string,
   parentIds: string[],
 ): Map<string, Record<string, number>> {
+  return sumChildrenDetailed(db, table, idwell, parentIds).totals;
+}
+
+/**
+ * The same totals, plus HOW MANY child values each one is made of.
+ *
+ * The count is not bookkeeping. SQL's SUM ignores a null quietly, so two sums
+ * over two separately-nullable columns of the same child can silently cover
+ * different rows: a contractor evaluated on three criteria but scored on only
+ * two yields Score over two rows and ScoreMax over three. Each total is a
+ * correct answer to "sum of what is there"; their RATIO is not a rating of
+ * anything, and the only way to know is to compare the counts.
+ *
+ * Nothing in the sample exercises it — Score and ScoreMax are both present on
+ * all 91 evaluation rows — which is exactly why it is measured rather than
+ * assumed.
+ */
+export function sumChildrenDetailed(
+  db: AggQuery,
+  table: string,
+  idwell: string,
+  parentIds: string[],
+): { totals: Map<string, Record<string, number>>; counts: Map<string, Record<string, number>> } {
   const out = new Map<string, Record<string, number>>();
+  const counts = new Map<string, Record<string, number>>();
   const aggs = calcAggregatesFor(table);
-  if (!aggs.length || !parentIds.length) return out;
+  if (!aggs.length || !parentIds.length) return { totals: out, counts };
   const ids = [...new Set(parentIds.filter(Boolean))];
-  if (!ids.length) return out;
+  if (!ids.length) return { totals: out, counts };
   const holes = ids.map(() => "?").join(", ");
 
   for (const a of aggs) {
+    const bump = (m: Map<string, Record<string, number>>, parent: string, v: number) => {
+      const rec = m.get(parent) ?? {};
+      rec[a.field] = (rec[a.field] ?? 0) + v;
+      m.set(parent, rec);
+    };
     const add = (parent: string, v: number) => {
       if (!Number.isFinite(v)) return;
-      const rec = out.get(parent) ?? {};
-      rec[a.field] = (rec[a.field] ?? 0) + v;
-      out.set(parent, rec);
+      bump(out, parent, v);
     };
     try {
       if (!a.childCalculated) {
         for (const r of db.prepare(
-          `SELECT "IDRecParent" AS p, SUM("${a.childField}") AS s
+          `SELECT "IDRecParent" AS p, SUM("${a.childField}") AS s, COUNT("${a.childField}") AS n
              FROM "${a.childTable}" WHERE idwell = ? AND "IDRecParent" IN (${holes})
-            GROUP BY "IDRecParent"`).all(idwell, ...ids) as { p: string; s: number | null }[]) {
-          if (r.s != null) add(String(r.p), Number(r.s));
+            GROUP BY "IDRecParent"`).all(idwell, ...ids) as { p: string; s: number | null; n: number }[]) {
+          if (r.s != null) { add(String(r.p), Number(r.s)); bump(counts, String(r.p), Number(r.n)); }
         }
       } else {
         // The child value is computed, so the rows have to be read and each one
@@ -502,7 +573,7 @@ export function sumChildren(
           `SELECT * FROM "${a.childTable}" WHERE idwell = ? AND "IDRecParent" IN (${holes})`)
           .all(idwell, ...ids) as Record<string, unknown>[]) {
           const v = computeRow(a.childTable, r)[a.childField];
-          if (v != null) add(String(r.IDRecParent ?? ""), v);
+          if (v != null) { add(String(r.IDRecParent ?? ""), v); bump(counts, String(r.IDRecParent ?? ""), 1); }
         }
       }
     } catch {
@@ -510,7 +581,7 @@ export function sumChildren(
       // which is the same answer as "nothing to total".
     }
   }
-  return out;
+  return { totals: out, counts };
 }
 
 /* ───────────────────────── most recent child by date ───────────────────────── */
@@ -746,8 +817,8 @@ export interface CalcNamed {
    * of 3.2, so this is a reading and not a certainty.
    */
   overrideWith?: string;
-  /** How the child values combine into the answer. */
-  kind: "areaOfCircles" | "list";
+  /** How the values combine into the answer. */
+  kind: "areaOfCircles" | "list" | "rentalLineCost";
   /** The unit an individual child value carries, for a list-valued result. */
   itemOf?: { table: string; field: string };
 }
@@ -775,6 +846,21 @@ const NAMED: (Omit<CalcNamed, "label"> & { helpIs: string })[] = [
     childField: "dia",
     kind: "list",
     itemOf: { table: "wvJobDrillStringBitNozzle", field: "dia" },
+  },
+  {
+    table: "wvJobReportCostRental",
+    field: "costrentalcalc",
+    eqn: "[(rateday) + (ratestandby) + (ratedepth * usedepth) + (ratehour * usehour) "
+      + "+ (rateother * useother) + costonetime] * qty",
+    helpIs: "Calculated Rental Cost. EQN: { [(<wvjobrentalitem.rateday>) + "
+      + "(<wvjobrentalitem.ratestandby>) + (<wvjobrentalitem.ratedepth> * "
+      + "<wvjobreportcostrental.usedepth>) + (<wvjobrentalitem.ratehour> * "
+      + "<wvjobreportcostrental.usehour>) + (<wvjobrentalitem.rateother> * "
+      + "<wvjobreportcostrental.useother>) + <wvjobreportcostrental.costonetime>] "
+      + "*<wvjobreportcostrental.qty> }",
+    childTable: "wvJobRentalItem",
+    childField: "rateday",
+    kind: "rentalLineCost",
   },
 ];
 
@@ -845,6 +931,48 @@ export function namedChildren(
 
   for (const n of named) {
     try {
+      if (n.kind === "rentalLineCost") {
+        /*
+         * WHAT A RECURRING COST LINE COSTS.
+         *
+         * The rates live on the rental ITEM; what was used lives on the cost
+         * LINE. The model states the arithmetic, and one term of it is wrong.
+         *
+         * THE GATE THE EQUATION OMITS. The stated equation adds `rateday` and
+         * `ratestandby` unconditionally, but UseDay and UseStandby are booleans
+         * whose own help reads "Check ON if daily charge is to apply in this
+         * report period". Charging a daily rate on a line where someone
+         * explicitly did not tick it is not a rounding difference: on this
+         * sample it moves the total from 5,928,206 to 6,137,881 across 72 of
+         * 373 lines. Every existing implementation in this repository gates
+         * them, one of them with a hand-reconciled total, and this matches that
+         * form exactly rather than restating it.
+         *
+         * UNITS WORK ONLY ON THE STORED VALUES, which is why this is SQL over
+         * base units and not arithmetic over anything a screen has touched:
+         * RateHour's base unit is Cost/DAY and UseHour's is DAYS, so their
+         * product is a cost. Convert either to the hours a user sees first and
+         * the line is out by a factor of 24.
+         */
+        for (const r of db.prepare(
+          `SELECT r."IDRec" AS p,
+                  ( COALESCE(i."RateDay",0)     * COALESCE(r."UseDay",0)
+                  + COALESCE(i."RateStandby",0) * COALESCE(r."UseStandby",0)
+                  + COALESCE(i."RateDepth",0)   * COALESCE(r."UseDepth",0)
+                  + COALESCE(i."RateHour",0)    * COALESCE(r."UseHour",0)
+                  + COALESCE(i."RateOther",0)   * COALESCE(r."UseOther",0)
+                  + COALESCE(r."CostOneTime",0) ) * COALESCE(r."Qty",1) AS v
+             FROM "${n.table}" r
+             JOIN "${n.childTable}" i
+               ON i."IDRec" = r."IDRecJobRentalItem" AND i.idwell = r.idwell
+            WHERE r.idwell = ? AND r."IDRec" IN (${holes})`,
+        ).all(idwell, ...ids) as { p: string; v: number | null }[]) {
+          const v = Number(r.v);
+          if (Number.isFinite(v)) put(String(r.p ?? ""), n.field, v);
+        }
+        continue;
+      }
+
       /*
        * The child values, in a DETERMINISTIC order — which is not the same as
        * the right order, and the difference is worth stating.
@@ -902,6 +1030,320 @@ export function namedChildren(
 
 /** Reset the named-formula cache — tests only. */
 export function _resetNamed(): void { _named = null; }
+
+/* ────────────────────── arithmetic over a table's own totals ────────────────────── */
+
+/**
+ * "A contractor's score divided by the maximum it could have scored."
+ *
+ * A fifth shape, and the one the module's own header named as the leverage:
+ * 71 fields were refused because "their inputs are themselves calculated, and
+ * aggregates rather than arithmetic". Now that the aggregates exist, the
+ * arithmetic over them can run — but only after they have been computed, which
+ * is why this cannot live in `calcFields`. computeRow evaluates against the
+ * stored row and returns before any child has been read, so a field admitted
+ * there would advertise a value it could never produce.
+ *
+ * Admitted only when EVERY reference names a field of the SAME table that is
+ * itself in `calcAggregates`. Measured against the whole model: 8 fields — the
+ * three AFE-vs-actual cost variances on wvJob, the AFE total on wvJobAFE, three
+ * stimulation volumes, and the contractor score percentage.
+ *
+ * THE PARTIAL-SUM GUARD. Two totals over two separately-nullable columns of the
+ * same child can cover different rows, because SQL's SUM ignores a null
+ * quietly. A contractor evaluated on three criteria but scored on only two
+ * gives Score over two rows and ScoreMax over three; each total is a correct
+ * answer to "sum of what is there", and their ratio is a rating of nothing —
+ * 17/30 reads as 57% where the honest reading of what was scored is 85%. So
+ * when the inputs to one expression were drawn from different numbers of rows,
+ * this produces nothing at all. The sample cannot exercise it, which is why the
+ * guard is unit-tested on a constructed database rather than assumed.
+ */
+export interface CalcOverAgg {
+  table: string;
+  field: string;
+  label: string;
+  eqn: string;
+  /** The aggregate fields this expression reads, lowercased. */
+  needs: string[];
+  ast: Node;
+}
+
+let _overAgg: Map<string, CalcOverAgg[]> | null = null;
+
+/** Fields computable as arithmetic over this table's own child totals. */
+export function calcOverAggregates(): Map<string, CalcOverAgg[]> {
+  if (_overAgg) return _overAgg;
+  const reg = new Map<string, CalcOverAgg[]>();
+  const tabs = allModelTables();
+
+  for (const [tLc, t] of Object.entries(tabs)) {
+    if (/calc$/.test(tLc)) continue;
+    const aggs = new Set(calcAggregatesFor(tLc).map((a) => a.field.toLowerCase()));
+    if (!aggs.size) continue;
+    for (const [fLc, f] of Object.entries(t.fields)) {
+      if (!f.calculated || !f.help) continue;
+      if (!NUMERIC.has(f.type ?? "")) continue;
+      const eqn = eqnOf(f.help);
+      if (!eqn) continue;
+      const toks = tokenise(eqn);
+      if (!toks) continue;
+      const refs = toks.filter((k): k is Extract<Tok, { k: "ref" }> => k.k === "ref");
+      if (!refs.length) continue;
+      // Every reference must be one of THIS table's own totals — no stored
+      // columns, no other tables, no arithmetic fields.
+      if (!refs.every((r) => r.table.toLowerCase() === tLc && aggs.has(r.field.toLowerCase()))) continue;
+      const ast = parse(toks);
+      if (!ast) continue;
+      const list = reg.get(tLc) ?? [];
+      list.push({
+        table: t.table,
+        field: fLc,
+        label: f.label ?? fLc,
+        eqn,
+        needs: [...new Set(refs.map((r) => r.field.toLowerCase()))],
+        ast,
+      });
+      reg.set(tLc, list);
+    }
+  }
+  _overAgg = reg;
+  return reg;
+}
+
+/** The over-aggregate fields of one table, or an empty list. */
+export function calcOverAggregatesFor(table: string): CalcOverAgg[] {
+  return calcOverAggregates().get(table.toLowerCase()) ?? [];
+}
+
+/** Total across every table — pinned by the tests. */
+export function calcOverAggregateCount(): number {
+  let n = 0;
+  for (const l of calcOverAggregates().values()) n += l.length;
+  return n;
+}
+
+/**
+ * Evaluate the over-aggregate fields for one parent, given its totals.
+ *
+ * @param totals that parent's child totals, keyed by aggregate field name.
+ * @param counts how many child values each total was made of. When the inputs
+ * to one expression disagree, the expression produces nothing — see the
+ * partial-sum guard above.
+ */
+export function overAggregates(
+  table: string,
+  totals: Record<string, number>,
+  counts: Record<string, number>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const c of calcOverAggregatesFor(table)) {
+    const have = c.needs.every((n) => totals[n] != null);
+    if (!have) continue;
+    const ns = c.needs.map((n) => counts[n]).filter((n) => n != null);
+    // Drawn from different numbers of rows: the arithmetic is defined, the
+    // answer is not.
+    if (ns.length > 1 && new Set(ns).size > 1) continue;
+    // `evaluate` keys a ref by its lowercased field name, which is exactly how
+    // sumChildren keys its totals.
+    const v = evaluate(c.ast, totals);
+    if (v != null && Number.isFinite(v)) out[c.field] = v;
+  }
+  return out;
+}
+
+/** Reset the over-aggregate cache — tests only. */
+export function _resetOverAggregates(): void { _overAgg = null; }
+
+/* ────────────────────────── a value read across a link ────────────────────────── */
+
+/**
+ * "The description, vendor and PO of the rental item this cost line is FOR."
+ *
+ * A sixth shape, and the simplest one: the whole equation is a single
+ * `<table.field>` naming another table. Nothing is added, ordered or chosen —
+ * one linked record is read.
+ *
+ * It is also the most dangerous shape in the model, which is why the guards
+ * below are longer than the code. 57 fields state an equation of exactly this
+ * form and only a minority are lookups; the rest are AGGREGATES wearing a
+ * lookup's clothes. `wvCas.SzODNomCompMaxCalc` is "Largest nominal OD of any
+ * component in the string. EQN: <wvcascomp.szodnom>." — identical in shape to
+ * `wvJobReportCostRental.VendorCalc`, and reading one component's OD would put
+ * an arbitrary pipe size where the string's widest belongs.
+ *
+ * Nothing in the EQN distinguishes them. The SENTENCE around it does, so the
+ * sentence is what is read: a help text carrying a superlative, an ordinal or a
+ * counting word is refused outright. That is a blunt instrument and it is meant
+ * to be — it errs towards leaving a column blank, which this app can say, and
+ * away from filling it with the wrong row, which it cannot.
+ *
+ * HOW THE LINK IS FOUND. Either the owning table carries exactly one record-link
+ * column whose declared targets include the source table, or the source table is
+ * the owning table's parent by WellView's prefix rule. Two candidates, or none,
+ * refuses: a guess about which link to follow is a guess about which record the
+ * value came from.
+ */
+export interface CalcLookup {
+  table: string;
+  field: string;
+  label: string;
+  eqn: string;
+  /** The table read, as the model spells it. */
+  srcTable: string;
+  /** The column read there, lowercased. */
+  srcField: string;
+  /**
+   * The column on THIS table holding the source record's id, or null when the
+   * source is this table's parent and the join is on IDRecParent.
+   */
+  linkColumn: string | null;
+}
+
+/**
+ * Words that turn a lookup into a choice.
+ *
+ * Any of these in the field's help means the equation names a POPULATION and
+ * the sentence names which member of it to take. This registry can do neither,
+ * so it declines rather than reading whichever row the database hands back.
+ */
+const CHOOSING_WORD =
+  /\b(min|max|minimum|maximum|largest|smallest|longest|shortest|deepest|shallowest|highest|lowest|earliest|latest|first|last|most recent|current|total|sum|cum|cumulative|average|mean|count|number of|all |any )\b/i;
+
+/** The whole equation is one reference and nothing else. */
+const ONE_REF = /^<([a-z0-9_]+)\.([a-z0-9_]+)>\s*\.?$/i;
+
+let _lookup: Map<string, CalcLookup[]> | null = null;
+
+/** Fields readable as a single value across one link, by lowercased table. */
+export function calcLookups(): Map<string, CalcLookup[]> {
+  if (_lookup) return _lookup;
+  const reg = new Map<string, CalcLookup[]>();
+  const tabs = allModelTables();
+
+  for (const [tLc, t] of Object.entries(tabs)) {
+    if (/calc$/.test(tLc)) continue;
+    // The table's parent by WellView's prefix rule, for the parent route.
+    const parentLc = Object.keys(tabs)
+      .filter((k) => k !== tLc && tLc.startsWith(k))
+      .sort((a, b) => b.length - a.length)[0];
+
+    for (const [fLc, f] of Object.entries(t.fields)) {
+      if (!f.calculated || !f.help) continue;
+      if (CHOOSING_WORD.test(f.help)) continue;
+      const eqn = eqnOf(f.help);
+      const m = eqn?.match(ONE_REF);
+      if (!eqn || !m) continue;
+      const srcLc = m[1].toLowerCase();
+      const colLc = m[2].toLowerCase();
+      if (srcLc === tLc || !tabs[srcLc]) continue;
+
+      const sf = modelField(srcLc, colLc);
+      // A calculated source would need its own resolution first; refuse rather
+      // than advertise a column that can only ever be blank.
+      if (!sf || sf.calculated) continue;
+
+      let linkColumn: string | null = null;
+      if (srcLc === parentLc) {
+        linkColumn = null;                                   // join on IDRecParent
+      } else {
+        const links = Object.entries(t.fields).filter(([lk, lf]) =>
+          !lf.calculated
+          && /^foreignidrec$/i.test(lf.lookupTyp ?? "")
+          && (lf.linkTargets ?? []).some((x) => x.toLowerCase() === srcLc)
+          && !/tk$/i.test(lk));
+        if (links.length !== 1) continue;                    // ambiguous, or none
+        linkColumn = links[0][0];
+      }
+
+      const list = reg.get(tLc) ?? [];
+      list.push({
+        table: t.table,
+        field: fLc,
+        label: f.label ?? fLc,
+        eqn,
+        srcTable: tabs[srcLc].table,
+        srcField: colLc,
+        linkColumn,
+      });
+      reg.set(tLc, list);
+    }
+  }
+  _lookup = reg;
+  return reg;
+}
+
+/** The lookups of one table, or an empty list. */
+export function calcLookupsFor(table: string): CalcLookup[] {
+  return calcLookups().get(table.toLowerCase()) ?? [];
+}
+
+/** Total across every table — pinned by the tests. */
+export function calcLookupCount(): number {
+  let n = 0;
+  for (const l of calcLookups().values()) n += l.length;
+  return n;
+}
+
+/**
+ * Read each lookup for a whole page of rows at once.
+ *
+ * ONE query per (link column, source table) pair, not one per row — the same
+ * discipline as sumChildren and latestChildren.
+ *
+ * A row whose link is empty, or whose linked record is gone, is ABSENT from the
+ * result rather than null: the value is unknown, not blank.
+ */
+export function linkedValues(
+  db: AggQuery,
+  table: string,
+  idwell: string,
+  rowIds: string[],
+): Map<string, Record<string, string | number>> {
+  const out = new Map<string, Record<string, string | number>>();
+  const looks = calcLookupsFor(table);
+  if (!looks.length || !rowIds.length) return out;
+  const ids = [...new Set(rowIds.filter(Boolean))];
+  if (!ids.length) return out;
+  const holes = ids.map(() => "?").join(", ");
+
+  // Group by the join they share, so one query serves every field read across
+  // the same link.
+  const byLink = new Map<string, CalcLookup[]>();
+  for (const l of looks) {
+    const key = `${l.linkColumn ?? "IDRecParent"}|${l.srcTable}`;
+    byLink.set(key, [...(byLink.get(key) ?? []), l]);
+  }
+
+  for (const group of byLink.values()) {
+    const { linkColumn, srcTable } = group[0];
+    const join = linkColumn ?? "IDRecParent";
+    const cols = [...new Set(group.map((l) => l.srcField))];
+    try {
+      for (const r of db.prepare(
+        `SELECT t0."IDRec" AS __id, ${cols.map((c) => `s."${c}" AS "${c}"`).join(", ")}
+           FROM "${table}" t0
+           JOIN "${srcTable}" s ON s."IDRec" = t0."${join}"
+          WHERE t0.idwell = ? AND t0."IDRec" IN (${holes})`,
+      ).all(idwell, ...ids) as Record<string, unknown>[]) {
+        const key = String(r.__id ?? "");
+        for (const l of group) {
+          const v = r[l.srcField];
+          if (v == null || v === "") continue;
+          const rec = out.get(key) ?? {};
+          rec[l.field] = v as string | number;
+          out.set(key, rec);
+        }
+      }
+    } catch {
+      // A table or column this database does not have: the fields stay absent.
+    }
+  }
+  return out;
+}
+
+/** Reset the lookup cache — tests only. */
+export function _resetLookups(): void { _lookup = null; }
 
 /** Reset the aggregate cache — tests only. */
 export function _resetAggregates(): void { _aggregates = null; }

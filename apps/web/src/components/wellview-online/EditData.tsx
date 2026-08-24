@@ -40,12 +40,20 @@ import { wvDbApi, type WvRecordColumn, type WvRecords, type WvTreeNode } from ".
 import { usePicklistCatalog } from "../../entry/picklists.js";
 import { useUnitSet, type UnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
-import { toDisplay, fromDisplay, displayUnitLabel, formatUnitValue } from "@dd/shared";
+import { toDisplay, fromDisplay, displayUnitLabel, formatUnitValue, formatUnitList } from "@dd/shared";
 import type { DatumShift } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
 import { InventoryTransfer } from "./InventoryTransfer.js";
 
-type Row = Record<string, string | number | null>;
+/**
+ * One record as it travels.
+ *
+ * `number[]` is the odd one out: a calculated LIST field — a bit's nozzles —
+ * whose values arrive in the model's base unit so the client can render them in
+ * the user's. It only ever appears on a calculated column, which is read-only
+ * everywhere in this component, so no editing path has to handle it.
+ */
+type Row = Record<string, string | number | number[] | null>;
 
 /** The app-level record clipboard (Copy Record / Paste Record, §3.9). */
 export interface WvClipboard { db: string; table: string; idrec: string; caption: string; label: string }
@@ -480,7 +488,20 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   // TK companions are managed with their link column and never rendered.
   // Fields the data model marks hidden appear only under "Show All Fields",
   // which is what the desktop's toggle does.
-  const visible = data.columns.filter((c) =>
+  /*
+   * The stored columns AND the calculated ones.
+   *
+   * The server has always sent `computedColumns` — the model-calculated fields
+   * these rows carry, which have no column in the database because WellView
+   * works them out when a report prints. Nothing on this side ever read them,
+   * so a folder's green cells were invisible however many of them this app
+   * learned to compute: a contractor's score, a bit's total flow area, a zone's
+   * current status all arrived in the row and had no heading to appear under.
+   *
+   * They need no special rendering. `calculated` already means read-only, green
+   * and tooltipped throughout this component; it simply had nothing to act on.
+   */
+  const visible = [...data.columns, ...(data.computedColumns ?? [])].filter((c) =>
     !c.tk && (showIds || !c.id) && (showIds || !c.hiddenByDefault));
   /**
    * Order the columns by WellView's own form SECTIONS — "Well Identifiers",
@@ -496,7 +517,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     };
     return [...visible].sort((a, b) => rank(a) - rank(b));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.columns, data.fieldGroups, showIds]);
+  }, [data.columns, data.computedColumns, data.fieldGroups, showIds]);
 
   /** Contiguous runs of one section, for the grouped header row. */
   const sections = useMemo(() => {
@@ -561,6 +582,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       }
       const v = prev[source];
       if (v == null || v === "") continue;
+      // A list-valued CALCULATED field is never carried forward — nothing
+      // calculated is editable, so there is nothing to seed.
+      if (Array.isArray(v)) continue;
       const step = c.carryForwardIncrement;
       if (!step) { seed[c.column] = v; continue; }
       if (c.type === "datetime") {
@@ -600,7 +624,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       const tkCol = c.link?.tkColumn;
       if (!tkCol || seed[c.column] == null) continue;
       const tk = prev[tkCol];
-      if (tk != null && tk !== "") seed[tkCol] = tk;
+      if (tk != null && tk !== "" && !Array.isArray(tk)) seed[tkCol] = tk;
     }
     return seed;
   }, [data.rows, data.columns]);
@@ -1020,7 +1044,23 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     if (e && col in e) return String(e[col] ?? "");
     const raw = row[col];
     if (raw == null) return "";
-    const c = data.columns.find((x) => x.column === col);
+    /*
+     * The CALCULATED columns are looked up too, not just the stored ones.
+     *
+     * Missing them meant a value rendered raw under a converted heading: a
+     * contractor's Score/Max printed 0.7 in a column headed "(%)", which reads
+     * as seven tenths of one per cent. The heading was converted because it is
+     * built from the column metadata; the value was not because the metadata
+     * was never found.
+     */
+    const c = data.columns.find((x) => x.column === col)
+      ?? data.computedColumns?.find((x) => x.column === col);
+    // A list-valued calculated field converts item by item — the unit is on the
+    // ITEM, because a one-item list is a bare number a column unit would
+    // convert twice.
+    if (Array.isArray(raw)) {
+      return formatUnitList(raw, { unit: c?.itemUnit, units: c?.itemUnits }, unitSet);
+    }
     if (c?.unit) {
       const n = Number(raw);
       if (Number.isFinite(n)) {

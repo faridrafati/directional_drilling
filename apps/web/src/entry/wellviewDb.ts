@@ -55,6 +55,12 @@ export interface WvRecordColumn {
   help?: string;
   /** Computed by WellView at print time — the desktop's green, locked fields. */
   calculated?: boolean;
+  /** …and this app actually produces a value for it, from the model's equation. */
+  computed?: boolean;
+  /** A list-valued calculated field — the unit rides on each ITEM, not the column. */
+  list?: boolean;
+  itemUnit?: string;
+  itemUnits?: Record<string, UnitFormat>;
   /** Hidden until "Show All Fields". */
   hiddenByDefault?: boolean;
   type?: WvFieldType;
@@ -117,7 +123,16 @@ export interface WvRecords {
   allowSeqInvert?: boolean;
   parentTable: string | null;
   columns: WvRecordColumn[];
-  rows: Record<string, string | number | null>[];
+  /**
+   * The model-calculated fields these rows carry — WellView's green cells.
+   *
+   * They have no column in the database, so the server appends them separately.
+   * Until now nothing read them: the API had been sending them all along and
+   * the grid showed only the stored columns, so a folder's calculated fields
+   * were invisible no matter how many of them this app learned to compute.
+   */
+  computedColumns?: WvRecordColumn[];
+  rows: Record<string, string | number | number[] | null>[];
 }
 
 export interface WvAuditFinding {
