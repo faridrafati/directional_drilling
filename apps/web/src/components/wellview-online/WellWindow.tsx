@@ -37,7 +37,7 @@ import { PrintReport } from "./PrintReport.js";
 import { wvDbApi, type WvSchematic, type WvSchematicRow,
   type WvWellhead, type WvWellheadField,
   type WvDvdSeries, type WvDvdAxis, type WvSavedReport,
-  type WvReportBlockDef } from "../../entry/wellviewDb.js";
+  type WvReportBlockDef, type WvSurvey, type WvSurveyStation } from "../../entry/wellviewDb.js";
 
 interface TemplateEntry {
   name: string;
@@ -946,7 +946,16 @@ function SchematicTab({ db, idwell, store, onEditTable }: {
    * not. The guide's other track types — depth curves over drilling parameters,
    * depth markers — are not offered rather than faked.
    */
-  const [tracks, setTracks] = useState<{ tvd: boolean; incl: boolean }>({ tvd: false, incl: false });
+  /*
+   * §8.3 "Scales: The scales provide the MD, Incl, Azmth, VS, and DLS numeric
+   * tracks." Two of the five were offered; the survey route has always returned
+   * all of them per station.
+   *
+   * Kept in the tab store so track selection survives a tab switch like every
+   * other schematic setting.
+   */
+  const [tracks, setTracks] = useTabState<Record<string, boolean>>(
+    store, "schematic.tracks", { tvd: false, incl: false, azimuth: false, vs: false, dls: false });
 
   /**
    * Get the drawing out of the app (§3.8 "Copy a Schematic" / "Print a
@@ -1040,7 +1049,7 @@ function SchematicTab({ db, idwell, store, onEditTable }: {
   const trackQ = useQuery({
     queryKey: ["wvdb", db, "survey", link?.survey ?? ""],
     queryFn: () => wvDbApi.survey(db, link!.survey!),
-    enabled: !!link?.survey && (tracks.tvd || tracks.incl),
+    enabled: !!link?.survey && Object.values(tracks).some(Boolean),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -1124,6 +1133,24 @@ function SchematicTab({ db, idwell, store, onEditTable }: {
               onChange={(e) => setTracks((t) => ({ ...t, incl: e.target.checked }))} />
             Incl
           </label>
+          {/*
+            * The other three of §8.3's five scales — "the MD, Incl, Azmth, VS,
+            * and DLS numeric tracks". MD is the depth axis itself; the survey
+            * route has always returned the rest per station.
+            */}
+          {([
+            ["azimuth", "Azmth", "Azimuth track from the linked survey (§8.3). Stations with no recorded bearing are marked."],
+            ["vs", "VS", "Vertical section track from the linked survey (§8.3), measured along the wellbore's VS direction or its closure direction."],
+            ["dls", "DLS", "Dogleg severity track from the linked survey (§8.3), in the unit set's own per-length unit."],
+          ] as const).map(([key, label, hint]) => (
+            <label key={key} className="flex items-center gap-1 text-[11px] text-gray-600"
+              title={link?.survey ? hint : "This wellbore has no deviation survey linked (§7.2)"}>
+              <input type="checkbox" checked={!!tracks[key]} disabled={!link?.survey}
+                data-testid={`wv-sch-track-${key}`}
+                onChange={(e) => setTracks((t) => ({ ...t, [key]: e.target.checked }))} />
+              {label}
+            </label>
+          ))}
           <label className="flex items-center gap-1 text-[11px] text-gray-600">
             <input type="checkbox" checked={showProposed} onChange={(e) => setShowProposed(e.target.checked)} />
             Proposed
@@ -1170,6 +1197,7 @@ function SchematicTab({ db, idwell, store, onEditTable }: {
         <SchematicSvg s={s} date={date} boreId={boreId || null} showProposed={showProposed}
           scale={scale} layers={layers} smartScaling={smartScaling} onEditTable={onEditTable}
           tracks={tracks} stations={trackQ.data?.stations ?? null}
+          trackColumns={trackQ.data?.columns ?? null}
           surveyName={link?.surveyName ?? null} datumShift={datumShift} />
       </div>
     </div>
@@ -1185,15 +1213,17 @@ function SchematicTab({ db, idwell, store, onEditTable }: {
  */
 function SchematicSvg({
   s, date, boreId, showProposed, scale, layers, smartScaling, onEditTable,
-  tracks, stations, surveyName, datumShift,
+  tracks, stations, trackColumns, surveyName, datumShift,
 }: {
   s: WvSchematic; date: string; boreId: string | null; showProposed: boolean;
   scale: number; layers: Record<SchematicLayer, boolean>; smartScaling: boolean;
   onEditTable: (table: string) => void;
   /** §8.3 Tracks: which extra depth-scaled columns to draw. */
-  tracks?: { tvd: boolean; incl: boolean };
+  tracks?: Record<string, boolean>;
   /** The linked survey's stations, or null while loading / when none is linked. */
-  stations?: { md: number; tvd: number; inclination: number }[] | null;
+  stations?: WvSurveyStation[] | null;
+  /** The route's own unit spec per column, so a track converts correctly. */
+  trackColumns?: WvSurvey["columns"] | null;
   surveyName?: string | null;
   /** Tools > Reference Datum, resolved for this well. Null while it loads. */
   datumShift?: DatumShift | null;
@@ -1731,10 +1761,27 @@ function SchematicSvg({
    * on past its last station would be inventing a hole angle.
    */
   const trackCols: React.ReactNode[] = [];
+  /**
+   * The unit spec the ROUTE declares for a column, not a literal.
+   *
+   * Dogleg severity is stored in degrees per metre and read as °/30m or
+   * °/100ft; azimuth and inclination are plain degrees. Taking the spec from
+   * the response is what keeps the number under the heading honest.
+   */
+  const colSpec = (key: string) => {
+    const c = trackColumns?.find((x: { key: string }) => x.key === key);
+    return c ? { unit: c.unit, units: c.units, applyDatum: c.applyDatum } : {};
+  };
   const wanted = [
-    tracks?.tvd ? { key: "tvd", label: "TVD", get: (st: { tvd: number }) => st.tvd, spec: depthSpec } : null,
-    tracks?.incl ? { key: "incl", label: "Incl°", get: (st: { inclination: number }) => st.inclination, spec: {} } : null,
-  ].filter(Boolean) as { key: string; label: string; get: (st: never) => number; spec: typeof depthSpec }[];
+    tracks?.tvd ? { key: "tvd", label: "TVD", get: (st: { tvd: number }) => st.tvd, spec: depthSpec, wraps: false } : null,
+    tracks?.incl ? { key: "incl", label: "Incl°", get: (st: { inclination: number }) => st.inclination, spec: colSpec("inclination"), wraps: false } : null,
+    tracks?.azimuth ? { key: "azimuth", label: "Azmth°", get: (st: { azimuth: number }) => st.azimuth, spec: colSpec("azimuth"), wraps: true } : null,
+    tracks?.vs ? { key: "vs", label: "VS", get: (st: { vs: number }) => st.vs, spec: colSpec("vs"), wraps: false } : null,
+    tracks?.dls ? { key: "dls", label: "DLS", get: (st: { dls: number }) => st.dls, spec: colSpec("dls"), wraps: false } : null,
+  ].filter(Boolean) as {
+    key: string; label: string; get: (st: never) => number;
+    spec: typeof depthSpec; wraps: boolean;
+  }[];
   const TRACK_W = 66;
   const trackLeft = W - 8 - wanted.length * TRACK_W;
   wanted.forEach((t, ti) => {
@@ -1743,30 +1790,81 @@ function SchematicSvg({
       .filter((st) => Number.isFinite(st.md) && Number.isFinite(t.get(st as never)))
       .sort((a, b) => a.md - b.md);
     const vals = pts.map((st) => t.get(st as never));
-    const hi = Math.max(1, ...vals);
+    /*
+     * THE TRACK HAS A FLOOR AS WELL AS A CEILING.
+     *
+     * The scale used to run 0..max, which puts any negative value at a negative
+     * x — outside the track, over the drawing, with no clip path to stop it.
+     * Vertical section goes negative whenever the hole heads back across its
+     * own reference direction. So the range starts at the lesser of zero and
+     * the minimum, and the footer prints both ends rather than implying zero.
+     */
+    const lo = Math.min(0, ...vals);
+    const rawHi = Math.max(...vals);
+    /*
+     * The ceiling widens ONLY when the range would otherwise be empty.
+     *
+     * This used to be Math.max(1, …vals) — a floor of 1 in BASE units. For TVD
+     * and inclination, whose values run to hundreds, it never bound. Dogleg
+     * severity is stored in degrees per METRE and runs about 0.26, so the floor
+     * dominated it: the track was drawn against a scale four times too large
+     * and its footer read "0–30 °/30m" where the survey tab, computing the same
+     * numbers, showed a maximum of 7.76.
+     */
+    const hi = rawHi > lo ? rawHi : lo + 1;
     trackCols.push(
       <g key={`tr${t.key}`}>
         <rect x={x0} y={TOP - 14} width={TRACK_W - 6} height={H - TOP - 2} fill="#f8fafc" stroke="#e2e8f0" />
         <text x={x0 + (TRACK_W - 6) / 2} y={TOP - 4} fontSize="9" fill="#475569" textAnchor="middle">
           {t.label}
         </text>
-        {pts.length > 1 ? (
-          <polyline fill="none" stroke="#0f766e" strokeWidth="1.2"
-            points={pts.map((st) => {
-              const v = t.get(st as never);
-              const shown = t.spec.unit ? toDisplay(v, t.spec, unitSet, datumShift)?.value ?? v : v;
-              const shownHi = t.spec.unit ? toDisplay(hi, t.spec, unitSet, datumShift)?.value ?? hi : hi;
-              const x = x0 + 3 + (shown / (shownHi || 1)) * (TRACK_W - 12);
-              return `${x},${y(Math.min(st.md, maxDepth))}`;
-            }).join(" ")} />
-        ) : (
+        {pts.length > 1 ? (() => {
+          const conv = (v: number) =>
+            t.spec.unit ? toDisplay(v, t.spec, unitSet, datumShift)?.value ?? v : v;
+          const sLo = conv(lo), sHi = conv(hi);
+          const xOf = (v: number) =>
+            x0 + 3 + ((conv(v) - sLo) / ((sHi - sLo) || 1)) * (TRACK_W - 12);
+          /*
+           * AZIMUTH WRAPS AND A POLYLINE DOES NOT KNOW IT.
+           *
+           * A hole heading 355° that turns to 5° has not swung 350° the other
+           * way, but a plain polyline draws exactly that: a horizontal whip
+           * across the full width of the track. Nine of the sample's thirty
+           * surveys contain such a step. So a wrapping track is drawn as
+           * SEGMENTS, broken wherever consecutive stations differ by more than
+           * half a turn — the line stops rather than lying about the turn.
+           */
+          const segs: string[][] = [[]];
+          pts.forEach((st, i) => {
+            const v = t.get(st as never);
+            if (t.wraps && i > 0) {
+              const prev = t.get(pts[i - 1] as never);
+              if (Math.abs(v - prev) > 180) segs.push([]);
+            }
+            segs[segs.length - 1].push(`${xOf(v)},${y(Math.min(st.md, maxDepth))}`);
+          });
+          return (
+            <>
+              {segs.filter((sg) => sg.length > 1).map((sg, si) => (
+                <polyline key={si} fill="none" stroke="#0f766e" strokeWidth="1.2" points={sg.join(" ")} />
+              ))}
+              {/* A carried bearing is not a measured one: mark the stations
+                  where the survey had no azimuth of its own. */}
+              {t.key === "azimuth" && pts.filter((st) => st.azimuthAssumed).map((st, si) => (
+                <circle key={`a${si}`} cx={xOf(t.get(st as never))} cy={y(Math.min(st.md, maxDepth))}
+                  r="1.6" fill="#cbd5e1" />
+              ))}
+            </>
+          );
+        })() : (
           <text x={x0 + (TRACK_W - 6) / 2} y={TOP + 24} fontSize="8" fill="#94a3b8" textAnchor="middle">
             {stations ? "no stations" : "loading…"}
           </text>
         )}
         {pts.length > 1 && (
           <text x={x0 + (TRACK_W - 6) / 2} y={H - 4} fontSize="7" fill="#94a3b8" textAnchor="middle">
-            0–{Math.round(t.spec.unit ? toDisplay(hi, t.spec, unitSet)?.value ?? hi : hi).toLocaleString()}
+            {Math.round(t.spec.unit ? toDisplay(lo, t.spec, unitSet)?.value ?? lo : lo).toLocaleString()}
+            –{Math.round(t.spec.unit ? toDisplay(hi, t.spec, unitSet)?.value ?? hi : hi).toLocaleString()}
           </text>
         )}
         <title>{`${t.label} from ${surveyName ? `survey "${surveyName}"` : "the linked deviation survey"}`

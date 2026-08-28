@@ -287,7 +287,18 @@ export interface WvQueryField {
 export interface WvSurvey {
   survey: string;
   method: string;
-  columns: { key: string; label: string; unit?: string; computed: boolean }[];
+  /**
+   * The per-column unit spec, as the route sends it.
+   *
+   * `units` and `applyDatum` were declared on the server and dropped here, so
+   * anything drawing from this had no way to convert: dogleg severity is stored
+   * as degrees per metre and is read as °/30m or °/100ft, and without the map
+   * a track would print the raw base number under the right heading.
+   */
+  columns: {
+    key: string; label: string; unit?: string; computed: boolean;
+    units?: Record<string, UnitFormat>; applyDatum?: boolean;
+  }[];
   stations: WvSurveyStation[];
   excludedBadStations: number;
   /** How many stations carry an assumed bearing (inclination-only survey). */

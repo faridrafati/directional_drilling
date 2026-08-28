@@ -595,6 +595,91 @@ test.describe("WellView Online — a tab keeps its selections", () => {
   });
 });
 
+/**
+ * §8.3's five numeric tracks, and the scale that has to be right.
+ *
+ * "Scales: The scales provide the MD, Incl, Azmth, VS, and DLS numeric tracks."
+ * Two of the five were offered. The other three came free from a route that had
+ * always returned them per station — but adding them exposed a scaling bug that
+ * had been harmless while only TVD and inclination existed.
+ *
+ * The track's ceiling was Math.max(1, …values), a floor of 1 in BASE units. TVD
+ * and inclination run to hundreds, so it never bound. Dogleg severity is stored
+ * in degrees per METRE and runs about 0.26, so the floor dominated it entirely:
+ * the track drew against a scale four times too large and labelled itself
+ * "0–30 °/30m" while the Survey tab, computing the same numbers, showed 7.76.
+ *
+ * The two screens must agree, which is what this checks.
+ */
+test.describe("WellView Online — schematic numeric tracks", () => {
+  test("draws all five scales, and DLS agrees with the Survey tab", async ({ page }) => {
+    await page.goto("/wellview");
+    await page.getByRole("heading", { name: "WellView" }).waitFor();
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    if (await signIn.isVisible().catch(() => false)) {
+      await page.getByLabel("User name").fill(USER);
+      await page.getByLabel("Password").fill(PASSWORD);
+      await signIn.click();
+    }
+    await page.getByTestId("wv-db-wv9.0_Sample").click();
+    await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("wv-well-row")
+      .filter({ hasText: "Sample 02 - Drilling operations" }).first().dblclick();
+    await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
+
+    // What the Survey tab makes of the same survey.
+    await page.getByTestId("wv-tab-survey").click();
+    await expect(page.locator("thead th").first()).toBeVisible({ timeout: 20_000 });
+    const heads = (await page.locator("thead th").allTextContents()).map((t) => t.trim());
+    const dlsIx = heads.findIndex((h) => /^DLS/.test(h));
+    expect(dlsIx, "the survey tab prints a DLS column").toBeGreaterThanOrEqual(0);
+    // The heading carries the unit set's own per-length unit, not the base.
+    expect(heads[dlsIx]).toContain("/30m");
+    const surveyMax = Math.max(...(await page.locator("tbody tr").evaluateAll(
+      (rows, ix) => rows.map((r) => Number((r.children[ix]?.textContent ?? "")
+        .replace(/[^\d.-]/g, ""))).filter((n) => Number.isFinite(n)), dlsIx)));
+    expect(surveyMax).toBeGreaterThan(0);
+
+    // …and what the schematic's track makes of it.
+    await page.getByTestId("wv-tab-schematic").click();
+    for (const k of ["tvd", "incl", "azimuth", "vs", "dls"]) {
+      const cb = page.getByTestId(`wv-sch-track-${k}`);
+      await expect(cb).toBeVisible({ timeout: 20_000 });
+      await cb.check();
+    }
+    const svg = page.locator("svg").filter({ has: page.locator("text", { hasText: "DLS" }) }).first();
+    for (const label of ["TVD", "Incl°", "Azmth°", "VS", "DLS"]) {
+      await expect(svg.locator("text", { hasText: new RegExp(`^${label.replace("°", "°")}$`) }).first())
+        .toBeVisible({ timeout: 15_000 });
+    }
+
+    // The DLS track's own range footer, read back and compared.
+    const footers = await svg.locator("text").allTextContents();
+    const ranges = footers.map((t) => t.trim()).filter((t) => /^-?[\d,]+–-?[\d,]+$/.test(t));
+    expect(ranges.length, "one range footer per track").toBe(5);
+    const dlsHi = Number(ranges[4].split("–")[1].replace(/,/g, ""));
+    // Same quantity, same unit, so the ceiling must sit just above the survey's
+    // maximum — not four times above it, which is what the base-unit floor did.
+    expect(dlsHi).toBeGreaterThanOrEqual(Math.floor(surveyMax));
+    expect(dlsHi).toBeLessThan(surveyMax * 2);
+
+    // Nothing may be drawn outside the track: VS goes negative on other wells,
+    // and the old zero-based scale put those points over the diagram.
+    const outside = await svg.evaluate((el) => {
+      const w = (el as SVGSVGElement).viewBox.baseVal.width;
+      let bad = 0;
+      for (const pl of el.querySelectorAll("polyline")) {
+        for (const pt of (pl.getAttribute("points") ?? "").trim().split(/\s+/)) {
+          const x = Number(pt.split(",")[0]);
+          if (Number.isFinite(x) && (x < 0 || x > w)) bad++;
+        }
+      }
+      return bad;
+    });
+    expect(outside, "points drawn outside the diagram").toBe(0);
+  });
+});
+
 test.describe("WellView Online — days vs depth", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/wellview");
