@@ -82,6 +82,18 @@ export function EditData({
   const qc = useQueryClient();
   const [table, setTable] = useState<string | null>(initialTable ?? "wvWellHeader");
   const [vertical, setVertical] = useState(false);
+  /*
+   * THE WELL HEADER IS ALWAYS VERTICAL, because it is always one record.
+   *
+   * The guide says so outright — "Since a well can have only have one well
+   * header record, the well header always displays in vertical edit mode"
+   * (its typo, not mine) — and this window opens on wvWellHeader by default,
+   * so the first screen of every Edit Data session was 105 columns laid across
+   * a single row that had to be scrolled end to end. Vertical mode already
+   * renders this table correctly and already freezes the label column; the fix
+   * is to stop offering the wrong one.
+   */
+  const forcedVertical = (table ?? "").toLowerCase() === "wvwellheader";
   const [showSystem, setShowSystem] = useState(false);
   /** Selected parent RECORD per parent table — the §3.9 navigation state.
    *  Keyed by record id, not row index, so it survives a re-sort or a refresh
@@ -185,9 +197,12 @@ export function EditData({
             Attachments
           </button>
           <button type="button" onClick={() => setVertical((v) => !v)}
-            title="Change Edit Mode — horizontal reads left to right, vertical top to bottom"
-            className="h-7 px-2 text-[11px] rounded border border-gray-600 text-gray-200 hover:bg-gray-700">
-            {vertical ? "Vertical" : "Horizontal"} mode
+            disabled={forcedVertical} data-testid="wv-edit-mode"
+            title={forcedVertical
+              ? "A well has one header record, so it always shows in vertical mode."
+              : "Change Edit Mode — horizontal reads left to right, vertical top to bottom"}
+            className="h-7 px-2 text-[11px] rounded border border-gray-600 text-gray-200 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+            {vertical || forcedVertical ? "Vertical" : "Horizontal"} mode
           </button>
           <button type="button" onClick={saveAndExit} data-testid="wv-edit-save-exit"
             className="h-7 px-3 text-[11px] rounded bg-blue-600 text-white hover:bg-blue-500">
@@ -221,7 +236,7 @@ export function EditData({
               <FolderRecords
                 key={`${table}-${chain.length}-${showSystem}`}
                 db={db} idwell={idwell} table={table} chain={chain}
-                vertical={vertical} showSystem={showSystem}
+                vertical={vertical || forcedVertical} showSystem={showSystem}
                 parentPick={parentPick} setParentPick={setParentPick}
                 clipboard={clipboard} onClipboard={onClipboard}
                 onStatus={setStatus}
@@ -1234,6 +1249,52 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     const hasLookup = !!seeded || !!c.library;
     const listId = seeded ? `wv-lu-${data.table}-${c.column}` : undefined;
     const open = hasLookup && popover?.key === (key ?? "__ghost__") && popover.col === c.column;
+
+    /*
+     * A LONG TEXT FIELD GETS A TEXTAREA, and this is data loss, not comfort.
+     *
+     * An <input type=text> does not merely hide the rest of a long value — the
+     * HTML value-sanitization algorithm STRIPS carriage returns and line feeds
+     * from it. Measured in Chromium: "line one\r\nline two\nline three" comes
+     * back out of an input as "line oneline twoline three". So opening one of
+     * these cells and typing a single character welds the paragraphs together,
+     * and saveAll writes the flattened string back over the original.
+     *
+     * 869 stored values across 24 columns contain a newline; 563 of them are
+     * wvJobReportTimeLog.Com, the most-edited folder in the product. The
+     * longest value in the sample is 1,819 characters.
+     *
+     * Driven by the model's own `stringlong`, which 165 fields declare and the
+     * API has always forwarded — this is one branch beside the two that already
+     * exist for boolean and datetime. NOT widened to `string`: 2,031 fields
+     * carry that, and turning them all into textareas would make horizontal
+     * mode unreadable.
+     *
+     * The guide corroborates the shape: its Edit Data shortcut list binds
+     * Ctrl+Tab to "Insert an indent (extra spaces) in a comments field", which
+     * only means anything in a multi-line editor.
+     */
+    if (c.type === "stringlong") {
+      return (
+        <textarea
+          rows={1}
+          value={val}
+          placeholder={isGhost ? "new…" : undefined}
+          onFocus={(e) => { focusHelp(c); e.currentTarget.rows = 6; }}
+          onBlur={(e) => { e.currentTarget.rows = 1; }}
+          onChange={(e) => {
+            if (isGhost) setGhostValue(c.column, e.target.value);
+            else setValue(key!, c.column, e.target.value);
+          }}
+          data-testid="wv-cell-long"
+          className={`w-full min-w-[7rem] px-1.5 py-0.5 text-[11px] border rounded resize-y
+            focus:bg-white focus:border-blue-400 focus:outline-none ${
+              fieldTone(c, val)
+            } ${isGhost ? "italic text-gray-600" : "text-gray-900"}`}
+        />
+      );
+    }
+
     return (
       <div className={hasLookup ? "relative flex items-center" : undefined}>
         <input
@@ -1457,7 +1518,12 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                 </tr>
               )}
               <tr>
-                <th className="px-1 py-1 border-b border-gray-200 w-16" />
+                {/*
+                  * The corner cell must out-stack the sticky header row it sits
+                  * in (z-10 above), or the frozen gutter scrolls under the
+                  * headings instead of over the rows.
+                  */}
+                <th className="px-1 py-1 border-b border-gray-200 w-16 sticky left-0 z-20 bg-gray-100" />
                 {cols.map((c) => (
                   <th key={c.column}
                     className={`px-1.5 py-1 text-left font-medium whitespace-nowrap border-b border-gray-200 ${
@@ -1481,7 +1547,28 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                   <tr key={k ?? i} data-row={k ?? undefined}
                     className={`${i % 2 ? "bg-gray-50" : ""} ${dirty ? "outline outline-1 outline-blue-300" : ""} ${
                       k && k === focusRecord ? "bg-amber-50" : ""}`}>
-                    <td className="align-middle">{rowActions(r, i)}</td>
+                    {/*
+                      * RECORD NUMBERS AND A FROZEN GUTTER, which 1.012 lists as
+                      * two of 9.0's Edit Data enhancements: "When you scroll
+                      * right or down through records, the first column or row is
+                      * frozen" and "Each record is assigned a number."
+                      *
+                      * Vertical mode has had both all along; horizontal — the
+                      * DEFAULT mode — had neither, so scrolling a 105-column
+                      * well header sideways left nothing to say which record a
+                      * row was. The number is also the guide's own selection hit
+                      * target ("To select one record, click the record number
+                      * column"), so it has to exist before selection can.
+                      *
+                      * The stripe is repeated on the cell because it is set on
+                      * the <tr>, and a sticky child needs its own opaque
+                      * background or the scrolled rows show through it.
+                      */}
+                    <td className={`align-middle sticky left-0 z-10 whitespace-nowrap ${
+                      k && k === focusRecord ? "bg-amber-50" : i % 2 ? "bg-gray-50" : "bg-white"}`}>
+                      <span className="text-gray-400 tabular-nums pl-1 pr-0.5">{i + 1}</span>
+                      {rowActions(r, i)}
+                    </td>
                     {cols.map((c) => (
                       <td key={c.column} className="border-b border-gray-100 align-top"
                         data-cell={k ? `${k}|${c.column.toLowerCase()}` : undefined}>
