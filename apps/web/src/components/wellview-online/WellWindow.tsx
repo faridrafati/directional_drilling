@@ -1244,8 +1244,18 @@ function SchematicSvg({
       cur = byId.get(parent);
     }
     const ko = num(byId.get(boreId)?.KickOffDepth);
-    return (row: WvSchematicRow): boolean => {
-      const link = String(row.IDRecWellBore ?? "");
+    /**
+     * @param linkKey the column naming the wellbore this row belongs to.
+     *
+     * Most tables carry `IDRecWellBore`. wvWellboreSize does not — a hole
+     * section hangs off its bore by `IDRecParent` — so with the default key its
+     * link read empty and the filter passed EVERY size row through. The result
+     * was that on the three wells with a second wellbore, the sidetrack's hole
+     * profile was drawn over the original's whatever the wellbore selector
+     * said. Naming the column is what makes the filter apply.
+     */
+    return (row: WvSchematicRow, linkKey = "IDRecWellBore"): boolean => {
+      const link = String((row as Record<string, unknown>)[linkKey] ?? "");
       if (!link || chain.has(link)) return true;
       // above the kickoff point → always shown, per the manual
       if (ko != null) {
@@ -1267,7 +1277,8 @@ function SchematicSvg({
   const propTubings = showProposed ? s.tubings.filter((t) => isProposed(t) && boreFilter(t)) : [];
   const sizes = (layers.holeSizes ? s.sizes : []).filter((z) => {
     const start = dstr(z.DtTmStart);
-    return (!start || start <= date);
+    // By IDRecParent: a hole section has no IDRecWellBore of its own.
+    return (!start || start <= date) && boreFilter(z, "IDRecParent");
   });
   const perfs = (layers.perforations ? s.perforations : []).filter((p) => {
     const d = dstr(p.DtTm);
@@ -1296,17 +1307,27 @@ function SchematicSvg({
    */
   const depthsOf = (dated: boolean): number[] => {
     const out: number[] = [];
+    /*
+     * SmartScaling decides WHEN, the wellbore selector decides WHAT. So the
+     * undated branch drops the date filter and keeps the bore one: an axis
+     * scaled for a sidetrack that is not being drawn would squeeze the bore
+     * that is into a sliver.
+     */
     const strings = dated
       ? [casings, tubings, rods, other, propCasings, propTubings]
-      : [s.casings, s.tubings, s.rods, s.otherInHole];
+      : [s.casings, s.tubings, s.rods, s.otherInHole].map((set) => set.filter((r) => boreFilter(r)));
     for (const set of strings) for (const r of set) { const d = num(r.DepthBtm); if (d) out.push(d); }
-    for (const z of (dated ? sizes : s.sizes)) { const d = num(z.DepthBtmActual); if (d) out.push(d); }
-    for (const p of (dated ? perfs : s.perforations)) {
+    for (const z of (dated ? sizes : s.sizes.filter((z) => boreFilter(z, "IDRecParent")))) {
+      const d = num(z.DepthBtmActual); if (d) out.push(d);
+    }
+    for (const p of (dated ? perfs : s.perforations.filter((p) => boreFilter(p)))) {
       const d = num(p.DepthBtm) ?? num(p.DepthTop); if (d) out.push(d);
     }
     // Zones are geology, not equipment: they are in the well whatever the date,
-    // so SmartScaling does not exclude them.
-    for (const z of (layers.zones ? s.zones : [])) { const d = num(z.DepthBtm); if (d) out.push(d); }
+    // so SmartScaling does not exclude them — but the bore selector still does.
+    for (const z of (layers.zones ? s.zones.filter((z) => boreFilter(z)) : [])) {
+      const d = num(z.DepthBtm); if (d) out.push(d);
+    }
     return out;
   };
   const maxDepth = Math.max(100, ...depthsOf(smartScaling)) * 1.04;
@@ -1353,7 +1374,9 @@ function SchematicSvg({
   }
 
   // zones: green bands behind strings
-  for (const [i, z] of (layers.zones ? s.zones : []).entries()) {
+  // Zones carry IDRecWellBore and were never filtered by it either, so a
+  // sidetrack's zones banded across the original hole.
+  for (const [i, z] of (layers.zones ? s.zones : []).filter((z) => boreFilter(z)).entries()) {
     const top = num(z.DepthTop), btm = num(z.DepthBtm);
     if (top == null || btm == null) continue;
     items.push(
