@@ -1287,30 +1287,10 @@ export async function registerWellviewDbRoutes(
       // Four kinds: arithmetic over the row itself, totals over child rows, the
       // value on the most recent child by date, and the two hand-written
       // formulas the model states in a form no parser here will read.
-      const computed = [
-        ...calcFieldsFor(t.name).map((c) => ({ field: c.field, label: c.label, eqn: c.eqn })),
-        ...calcAggregatesFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
-        ...calcLatestFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
-        ...calcNamedFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
-        ...calcOverAggregatesFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
-        ...calcLookupsFor(t.name).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
-        // …where each piece of a casing or tubing string sits in the hole,
-        // which is one walk up the stack from the shoe. See stringStack.ts.
-        ...stackFieldsFor(t.name).map((f) => ({
-          field: f,
-          label: modelField(t.name, f)?.label ?? f,
-          eqn: modelField(t.name, f)?.help ?? "",
-        })),
-        // …and the mud check's own out-of-range summary, which is one hand
-        // written comparison against the mud program. See mudOutOfRange.ts.
-        ...(t.name.toLowerCase() === "wvjobreportmudchk" && modelField(t.name, "outofrangecalc")
-          ? [{
-            field: "outofrangecalc",
-            label: modelField(t.name, "outofrangecalc")?.label ?? "Out of Range",
-            eqn: modelField(t.name, "outofrangecalc")?.help ?? "",
-          }]
-          : []),
-      ];
+      // One roll-call for every surface — see computedFieldsFor. Not the report
+      // variant: the Time Log's clock needs the day it belongs to, which a
+      // folder grid has no notion of.
+      const computed = computedFieldsFor(t.name);
       const where: string[] = [];
       const args: string[] = [];
       if (req.query.idwell && t.hasIdwell) { where.push(`"${t.colSet.get("idwell")}" = ?`); args.push(req.query.idwell); }
@@ -2741,12 +2721,25 @@ export async function registerWellviewDbRoutes(
    * Only per-well tables can select wells, so only those are offered — the
    * builder cannot be used to compose a criterion the runner would then skip.
    */
-  app.get<{ Params: { db: string }; Querystring: { table?: string } }>(
+  /*
+   * The fields a table offers.
+   *
+   * `computed=1` appends the ones this app WORKS OUT — the report designer's
+   * picker asks for those, because its own body text promises them: "Fields the
+   * app computes can be printed too; they are marked green on the report, as
+   * WellView marks them." They were never offered.
+   *
+   * The flag exists because this route is shared with the Query Builder, where
+   * a computed name is a criterion the runner cannot apply — it would become a
+   * new way to write a query that silently matches nothing.
+   */
+  app.get<{ Params: { db: string }; Querystring: { table?: string; computed?: string } }>(
     "/entry/wellview/dbs/:db/query-fields",
     { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
+      const wantComputed = req.query.computed === "1";
       if (!req.query.table) {
         const out = [...schema(d).values()]
           .filter((t) => t.hasIdwell && !HIDDEN_TABLES.test(t.name.toLowerCase()))
@@ -2791,6 +2784,39 @@ export async function registerWellviewDbRoutes(
             };
           })
           .sort((a, b) => a.label.localeCompare(b.label)),
+        /*
+         * The fields this app WORKS OUT, offered only where they can be used.
+         *
+         * The report designer's own body text promises them — "Fields the app
+         * computes can be printed too; they are marked green on the report, as
+         * WellView marks them" — and checkReport has always accepted their
+         * names. The picker simply never listed one, so the promise was
+         * unactionable: a user had to know the field existed and could not type
+         * it anywhere.
+         *
+         * Withheld from the Query Builder, which shares this route. A computed
+         * name has no column, so a criterion over one cannot be compiled to
+         * SQL; offering it there would be a new way to write a query that
+         * silently matches nothing.
+         *
+         * `forReport` is off: the Time Log's clock times need the report day
+         * they belong to, which the designer cannot promise a block will have.
+         */
+        computed: wantComputed
+          ? computedFieldsFor(t.name).map((c) => {
+            const mf = modelField(t.name, c.field);
+            return {
+              field: c.field,
+              label: c.label,
+              type: mf?.type ?? "double",
+              unit: mf?.baseUnit,
+              units: mf?.units,
+              /** The model's own sentence, so the picker can show what it is. */
+              eqn: c.eqn,
+              computed: true as const,
+            };
+          }).sort((a, b) => a.label.localeCompare(b.label))
+          : undefined,
       };
     },
   );
@@ -3475,6 +3501,48 @@ export async function registerWellviewDbRoutes(
   }
 
   /** Validate a definition against THIS database, naming what is wrong. */
+/**
+ * Every field this app can compute for a table, from one list.
+ *
+ * The calc engine has grown to six registries plus three dedicated modules, and
+ * the places that had to know about them were each maintaining their own copy
+ * of the roll-call. They had already drifted: the saved-report validator knew
+ * six of the eight, so a report naming a string-stack depth or a time-log clock
+ * — fields the resolver prints perfectly well — was refused at save.
+ *
+ * @param forReport include the fields only the REPORT path can produce. The
+ * Time Log's clock needs the day it belongs to as its anchor, which Edit Data
+ * has no notion of; offering it in a folder grid would advertise a column that
+ * is always blank there.
+ */
+function computedFieldsFor(
+  tableName: string,
+  opts: { forReport?: boolean } = {},
+): { field: string; label: string; eqn: string }[] {
+  const lbl = (f: string) => modelField(tableName, f)?.label ?? f;
+  const help = (f: string) => modelField(tableName, f)?.help ?? "";
+  const out = [
+    ...calcFieldsFor(tableName).map((c) => ({ field: c.field, label: c.label, eqn: c.eqn })),
+    ...calcAggregatesFor(tableName).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+    ...calcLatestFor(tableName).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+    ...calcNamedFor(tableName).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+    ...calcOverAggregatesFor(tableName).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+    ...calcLookupsFor(tableName).map((a) => ({ field: a.field, label: a.label, eqn: a.eqn })),
+    // Where each piece of a casing or tubing string sits in the hole.
+    ...stackFieldsFor(tableName).map((f) => ({ field: f, label: lbl(f), eqn: help(f) })),
+    // The mud check's own out-of-range summary against the mud program.
+    ...(tableName.toLowerCase() === "wvjobreportmudchk" && modelField(tableName, "outofrangecalc")
+      ? [{ field: "outofrangecalc", label: lbl("outofrangecalc"), eqn: help("outofrangecalc") }]
+      : []),
+  ];
+  if (opts.forReport && tableName.toLowerCase() === "wvjobreporttimelog") {
+    for (const f of ["dttmstartcalc", "dttmendcalc", "sumofdurationcalc"]) {
+      if (modelField(tableName, f)) out.push({ field: f, label: lbl(f), eqn: help(f) });
+    }
+  }
+  return out;
+}
+
   function checkReport(d: Db, def: SavedReportDef): string[] {
     const bad: string[] = [];
     if (!def.blocks?.length) bad.push("a report needs at least one block");
@@ -3487,12 +3555,12 @@ export async function registerWellviewDbRoutes(
         // has no column at all — refusing those would reject exactly the fields
         // WellView is best known for printing.
         if (t.colSet.has(f.toLowerCase())) continue;
-        if (calcFieldsFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
-        if (calcAggregatesFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
-        if (calcLatestFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
-        if (calcNamedFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
-        if (calcOverAggregatesFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
-        if (calcLookupsFor(t.name).some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
+        // One roll-call, shared with the field picker and the folder grid. This
+        // used to list six of the eight sources by hand, so a report naming a
+        // string-stack depth or a time-log clock — both of which the resolver
+        // prints — was refused at save.
+        if (computedFieldsFor(t.name, { forReport: true })
+          .some((c) => c.field.toLowerCase() === f.toLowerCase())) continue;
         bad.push(`${b.table}.${f} is neither a column here nor a field this app can compute`);
       }
     }
@@ -3505,16 +3573,36 @@ export async function registerWellviewDbRoutes(
     { preHandler: WELLVIEW_GUARD },
     async (req) => {
       if (!prisma) return { reports: [], note: "saved reports need the application database" };
-      const rows = await prisma.wellviewReport.findMany({
-        where: { database: req.params.db },
-        orderBy: [{ category: "asc" }, { name: "asc" }],
-      });
+      /*
+       * "MY REPORTS" MEANS MINE.
+       *
+       * The folder is called My Reports and listed every administrator's, so
+       * one person's designs filled another's sidebar and either could delete
+       * the other's. The createdBy column exists and has been written all
+       * along; nothing asked it.
+       *
+       * The count of other people's is still reported, because a list that
+       * silently shrank would read as data loss on a database that already
+       * holds them. It says how many are not shown, not what they are.
+       */
+      const me = req.entryUser?.username ?? "";
+      const [rows, others] = await Promise.all([
+        prisma.wellviewReport.findMany({
+          where: { database: req.params.db, createdBy: me },
+          orderBy: [{ category: "asc" }, { name: "asc" }],
+        }),
+        prisma.wellviewReport.count({
+          where: { database: req.params.db, createdBy: { not: me } },
+        }),
+      ]);
       return {
         reports: rows.map((r) => ({
           id: r.id, name: r.name, category: r.category ?? "My Reports",
           definition: JSON.parse(r.definition) as SavedReportDef,
           createdBy: r.createdBy, updatedAt: r.updatedAt.toISOString(),
         })),
+        /** Saved here by someone else — counted so the absence is not silent. */
+        otherUsers: others || undefined,
       };
     },
   );
@@ -3568,6 +3656,18 @@ export async function registerWellviewDbRoutes(
       if (!prisma) return reply.code(503).send({ error: "saved reports need the application database" });
       const found = await prisma.wellviewReport.findUnique({ where: { id: req.params.id } });
       if (!found) return reply.code(404).send({ error: "no such report" });
+      /*
+       * Two guards this route had neither of, both of which the saved-QUERY
+       * delete already has: a report belongs to ONE database and to ONE person.
+       * Without the first, a report saved against one database could be deleted
+       * through another's URL; without the second, anyone could delete anyone's.
+       */
+      if (found.database !== req.params.db) {
+        return reply.code(404).send({ error: "no such report in this database" });
+      }
+      if (found.createdBy !== (req.entryUser?.username ?? "")) {
+        return reply.code(403).send({ error: "that report was saved by someone else" });
+      }
       await prisma.wellviewReport.delete({ where: { id: req.params.id } });
       return { deleted: req.params.id };
     },

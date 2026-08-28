@@ -571,9 +571,20 @@ export const wvDbApi = {
     entryApi.get<{ tables: { table: string; label: string }[] }>(
       `/wellview/dbs/${enc(db)}/query-fields`),
 
-  queryFields: (db: string, table: string) =>
-    entryApi.get<{ table: string; fields: WvQueryField[] }>(
-      `/wellview/dbs/${enc(db)}/query-fields?table=${enc(table)}`),
+  /**
+   * @param withComputed also return the fields the app WORKS OUT.
+   *
+   * Only the report designer asks for them. A computed field has no column, so
+   * a query criterion over one cannot be compiled to SQL — offering them in the
+   * Query Builder would be a new way to write a query that matches nothing.
+   */
+  queryFields: (db: string, table: string, withComputed = false) =>
+    entryApi.get<{
+      table: string;
+      fields: WvQueryField[];
+      computed?: (WvQueryField & { eqn?: string; computed: true })[];
+    }>(`/wellview/dbs/${enc(db)}/query-fields?table=${enc(table)}`
+      + (withComputed ? "&computed=1" : "")),
 
   /** Run criteria that have not been saved — the builder's preview. */
   runCriteria: (db: string, criteria: WvCriterion[]) =>
@@ -713,8 +724,13 @@ export const wvDbApi = {
    */
   /** §9.2 My Reports — the reports this user designed for this database. */
   savedReports: (db: string) =>
-    entryApi.get<{ reports: WvSavedReport[]; note?: string }>(
-      `/wellview/dbs/${enc(db)}/reports`),
+    entryApi.get<{
+      reports: WvSavedReport[];
+      note?: string;
+      /** Saved for this database by SOMEONE ELSE — counted so the list's
+       *  scoping is visible rather than silent. */
+      otherUsers?: number;
+    }>(`/wellview/dbs/${enc(db)}/reports`),
 
   saveReport: (db: string, body: {
     id?: string; name: string; category?: string; definition: WvReportDef;

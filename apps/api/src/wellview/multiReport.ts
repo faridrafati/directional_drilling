@@ -20,7 +20,7 @@
  * well name is prepended when the template does not already print it.
  */
 import type { DatabaseSync } from "node:sqlite";
-import { columnLabel, modelField, modelTable } from "./model.js";
+import { columnLabel, modelField, modelTable, orderByFor } from "./model.js";
 import { classifyOmitted, type OmittedColumn } from "./omitted.js";
 
 export interface MultiTemplateField {
@@ -395,9 +395,32 @@ export function resolveMultiTemplate(
 
     const sel = present.map((r) => `${r.alias}."${r.actual}"`);
     const placeholders = idwells.map(() => "?").join(", ");
+    /*
+     * TWO KEYS, and the well has to come first.
+     *
+     * These rows came back in storage order, so a folder's rows appeared in an
+     * order that matched neither the folder nor anything else: measured over 36
+     * tables, 30 of them differ from the order Edit Data shows, most with every
+     * row displaced.
+     *
+     * `orderByFor` is the app's one ordering rule and applies directly — but
+     * ALONE it would make this worse. Most tables resolve to a date, and a date
+     * across forty-two wells interleaves them, which is the very complaint the
+     * audit raises. So the well groups the rows and the folder's own rule
+     * orders them within each well.
+     *
+     * By well NAME, not by the order the Explorer's selection arrived in: a
+     * multi-well report is read as a document, and a document's rows should sit
+     * where the reader can find them rather than where someone happened to
+     * click. Stated because the two genuinely disagree.
+     */
+    const within = orderByFor(t.name, t.cols, "t0");
+    const wellKey = well?.cols.has("wellname") ? `w."${well.cols.get("wellname")}"` : null;
+    const orderBy = [wellKey, within].filter(Boolean).join(", ");
     const sql = `SELECT ${[...lead, idwellSel, ...sel].join(", ")}
                    FROM "${t.name}" t0${wellJoin}${linkJoins}
-                  WHERE t0."${t.cols.get("idwell")}" IN (${placeholders})${filterWhere}`;
+                  WHERE t0."${t.cols.get("idwell")}" IN (${placeholders})${filterWhere}`
+      + (orderBy ? ` ORDER BY ${orderBy}` : "");
 
     let raw: Record<string, unknown>[] = [];
     let total = 0;

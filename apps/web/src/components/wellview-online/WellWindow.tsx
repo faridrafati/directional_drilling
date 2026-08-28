@@ -265,6 +265,17 @@ function ReportsTab({ db, idwell, store, onEditTable, onEditRecord }: {
               </p>
             )}
             {/*
+              * The folder is called My Reports and used to list everyone's, so
+              * one person's designs filled another's sidebar and either could
+              * delete the other's. It is scoped now — and says how many are not
+              * shown, because a list that quietly shrank would read as loss.
+              */}
+            {!!savedQ.data?.otherUsers && (
+              <p className="px-2 py-1 text-[10px] text-gray-400" data-testid="wv-reports-others">
+                {savedQ.data.otherUsers} more saved here by other users, not shown.
+              </p>
+            )}
+            {/*
               * SAVED REPORTS GROUP BY THE CATEGORY THEY WERE GIVEN.
               *
               * The editor asks for a category, the server stores it and orders
@@ -2728,12 +2739,22 @@ function ReportFields({ db, table, chosen, onChange }: {
   db: string; table: string; chosen: string[]; onChange: (f: string[]) => void;
 }) {
   const q = useQuery({
-    queryKey: ["wvdb", db, "query-fields", table],
-    queryFn: () => wvDbApi.queryFields(db, table),
+    queryKey: ["wvdb", db, "query-fields", table, "computed"],
+    queryFn: () => wvDbApi.queryFields(db, table, true),
     enabled: !!table,
     staleTime: Infinity,
   });
-  const all = q.data?.fields ?? [];
+  const stored = q.data?.fields ?? [];
+  const computed = q.data?.computed ?? [];
+  /*
+   * Stored columns and computed fields in ONE list, the computed ones marked.
+   *
+   * The panel below already promises these — "Fields the app computes can be
+   * printed too; they are marked green on the report, as WellView marks them" —
+   * and the server has always accepted their names. They were simply never
+   * offered, so the promise could not be acted on.
+   */
+  const all = [...stored, ...computed];
   const labelOf = (f: string) =>
     all.find((x) => x.field.toLowerCase() === f.toLowerCase())?.label ?? f;
   const move = (i: number, by: number) => {
@@ -2750,8 +2771,18 @@ function ReportFields({ db, table, chosen, onChange }: {
           onChange={(e) => { if (e.target.value) onChange([...chosen, e.target.value]); }}
           className="h-8 border border-gray-300 rounded px-1 text-xs bg-white flex-1">
           <option value="">Add a field…</option>
-          {all.filter((f) => !chosen.some((c) => c.toLowerCase() === f.field.toLowerCase()))
+          {stored.filter((f) => !chosen.some((c) => c.toLowerCase() === f.field.toLowerCase()))
             .map((f) => <option key={f.field} value={f.field}>{f.label}</option>)}
+          {/* Grouped, not mixed in: a computed field prints green and cannot be
+              filtered on, so the reader should see which kind they are picking. */}
+          {computed.length > 0 && (
+            <optgroup label="Computed by this app">
+              {computed.filter((f) => !chosen.some((c) => c.toLowerCase() === f.field.toLowerCase()))
+                .map((f) => (
+                  <option key={f.field} value={f.field} title={f.eqn}>{f.label}</option>
+                ))}
+            </optgroup>
+          )}
         </select>
       </div>
       {!chosen.length && (
@@ -2761,7 +2792,11 @@ function ReportFields({ db, table, chosen, onChange }: {
         {chosen.map((f, i) => (
           <li key={f} className="flex items-center gap-1 text-[11px]" data-testid="wv-re-field">
             <span className="w-5 text-gray-400 tabular-nums text-right">{i + 1}</span>
-            <span className="flex-1 truncate text-gray-800">{labelOf(f)}</span>
+            <span className={`flex-1 truncate ${
+              computed.some((c) => c.field.toLowerCase() === f.toLowerCase())
+                ? "text-green-700" : "text-gray-800"}`}>
+              {labelOf(f)}
+            </span>
             <button type="button" onClick={() => move(i, -1)} disabled={i === 0}
               title="Move up" className="h-6 w-6 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30">↑</button>
             <button type="button" onClick={() => move(i, 1)} disabled={i === chosen.length - 1}
