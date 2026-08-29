@@ -1900,7 +1900,10 @@ export async function registerWellviewDbRoutes(
    * Candidate records for a link column's target table, with readable captions
    * — what the manual's associated-data lookup shows instead of GUIDs.
    */
-  app.get<{ Params: { db: string }; Querystring: { table?: string; idwell?: string } }>(
+  app.get<{
+    Params: { db: string };
+    Querystring: { table?: string; idwell?: string; source?: string; parent?: string };
+  }>(
     "/entry/wellview/dbs/:db/link-candidates",
     { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
@@ -1910,14 +1913,51 @@ export async function registerWellviewDbRoutes(
       if (!t) return reply.code(404).send({ error: `no table ${req.query.table}` });
       const idCol = t.colSet.get("idrec");
       if (!idCol) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
-      const where = req.query.idwell && t.hasIdwell ? "WHERE idwell = ?" : "";
-      const args = where ? [String(req.query.idwell)] : [];
+
+      /*
+       * A LINK BETWEEN SIBLINGS IS SCOPED TO THEIR SHARED PARENT.
+       *
+       * A stimulation stage picks one of the fluids defined for THAT
+       * stimulation — the help is explicit: "You must define all of the fluid
+       * records before you can define the stimulation or treatment stages."
+       * The list was scoped to the WELL, so a stage on one stim offered all 20
+       * fluids on the well where 4 are legal, and 28 of the 39 fluid rows share
+       * a caption with another, so the wrong one is not even distinguishable.
+       *
+       * The rule is read off the schema, not a list of tables: when the source
+       * and the target have the SAME prefix parent they are siblings, and the
+       * link can only point within one parent record. 25 link columns in the
+       * model are of that shape and every one was over-offered; the worst is
+       * wvJobRig.IDRecJobContactContractor at 97 candidates where 7 are legal.
+       *
+       * Gated strictly on the shared prefix parent, never on "has an
+       * IDRecParent": wvCement.IDRecString points clean across the tree and
+       * must keep the well-wide list.
+       */
+      const src = req.query.source ? table(d, String(req.query.source)) : null;
+      const parentCol = t.colSet.get("idrecparent");
+      const sibling = !!src && !!parentCol && !!t.parent && !!src.parent
+        && String(t.parent).toLowerCase() === String(src.parent).toLowerCase();
+      // A record with no parent of its own falls back to the well-wide list:
+      // an empty picker would leave a broken link with no way to repair it.
+      const scoped = sibling && !!req.query.parent;
+
+      const preds: string[] = [];
+      const args: string[] = [];
+      if (req.query.idwell && t.hasIdwell) { preds.push("idwell = ?"); args.push(String(req.query.idwell)); }
+      if (scoped) { preds.push(`"${parentCol}" = ?`); args.push(String(req.query.parent)); }
+      const where = preds.length ? `WHERE ${preds.join(" AND ")}` : "";
       const ord = orderClause(t);
+      const LIMIT = 300;
       const rows = d.ro.prepare(
-        `SELECT * FROM "${t.name}" ${where}${ord ? ` ORDER BY ${ord}` : ""} LIMIT 300`,
+        `SELECT * FROM "${t.name}" ${where}${ord ? ` ORDER BY ${ord}` : ""} LIMIT ${LIMIT}`,
       ).all(...args) as Record<string, unknown>[];
       return {
         table: t.name,
+        /** True when the list was narrowed to the record's own parent. */
+        scoped,
+        /** Whether more candidates exist than were returned. */
+        truncated: rows.length === LIMIT,
         candidates: rows.map((r) => ({ idrec: String(r[idCol]), caption: captionOf(t, r) })),
       };
     },

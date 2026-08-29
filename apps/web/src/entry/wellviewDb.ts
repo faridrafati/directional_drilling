@@ -723,9 +723,26 @@ export const wvDbApi = {
     (anchor ? `&anchor=${enc(`${anchor.table}:${anchor.idrec}`)}` : ""),
 
   /** Candidate records (id + readable caption) for a link column's target table. */
-  linkCandidates: (db: string, table: string, idwell?: string) =>
-    entryApi.get<{ table: string; candidates: { idrec: string; caption: string }[] }>(
-      `/wellview/dbs/${enc(db)}/link-candidates?table=${enc(table)}${idwell ? `&idwell=${enc(idwell)}` : ""}`),
+  /**
+   * @param source the table the link is being edited ON, and @param parent that
+   * record's own IDRecParent.
+   *
+   * Supplied together they let the server narrow a SIBLING link to the parent
+   * both records share — a stimulation stage offering the fluids of that
+   * stimulation rather than every fluid on the well. The server decides whether
+   * the narrowing applies; sending them on a link that points elsewhere is
+   * harmless and returns the wide list.
+   */
+  linkCandidates: (db: string, table: string, idwell?: string,
+    source?: string, parent?: string | null) =>
+    entryApi.get<{
+      table: string; scoped?: boolean; truncated?: boolean;
+      candidates: { idrec: string; caption: string }[];
+    }>(
+      `/wellview/dbs/${enc(db)}/link-candidates?table=${enc(table)}`
+      + (idwell ? `&idwell=${enc(idwell)}` : "")
+      + (source ? `&source=${enc(source)}` : "")
+      + (parent ? `&parent=${enc(parent)}` : "")),
 
   /** A record's ancestor chain, subject-area root first — lets Edit Data open
    *  on a record found in a report with every parent folder positioned. */

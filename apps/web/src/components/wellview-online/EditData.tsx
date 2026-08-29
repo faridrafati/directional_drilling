@@ -759,13 +759,16 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     return [...set].sort();
   }, [cols]);
   const candsQ = useQuery({
-    queryKey: ["wvdb", db, "linkcands", data.table, idwell, linkTables.join(",")],
+    queryKey: ["wvdb", db, "linkcands", data.table, idwell, parentIdrec, linkTables.join(",")],
     enabled: linkTables.length > 0,
     queryFn: async () => {
       const out: Record<string, { idrec: string; caption: string }[]> = {};
       for (const t of linkTables) {
-        try { out[t] = (await wvDbApi.linkCandidates(db, t, idwell)).candidates; }
-        catch { out[t] = []; }
+        // Every row in this folder hangs off the same parent, so the folder's
+        // parent is the scope a sibling link is confined to.
+        try {
+          out[t] = (await wvDbApi.linkCandidates(db, t, idwell, data.table, parentIdrec)).candidates;
+        } catch { out[t] = []; }
       }
       return out;
     },
