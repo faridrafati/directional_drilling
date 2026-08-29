@@ -74,11 +74,33 @@ interface Props {
   clipboard: WvClipboard | null;
   onClipboard: (c: WvClipboard | null) => void;
   onClose: () => void;
+  /**
+   * The Explorer selection this window was opened on. With more than one, the
+   * title bar offers them — §3.9's "you can then choose from that list of wells
+   * when editing data".
+   */
+  wells?: { idwell: string; name: string }[];
 }
 
 export function EditData({
-  db, idwell, wellName, initialTable, initialRecord, initialColumn, clipboard, onClipboard, onClose,
+  db, idwell, wellName, wells, initialTable, initialRecord, initialColumn, clipboard, onClipboard, onClose,
 }: Props) {
+  /*
+   * SELECT WELLS (§3.9, and 9.0's Edit Data Enhancements).
+   *
+   * "To edit data for a selection of wells, select multiple wells from the well
+   * list… You can then choose from that list of wells when editing data" —
+   * "making it easier for such tasks as copying between wells".
+   *
+   * The window took one `idwell` and had no way back to the Explorer without
+   * closing, so Copy Record here and Paste Record there meant shutting the
+   * window between them. The clipboard already survives that; the switch is
+   * what was missing.
+   */
+  const [well, setWell] = useState(idwell);
+  useEffect(() => { setWell(idwell); }, [idwell]);
+  const wellList = wells ?? [];
+  const currentName = wellList.find((w) => w.idwell === well)?.name ?? wellName;
   const qc = useQueryClient();
   const [table, setTable] = useState<string | null>(initialTable ?? "wvWellHeader");
   const [vertical, setVertical] = useState(false);
@@ -137,8 +159,8 @@ export function EditData({
    */
   const [showCalc, setShowCalc] = useState(false);
   const treeQ = useQuery({
-    queryKey: ["wvdb", db, "tree", idwell, showCalc],
-    queryFn: () => wvDbApi.tree(db, idwell, showCalc),
+    queryKey: ["wvdb", db, "tree", well, showCalc],
+    queryFn: () => wvDbApi.tree(db, well, showCalc),
   });
   const tree = useMemo(() => treeQ.data?.tree ?? [], [treeQ.data]);
   /** The derived folders on offer, so the pane knows which kind it is showing. */
@@ -170,9 +192,9 @@ export function EditData({
   /** Saved edits must reach everything already on screen: the folder tree
    *  counts, the report under this overlay, and the schematic. */
   const onDirty = () => {
-    void qc.invalidateQueries({ queryKey: ["wvdb", db, "tree", idwell] });
+    void qc.invalidateQueries({ queryKey: ["wvdb", db, "tree", well] });
     void qc.invalidateQueries({ queryKey: ["wvdb", db, "template"] });
-    void qc.invalidateQueries({ queryKey: ["wvdb", db, "schematic", idwell] });
+    void qc.invalidateQueries({ queryKey: ["wvdb", db, "schematic", well] });
   };
 
   const pickFolder = (t: string) => {
@@ -196,7 +218,33 @@ export function EditData({
         {/* title bar — the manual: it names the well being worked */}
         <div className="px-3 py-2 bg-gray-800 text-white flex items-center gap-3 shrink-0">
           <span className="text-sm font-semibold">Edit Data</span>
-          <span className="text-xs text-gray-300 truncate">{wellName}</span>
+          {wellList.length > 1 ? (
+            /*
+             * §3.9: "You can then choose from that list of wells when editing
+             * data." Switching saves what is pending first, as leaving a folder
+             * does, and clears the parent picks — a job record chosen on one
+             * well means nothing on another.
+             */
+            <select value={well} data-testid="wv-edit-well"
+              title="The wells selected in the Explorer. Copy a record here and paste it into the same folder on another."
+              onChange={(e) => {
+                const next = e.target.value;
+                void (async () => {
+                  const ok = (await flushRef.current?.()) ?? true;
+                  if (!ok) return;
+                  setParentPick({});
+                  setStatus(null);
+                  setWell(next);
+                })();
+              }}
+              className="h-7 max-w-[22rem] px-1 text-[11px] rounded border border-gray-600 bg-gray-700 text-gray-100">
+              {wellList.map((w) => (
+                <option key={w.idwell} value={w.idwell}>{w.name}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-xs text-gray-300 truncate">{currentName}</span>
+          )}
           <label className="ml-auto flex items-center gap-1 text-[11px] text-gray-300">
             <input type="checkbox" checked={showSystem} onChange={(e) => setShowSystem(e.target.checked)} />
             Show System Fields
@@ -242,7 +290,7 @@ export function EditData({
         </div>
 
         {showInventory && (
-          <InventoryTransfer db={db} toWell={idwell} toWellName={wellName}
+          <InventoryTransfer db={db} toWell={well} toWellName={currentName}
             onClose={() => setShowInventory(false)} />
         )}
         {showAttach && (
@@ -250,7 +298,7 @@ export function EditData({
              folder in view when one is open, so uploading from the Casing
              folder attaches to casing rather than to the well at large. */
           <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 max-h-72 overflow-y-auto shrink-0">
-            <Attachments db={db} idwell={idwell} table={table ?? undefined} />
+            <Attachments db={db} idwell={well} table={table ?? undefined} />
           </div>
         )}
 
@@ -265,11 +313,11 @@ export function EditData({
           {/* records */}
           <section className="flex-1 min-w-0 flex flex-col min-h-0">
             {table && calcTables.has(table.toLowerCase()) ? (
-              <CalcFolder key={table} db={db} idwell={idwell} table={table} onStatus={setStatus} />
+              <CalcFolder key={`${well}-${table}`} db={db} idwell={well} table={table} onStatus={setStatus} />
             ) : table && treeQ.data ? (
               <FolderRecords
-                key={`${table}-${chain.length}-${showSystem}`}
-                db={db} idwell={idwell} table={table} chain={chain}
+                key={`${well}-${table}-${chain.length}-${showSystem}`}
+                db={db} idwell={well} table={table} chain={chain}
                 vertical={vertical || forcedVertical} showSystem={showSystem}
                 parentPick={parentPick} setParentPick={setParentPick}
                 clipboard={clipboard} onClipboard={onClipboard}
@@ -833,6 +881,18 @@ function recordCaption(row: Row | undefined): string {
   }
   return String(row.IDRec ?? "record").slice(0, 12);
 }
+
+/**
+ * A field that gets the comments editor rather than a one-line input.
+ *
+ * 9.0: "Text fields that are 100 characters or more can now function as a
+ * comments field that opens to a larger edit window." `stringlong` fields
+ * declare no length at all and are comments fields by their type.
+ */
+const COMMENTS_FIELD_CHARS = 100;
+export const isCommentsField = (c: { type?: string; size?: number }): boolean =>
+  c.type === "stringlong"
+  || (c.type === "string" && (c.size ?? 0) >= COMMENTS_FIELD_CHARS);
 
 /** DtTm columns hold "YYYY-MM-DDTHH:MM:SSZ" wall-clock stamps. */
 const isDtTmCol = (c: string) => /^dttm/i.test(c);
@@ -1599,9 +1659,21 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
    * a string is visible on the schematic straight away.
    */
   async function insertAbove() {
-    const target = selected[0];
-    const at = data.rows.findIndex((r) => String(r.IDRec ?? "") === target);
-    if (!target || at < 0) return;
+    /*
+     * AS MANY ROWS AS ARE SELECTED, above the topmost of them.
+     *
+     * 9.0: "A new Insert command allows you to add ONE OR MORE rows above the
+     * current row in a sequenced table." The same chapter frames this grid as
+     * Excel's — "Moving between records and fields is similar to working in
+     * Microsoft Excel" — where selecting three rows and inserting gives three.
+     */
+    const chosen = data.rows
+      .map((r, i) => ({ id: String(r.IDRec ?? ""), i }))
+      .filter((x) => selected.includes(x.id));
+    if (!chosen.length) return;
+    const target = chosen[0].id;
+    const at = chosen[0].i;
+    const count = chosen.length;
     setBusy(true);
     try {
       // Pending edits first: this re-reads the folder, and anything unsaved
@@ -1609,11 +1681,13 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       if (dirtyCount > 0 && !(await saveAll())) return;
       const res = await wvDbApi.insert(db, data.table, {
         idwell, ...(parentIdrec ? { parent: parentIdrec } : {}),
-        values: {}, insertBefore: target,
+        values: {}, insertBefore: target, insertCount: count,
       });
       setSelected([]);
       onSaved();
-      onStatus(`Blank record inserted above record ${at + 1} — the records below it moved down one. `
+      const made = res.inserted ?? 1;
+      onStatus(`${made} blank record${made === 1 ? "" : "s"} inserted above record ${at + 1} — `
+        + `the records below moved down ${made === 1 ? "one" : `${made} places`}. `
         + "This changes how strings and tally information draw on the schematic."
         // Rows the user did not edit were written, so the user is told.
         + (res.renumbered
@@ -1940,17 +2014,27 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
      * wvJobReportTimeLog.Com, the most-edited folder in the product. The
      * longest value in the sample is 1,819 characters.
      *
-     * Driven by the model's own `stringlong`, which 165 fields declare and the
-     * API has always forwarded — this is one branch beside the two that already
-     * exist for boolean and datetime. NOT widened to `string`: 2,031 fields
-     * carry that, and turning them all into textareas would make horizontal
-     * mode unreadable.
+     * Driven by the model's own `stringlong`, which 165 fields declare — and by
+     * the DECLARED LENGTH, which is 9.0's own rule for this: "Text fields that
+     * are 100 characters or more can now function as a comments field that
+     * opens to a larger edit window" (Edit Data Enhancements). The model states
+     * that length as `physicalsize` and the data-model builder used to drop it,
+     * so nothing here could tell a 10-character code from a 255-character note.
+     *
+     * That rule is not decoration, it closes the last hole in this one. Of the
+     * 25 columns in the sample database holding a value with a newline in it,
+     * 24 are `stringlong`; the twenty-fifth is wvProblem.actiontaken — a
+     * `string` of 255, "What actions were taken to remedy the problem" — whose
+     * single multi-line value an <input> would have flattened.
+     *
+     * 214 string fields are 100 or more. Still NOT all 2,031: a 50-character
+     * name in a textarea would make horizontal mode unreadable for no gain.
      *
      * The guide corroborates the shape: its Edit Data shortcut list binds
      * Ctrl+Tab to "Insert an indent (extra spaces) in a comments field", which
      * only means anything in a multi-line editor.
      */
-    if (c.type === "stringlong") {
+    if (isCommentsField(c)) {
       return (
         <textarea
           rows={1}
@@ -2246,7 +2330,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           )}
           {ordered && (
             <button type="button" data-testid="wv-edit-insert"
-              disabled={busy || selected.length !== 1 || !!find || data.rows.length === 0}
+              disabled={busy || selected.length === 0 || !!find || data.rows.length === 0}
               onClick={() => void insertAbove()}
               title={find
                 ? "Clear the find to insert — a new record is blank, so it would not match it"
@@ -2254,11 +2338,13 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                   ? "Insert Records (§3.9) — a new blank record ABOVE the selected one. "
                     + "This can change how strings and tallies draw on the schematic."
                   : selected.length
-                    ? `Insert Records — ${selected.length} records are selected; select exactly one, `
-                      + "and the new record goes above it"
+                    // "one or more rows above the current row" — as many as are
+                    // selected, the way a spreadsheet does it.
+                    ? `Insert Records — ${selected.length} blank records above the first of the `
+                      + `${selected.length} selected`
                     : "Insert Records — click a record number to select it, and the new record goes above it"}
               className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
-              Insert
+              {selected.length > 1 ? `Insert ${selected.length}` : "Insert"}
             </button>
           )}
           {ordered && data.allowInsertTop && (

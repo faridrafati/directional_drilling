@@ -189,6 +189,50 @@ d("inserting a record above another", () => {
     scrub();
   });
 
+  it("inserts as many rows as were asked for, in one gap", async () => {
+    /*
+     * 9.0: "A new Insert command allows you to add ONE OR MORE rows above the
+     * current row in a sequenced table." The same chapter frames this grid as
+     * Excel's, where selecting three rows and inserting gives three.
+     */
+    scrub();
+    await addOk(PARENT_A, "one");
+    await addOk(PARENT_A, "two");
+    const two = folder(PARENT_A)[1].id;
+    const res = await app.inject({
+      method: "POST",
+      url: `/entry/wellview/dbs/${DB}/records/${TABLE}`,
+      headers: auth,
+      payload: { idwell: TEST_IDWELL, parent: PARENT_A, values: {}, insertBefore: two, insertCount: 3 },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().inserted).toBe(3);
+
+    const now = folder(PARENT_A);
+    expect(now.map((r) => r.des)).toEqual(["one", "", "", "", "two"]);
+    const seqs = now.map((r) => r.seq);
+    expect(new Set(seqs).size, "every row keeps a number of its own").toBe(seqs.length);
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+    scrub();
+  });
+
+  it("bounds a count that is a mistake rather than an instruction", async () => {
+    // Five hundred blank rows are not recoverable by hand.
+    scrub();
+    await addOk(PARENT_A, "one");
+    const one = folder(PARENT_A)[0].id;
+    const res = await app.inject({
+      method: "POST",
+      url: `/entry/wellview/dbs/${DB}/records/${TABLE}`,
+      headers: auth,
+      payload: { idwell: TEST_IDWELL, parent: PARENT_A, values: {}, insertBefore: one, insertCount: 5000 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().inserted).toBe(200);
+    expect(folder(PARENT_A).length).toBe(201);
+    scrub();
+  });
+
   it("refuses a record in a different folder", async () => {
     scrub();
     await addOk(PARENT_A, "A1");

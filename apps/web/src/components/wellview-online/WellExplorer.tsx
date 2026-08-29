@@ -47,7 +47,17 @@ interface Props {
   /** Open a well (double-click or Open button) into the Reports/Schematic window. */
   onOpen: (idwell: string) => void;
   /** Open the Edit Data window on a well. */
-  onEdit: (idwell: string) => void;
+  /**
+   * @param wells every well the user had selected, not only the one opened.
+   *
+   * 9.0's Edit Data Enhancements: "If users select multiple wells in the
+   * Explorer, they can now access those wells from the Edit Data window, making
+   * it easier for such tasks as copying between wells." §3.9 says the same from
+   * the other end: "To edit data for a selection of wells, select multiple
+   * wells from the well list… You can then choose from that list of wells when
+   * editing data."
+   */
+  onEdit: (idwell: string, wells?: string[]) => void;
   /** Run a WellView multi-well report over the selected wells. */
   onMultiReport: (idwells: string[]) => void;
   /** Run the Data Auditor over the selected wells. */
@@ -535,8 +545,13 @@ export function WellExplorer({ db, onOpen, onEdit, onAudit, onMultiReport, onCha
       <div className="flex items-center gap-1 mb-2 shrink-0 flex-wrap">
         <ToolButton label="Open" hint="Open the selected well to view reports and the schematic"
           disabled={!primary} onClick={() => primary && openWell(primary)} />
-        <ToolButton label="Edit Data" hint="Open the Edit Data window to change well records"
-          disabled={!primary} onClick={() => primary && onEdit(primary)} />
+        <ToolButton
+          label={selected.length > 1 ? `Edit Data (${selected.length})` : "Edit Data"}
+          hint={selected.length > 1
+            ? `Open the Edit Data window on ${selected.length} selected wells — the window can `
+              + "switch between them, which is what makes copying a record from one to another work"
+            : "Open the Edit Data window to change well records"}
+          disabled={!primary} onClick={() => primary && onEdit(primary, selected)} />
         <ToolButton label="New Well" hint="Create a new well in this database (ch. 4 — Well Planning)"
           onClick={() => void newWell()} />
         <ToolButton label="Data Audit" hint="Check that fields meet the §10.2 business rules"

@@ -48,8 +48,14 @@ function Inner() {
     staleTime: Infinity,
   });
   const [openWell, setOpenWell] = useState<string | null>(null);
-  const [edit, setEdit] = useState<
-    { idwell: string; table: string | null; idrec?: string; column?: string | null } | null>(null);
+  const [edit, setEdit] = useState<{
+    idwell: string;
+    table: string | null;
+    idrec?: string;
+    column?: string | null;
+    /** The Explorer selection this was opened on — the window can switch between them. */
+    wells?: string[];
+  } | null>(null);
   const [audit, setAudit] = useState<string[] | null>(null);
   const [multi, setMulti] = useState<string[] | null>(null);
   /** Copy Record / Paste Record buffer — survives closing one well and opening
@@ -136,7 +142,7 @@ function Inner() {
           <WellExplorer
             db={db}
             onOpen={setOpenWell}
-            onEdit={(idwell) => setEdit({ idwell, table: null })}
+            onEdit={(idwell, wells) => setEdit({ idwell, table: null, wells })}
             onAudit={(idwells) => setAudit(idwells)}
             onMultiReport={(idwells) => setMulti(idwells)}
             onChangeDatabase={() => { setDb(null); setOpenWell(null); }}
@@ -160,6 +166,7 @@ function Inner() {
             db={db}
             idwell={edit.idwell}
             wellName={nameOf(edit.idwell)}
+            wells={(edit.wells ?? []).map((w) => ({ idwell: w, name: nameOf(w) }))}
             initialTable={edit.table}
             initialRecord={edit.idrec ?? null}
             initialColumn={edit.column ?? null}

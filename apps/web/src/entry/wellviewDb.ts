@@ -84,6 +84,12 @@ export interface WvRecordColumn {
   itemUnits?: Record<string, UnitFormat>;
   /** Hidden until "Show All Fields". */
   hiddenByDefault?: boolean;
+  /**
+   * Declared length of a text field. 9.0: "Text fields that are 100 characters
+   * or more can now function as a comments field that opens to a larger edit
+   * window."
+   */
+  size?: number;
   type?: WvFieldType;
   unit?: string;
   /** Per unit set: the unit to display in, and its decimals. */
@@ -769,10 +775,14 @@ export const wvDbApi = {
    * tallies) only; anywhere else the server refuses rather than appending.
    */
   insert: (db: string, table: string, body: {
-    idwell?: string; parent?: string; values: Record<string, unknown>; insertBefore?: string;
+    idwell?: string; parent?: string; values: Record<string, unknown>;
+    insertBefore?: string;
+    /** How many blank rows — 9.0's Insert adds "one or more". */
+    insertCount?: number;
   }) =>
-    entryApi.post<{ idrec: string | null; idwell: string | null; renumbered?: number }>(
-      `/wellview/dbs/${enc(db)}/records/${enc(table)}`, body),
+    entryApi.post<{
+      idrec: string | null; idwell: string | null; inserted?: number; renumbered?: number;
+    }>(`/wellview/dbs/${enc(db)}/records/${enc(table)}`, body),
 
   update: (db: string, table: string, idrec: string, values: Record<string, unknown>) =>
     entryApi.patch<{ changed: number }>(`/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}`, { values }),

@@ -1568,6 +1568,8 @@ export async function registerWellviewDbRoutes(
             /** Hidden by default; revealed by "Show All Fields". */
             hiddenByDefault: mf?.hidden,
             type: mf?.type,
+            /** Declared length of a text field — §3.11's comments-field rule. */
+            size: mf?.size,
             unit: mf?.baseUnit,
             applyDatum: mf?.applyDatum || undefined,
             datumMode: mf?.datumMode,
@@ -1836,6 +1838,14 @@ export async function registerWellviewDbRoutes(
       idwell?: string; parent?: string; values?: Record<string, unknown>;
       /** IDRec of the record the new one goes ABOVE. Sequenced folders only. */
       insertBefore?: string;
+      /**
+       * How many blank rows to insert there. 9.0: "A new Insert command allows
+       * you to add ONE OR MORE rows above the current row in a sequenced
+       * table." The same chapter frames the grid as Excel's — "Moving between
+       * records and fields is similar to working in Microsoft Excel" — where
+       * selecting three rows and inserting gives three.
+       */
+      insertCount?: number;
     };
   }>(
     "/entry/wellview/dbs/:db/records/:table",
@@ -1906,11 +1916,19 @@ export async function registerWellviewDbRoutes(
        * parent. Same rule the paste route already uses for a pasted block —
        * a single Add is that block with one row in it.
        */
+      /*
+       * "One or more rows above the current row." A count larger than the
+       * folder is a mistake, not an instruction, so it is bounded rather than
+       * obeyed — five hundred blank rows are not recoverable by hand.
+       */
+      const count = Math.max(1, Math.min(200, Math.trunc(Number(req.body?.insertCount ?? 1)) || 1));
       const seqColIns = t.colSet.get("sysseq");
       /** Rows to renumber to make room, when the caller asked for a position. */
       let shift: { sql: string; args: (string | number)[] } | null = null;
       /** A folder with null sequence numbers, given them before anything moves. */
       let renumber: { sql: string; args: (string | number)[] }[] = [];
+      /** IDRecs of the second and later rows, when more than one was asked for. */
+      const extra: string[] = [];
       if (seqColIns && values[seqColIns] == null) {
         const where: string[] = [];
         const args: string[] = [];
@@ -2018,9 +2036,9 @@ export async function registerWellviewDbRoutes(
             seqAt = Number(at[seqColIns]);
           }
           shift = {
-            sql: `UPDATE "${t.name}" SET "${seqColIns}" = "${seqColIns}" + 1`
+            sql: `UPDATE "${t.name}" SET "${seqColIns}" = "${seqColIns}" + ?`
               + ` WHERE ${[...shiftWhere, `"${seqColIns}" >= ?`].join(" AND ")}`,
-            args: [...shiftArgs, seqAt],
+            args: [count, ...shiftArgs, seqAt],
           };
           values[seqColIns] = seqAt;
         } else {
@@ -2070,6 +2088,16 @@ export async function registerWellviewDbRoutes(
           for (const r of renumber) wdb.prepare(r.sql).run(...r.args);
           wdb.prepare(shift.sql).run(...shift.args);
           ins.run(...cols.map((c) => values[c] as string | number | null));
+          /*
+           * The rest of the requested rows, each with an IDRec and a sequence
+           * number of its own, filling the gap the shift opened.
+           */
+          const idColMore = t.colSet.get("idrec");
+          for (let i = 1; i < count && idColMore; i++) {
+            const more = { ...values, [idColMore]: newIdRec(), [seqColIns!]: Number(values[seqColIns!]) + i };
+            ins.run(...cols.map((c) => more[c] as string | number | null));
+            extra.push(String(more[idColMore]));
+          }
           wdb.exec("COMMIT");
         } catch (e) {
           wdb.exec("ROLLBACK");
@@ -2109,6 +2137,9 @@ export async function registerWellviewDbRoutes(
       return {
         idrec,
         idwell: t.hasIdwell ? idwell : null,
+        /** How many records were created — one, unless more were asked for. */
+        inserted: 1 + extra.length,
+        ...(extra.length ? { extraIdrecs: extra } : {}),
         /** Records given a sequence number they did not have, so this could work. */
         ...(renumber.length ? { renumbered: renumber.length } : {}),
       };
