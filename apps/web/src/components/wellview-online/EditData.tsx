@@ -36,7 +36,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { wvDbApi, type WvRecordColumn, type WvRecords, type WvTreeNode } from "../../entry/wellviewDb.js";
+import { wvDbApi, type WvRecordColumn, type WvRecords, type WvTreeNode, type WvSubjectArea } from "../../entry/wellviewDb.js";
 import { usePicklistCatalog } from "../../entry/picklists.js";
 import { useUnitSet, type UnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
@@ -258,7 +258,8 @@ export function EditData({
           {/* folder tree */}
           <aside className="w-72 shrink-0 border-r border-gray-200 overflow-y-auto p-1.5 bg-gray-50">
             {treeQ.isLoading && <div className="p-2 text-xs text-gray-400">Reading the schema…</div>}
-            <FolderTree nodes={tree} depth={0} active={table} onPick={pickFolder} />
+            <SubjectTree nodes={tree} subjects={treeQ.data?.subjects ?? []}
+              active={table} onPick={pickFolder} />
           </aside>
 
           {/* records */}
@@ -293,12 +294,93 @@ export function EditData({
   );
 }
 
+/**
+ * The folder tree — grouped into subject areas, and openable and closable.
+ *
+ * §3.9 Selecting Folders states both: "Well information in the Edit Data window
+ * is grouped into subject areas… Click to expand a subject area or folder to
+ * see its subfolders. Click to collapse a subject area or folder."
+ *
+ * Neither existed. Sixty-six top-level folders were listed flat and ordered by
+ * hidden table names, with every subfolder of every one of them expanded at
+ * once — 199 rows on this database before a single record is looked at.
+ *
+ * What is open on arrival is the area and the ancestors of the SELECTED folder,
+ * and nothing else: the tree opens on the record the user came to see, rather
+ * than on all of it.
+ */
+function SubjectTree({ nodes, subjects, active, onPick }: {
+  nodes: WvTreeNode[];
+  subjects: WvSubjectArea[];
+  active: string | null;
+  onPick: (t: string) => void;
+}) {
+  const byTable = new Map(nodes.map((n) => [n.table.toLowerCase(), n]));
+  /** The area holding the selected folder, which is the one to open on arrival. */
+  const homeArea = useMemo(() => {
+    const holds = (n: WvTreeNode): boolean =>
+      n.table.toLowerCase() === (active ?? "").toLowerCase() || n.children.some(holds);
+    for (const a of subjects) {
+      if (a.tables.some((t) => { const n = byTable.get(t.toLowerCase()); return n ? holds(n) : false; })) {
+        return a.name;
+      }
+    }
+    return subjects[0]?.name ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subjects, nodes, active]);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const isOpen = (name: string) => open[name] ?? name === homeArea;
+
+  if (!subjects.length) {
+    return <FolderTree nodes={nodes} depth={0} active={active} onPick={onPick} />;
+  }
+  return (
+    <div>
+      {subjects.map((a) => {
+        const mine = a.tables.map((t) => byTable.get(t.toLowerCase())).filter(Boolean) as WvTreeNode[];
+        if (!mine.length) return null;
+        const shown = isOpen(a.name);
+        const holding = mine.reduce((n, x) => n + (x.count ?? 0), 0);
+        return (
+          <div key={a.name} className="mb-0.5">
+            <button type="button" data-testid="wv-subject"
+              onClick={() => setOpen((o) => ({ ...o, [a.name]: !shown }))}
+              title={a.listed
+                ? `${a.name} — a subject area of the WellView database`
+                : "Folders this database has that the user guide's subject areas do not name. "
+                  + "They are here so they stay reachable."}
+              className={`w-full text-left px-1.5 py-1 rounded text-[11px] font-semibold flex items-center gap-1 ${
+                a.listed ? "text-gray-700 hover:bg-gray-200" : "text-gray-400 italic hover:bg-gray-200"}`}>
+              <span className="w-3 text-gray-400">{shown ? "▾" : "▸"}</span>
+              <span className="truncate">{a.name}</span>
+              {holding > 0 && (
+                <span className="ml-auto text-[10px] text-gray-400 tabular-nums font-normal">{holding}</span>
+              )}
+            </button>
+            {shown && <FolderTree nodes={mine} depth={1} active={active} onPick={onPick} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function FolderTree({ nodes, depth, active, onPick }: {
   nodes: WvTreeNode[]; depth: number; active: string | null; onPick: (t: string) => void;
 }) {
+  /*
+   * A folder opens when it, or something under it, is the folder in view.
+   * Anything else stays shut until it is clicked — the guide's own behaviour,
+   * and the difference between a list of 199 rows and a list of a dozen.
+   */
+  const holds = (n: WvTreeNode): boolean =>
+    n.table.toLowerCase() === (active ?? "").toLowerCase() || n.children.some(holds);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   return (
     <div>
-      {nodes.map((n) => (
+      {nodes.map((n) => {
+        const shown = open[n.table] ?? holds(n);
+        return (
         <div key={n.table}>
           <button type="button"
             style={{ paddingLeft: 6 + depth * 14 }}
@@ -314,6 +396,16 @@ function FolderTree({ nodes, depth, active, onPick }: {
               : n.table}
             disabled={n.derived === true && n.children.length > 0}
             onClick={() => onPick(n.table)}>
+            {/* §3.9 "Click to expand a folder to see its subfolders." Its own
+                control, so opening a folder and selecting it stay separate. */}
+            {n.children.length > 0 ? (
+              <span role="button" tabIndex={-1} data-testid="wv-folder-toggle"
+                title={shown ? "Collapse" : `Expand — ${n.children.length} subfolders`}
+                onClick={(e) => { e.stopPropagation(); setOpen((o) => ({ ...o, [n.table]: !shown })); }}
+                className="w-3 shrink-0 text-gray-400 hover:text-gray-700">
+                {shown ? "▾" : "▸"}
+              </span>
+            ) : <span className="w-3 shrink-0" />}
             <FolderGlyph filled={(n.count ?? 0) > 0} />
             <span className="truncate">{n.label}</span>
             {/*
@@ -329,11 +421,12 @@ function FolderTree({ nodes, depth, active, onPick }: {
               <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{n.count}</span>
             ) : null}
           </button>
-          {n.children.length > 0 && (
+          {n.children.length > 0 && shown && (
             <FolderTree nodes={n.children} depth={depth + 1} active={active} onPick={onPick} />
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

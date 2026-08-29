@@ -44,6 +44,22 @@ export interface WvTreeNode {
   needs?: string[];
 }
 
+/**
+ * A SUBJECT AREA (§3.9 Selecting Folders): "Well information in the Edit Data
+ * window is grouped into subject areas. Each subject area (such as General,
+ * Operations, and Geological Evaluation) contains a group of folders."
+ *
+ * A heading, not a folder — it has no records and nothing to open — so it
+ * arrives beside the tree rather than wrapped around it.
+ */
+export interface WvSubjectArea {
+  name: string;
+  /** Top-level tables in this area, in the order the guide lists them. */
+  tables: string[];
+  /** False for the catch-all holding folders the guide names nowhere. */
+  listed: boolean;
+}
+
 /** The physical types WellView's data model declares for a field. */
 export type WvFieldType = "string" | "stringlong" | "double" | "datetime" | "boolean" | "integer" | "blob";
 
@@ -721,7 +737,7 @@ export const wvDbApi = {
     if (idwell) q.set("idwell", idwell);
     if (calc) q.set("calc", "1");
     const qs = q.toString();
-    return entryApi.get<{ tree: WvTreeNode[] }>(
+    return entryApi.get<{ tree: WvTreeNode[]; subjects?: WvSubjectArea[] }>(
       `/wellview/dbs/${enc(db)}/tree${qs ? `?${qs}` : ""}`);
   },
 

@@ -47,6 +47,7 @@ import {
   computeCalc, calcDerivation, derivableCalcTables, calcMissingScope, type CalcParam,
 } from "../wellview/calc.js";
 import "../wellview/calcDerivations.js";
+import { groupBySubject, subjectRankOf } from "../wellview/subjects.js";
 import { mudLimits, mudOutOfRange, type OutOfRange } from "../wellview/mudOutOfRange.js";
 import { stackFieldsFor, stackRows, type StackRow } from "../wellview/stringStack.js";
 import { appFrame, WELL_FILE_EXTENSION } from "../wellview/appframe.js";
@@ -482,13 +483,11 @@ export function resolveDateValue(raw: string, now = new Date()): string | null {
 }
 
 // ── subject-area tree ─────────────────────────────────────────────────────────
-/** Top-level display order, per the manual's "start with the first subject area
- *  and work down the list". Unlisted top tables follow alphabetically. */
-const SUBJECT_ORDER = [
-  "wvWellHeader", "wvWellbore", "wvZone", "wvJob", "wvCas", "wvCement", "wvTub",
-  "wvRod", "wvOtherInHole", "wvOtherStr", "wvPerforation", "wvStimTreat",
-  "wvCore", "wvLog", "wvGeoEval", "wvProblem", "wvNote", "wvAttachment",
-];
+/*
+ * The hand-written top-level order this replaced listed eighteen tables and
+ * left the other forty-eight to fall out alphabetically. The order now comes
+ * from the guide's own subject-area pages — see wellview/subjects.ts.
+ */
 /** Bookkeeping tables that are not subject areas. */
 const HIDDEN_TABLES = /^wv(sys|externaldata|units)/i;
 
@@ -607,11 +606,12 @@ function buildTree(d: Db, idwell: string | null): TreeNode[] {
   const tops = [...sch.values()].filter(
     (t) => t.hasIdwell && (!t.hasParent || t.name.toLowerCase() === "wvwellbore") && !HIDDEN_TABLES.test(t.name),
   );
-  const rank = (t: TableInfo) => {
-    const i = SUBJECT_ORDER.findIndex((s) => s.toLowerCase() === t.name.toLowerCase());
-    return i === -1 ? SUBJECT_ORDER.length : i;
-  };
-  tops.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  /*
+   * Within a subject area the order is the GUIDE'S, which is the order the work
+   * happens in — Risers, then Casing Strings, then Cement. Alphabetical by a
+   * hidden table name is nobody's order.
+   */
+  tops.sort((a, b) => subjectRankOf(a.name) - subjectRankOf(b.name) || a.name.localeCompare(b.name));
   return tops.map(node);
 }
 
@@ -1336,10 +1336,24 @@ export async function registerWellviewDbRoutes(
       const d = need(reply, req.params.db);
       if (!d) return;
       const tree = buildTree(d, req.query.idwell || null);
+      /*
+       * §3.9 Selecting Folders: "Well information in the Edit Data window is
+       * grouped into subject areas."
+       *
+       * Sent BESIDE the tree rather than wrapped around it. A subject area is a
+       * heading, not a folder — it has no records, no parent chain and nothing
+       * to open — and making it a tree node would put it in every consumer's
+       * parent-chain walk as though a folder hung off it.
+       */
+      const subjects = groupBySubject(tree.map((n) => n.table));
       // §3.9's "Show Calculated Folders" — off unless asked for, as in the
       // desktop, where they are hidden until the command is chosen.
-      if (req.query.calc === "1") tree.push(calcFolders(d, req.query.idwell || null));
-      return { tree };
+      if (req.query.calc === "1") {
+        const group = calcFolders(d, req.query.idwell || null);
+        tree.push(group);
+        subjects.push({ name: group.label, tables: [group.table], listed: true });
+      }
+      return { tree, subjects };
     },
   );
 

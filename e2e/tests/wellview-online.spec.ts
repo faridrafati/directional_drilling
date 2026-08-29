@@ -11,10 +11,50 @@
  *
  *   ENTRY_USER=admin ENTRY_PASSWORD=… npx playwright test wellview-online
  */
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 
 const USER = process.env.ENTRY_USER ?? "admin";
 const PASSWORD = process.env.ENTRY_PASSWORD ?? "";
+
+/**
+ * Open a folder in the Edit Data tree.
+ *
+ * The tree groups folders into the guide's subject areas and opens closed
+ * (§3.9: "Click to expand a subject area or folder to see its subfolders"), so
+ * a folder several levels down is not on screen until its ancestors are. This
+ * expands whatever is still shut and then clicks — which is what a person does,
+ * and keeps these specs about the folder rather than about the tree.
+ */
+async function openFolder(page: Page, target: Locator): Promise<void> {
+  /*
+   * One shut node per round, re-resolved each time. Opening a node flips its
+   * own glyph and adds rows, so a list captured up front goes stale after the
+   * first click and every remaining click waits out its own timeout instead.
+   */
+  for (let round = 0; round < 60; round++) {
+    if (await target.first().isVisible().catch(() => false)) {
+      await target.first().click();
+      return;
+    }
+    /*
+     * Subject areas before folders. There are eleven areas and hundreds of
+     * folders, and always taking the topmost shut node means expanding the
+     * whole of Operations before ever reaching Other — where wvNote lives.
+     */
+    const area = page.locator('aside [data-testid="wv-subject"]')
+      .filter({ hasText: "▸" }).first();
+    const shut = (await area.count())
+      ? area
+      : page.locator('aside [data-testid="wv-folder-toggle"]').filter({ hasText: "▸" }).first();
+    // Nothing shut can also mean nothing drawn yet: "Show System Fields" is in
+    // the title bar and appears before the tree query returns. Waiting rather
+    // than giving up is the difference between a race and a failure.
+    if (await shut.count()) await shut.click({ timeout: 2000 }).catch(() => {});
+    else await page.waitForTimeout(200);
+  }
+  // Let the click fail with Playwright's own message if it is still not there.
+  await target.first().click();
+}
 
 test.describe("WellView Online", () => {
   test.beforeEach(async ({ page }) => {
@@ -65,8 +105,8 @@ test.describe("WellView Online", () => {
     await page.getByRole("button", { name: "Edit Data", exact: true }).click();
     await expect(page.getByText("Show System Fields")).toBeVisible({ timeout: 15_000 });
 
-    await page.locator('button[title="wvJob"]').click();
-    await page.locator('button[title="wvJobReport"]').click();
+    await openFolder(page, page.locator('button[title="wvJob"]'));
+    await openFolder(page, page.locator('button[title="wvJobReport"]'));
     // records appear under the parent job with Previous/Next in the chain bar
     await expect(page.getByText("Daily Operations").first()).toBeVisible();
     await page.getByTestId("wv-edit-save-exit").click();
@@ -364,7 +404,7 @@ test.describe("WellView Online — a folder's calculated fields", () => {
       .filter({ hasText: "Sample 18 - Phase and Prod" }).first().dblclick();
     await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
     await page.getByRole("button", { name: "Edit Data" }).first().click();
-    await page.getByText(/Service Contractors/i).first().click();
+    await openFolder(page, page.getByText(/Service Contractors/i));
 
     const head = page.locator("thead").last();
     await expect(head).toContainText("Total Score", { timeout: 20_000 });
@@ -842,6 +882,10 @@ test("the well list converts measured columns and copies what it shows", async (
     await page.getByLabel("Password").fill(PASSWORD);
     await signIn.click();
   }
+  // Wait for the sign-in to LAND before reloading. Clicking "Sign in" starts a
+  // request; the token reaches localStorage when it comes back, and a reload in
+  // between throws the session away and leaves the page on the sign-in form.
+  await page.getByTestId("wv-db-wv9.0_Sample").waitFor({ timeout: 15_000 });
   // Put a measured column on screen; the choice is persisted per database.
   await page.evaluate(() => localStorage.setItem(
     "wv.online.wv9.0_Sample.cols", JSON.stringify(["WellName", "ElvOrigKB"])));
@@ -903,7 +947,7 @@ test("Copy Data puts the displayed values on the clipboard, not the stored ones"
     .first().dblclick();
   await page.getByRole("button", { name: "Edit Data", exact: true }).click();
   await expect(page.getByText("Show System Fields")).toBeVisible({ timeout: 15_000 });
-  await page.locator('button[title="wvWellbore"]').click();
+  await openFolder(page, page.locator('button[title="wvWellbore"]'));
   await expect(page.getByRole("button", { name: /^Copy Data$/ })).toBeEnabled({ timeout: 10_000 });
 
   const units = page.locator("select").first();
@@ -1239,7 +1283,7 @@ test("pastes a block of spreadsheet rows into a folder", async ({ page }) => {
   await expect(page.getByText("Select a report")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Edit Data", exact: true }).click();
   await expect(page.getByText("Show System Fields")).toBeVisible({ timeout: 15_000 });
-  await page.locator('button[title="wvNote"]').click();
+  await openFolder(page, page.locator('button[title="wvNote"]'));
   await expect(page.getByTestId("wv-edit-paste-open")).toBeVisible({ timeout: 15_000 });
 
   const tag = `E2EPASTE-${Date.now() % 100000}`;
@@ -1509,7 +1553,7 @@ test("lists every field's database name, type and unit, and copies them", async 
   await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
   await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12" }).first().click();
   await page.getByRole("button", { name: /^Edit Data$/ }).first().click();
-  await page.getByText("Drill Strings / BHA", { exact: true }).first().click();
+  await openFolder(page, page.getByText("Drill Strings / BHA", { exact: true }));
 
   await page.getByTestId("wv-edit-fieldinfo").click();
   await expect(page.getByTestId("wv-fieldinfo-dialog")).toBeVisible({ timeout: 15_000 });
@@ -1576,7 +1620,7 @@ test("selects records by their number, with Shift, Ctrl and Select all", async (
   await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
   await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12" }).first().click();
   await page.getByRole("button", { name: /^Edit Data$/ }).first().click();
-  await page.getByText("Drill Strings / BHA", { exact: true }).first().click();
+  await openFolder(page, page.getByText("Drill Strings / BHA", { exact: true }));
 
   const nums = page.getByTestId("wv-rownum");
   await expect(nums.first()).toBeVisible({ timeout: 15_000 });
