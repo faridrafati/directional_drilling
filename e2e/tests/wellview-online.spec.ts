@@ -1545,3 +1545,77 @@ test("lists every field's database name, type and unit, and copies them", async 
   await page.getByTestId("wv-fieldinfo-close").click();
   await expect(page.getByTestId("wv-fieldinfo-dialog")).toHaveCount(0);
 });
+
+/**
+ * §3.11 Selecting Records — the gate for multi-delete, multi-copy and Copy
+ * Selected Data.
+ *
+ * The guide names the gesture precisely: "To select one record, click the
+ * record number column in vertical or horizontal view." / "To select multiple
+ * records, click the record number column and drag to select." 9.0's own
+ * enhancement list adds "To highlight the rows, use the Ctrl and Shift keys",
+ * and the shortcut table binds "Select all the records — Ctrl+A".
+ *
+ * THE HIT TARGET IS THE NUMBER, NOT THE CELL, and this test exists partly to
+ * keep it that way. The cell also holds Copy, Duplicate and Delete; while this
+ * was being built a click aimed at the cell's centre landed on Duplicate and
+ * created 169 records. So the last assertion here is that a full selection
+ * workout leaves the row count exactly where it started.
+ */
+test("selects records by their number, with Shift, Ctrl and Select all", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => { /* not chromium */ });
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12" }).first().click();
+  await page.getByRole("button", { name: /^Edit Data$/ }).first().click();
+  await page.getByText("Drill Strings / BHA", { exact: true }).first().click();
+
+  const nums = page.getByTestId("wv-rownum");
+  await expect(nums.first()).toBeVisible({ timeout: 15_000 });
+  const startRows = await nums.count();
+  expect(startRows).toBeGreaterThan(4);
+
+  const selected = () => nums.evaluateAll(
+    (els) => els.filter((e) => e.className.includes("text-blue-900")).length);
+
+  await nums.nth(1).click();
+  expect(await selected()).toBe(1);
+
+  // Shift extends from the last click — four rows, 1 through 4.
+  await nums.nth(4).click({ modifiers: ["Shift"] });
+  expect(await selected()).toBe(4);
+
+  // Ctrl adds one, and adds it again to take it away.
+  await nums.nth(7).click({ modifiers: ["Control"] });
+  expect(await selected()).toBe(5);
+  await nums.nth(7).click({ modifiers: ["Control"] });
+  expect(await selected()).toBe(4);
+
+  // The button counts what is selected, and clears it.
+  const all = page.getByTestId("wv-edit-selectall");
+  await expect(all).toContainText("Deselect (4)");
+  await all.click();
+  expect(await selected()).toBe(0);
+  await all.click();
+  expect(await selected()).toBe(startRows);
+  await all.click();
+
+  // §3.11 Copy Selected Data: with a selection, Copy Data copies just those.
+  await nums.nth(0).click();
+  await nums.nth(2).click({ modifiers: ["Shift"] });
+  await page.getByRole("button", { name: "Copy Data" }).click();
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clip.split("\n").length, "one heading row plus the three selected").toBe(4);
+
+  // Nothing was created or destroyed by any of that. The number is the target
+  // precisely so that selecting cannot reach Duplicate or Delete.
+  expect(await nums.count(), "selecting must not change the folder").toBe(startRows);
+});

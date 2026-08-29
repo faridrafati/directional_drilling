@@ -739,6 +739,104 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   /** The well header is one record per well — no ghost row, no duplicating. */
   const singleRecord = data.table.toLowerCase() === "wvwellheader";
 
+  /*
+   * §3.11 SELECTING RECORDS — the gate for multi-delete, multi-copy and
+   * Copy Selected Data.
+   *
+   * The guide is specific about the gesture and it is not a row click: "To
+   * select one record, click the record number column in vertical or horizontal
+   * view." / "To select multiple records, click the record number column and
+   * drag to select." 9.0's own enhancement list adds the keyboard: "You can
+   * select multiple records when deleting as well as copying and pasting. To
+   * highlight the rows, use the Ctrl and Shift keys." And the shortcut table
+   * binds "Select all the records — Ctrl+A".
+   *
+   * The NUMBER COLUMN is the hit target for a reason that survives the port: a
+   * row here can carry a hundred inputs, and a row-wide handler would fight
+   * every one of them for focus and text selection.
+   *
+   * The shift/ctrl model is the Explorer's, ported rather than rewritten —
+   * WellExplorer.clickRow has done exactly this since the well list gained
+   * multi-select, and two selection models that behave differently in the same
+   * app is a worse outcome than either.
+   */
+  const [selected, setSelected] = useState<string[]>([]);
+  const lastClick = useRef<number | null>(null);
+  const dragging = useRef(false);
+
+  /*
+   * An IDRec survives a refresh; a POSITION does not. So the selection is
+   * dropped whenever the folder changes underneath it — a different table, a
+   * different parent record, or a save that re-read the rows. Keeping it would
+   * let a bulk action address rows that had moved.
+   */
+  useEffect(() => { setSelected([]); lastClick.current = null; }, [data.table, parentIdrec]);
+
+  /*
+   * Ctrl+A — "Select all the records", from the shortcut table.
+   *
+   * Bound on the window but ignored whenever the focus is in a field, because
+   * inside a text box Ctrl+A means select the text and taking that away would
+   * be a worse trade than the shortcut is worth.
+   */
+  useEffect(() => {
+    if (singleRecord) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "a") return;
+      const el = document.activeElement;
+      const tag = el?.tagName.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      e.preventDefault();
+      setSelected(data.rows.map((r) => String(r.IDRec ?? "")).filter(Boolean));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [data.rows, singleRecord]);
+
+  const selectableRows = singleRecord ? [] : data.rows;
+  const idOfRow = (r: Row) => String(r.IDRec ?? "");
+
+  function clickRow(row: Row, e: React.MouseEvent, index: number) {
+    if (singleRecord) return;
+    const id = idOfRow(row);
+    if (!id) return;
+    if (e.shiftKey && lastClick.current !== null) {
+      const [a, b] = [lastClick.current, index].sort((x, y) => x - y);
+      setSelected(selectableRows.slice(a, b + 1).map(idOfRow).filter(Boolean));
+    } else if (e.ctrlKey || e.metaKey) {
+      setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+      lastClick.current = index;
+    } else {
+      setSelected([id]);
+      lastClick.current = index;
+    }
+  }
+
+  /** "click the record number column and drag to select" — the guide's words. */
+  function dragOver(index: number) {
+    if (!dragging.current || singleRecord) return;
+    const start = lastClick.current;
+    if (start === null) return;
+    const [a, b] = [start, index].sort((x, y) => x - y);
+    setSelected(selectableRows.slice(a, b + 1).map(idOfRow).filter(Boolean));
+  }
+
+  /**
+   * The rows a row-action applies to.
+   *
+   * A selection wins over the row whose button was pressed — but only when that
+   * row is IN it. Pressing Delete on an unselected row while three others are
+   * selected means delete THIS one; anything else would act on records the user
+   * is not pointing at.
+   */
+  const targetsFor = (row: Row): string[] => {
+    const id = idOfRow(row);
+    return selected.length > 1 && selected.includes(id) ? selected : [id];
+  };
+
+  const selectedRows = () => data.rows.filter((r) => selected.includes(idOfRow(r)));
+
+
   /** Lookup values for a column, when the library binding knows it. */
   const lookupFor = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -915,33 +1013,61 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
    * on. The server refuses too; this is so the user finds out before the
    * confirm rather than after it.
    */
+  /**
+   * Delete — one record, or every selected one.
+   *
+   * 9.0's own enhancement list: "You can select multiple records when deleting
+   * as well as copying and pasting." So the preflight runs for EVERY target
+   * before anything is deleted, and the confirmation states the whole cost. A
+   * per-record prompt for a fifty-row selection is not a safeguard, it is a
+   * way of getting the safeguard dismissed.
+   *
+   * If ANY target is still referenced the whole delete is refused. A partial
+   * delete leaves the user having confirmed one number and received another.
+   */
   async function remove(row: Row) {
-    const idrec = String(row.IDRec ?? "");
-    if (!idrec) return;
+    const targets = targetsFor(row).filter(Boolean);
+    if (!targets.length) return;
     setBusy(true);
     try {
-      const pre = await wvDbApi.deletePreflight(db, data.table, idrec);
+      const pres = [];
+      for (const id of targets) pres.push({ id, pre: await wvDbApi.deletePreflight(db, data.table, id) });
 
-      if (!pre.canDelete) {
-        const held = pre.referencedBy
+      const blocked = pres.filter((p) => !p.pre.canDelete);
+      if (blocked.length) {
+        const held = blocked[0].pre.referencedBy
           .map((r) => `${r.count} ${r.label} (${r.column})`)
           .join(", ");
-        onStatus(`Not deleted — this record is still linked from ${held}. `
-          + "Clear those links first, then delete it.");
+        onStatus(targets.length === 1
+          ? `Not deleted — this record is still linked from ${held}. `
+            + "Clear those links first, then delete it."
+          : `Not deleted — ${blocked.length} of the ${targets.length} selected records `
+            + `are still linked from other folders. Nothing was deleted.`);
         return;
       }
 
-      const lines = pre.children.length
-        ? pre.children.map((c) => `  • ${c.count} ${c.label}`).join("\n")
+      // One tally over the whole selection, so the number confirmed is the
+      // number that happens.
+      const total = pres.reduce((n, p) => n + p.pre.records, 0);
+      const kids = new Map<string, number>();
+      for (const p of pres) {
+        for (const c of p.pre.children) kids.set(c.label, (kids.get(c.label) ?? 0) + c.count);
+      }
+      const lines = kids.size
+        ? [...kids].map(([label, count]) => `  • ${count} ${label}`).join("\n")
         : "  • nothing in its subfolders";
+      const head = targets.length === 1
+        ? "Delete this record and everything under it?"
+        : `Delete ${targets.length} selected records and everything under them?`;
       const ok = window.confirm(
-        `Delete this record and everything under it?\n\n${lines}\n\n`
-        + `${pre.records} record${pre.records === 1 ? "" : "s"} in total. This cannot be undone.`);
+        `${head}\n\n${lines}\n\n${total} record${total === 1 ? "" : "s"} in total. This cannot be undone.`);
       if (!ok) return;
 
-      const res = await wvDbApi.remove(db, data.table, idrec);
+      let removed = 0;
+      for (const id of targets) removed += (await wvDbApi.remove(db, data.table, id)).removed;
+      setSelected([]);
       onSaved();
-      onStatus(`Deleted ${res.removed} record${res.removed === 1 ? "" : "s"} (including subfolders).`);
+      onStatus(`Deleted ${removed} record${removed === 1 ? "" : "s"} (including subfolders).`);
     } catch (e) {
       onStatus(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -1014,7 +1140,10 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       const u = c.unit ? displayUnitLabel(c, unitSet, datumShift) : "";
       return u ? `${c.label} (${u})` : c.label;
     }).join("\t");
-    const body = data.rows.map((r) => {
+    // §3.11 Copy Selected Data: a selection narrows what is copied. With none,
+    // the whole folder — which is what Copy Data has always meant.
+    const source = selected.length ? selectedRows() : data.rows;
+    const body = source.map((r) => {
       const k = keyOf(r);
       return cols.map((c) => {
         const v = k ? valueOf(r, k, c.column) : String(r[c.column] ?? "");
@@ -1024,10 +1153,12 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       }).join("\t");
     }).join("\n");
     void navigator.clipboard.writeText(`${head}\n${body}`).then(
-      () => onStatus(data.truncated
-        ? `Copied the first ${data.rows.length} of ${data.total} records to the clipboard, `
-          + "headings included — the folder is larger than one read."
-        : `Copied ${data.rows.length} record${data.rows.length === 1 ? "" : "s"} to the clipboard, headings included.`),
+      () => onStatus(selected.length
+        ? `Copied ${source.length} selected record${source.length === 1 ? "" : "s"} to the clipboard, headings included.`
+        : data.truncated
+          ? `Copied the first ${data.rows.length} of ${data.total} records to the clipboard, `
+            + "headings included — the folder is larger than one read."
+          : `Copied ${data.rows.length} record${data.rows.length === 1 ? "" : "s"} to the clipboard, headings included.`),
       () => onStatus("The browser refused clipboard access."),
     );
   }
@@ -1482,6 +1613,31 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           {/* §3.11 Field Information — the database names and types behind the
               captions. Enabled even on an empty folder: it describes the FIELDS,
               which exist whether or not any record does. */}
+          {/*
+            * §3.11 "To select all the records in a folder, choose Select All
+            * Records from the Tools menu. To cancel the selected records,
+            * choose Deselect Records." Ctrl+A does the first, per the shortcut
+            * table, scoped to this grid.
+            *
+            * The label counts what would ACTUALLY be selected. A folder larger
+            * than one read holds 500 of its rows here, and "Select all" on a
+            * 2,389-row folder that then deletes 500 would be a lie told by a
+            * button.
+            */}
+          {!singleRecord && data.rows.length > 0 && (
+            <button type="button" data-testid="wv-edit-selectall"
+              onClick={() => (selected.length
+                ? setSelected([])
+                : setSelected(data.rows.map((r) => String(r.IDRec ?? "")).filter(Boolean)))}
+              title={data.truncated
+                ? `Select the ${data.rows.length} records loaded here — the folder holds ${data.total}`
+                : "Select All Records (Ctrl+A)"}
+              className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+              {selected.length
+                ? `Deselect (${selected.length})`
+                : data.truncated ? `Select ${data.rows.length} loaded` : "Select all"}
+            </button>
+          )}
           <button type="button" onClick={() => setFieldInfo(true)} data-testid="wv-edit-fieldinfo"
             title="Field Information — the database name, type and unit of every field in this folder"
             className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
@@ -1544,8 +1700,29 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
               <tr>
                 <td className="sticky left-0 bg-gray-100 px-2 py-1 border-b border-gray-200" />
                 {data.rows.map((r, i) => (
-                  <td key={i} className="px-2 py-1 border-b border-l border-gray-200 text-center text-gray-400">
-                    #{i + 1}{rowActions(r, i)}
+                  /* "To select one record, click the record number column in
+                     vertical or horizontal view" — the number cell IS the hit
+                     target, in both modes. */
+                  <td key={i}
+                    className={`px-2 py-1 border-b border-l border-gray-200 text-center ${
+                      selected.includes(String(r.IDRec ?? "")) ? "bg-blue-100" : ""}`}>
+                    {/*
+                      * THE NUMBER is the hit target, not the cell. The cell also
+                      * holds Copy, Duplicate and Delete, and a click anywhere in
+                      * it would land on whichever of those it hit — selecting by
+                      * clicking a row can never be allowed to duplicate it.
+                      */}
+                    <span data-testid="wv-rownum" role="button" tabIndex={-1}
+                      onMouseDown={(e) => { dragging.current = true; clickRow(r, e, i); }}
+                      onMouseEnter={() => dragOver(i)}
+                      onMouseUp={() => { dragging.current = false; }}
+                      title="Click to select; Shift for a range, Ctrl to add"
+                      className={`inline-block px-1 select-none cursor-pointer rounded ${
+                        selected.includes(String(r.IDRec ?? ""))
+                          ? "text-blue-900 font-medium" : "text-gray-400 hover:bg-gray-200"}`}>
+                      #{i + 1}
+                    </span>
+                    {rowActions(r, i)}
                   </td>
                 ))}
                 {!singleRecord && (
@@ -1661,8 +1838,22 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                       * background or the scrolled rows show through it.
                       */}
                     <td className={`align-middle sticky left-0 z-10 whitespace-nowrap ${
-                      k && k === focusRecord ? "bg-amber-50" : i % 2 ? "bg-gray-50" : "bg-white"}`}>
-                      <span className="text-gray-400 tabular-nums pl-1 pr-0.5">{i + 1}</span>
+                      selected.includes(k ?? "")
+                        ? "bg-blue-100"
+                        : k && k === focusRecord ? "bg-amber-50" : i % 2 ? "bg-gray-50" : "bg-white"}`}>
+                      {/* The number alone selects — the row actions share this
+                          cell, and a click that hit Duplicate instead would be
+                          a destructive surprise. */}
+                      <span data-testid="wv-rownum" role="button" tabIndex={-1}
+                        onMouseDown={(e) => { dragging.current = true; clickRow(r, e, i); }}
+                        onMouseEnter={() => dragOver(i)}
+                        onMouseUp={() => { dragging.current = false; }}
+                        title="Click to select; Shift for a range, Ctrl to add"
+                        className={`tabular-nums pl-1 pr-0.5 select-none cursor-pointer rounded ${
+                          selected.includes(k ?? "")
+                            ? "text-blue-900 font-medium" : "text-gray-400 hover:bg-gray-200"}`}>
+                        {i + 1}
+                      </span>
                       {rowActions(r, i)}
                     </td>
                     {cols.map((c) => (
