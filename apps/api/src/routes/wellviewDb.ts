@@ -2368,6 +2368,31 @@ export async function registerWellviewDbRoutes(
         scoped,
         /** Whether more candidates exist than were returned. */
         truncated: rows.length === LIMIT,
+        /*
+         * §3.11 Looking up Associated Data: "If the record is not created yet,
+         * click <new> to create a new record" — "the link to the new record is
+         * automatically added to the current table".
+         *
+         * Offered only where a new record needs nothing but the well. A folder
+         * that hangs off a parent RECORD cannot be added to from here: the
+         * picker knows the well and the column, not which casing string or
+         * which job the new row would belong under, and a row written with a
+         * null parent is one nothing can reach.
+         *
+         * The test is the PREFIX PARENT, not the presence of an IDRecParent
+         * column. wvWellbore has one and it is a SELF-reference — a sidetrack
+         * naming its parent bore (§10.4) — so a wellbore needs nothing but the
+         * well, and 17 of the 44 in this database carry a null parent, which is
+         * what a new one would look like. Gating on the column would have
+         * refused `<new>` on the commonest link in the schema.
+         *
+         * `TblKeyParent` tables are excluded too: their parent is named in the
+         * DATA, and one written without it is the orphan case this app already
+         * had to special-case to make visible at all.
+         */
+        canCreate: t.hasIdwell && t.parent === null && !t.colSet.has("tblkeyparent"),
+        /** What the folder is called, so a message about it can name it. */
+        label: folderLabel(t.name, t.parent),
         candidates: rows.map((r) => ({ idrec: String(r[idCol]), caption: captionOf(t, r) })),
       };
     },

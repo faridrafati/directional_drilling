@@ -821,6 +821,14 @@ export const wvDbApi = {
     source?: string, parent?: string | null) =>
     entryApi.get<{
       table: string; scoped?: boolean; truncated?: boolean;
+      /**
+       * Whether a record can be created here and now (§3.11's `<new>`). False
+       * for a folder that hangs off a parent record: the picker knows the well
+       * and the column, not which casing string the new row would sit under.
+       */
+      canCreate?: boolean;
+      /** The folder's name, for a message that has to say which folder. */
+      label?: string;
       candidates: { idrec: string; caption: string }[];
     }>(
       `/wellview/dbs/${enc(db)}/link-candidates?table=${enc(table)}`

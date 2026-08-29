@@ -303,10 +303,22 @@ test.describe("WellView Online — a dropped column is visible", () => {
     // The printed page is the copy that gets handed to someone, so it is the
     // one that must not overstate what the app filled in.
     await page.getByRole("button", { name: "Print" }).first().click();
-    await expect(page.getByTestId("wv-print-build")).toBeVisible({ timeout: 20_000 });
+    const build = page.getByTestId("wv-print-build");
+    await expect(build).toBeVisible({ timeout: 20_000 });
+    /*
+     * The job list arrives after the dialog does, so counting the checkboxes
+     * and ticking the first one raced it: the element ticked was replaced by
+     * the re-render, the dialog stayed on "0 of 2 — Nothing selected", and the
+     * disabled Prepare button then timed out the click. Assert the precondition
+     * instead of assuming it.
+     */
     const picks = page.getByTestId("wv-print-pick");
-    if (await picks.count()) await picks.first().check();
-    await page.getByTestId("wv-print-build").click();
+    if (await picks.count()) {
+      await page.getByRole("button", { name: "Select all" }).click();
+      await expect(picks.first()).toBeChecked({ timeout: 10_000 });
+    }
+    await expect(build).toBeEnabled({ timeout: 10_000 });
+    await build.click();
     await expect(page.getByTestId("wv-print-sheet").first()).toBeVisible({ timeout: 25_000 });
 
     const printed = page.getByTestId("wv-print-omitted");

@@ -982,6 +982,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     }
     return out;
   }, [cols]);
+  const qc = useQueryClient();
   const [edits, setEdits] = useState<Record<string, Row>>({});      // record key → changed fields
   const [ghost, setGhost] = useState<Row>({});
   const [busy, setBusy] = useState(false);
@@ -1311,19 +1312,64 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     enabled: linkTables.length > 0,
     queryFn: async () => {
       const out: Record<string, { idrec: string; caption: string }[]> = {};
+      const creatable: { table: string; label: string }[] = [];
       for (const t of linkTables) {
         // Every row in this folder hangs off the same parent, so the folder's
         // parent is the scope a sibling link is confined to.
         try {
-          out[t] = (await wvDbApi.linkCandidates(db, t, idwell, data.table, parentIdrec)).candidates;
+          const r = await wvDbApi.linkCandidates(db, t, idwell, data.table, parentIdrec);
+          out[t] = r.candidates;
+          if (r.canCreate) creatable.push({ table: t, label: r.label ?? t.replace(/^wv/, "") });
         } catch { out[t] = []; }
       }
-      return out;
+      return { cands: out, creatable };
     },
   });
+  /** Candidate lists, keyed by target table — the shape every caller wanted. */
+  const cands = candsQ.data?.cands;
+
+  /**
+   * `<new>` (§3.11 Looking up Associated Data).
+   *
+   * "If the record is not created yet, click <new> to create a new record",
+   * and, from the Zones example: "Click <new> to go to the Zones tables and add
+   * a new record. The link to the new record is automatically added to the
+   * current table."
+   *
+   * Both halves. The record is created blank in its own folder — which is what
+   * the desktop leaves you looking at — and the link here is set to it as a
+   * pending edit, so it saves with everything else in this folder. The status
+   * line then offers the folder, because a blank record nobody fills in is not
+   * an improvement on no record at all.
+   */
+  async function createLinked(target: string, label: string, key: string | null, c: WvRecordColumn) {
+    setBusy(true);
+    try {
+      const res = await wvDbApi.insert(db, target, { idwell, values: {} });
+      if (!res.idrec) throw new Error("no record was created");
+      setLink(key, c, res.idrec, target);
+      setPopover(null);
+      // The new record has to appear in the picker, or the cell shows a GUID.
+      await qc.invalidateQueries({ queryKey: ["wvdb", db, "linkcands"] });
+      onSaved();
+      /*
+       * NOT a jump to that folder, though the desktop's <new> takes you there.
+       * The link is a PENDING edit here, and leaving the folder saves it — a
+       * save the user did not ask for, on a record they were still typing into.
+       * The message names the folder instead; the tree is one click away.
+       */
+      onStatus(`A blank record was created in ${label} and linked to "${c.label}". `
+        + `It holds nothing yet — open ${label} and describe it. `
+        + "The link itself saves with this folder's other changes.");
+    } catch (e) {
+      onStatus(`Could not create the record: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
   const captionOfLink = (idrec: string | null): string | null => {
-    if (!idrec || !candsQ.data) return null;
-    for (const [t, list] of Object.entries(candsQ.data)) {
+    if (!idrec || !cands) return null;
+    for (const [t, list] of Object.entries(cands)) {
       const hit = list.find((c) => c.idrec === idrec);
       if (hit) return `${hit.caption} · ${t.replace(/^wv/, "")}`;
     }
@@ -1929,7 +1975,20 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           {open && (
             <LinkPopover
               targets={c.link.targets}
-              cands={candsQ.data ?? {}}
+              cands={cands ?? {}}
+              /*
+                * THIS COLUMN'S targets, not the folder's.
+                *
+                * `creatable` is worked out once for every link table the folder
+                * uses, and offering all of them here let a Wellbore link offer
+                * to create a Casing String — measured in the browser, and it
+                * made one. A picker may only create what the column it belongs
+                * to can point at.
+                */
+              creatable={(candsQ.data?.creatable ?? [])
+                .filter((x) => c.link!.targets.some((t) => t.toLowerCase() === x.table.toLowerCase()))}
+              onCreate={(t, lbl) => void createLinked(t, lbl, key, c)}
+              busy={busy}
               onPick={(idrec, t) => { setLink(key, c, idrec, t); setPopover(null); }}
               onClose={() => setPopover(null)}
             />
@@ -3002,9 +3061,18 @@ function ValuesPopover({ values, onPick, onClose, note, loading }: {
 }
 
 /** The associated-data lookup: real records of the target table(s), by caption. */
-function LinkPopover({ targets, cands, onPick, onClose }: {
+function LinkPopover({ targets, cands, creatable, onCreate, busy, onPick, onClose }: {
   targets: string[];
   cands: Record<string, { idrec: string; caption: string }[]>;
+  /**
+   * Targets a record can be created in from here (§3.11's `<new>`), with the
+   * folder's own name. A folder that hangs off a parent record is not among
+   * them: this picker knows the well and the column, not which casing string
+   * the new row would belong under.
+   */
+  creatable: { table: string; label: string }[];
+  onCreate: (table: string, label: string) => void;
+  busy: boolean;
   onPick: (idrec: string | null, table: string | null) => void;
   onClose: () => void;
 }) {
@@ -3020,6 +3088,24 @@ function LinkPopover({ targets, cands, onPick, onClose }: {
       <div className="max-h-56 overflow-y-auto">
         <button type="button" onClick={() => onPick(null, null)}
           className="block w-full text-left px-2 py-0.5 text-[11px] text-gray-400 hover:bg-gray-50">(none)</button>
+        {/*
+          * §3.11 Looking up Associated Data: "If the record is not created yet,
+          * click <new> to create a new record" — and, from the Zones example,
+          * "the link to the new record is automatically added to the current
+          * table". The empty folder is the case this exists for: without it,
+          * linking to a zone that has not been entered means leaving this
+          * record, opening Zones, adding one, and coming back.
+          */}
+        {creatable.map((t) => (
+          <button key={`new-${t.table}`} type="button" disabled={busy}
+            data-testid="wv-link-new"
+            title={`Create a blank ${t.label} record on this well and link it here. `
+              + "It will hold nothing until it is filled in."}
+            onClick={() => onCreate(t.table, t.label)}
+            className="block w-full text-left px-2 py-0.5 text-[11px] text-blue-700 hover:bg-blue-50 disabled:opacity-40">
+            &lt;new&gt;{creatable.length > 1 || targets.length > 1 ? ` — ${t.label}` : ""}
+          </button>
+        ))}
         {targets.map((t) => {
           const list = (cands[t] ?? []).filter((c) => !filter || c.caption.toLowerCase().includes(filter.toLowerCase()));
           if (!list.length) return null;
