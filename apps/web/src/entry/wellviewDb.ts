@@ -711,8 +711,16 @@ export const wvDbApi = {
     return entryApi.get<WvRecords>(`/wellview/dbs/${enc(db)}/records/${enc(table)}${qs ? `?${qs}` : ""}`);
   },
 
-  insert: (db: string, table: string, body: { idwell?: string; parent?: string; values: Record<string, unknown> }) =>
-    entryApi.post<{ idrec: string | null; idwell: string | null }>(`/wellview/dbs/${enc(db)}/records/${enc(table)}`, body),
+  /**
+   * @param body.insertBefore §3.9 Inserting Records — put the new record ABOVE
+   * this one instead of at the end. Sequenced folders (string components,
+   * tallies) only; anywhere else the server refuses rather than appending.
+   */
+  insert: (db: string, table: string, body: {
+    idwell?: string; parent?: string; values: Record<string, unknown>; insertBefore?: string;
+  }) =>
+    entryApi.post<{ idrec: string | null; idwell: string | null; renumbered?: number }>(
+      `/wellview/dbs/${enc(db)}/records/${enc(table)}`, body),
 
   update: (db: string, table: string, idrec: string, values: Record<string, unknown>) =>
     entryApi.patch<{ changed: number }>(`/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}`, { values }),

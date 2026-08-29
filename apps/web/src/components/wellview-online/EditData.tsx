@@ -1188,6 +1188,50 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       setBusy(false);
     }
   }
+  /**
+   * Insert Records (§3.9): "When you are working with a string component or a
+   * tally, you can insert new records instead of adding them to the end of the
+   * list. To insert a record above the current record, select the existing
+   * record and click the button."
+   *
+   * Select-then-click is the guide's own gesture, and the selection it needs is
+   * the one already built for multi-delete and Copy Selected Data. The record
+   * is created blank and immediately: there is nowhere for a ghost row to sit
+   * in the middle of a folder, and the position is the point of the command.
+   *
+   * The guide's own warning is passed on rather than paraphrased — renumbering
+   * a string is visible on the schematic straight away.
+   */
+  async function insertAbove() {
+    const target = selected[0];
+    const at = data.rows.findIndex((r) => String(r.IDRec ?? "") === target);
+    if (!target || at < 0) return;
+    setBusy(true);
+    try {
+      // Pending edits first: this re-reads the folder, and anything unsaved
+      // would be reconciled against rows that had moved.
+      if (dirtyCount > 0 && !(await saveAll())) return;
+      const res = await wvDbApi.insert(db, data.table, {
+        idwell, ...(parentIdrec ? { parent: parentIdrec } : {}),
+        values: {}, insertBefore: target,
+      });
+      setSelected([]);
+      onSaved();
+      onStatus(`Blank record inserted above record ${at + 1} — the records below it moved down one. `
+        + "This changes how strings and tally information draw on the schematic."
+        // Rows the user did not edit were written, so the user is told.
+        + (res.renumbered
+          ? ` This folder's ${res.renumbered} records had no sequence numbers at all; `
+            + "they have been numbered in the order they were already in, so that a record can be "
+            + "placed among them."
+          : ""));
+    } catch (e) {
+      onStatus(`Insert failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const ids = () => data.rows.map((r) => String(r.IDRec));
   const moveRow = (index: number, by: -1 | 1) => {
     const next = ids();
@@ -1792,6 +1836,23 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
               title={`Paste "${clipboard!.caption}" into this folder (subfolders included)`}
               className="h-7 px-2 text-[11px] rounded border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-40">
               Paste Record
+            </button>
+          )}
+          {ordered && (
+            <button type="button" data-testid="wv-edit-insert"
+              disabled={busy || selected.length !== 1 || !!find || data.rows.length === 0}
+              onClick={() => void insertAbove()}
+              title={find
+                ? "Clear the find to insert — a new record is blank, so it would not match it"
+                : selected.length === 1
+                  ? "Insert Records (§3.9) — a new blank record ABOVE the selected one. "
+                    + "This can change how strings and tallies draw on the schematic."
+                  : selected.length
+                    ? `Insert Records — ${selected.length} records are selected; select exactly one, `
+                      + "and the new record goes above it"
+                    : "Insert Records — click a record number to select it, and the new record goes above it"}
+              className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+              Insert
             </button>
           )}
           {ordered && data.allowInsertTop && (

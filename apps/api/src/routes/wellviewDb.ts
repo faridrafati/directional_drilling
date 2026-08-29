@@ -1667,8 +1667,22 @@ export async function registerWellviewDbRoutes(
   );
 
 
-  /** Add a record (§3.9 "Add a New Record"): IDRec generated, links filled in. */
-  app.post<{ Params: { db: string; table: string }; Body: { idwell?: string; parent?: string; values?: Record<string, unknown> } }>(
+  /**
+   * Add a record (§3.9 "Add a New Record"): IDRec generated, links filled in.
+   *
+   * `insertBefore` is §3.9 Inserting Records — "When you are working with a
+   * string component or a tally, you can insert new records instead of adding
+   * them to the end of the list. To insert a record above the current record,
+   * select the existing record and click the button."
+   */
+  app.post<{
+    Params: { db: string; table: string };
+    Body: {
+      idwell?: string; parent?: string; values?: Record<string, unknown>;
+      /** IDRec of the record the new one goes ABOVE. Sequenced folders only. */
+      insertBefore?: string;
+    };
+  }>(
     "/entry/wellview/dbs/:db/records/:table",
     { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
@@ -1738,6 +1752,10 @@ export async function registerWellviewDbRoutes(
        * a single Add is that block with one row in it.
        */
       const seqColIns = t.colSet.get("sysseq");
+      /** Rows to renumber to make room, when the caller asked for a position. */
+      let shift: { sql: string; args: (string | number)[] } | null = null;
+      /** A folder with null sequence numbers, given them before anything moves. */
+      let renumber: { sql: string; args: (string | number)[] }[] = [];
       if (seqColIns && values[seqColIns] == null) {
         const where: string[] = [];
         const args: string[] = [];
@@ -1745,18 +1763,168 @@ export async function registerWellviewDbRoutes(
         if (idwCol && idwell) { where.push(`"${idwCol}" = ?`); args.push(idwell); }
         const parCol = t.colSet.get("idrecparent");
         if (parCol && req.body?.parent) { where.push(`"${parCol}" = ?`); args.push(req.body.parent); }
-        const max = d.ro.prepare(
-          `SELECT MAX("${seqColIns}") AS m FROM "${t.name}"${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`,
-        ).get(...args) as { m: number | null };
-        values[seqColIns] = Number(max?.m ?? 0) + 1;
+        const scope = where.length ? ` WHERE ${where.join(" AND ")}` : "";
+
+        const before = req.body?.insertBefore;
+        if (before) {
+          /*
+           * INSERT ABOVE THE CURRENT RECORD (§3.9 Inserting Records).
+           *
+           * The new row takes the target's sequence number and everything from
+           * there down moves one place, which is the only way "above" survives
+           * a renumbering: appending and then shuffling would leave the folder
+           * briefly in an order the schematic would draw.
+           *
+           * `>=` rather than `>` because the target itself has to move too.
+           * Gaps in the existing numbers are harmless — the order is the
+           * comparison, not the values.
+           *
+           * Only a SEQUENCED folder. Elsewhere `orderColumn` does not sort by
+           * `sysSeq` at all, so "above" would renumber rows nobody sees in that
+           * order and the record would appear wherever the folder's own fields
+           * put it — a wrong answer dressed as success.
+           */
+          if (!modelTable(t.name)?.sequenced) {
+            return reply.code(400).send({
+              error: `${t.name} is not a sequenced folder, so a record cannot be inserted `
+                + "above another one — its records are arranged by their own fields.",
+            });
+          }
+          const idColIns = t.colSet.get("idrec");
+          if (!idColIns) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
+          /*
+           * THE SCOPE COMES FROM THE TARGET ROW, not from the request.
+           *
+           * A caller that names a record but omits `parent` would otherwise
+           * renumber every row in the well — every tally under every string.
+           * Reading the well and parent off the record being inserted above
+           * makes that impossible, and doubles as the check that the record is
+           * in the folder the new one is going into.
+           */
+          const at = d.ro.prepare(
+            `SELECT * FROM "${t.name}" WHERE "${idColIns}" = ?`,
+          ).get(before) as Record<string, unknown> | undefined;
+          if (!at) return reply.code(404).send({ error: "the record to insert above does not exist" });
+          const shiftWhere: string[] = [];
+          const shiftArgs: (string | number)[] = [];
+          for (const key of ["idwell", "idrecparent"] as const) {
+            const col = t.colSet.get(key);
+            if (!col) continue;
+            const theirs = at[col] == null ? null : String(at[col]);
+            const ours = key === "idwell" ? idwell : (req.body?.parent ?? null);
+            if (ours != null && theirs !== ours) {
+              return reply.code(400).send({
+                error: "the record to insert above is in a different folder",
+              });
+            }
+            // A null is a scope of its own — skipping it would widen the shift
+            // to every row in the table.
+            if (theirs == null) { shiftWhere.push(`"${col}" IS NULL`); continue; }
+            shiftWhere.push(`"${col}" = ?`);
+            shiftArgs.push(theirs);
+            values[col] = theirs;
+          }
+          /*
+           * A FOLDER WITH NO SEQUENCE NUMBERS CANNOT BE INSERTED INTO, and this
+           * database is full of them.
+           *
+           * 2,574 of the 24,644 rows in sequenced tables carry a NULL `sysSeq`
+           * — 562 of the 595 bit nozzles, 1,265 of the 1,404 daily contacts.
+           * With every number null, "above" has nothing to be above: SQL
+           * compares NULL to a number as NULL, so the shift matches no rows and
+           * the new record silently lands at the end. Measured, not assumed:
+           * the first browser run of this command appended.
+           *
+           * So the folder is numbered first, IN THE ORDER IT ALREADY READS —
+           * the same ORDER BY the grid fetched it with — which changes no
+           * record's position and leaves the folder able to hold one. The
+           * caller is told, because rows the user did not edit were written.
+           */
+          const nulls = Number((d.ro.prepare(
+            `SELECT COUNT(*) c FROM "${t.name}" WHERE ${shiftWhere.join(" AND ")}`
+            + ` AND "${seqColIns}" IS NULL`,
+          ).get(...shiftArgs) as { c: number }).c);
+          let seqAt: number;
+          if (nulls > 0) {
+            const ord = orderClause(t);
+            const inOrder = (d.ro.prepare(
+              `SELECT "${idColIns}" AS id FROM "${t.name}" WHERE ${shiftWhere.join(" AND ")}`
+              + (ord ? ` ORDER BY ${ord}` : ""),
+            ).all(...shiftArgs) as { id: string }[]).map((r) => String(r.id));
+            renumber = inOrder.map((id, i) => ({
+              sql: `UPDATE "${t.name}" SET "${seqColIns}" = ? WHERE "${idColIns}" = ?`,
+              args: [i + 1, id] as (string | number)[],
+            }));
+            seqAt = inOrder.indexOf(before) + 1;
+            if (seqAt < 1) {
+              return reply.code(400).send({ error: "the record to insert above is in a different folder" });
+            }
+          } else {
+            seqAt = Number(at[seqColIns]);
+          }
+          shift = {
+            sql: `UPDATE "${t.name}" SET "${seqColIns}" = "${seqColIns}" + 1`
+              + ` WHERE ${[...shiftWhere, `"${seqColIns}" >= ?`].join(" AND ")}`,
+            args: [...shiftArgs, seqAt],
+          };
+          values[seqColIns] = seqAt;
+        } else {
+          /*
+           * Otherwise the END of the folder, which takes an explicit number.
+           *
+           * `orderColumn` sorts a sequenced folder by `sysSeq` ascending and
+           * SQLite sorts NULL FIRST — so a row inserted without one does not
+           * land at the bottom, it jumps to the top. On a casing tally that
+           * puts a newly added joint above the shoe, and the string reads in
+           * the wrong order from that moment on, in every report and on the
+           * schematic.
+           *
+           * Nothing in either converted database has a null `sysSeq` (776 of
+           * 776 wvCasCompTally rows carry one), so every such row would be this
+           * app's, and the desktop would show it the same way.
+           */
+          const max = d.ro.prepare(
+            `SELECT MAX("${seqColIns}") AS m FROM "${t.name}"${scope}`,
+          ).get(...args) as { m: number | null };
+          values[seqColIns] = Number(max?.m ?? 0) + 1;
+        }
+      } else if (req.body?.insertBefore) {
+        /*
+         * Asked for a position in a folder that has none. Appending quietly
+         * would put the record at the bottom while the user asked for it to go
+         * above a particular row — a wrong answer dressed as success.
+         */
+        return reply.code(400).send({
+          error: `${t.name} records have no order of their own, so a record cannot be `
+            + "inserted above another one. They are arranged by their own fields.",
+        });
       }
 
       const cols = Object.keys(values);
 
       if (!cols.length) return reply.code(400).send({ error: "nothing to insert" });
-      writable(d).prepare(
+      const wdb = writable(d);
+      const ins = wdb.prepare(
         `INSERT INTO "${t.name}" (${cols.map((c) => `"${c}"`).join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
-      ).run(...cols.map((c) => values[c] as string | number | null));
+      );
+      if (shift) {
+        // One transaction: a folder renumbered with nothing inserted into the
+        // gap is worse than no insert at all.
+        wdb.exec("BEGIN");
+        try {
+          for (const r of renumber) wdb.prepare(r.sql).run(...r.args);
+          wdb.prepare(shift.sql).run(...shift.args);
+          ins.run(...cols.map((c) => values[c] as string | number | null));
+          wdb.exec("COMMIT");
+        } catch (e) {
+          wdb.exec("ROLLBACK");
+          return reply.code(400).send({
+            error: `the insert was rolled back: ${e instanceof Error ? e.message : String(e)}`,
+          });
+        }
+      } else {
+        ins.run(...cols.map((c) => values[c] as string | number | null));
+      }
 
       // Ch. 4: creating the well auto-creates its Original Hole wellbore, so
       // wellbore-linked folders have something to link to from the first day.
@@ -1783,7 +1951,12 @@ export async function registerWellviewDbRoutes(
           ).run(...wcols.map((c) => wbValues[c] as string | number | null));
         }
       }
-      return { idrec, idwell: t.hasIdwell ? idwell : null };
+      return {
+        idrec,
+        idwell: t.hasIdwell ? idwell : null,
+        /** Records given a sequence number they did not have, so this could work. */
+        ...(renumber.length ? { renumbered: renumber.length } : {}),
+      };
     },
   );
 
