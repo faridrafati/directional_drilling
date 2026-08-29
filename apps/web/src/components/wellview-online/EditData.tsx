@@ -1250,8 +1250,30 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     const approved = c.modelList?.length ? listOf(c).labels : null;
     const seeded = approved ?? lookupFor.get(c.column.toLowerCase());
     const hasLookup = !!seeded || !!c.library;
+    /*
+     * CTRL+F2 — "Looking up Database Entries", and it works on any free-text
+     * field, not only the ones with a library behind them.
+     *
+     * The guide: "To view all entries that have been previously entered into a
+     * field, press Ctrl + F2. The database lookup list is not well specific; it
+     * contains all of the entries in the database for a specific field." That
+     * is a different thing from the approved library — it is what people have
+     * actually typed, offered so the next person types the same.
+     *
+     * 603 free-text fields have no lookup of any kind today. The route that
+     * serves them already exists and already ignores idwell, which is exactly
+     * the "not well specific" the guide describes; only this gate was shut.
+     *
+     * Refused on anything a value cannot be stored into or chosen for: a
+     * calculated field is green and read-only, a key or TK column is identity,
+     * and a link column has its own record picker.
+     */
+    const canDbLookup = (c.type === "string" || c.type === "stringlong")
+      && !c.calculated && !c.id && !c.system
+      && !/^idrec/i.test(c.column) && !/tk$/i.test(c.column) && !c.link;
     const listId = seeded ? `wv-lu-${data.table}-${c.column}` : undefined;
-    const open = hasLookup && popover?.key === (key ?? "__ghost__") && popover.col === c.column;
+    const open = (hasLookup || canDbLookup)
+      && popover?.key === (key ?? "__ghost__") && popover.col === c.column;
 
     /*
      * A LONG TEXT FIELD GETS A TEXTAREA, and this is data loss, not comfort.
@@ -1317,8 +1339,14 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       );
     }
 
+    /*
+     * `relative` whenever a popover CAN open here, not only when the field
+     * carries a library. The popover is positioned `absolute top-full`, so
+     * without a positioned ancestor it resolves against the page and lands at
+     * the top-left corner of the document instead of under the cell.
+     */
     return (
-      <div className={hasLookup ? "relative flex items-center" : undefined}>
+      <div className={hasLookup || canDbLookup ? "relative flex items-center" : undefined}>
         <input
           value={approved ? showListValue(c, val) : val}
           list={listId}
@@ -1330,6 +1358,14 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           spellCheck={false}
           placeholder={isGhost ? "new…" : undefined}
           onFocus={() => focusHelp(c)}
+          onKeyDown={(e) => {
+            // The guide's own binding. Unclaimed by the browser, and the only
+            // keystroke this grid listens for besides Escape.
+            if (canDbLookup && e.ctrlKey && e.key === "F2") {
+              e.preventDefault();
+              setPopover(open ? null : { key: key ?? "__ghost__", col: c.column });
+            }
+          }}
           onChange={(e) => {
             const v = approved ? storeListValue(c, e.target.value) : e.target.value;
             if (isGhost) setGhostValue(c.column, v); else setValue(key!, c.column, v);
@@ -1339,18 +1375,23 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
               fieldTone(c, val)
             } ${isGhost ? "italic text-gray-600" : "text-gray-900"}`}
         />
-        {hasLookup && (
+        {(hasLookup || canDbLookup) && (
           <>
-            {/* Table 3-6 item J: the ellipsis button marks a lookup list. */}
-            <button type="button" tabIndex={-1} data-testid="wv-lookup-button"
-              title={approved
-                ? "Approved values, from WellView’s own data model."
-                : c.library
-                  ? `Library field — ${c.library.table}. The approved list is not readable here; this offers the values in use.`
-                  : "Lookup list"}
-              onClick={() => setPopover(open ? null : { key: key ?? "__ghost__", col: c.column })}
-              className={`shrink-0 px-1 text-[10px] hover:text-blue-600 ${
-                c.library ? "text-blue-400" : "text-gray-400"}`}>…</button>
+            {/* Table 3-6 item J: the ellipsis button marks a lookup list. It
+                stays on the fields that HAVE one — a free-text field reached by
+                Ctrl+F2 gets no permanent affordance, because offering values in
+                use as though they were a list would blur the two. */}
+            {hasLookup && (
+              <button type="button" tabIndex={-1} data-testid="wv-lookup-button"
+                title={approved
+                  ? "Approved values, from WellView’s own data model."
+                  : c.library
+                    ? `Library field — ${c.library.table}. The approved list is not readable here; this offers the values in use.`
+                    : "Lookup list"}
+                onClick={() => setPopover(open ? null : { key: key ?? "__ghost__", col: c.column })}
+                className={`shrink-0 px-1 text-[10px] hover:text-blue-600 ${
+                  c.library ? "text-blue-400" : "text-gray-400"}`}>…</button>
+            )}
             {seeded && (
               <datalist id={listId}>
                 {seeded.map((v) => <option key={v} value={v} />)}
@@ -1714,11 +1755,13 @@ function LibraryPopover({ db, table, column, library, seeded, approved, onPick, 
     <ValuesPopover
       values={values}
       loading={approved ? false : q.isLoading}
-      note={approved
+      note={(approved
         ? "The approved values, from WellView’s own data model."
         : library
           ? `Values in use in this database. The approved library (${library.table}) ships encrypted and cannot be read here.`
-          : "Values in use in this database."}
+          : "Values in use in this database.")
+        // A list that stopped at 500 and said nothing would read as complete.
+        + (!approved && q.data?.truncated ? " Showing the first 500." : "")}
       onPick={onPick}
       onClose={onClose}
     />

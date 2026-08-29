@@ -784,7 +784,7 @@ export const wvDbApi = {
       `/wellview/dbs/${enc(db)}/queries/sql`, { sql }),
 
   columnValues: (db: string, table: string, column: string) =>
-    entryApi.get<{ table: string; column: string; values: string[] }>(
+    entryApi.get<{ table: string; column: string; values: string[]; truncated?: boolean }>(
       `/wellview/dbs/${enc(db)}/column-values?table=${enc(table)}&column=${enc(column)}`),
 
   /** The well-header case, which is what Quick Query asks for. */

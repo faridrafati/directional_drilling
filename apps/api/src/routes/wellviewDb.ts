@@ -2163,10 +2163,24 @@ export async function registerWellviewDbRoutes(
       if (!col) return reply.code(404).send({ error: `no column ${req.query.column} on ${t.name}` });
       // Values in use across the WHOLE database, not just one well: a grade
       // typed on another well is still a value this database uses.
+      /*
+       * The cap is disclosed rather than silent. A lookup that stops at 500
+       * and says nothing reads as "these are all the values", and the field
+       * this bites first is a free-text Description with hundreds of distinct
+       * entries — exactly the field Ctrl+F2 is most useful on.
+       */
+      const LIMIT = 500;
       const rows = d.ro.prepare(
-        `SELECT DISTINCT "${col}" v FROM "${t.name}" WHERE "${col}" IS NOT NULL AND "${col}" <> '' ORDER BY 1 LIMIT 500`,
+        `SELECT DISTINCT "${col}" v FROM "${t.name}" WHERE "${col}" IS NOT NULL AND "${col}" <> ''`
+        + ` ORDER BY 1 LIMIT ${LIMIT + 1}`,
       ).all() as { v: unknown }[];
-      return { table: t.name, column: col, values: rows.map((r) => String(r.v)) };
+      const truncated = rows.length > LIMIT;
+      return {
+        table: t.name,
+        column: col,
+        truncated,
+        values: rows.slice(0, LIMIT).map((r) => String(r.v)),
+      };
     },
   );
 
