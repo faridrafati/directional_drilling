@@ -857,8 +857,8 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
 
 /** §8.3 "group lists" — the kinds of downhole item a template may show. */
 export type SchematicLayer =
-  | "holeSizes" | "casing" | "tubing" | "rods" | "otherInHole"
-  | "perforations" | "cement" | "zones" | "drillString";
+  | "holeSizes" | "casing" | "tubing" | "rods" | "otherInHole" | "otherStr"
+  | "perforations" | "cement" | "zones" | "drillString" | "annotations";
 
 export const SCHEMATIC_LAYERS: { key: SchematicLayer; label: string }[] = [
   { key: "holeSizes", label: "Hole sizes" },
@@ -866,12 +866,18 @@ export const SCHEMATIC_LAYERS: { key: SchematicLayer; label: string }[] = [
   { key: "tubing", label: "Tubing" },
   { key: "rods", label: "Rods" },
   { key: "otherInHole", label: "Other in hole" },
+  // Plugs, guns and fish left downhole — twelve of the sample's thirteen are
+  // still in the hole, two of them below the deepest casing in their well.
+  { key: "otherStr", label: "Other strings" },
   { key: "perforations", label: "Perforations" },
   { key: "cement", label: "Cement" },
   // §7.2 "Drilling OD Not Visible" / "Bit Not Visible": the string in the hole
   // and the bit on its end are part of the picture a driller expects.
   { key: "drillString", label: "Drill string & bit" },
   { key: "zones", label: "Zones" },
+  // The one table in the model whose sole purpose is to put text on this
+  // drawing (§8.3 "Show annotations").
+  { key: "annotations", label: "Annotations" },
 ];
 
 const ALL_LAYERS = Object.fromEntries(
@@ -885,17 +891,38 @@ const num = (v: string | number | null | undefined): number | null => {
 const dstr = (v: string | number | null | undefined): string | null =>
   typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null;
 
+/**
+ * Is this record a PLAN rather than steel in the hole?
+ *
+ * The flag alone decides it. This used to also require the run date to be
+ * ABSENT, which reads the two columns backwards: when the flag is set,
+ * DtTmRun is the date the equipment is PROPOSED to run on. The guide says only
+ * "Proposed equipment has the Proposed flag selected in the Edit Data window"
+ * and nothing about the date.
+ *
+ * The cost of the old reading was that a proposed string carrying its planned
+ * date fell through to `inHole` and was drawn as ordinary steel, unmarked. Two
+ * tubing strings in the sample — both named "Proposed Production Tubing" —
+ * were shown that way, and the one on Sample 02 has no pull date, so it was
+ * solid on the diagram on every date from 2000-04-09 onward.
+ *
+ * The column is spelled differently across tables: wvCas/wvTub/wvRod/wvOtherStr
+ * use ProposedRun, wvDepthAnnotation uses plain Proposed. Both are read, because
+ * assuming one name returns false on the other half without saying so.
+ */
+const isProposed = (row: WvSchematicRow): boolean =>
+  String(row.ProposedRun ?? row.Proposed ?? "") === "1";
+
 /** Is this string in the hole on `date`? Run on/before it, not yet pulled. */
 function inHole(row: WvSchematicRow, date: string): boolean {
+  // A plan is never in the hole, whatever dates it carries.
+  if (isProposed(row)) return false;
   const run = dstr(row.DtTmRun);
   const pull = dstr(row.DtTmPull);
   if (run && run > date) return false;
   if (pull && pull <= date) return false;
-  if (!run && String(row.ProposedRun ?? "") === "1") return false;   // proposed only
   return true;
 }
-const isProposed = (row: WvSchematicRow): boolean =>
-  !dstr(row.DtTmRun) && String(row.ProposedRun ?? "") === "1";
 
 function SchematicTab({ db, idwell, store, onEditTable }: {
   db: string; idwell: string; store: Map<string, unknown>; onEditTable: (table: string) => void;
@@ -1303,6 +1330,16 @@ function SchematicSvg({
   const tubings = (layers.tubing ? s.tubings : []).filter((t) => inHole(t, date) && boreFilter(t));
   const rods = (layers.rods ? s.rods : []).filter((r) => inHole(r, date) && boreFilter(r));
   const other = (layers.otherInHole ? s.otherInHole : []).filter((o) => inHole(o, date) && boreFilter(o));
+  const otherStr = (layers.otherStr ? s.otherStr ?? [] : []).filter((o) => inHole(o, date) && boreFilter(o));
+  /*
+   * Annotations use a plain `Proposed`, not `ProposedRun`, and have a start and
+   * an END rather than a run and a pull — so they get their own window rather
+   * than reusing inHole.
+   */
+  const annotations = (layers.annotations ? s.annotations ?? [] : []).filter((a) => {
+    const st = dstr(a.DtTmStart), en = dstr(a.DtTmEnd);
+    return (!st || st <= date) && (!en || en > date) && !isProposed(a) && boreFilter(a);
+  });
   const propCasings = showProposed ? s.casings.filter((c) => isProposed(c) && boreFilter(c)) : [];
   const propTubings = showProposed ? s.tubings.filter((t) => isProposed(t) && boreFilter(t)) : [];
   const sizes = (layers.holeSizes ? s.sizes : []).filter((z) => {
@@ -1713,6 +1750,75 @@ function SchematicSvg({
         <title>{`${o.Des ?? "Other in hole"} ${fmtDepth(top)}${btm && btm !== top ? `–${fmtDepth(btm)}` : ""} (wvOtherInHole)`}</title>
       </rect>,
     );
+  }
+
+  /*
+   * OTHER STRINGS: a plug, a gun or a fish left downhole.
+   *
+   * Drawn as a solid dark bar rather than a pipe — these are obstructions, not
+   * conduits, and two of the sample's are deeper than the deepest casing in
+   * their well. Width follows the components' largest OD where there is one,
+   * so a bridge plug reads wider than a gun.
+   */
+  {
+    /*
+     * Labels are stacked, not printed at their own depth.
+     *
+     * Sample 04 carries three of these between 4,262 m and 4,421 m on a
+     * 4,450 m axis — four pixels apart, so drawn honestly they overprint into
+     * an unreadable smear. The BAR stays at its true depth; only the caption
+     * is nudged, and a leader line keeps it attached to what it names.
+     */
+    let lastLabelY = -Infinity;
+    for (const [i, o] of otherStr.entries()) {
+      const btm = num(o.DepthBtm);
+      if (btm == null) continue;
+      const top = topOf(o) ?? btm;
+      const hw = Math.max(4, halfW(num(o.maxOd ?? null)) * 0.5);
+      const anchorY = y(btm);
+      const labelY = Math.max(anchorY, lastLabelY + 10);
+      lastLabelY = labelY;
+      items.push(
+        <g key={`ostr${i}`} className="cursor-pointer" onClick={() => onEditTable("wvOtherStr")}>
+          <rect x={CX - hw} y={yTop(o)} width={hw * 2} height={Math.max(4, y(btm) - y(top))}
+            fill="#4b5563" stroke="#1f2937" strokeWidth="0.6" rx="1" />
+          {Math.abs(labelY - anchorY) > 1 && (
+            <line x1={CX + hw + 2} y1={anchorY} x2={CX + hw + 10} y2={labelY - 3}
+              stroke="#9ca3af" strokeWidth="0.5" />
+          )}
+          <text x={CX + hw + 12} y={labelY} fontSize="8" fill="#374151">{String(o.Des ?? "")}</text>
+          <title>{`${o.Des ?? "Other string"} — ${fmtDepth(top)}–${fmtDepth(btm)} (wvOtherStr)`}</title>
+        </g>,
+      );
+    }
+  }
+
+  /*
+   * ANNOTATIONS: the text the schematic exists to carry.
+   *
+   * Both sample rows sit within 0.0002 m of each other, so equal depths are
+   * stacked from the first release rather than overprinted — two rows is not
+   * enough to tune a layout, but it is enough to know the collision is real.
+   */
+  {
+    const byDepth = new Map<number, number>();
+    for (const [i, a] of annotations.entries()) {
+      const dpt = num(a.Depth);
+      if (dpt == null) continue;
+      const k = Math.round(dpt * 100);
+      const stack = byDepth.get(k) ?? 0;
+      byDepth.set(k, stack + 1);
+      const yy = y(dpt);
+      items.push(
+        <g key={`ann${i}`} className="cursor-pointer" onClick={() => onEditTable("wvDepthAnnotation")}>
+          <line x1={CX + 40} y1={yy} x2={W - 90} y2={yy} stroke="#7c3aed" strokeWidth="0.8" strokeDasharray="3 2" />
+          <text x={W - 88} y={yy + 3 + stack * 10} fontSize="8" fill="#6d28d9">
+            {String(a.Annotation ?? a.Typ ?? "")}
+          </text>
+          <title>{`${a.Annotation ?? "Annotation"} @ ${fmtDepth(dpt)} (wvDepthAnnotation)`}</title>
+        </g>,
+      );
+    }
   }
 
   // perforations: red ticks either side

@@ -175,6 +175,10 @@ export interface WvSchematic {
   tubings: (WvSchematicRow & { maxOd: number | null })[];
   rods: WvSchematicRow[];
   otherInHole: WvSchematicRow[];
+  /** Plugs, guns and fish left in the hole — not casing, tubing or rods. */
+  otherStr: (WvSchematicRow & { maxOd: number | null })[];
+  /** Text placed at a depth on the drawing (wvDepthAnnotation). */
+  annotations: WvSchematicRow[];
   perforations: WvSchematicRow[];
   cement: WvSchematicRow[];
   /**

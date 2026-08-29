@@ -30,8 +30,11 @@ let db: DatabaseSync;
 beforeAll(() => { db = new DatabaseSync(SAMPLE, { readOnly: true }); });
 afterAll(() => { db?.close(); });
 
-const cols = (t: string) =>
-  (db.prepare(`SELECT * FROM "${t}" LIMIT 1`).columns() as { name: string }[]).map((c) => c.name);
+const cols = (t: string) => {
+  const st = db.prepare(`SELECT * FROM "${t}" LIMIT 1`) as unknown as
+    { columns(): { name: string }[] };
+  return st.columns().map((c) => c.name);
+};
 
 d("the schematic's wellbore filter", () => {
   it("must key hole sections on IDRecParent, because they have no IDRecWellBore", () => {

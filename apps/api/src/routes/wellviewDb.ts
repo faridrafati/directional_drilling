@@ -3821,6 +3821,29 @@ function computedFieldsFor(
         stringTopByParent(d, "wvTubComp", idwell));
       const rods = withComps(stringRows(d, "wvRod", idwell), null, stringTopByParent(d, "wvRodComp", idwell));
       const other = stringRows(d, "wvOtherInHole", idwell, ["SzODMax", "IconName"]);
+      /*
+       * OTHER STRINGS — the things left in the hole that are not casing,
+       * tubing or rods, and were not in this payload at all.
+       *
+       * Thirteen in the sample across four wells, twelve of them still
+       * downhole: a Basket Bridge Plug at 4,262 m and a Dropped TCP Gun at
+       * 4,326 m among them, both DEEPER than the deepest casing in their well.
+       * For a re-entry or a fishing job those are exactly the records the
+       * picture exists to show, and the diagram did not know they were there.
+       *
+       * No DepthTop and no IconName on this table, so the top comes from the
+       * components the same way casing and tubing already do.
+       */
+      const otherStrOd = maxOdByParent(d, "wvOtherStrComp", idwell);
+      const otherStr = withComps(
+        stringRows(d, "wvOtherStr", idwell, ["LatPosition", "IDRecTub"]),
+        otherStrOd, stringTopByParent(d, "wvOtherStrComp", idwell));
+      /*
+       * DEPTH ANNOTATIONS — the one table in the model whose only documented
+       * purpose is to put text on the schematic, and which nothing read.
+       */
+      const annotations = stringRows(d, "wvDepthAnnotation", idwell,
+        ["Depth", "Annotation", "Typ", "DtTmStart", "DtTmEnd", "Proposed"]);
       const perfs = stringRows(d, "wvPerforation", idwell, ["DepthTop", "DtTm", "Proposed", "Typ"]);
       const cement = stringRows(d, "wvCement", idwell,
         ["IDRecString", "DtTmStart", "Proposed", "CementTyp", "CementSubTyp"]);
@@ -4005,7 +4028,8 @@ function computedFieldsFor(
             surveyName: r.srv ? names.get(String(r.srv)) ?? null : null,
           }));
       })();
-      for (const set of [casings, tubings, rods, other]) collect(set, ["DtTmRun", "DtTmPull"]);
+      for (const set of [casings, tubings, rods, other, otherStr]) collect(set, ["DtTmRun", "DtTmPull"]);
+      collect(annotations, ["DtTmStart", "DtTmEnd"]);
       collect(perfs, ["DtTm"]);
       collect(cement, ["DtTmStart"]);
       collect(cementStages, ["DtTmStart", "DtTmDrillOut"]);
@@ -4020,8 +4044,8 @@ function computedFieldsFor(
       // metres and read in inches, as a fraction.
       const sizeField = modelField("wvWellboreSize", "sz") ?? modelField("wvCasComp", "szodnom");
       return {
-        wellbores: bores, sizes, casings, tubings, rods, otherInHole: other,
-        perforations: perfs, cement, cementStages, zones,
+        wellbores: bores, sizes, casings, tubings, rods, otherInHole: other, otherStr,
+        perforations: perfs, cement, cementStages, zones, annotations,
         drillStrings, surveyLinks,
         dates: [...dates].sort(),
         // `applyDatum` is part of the spec, not decoration: `toDisplay` shifts
