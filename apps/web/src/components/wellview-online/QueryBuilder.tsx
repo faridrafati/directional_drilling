@@ -389,7 +389,10 @@ export function QueryBuilder({ db, editing, onClose, onSaved }: Props) {
                 Run SQL
               </button>
             </div>
+            {/* SQL, not prose. Left to the browser's default this underlines
+                every table and column name in the query. */}
             <textarea value={sql} onChange={(e) => setSql(e.target.value)} rows={4}
+              spellCheck={false}
               data-testid="wv-qb-sql"
               placeholder="SELECT DISTINCT idwell FROM wvJob WHERE wvTyp = 'Drilling'"
               className="w-full border border-gray-300 rounded p-2 text-[11px] font-mono" />

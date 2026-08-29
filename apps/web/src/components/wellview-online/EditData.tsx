@@ -1939,7 +1939,9 @@ function PasteData({
             Copy a block of cells in Excel, then paste it here. Map each pasted column to a
             field in this folder — measured columns are read in the units on screen.
           </p>
+          {/* A block of spreadsheet cells — codes, numbers and identifiers. */}
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5}
+            spellCheck={false}
             data-testid="wv-paste-text" autoFocus
             placeholder="Paste here (Ctrl-V)…"
             className="w-full border border-gray-300 rounded p-2 text-[11px] font-mono" />

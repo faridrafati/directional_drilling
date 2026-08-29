@@ -109,6 +109,16 @@ d("the vendor spelling dictionary", () => {
     for (const w of present) expect(words.has(w), `${w} IS in the dictionary`).toBe(true);
   });
 
+  it("does not contain the word the whole application is about", () => {
+    // "wellbore" appears 248 times across the model's labels, Peloton's own
+    // field help and the sample's free text — 187 of those in the help Peloton
+    // wrote — and their dictionary has no entry for it. A checker built on this
+    // list would underline it every time.
+    expect(words.has("wellbore")).toBe(false);
+    expect(words.has("downhole")).toBe(false);
+    expect(words.has("workover")).toBe(false);
+  });
+
   it("would nonetheless flag one word in eight, almost all of them correct", () => {
     // The measurement that decides it. Real free text from this database.
     const SRC: [string, string][] = [
