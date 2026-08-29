@@ -102,3 +102,74 @@ d("long text fields", () => {
     // …which a 7rem single-line input showed about thirty characters of.
   });
 });
+
+/**
+ * The 100-CHARACTER RULE — 9.0's own, and the last hole in the branch above.
+ *
+ * Edit Data Enhancements: "Text fields that are 100 characters or more can now
+ * function as a comments field that opens to a larger edit window." The model
+ * states that length as `physicalsize`, and the data-model builder used to drop
+ * it, so nothing downstream could tell a 10-character code from a 255-character
+ * note.
+ */
+describe("the comments-field rule", () => {
+  const model = JSON.parse(readFileSync(
+    join(ROOT, "apps", "web", "public", "wellview-templates", "datamodel.json"), "utf8"),
+  ) as { tables: Record<string, { fields: Record<string, { type?: string; size?: number }> }> };
+
+  /** The same predicate the grid uses, kept here so the rule has one statement. */
+  const isCommentsField = (f: { type?: string; size?: number }) =>
+    f.type === "stringlong" || (f.type === "string" && (f.size ?? 0) >= 100);
+
+  it("carries the declared length of every text field", () => {
+    let sized = 0;
+    let strings = 0;
+    for (const t of Object.values(model.tables)) {
+      for (const f of Object.values(t.fields)) {
+        if (f.type !== "string") continue;
+        strings++;
+        if (typeof f.size === "number" && f.size > 0) sized++;
+      }
+    }
+    expect(strings).toBeGreaterThan(2000);
+    // Every one of them: a missing length would silently read as "short".
+    expect(sized).toBe(strings);
+  });
+
+  it("takes in the one newline-holding column that is not stringlong", () => {
+    /*
+     * 25 columns in the sample hold a value with a newline in it. 24 are
+     * stringlong and were already safe. The twenty-fifth is this one — a
+     * `string` of 255 — and an <input type=text> strips the newline out of it.
+     */
+    const f = model.tables["wvproblem"].fields.actiontaken;
+    expect(f.type).toBe("string");
+    expect(f.size).toBe(255);
+    expect(isCommentsField(f)).toBe(true);
+  });
+
+  it("does not swallow every short field with it", () => {
+    // A 50-character name in a textarea makes horizontal mode unreadable for
+    // no gain, so the rule is the guide's number and not "all text".
+    const all = Object.values(model.tables)
+      .flatMap((t) => Object.values(t.fields))
+      .filter((f) => f.type === "string");
+    const wide = all.filter(isCommentsField);
+    expect(wide.length).toBeGreaterThan(150);
+    expect(wide.length).toBeLessThan(all.length / 4);
+    // A named short one, for a case anybody can check by hand.
+    const operator = model.tables["wvwellheader"].fields.operator;
+    expect(operator.size).toBe(50);
+    expect(isCommentsField(operator)).toBe(false);
+
+    /*
+     * And a consequence of following the guide's number rather than taste:
+     * wvWellHeader.WellName is declared as exactly 100, so it IS a comments
+     * field. Recorded rather than special-cased — "100 characters or more" is
+     * the rule the vendor states, and a one-row textarea reads the same as an
+     * input until it is focused.
+     */
+    expect(model.tables["wvwellheader"].fields.wellname.size).toBe(100);
+    expect(isCommentsField(model.tables["wvwellheader"].fields.wellname)).toBe(true);
+  });
+});

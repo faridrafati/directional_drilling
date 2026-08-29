@@ -31,6 +31,12 @@ export interface ModelField {
   labelShort?: string;
   help?: string;
   type?: PhysicalType;
+  /**
+   * The declared length of a text field, which 9.0 makes a user-visible rule
+   * out of: "Text fields that are 100 characters or more can now function as a
+   * comments field that opens to a larger edit window."
+   */
+  size?: number;
   calculated?: boolean;
   hidden?: boolean;
   carryForward?: boolean;

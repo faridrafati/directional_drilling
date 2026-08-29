@@ -332,6 +332,20 @@ for (const m of xml.matchAll(/<(afmtable|afmfieldunitformat|afmunitset|afmfield|
     labelShort: a.captionshort || undefined,
     help: clean(a.help),
     type: a.physicaltype || undefined,
+    /*
+     * THE DECLARED LENGTH, which 9.0 makes a user-visible rule out of.
+     *
+     * "Text fields that are 100 characters or more can now function as a
+     * comments field that opens to a larger edit window" — Edit Data
+     * Enhancements. The model states it as `physicalsize` and this builder used
+     * to drop it, so nothing downstream could tell a 10-character code from a
+     * 255-character note.
+     *
+     * Only for text: a double's "size" is a storage width and means nothing to
+     * a person entering a number.
+     */
+    size: (a.physicaltype === "string" || a.physicaltype === "stringlong")
+      && Number(a.physicalsize) > 0 ? Number(a.physicalsize) : undefined,
     calculated: bool(a.calculated) || undefined,
     hidden: bool(a.hidden) || undefined,
     carryForward: bool(a.carryfwd) || undefined,
