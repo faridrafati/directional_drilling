@@ -46,7 +46,7 @@ import {
 import { mudLimits, mudOutOfRange, type OutOfRange } from "../wellview/mudOutOfRange.js";
 import { stackFieldsFor, stackRows, type StackRow } from "../wellview/stringStack.js";
 import { appFrame, WELL_FILE_EXTENSION } from "../wellview/appframe.js";
-import { columnLabel, folderLabel, modelField, modelTable, orderByFor, renderRecordDes } from "../wellview/model.js";
+import { columnLabel, folderLabel, markableNameColumn, modelField, modelTable, orderByFor, renderRecordDes } from "../wellview/model.js";
 import { computeSurvey, closureOf } from "@dd/shared";
 import { resolveMultiTemplate, type MultiTemplate } from "../wellview/multiReport.js";
 import { resolveXlExtract, type XlTemplate } from "../wellview/xlExtract.js";
@@ -2495,7 +2495,11 @@ export async function registerWellviewDbRoutes(
    */
   app.post<{
     Params: { db: string; table: string; idrec: string };
-    Body: { idwell?: string; parent?: string; childTables?: string[] };
+    Body: {
+      idwell?: string; parent?: string; childTables?: string[];
+      /** §3.11 "Each new record has the word *COPY* in its name." */
+      mark?: boolean;
+    };
   }>(
     "/entry/wellview/dbs/:db/records/:table/:idrec/copy",
     { preHandler: WELLVIEW_GUARD },
@@ -2516,12 +2520,72 @@ export async function registerWellviewDbRoutes(
       const w = writable(d);
       let copied = 0;
 
-      const copyRec = (tt: TableInfo, row: Record<string, unknown>, idwell: string | null, parent: string | null): string => {
+      /** Set on the top-level copy only; the descendants keep their own names. */
+      let markedColumn: string | null = null;
+
+      const copyRec = (tt: TableInfo, row: Record<string, unknown>, idwell: string | null, parent: string | null, top = false): string => {
         const values: Record<string, unknown> = { ...row };
         const newId = newIdRec();
         values[tt.colSet.get("idrec")!] = newId;
         if (tt.hasIdwell && idwell) values[tt.colSet.get("idwell")!] = idwell;
         if (tt.hasParent) values[tt.colSet.get("idrecparent")!] = parent;
+
+        if (top) {
+          /*
+           * A COPY NEEDS A PLACE OF ITS OWN IN A SEQUENCED FOLDER.
+           *
+           * `{ ...row }` carried the source's `sysSeq` across, so duplicating a
+           * tally joint produced two records claiming the same position and the
+           * order between them became whatever SQLite returned. The end of the
+           * folder is the same rule Add already uses, applied to the target
+           * scope — which is not necessarily the source's, since a copy can
+           * land in another well or under another parent.
+           *
+           * The descendants keep theirs: their parent is brand new, so they
+           * have no siblings to collide with and their order is the source's.
+           */
+          const seqCol = modelTable(tt.name)?.sequenced ? tt.colSet.get("sysseq") : null;
+          if (seqCol) {
+            const w: string[] = [];
+            const a: string[] = [];
+            if (tt.hasIdwell && idwell) { w.push(`"${tt.colSet.get("idwell")}" = ?`); a.push(idwell); }
+            if (tt.hasParent && parent) { w.push(`"${tt.colSet.get("idrecparent")}" = ?`); a.push(parent); }
+            const max = d.ro.prepare(
+              `SELECT MAX("${seqCol}") AS m FROM "${tt.name}"${w.length ? ` WHERE ${w.join(" AND ")}` : ""}`,
+            ).get(...a) as { m: number | null };
+            values[seqCol] = Number(max?.m ?? 0) + 1;
+          }
+
+          /*
+           * §3.11 "Each new record has the word *COPY* in its name."
+           *
+           * The model says what a record's NAME is — `recordDes`, a template
+           * like "BHA #<StringNo>, <Des>" — so the mark goes on the first field
+           * that template names which can hold it: free text, not calculated,
+           * and not a closed list. Appending to a date, a depth or a model list
+           * would not mark the record, it would corrupt the field: "Packer
+           * *COPY*" is not a value the desktop can map back to a table.
+           *
+           * 151 of the 229 tables that declare a name have such a field. Where
+           * none does the copy is left unmarked and the caller is TOLD, rather
+           * than being left to believe a mark was made.
+           */
+          if (req.body?.mark) {
+            const col = markableNameColumn(tt);
+            if (col) {
+              const actual = tt.colSet.get(col.toLowerCase());
+              const was = actual == null ? null : values[actual];
+              const text = was == null ? "" : String(was);
+              // Copying a copy does not stack the marks.
+              if (actual && !text.includes("*COPY*")) {
+                values[actual] = text ? `${text} *COPY*` : "*COPY*";
+                markedColumn = actual;
+              } else if (actual) {
+                markedColumn = actual;
+              }
+            }
+          }
+        }
         for (const [k, v] of [["syscreatedate", now], ["syscreateuser", user], ["sysmoddate", now], ["sysmoduser", user]] as const) {
           const c = tt.colSet.get(k);
           if (c) values[c] = v;
@@ -2550,8 +2614,116 @@ export async function registerWellviewDbRoutes(
         : null;
       const targetIdwell = req.body?.idwell ?? (t.hasIdwell ? String(src[t.colSet.get("idwell")!]) : null);
       const targetParent = req.body?.parent ?? (t.hasParent ? (src[t.colSet.get("idrecparent")!] as string | null) : null);
-      const idrec = copyRec(t, src, targetIdwell, targetParent);
-      return { idrec, copied };
+      const idrec = copyRec(t, src, targetIdwell, targetParent, true);
+      return {
+        idrec,
+        copied,
+        /** Which field carries the *COPY* mark, or null when none could. */
+        ...(req.body?.mark ? { markedColumn } : {}),
+      };
+    },
+  );
+
+  /**
+   * PASTE INTO CURRENT RECORD (§3.11).
+   *
+   * The guide gives two ways to paste: "To paste as a new record, select the
+   * folder and choose Paste as New Record(s)… To paste into an existing record,
+   * select the record and choose Paste into Current Record." Only the first
+   * existed here — the copy route never does anything but INSERT — and the
+   * workaround people reach for, paste-new-then-delete-old, changes the record's
+   * IDRec and breaks every link pointing at it.
+   *
+   * So the record's own IDENTITY is what this keeps: its IDRec, the well and
+   * parent that place it in the tree, and its sysSeq, which is its position in
+   * the folder. Everything else takes the source's value.
+   *
+   * SUBFOLDER RECORDS ARE NOT TOUCHED. Pasting field values into a record is
+   * not the same act as re-parenting somebody else's children, and the guide
+   * puts the child-table choice on the COPY, where a new record is being made.
+   * The caller says as much on screen rather than leaving it to be discovered.
+   */
+  app.post<{
+    Params: { db: string; table: string; idrec: string };
+    Body: { source?: string };
+  }>(
+    "/entry/wellview/dbs/:db/records/:table/:idrec/paste-into",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, req.params.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
+      const idCol = t.colSet.get("idrec");
+      if (!idCol) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
+      const sourceId = req.body?.source;
+      if (!sourceId) return reply.code(400).send({ error: "source is required" });
+      if (sourceId === req.params.idrec) {
+        return reply.code(400).send({ error: "a record cannot be pasted into itself" });
+      }
+
+      const src = d.ro.prepare(`SELECT * FROM "${t.name}" WHERE "${idCol}" = ?`).get(sourceId) as
+        Record<string, unknown> | undefined;
+      if (!src) return reply.code(404).send({ error: "the copied record no longer exists" });
+      const dst = d.ro.prepare(`SELECT * FROM "${t.name}" WHERE "${idCol}" = ?`).get(req.params.idrec) as
+        Record<string, unknown> | undefined;
+      if (!dst) return reply.code(404).send({ error: "record not found" });
+
+      /*
+       * A LINK GUID IS ONLY MEANINGFUL IN ITS OWN WELL.
+       *
+       * Pasting one across wells would store a pointer at a record on a
+       * different well — a value the desktop resolves to the wrong thing or to
+       * nothing. The target's existing link is at least valid where it is, so
+       * it stands, and the fields left alone are NAMED in the reply. Silently
+       * writing the GUID would be the corruption this whole exercise is about.
+       */
+      const idwCol = t.colSet.get("idwell");
+      const crossWell = !!idwCol && String(src[idwCol] ?? "") !== String(dst[idwCol] ?? "");
+
+      const patch: Record<string, unknown> = {};
+      const skipped: { column: string; label: string; reason: string }[] = [];
+      for (const c of t.cols) {
+        if (isSysCol(c) || isKeyCol(c)) continue;          // identity and bookkeeping stay
+        if (modelField(t.name, c)?.calculated) continue;   // nothing is stored for these
+        if (crossWell && (isLinkCol(t, c) || isTkCol(c))) {
+          if (!isTkCol(c) && src[c] != null) {
+            skipped.push({
+              column: c,
+              label: columnLabel(t.name, c),
+              reason: "it points at a record on the well the copy came from",
+            });
+          }
+          continue;
+        }
+        patch[c] = src[c] ?? null;
+      }
+      if (!Object.keys(patch).length) {
+        return reply.code(400).send({ error: "there is nothing in this record to paste" });
+      }
+
+      const user = (req as unknown as { entryUser?: { username?: string } }).entryUser?.username ?? "web";
+      const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      const cols = Object.keys(patch);
+      const sets = cols.map((c) => `"${c}" = ?`);
+      const args: (string | number | null)[] = cols.map((c) => patch[c] as string | number | null);
+      for (const [k, v] of [["sysmoddate", now], ["sysmoduser", user]] as const) {
+        const c = t.colSet.get(k);
+        if (c) { sets.push(`"${c}" = ?`); args.push(v); }
+      }
+      const res = writable(d).prepare(
+        `UPDATE "${t.name}" SET ${sets.join(", ")} WHERE "${idCol}" = ?`,
+      ).run(...args, req.params.idrec);
+
+      return {
+        changed: Number(res.changes),
+        /** How many of the record's own fields took the copied value. */
+        fields: cols.length,
+        /** Links that could not cross the well boundary, named for the user. */
+        skipped,
+        /** Subfolder records were not touched; the screen says so. */
+        children: false,
+      };
     },
   );
 

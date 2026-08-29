@@ -823,9 +823,20 @@ export const wvDbApi = {
    * allows you to choose the child tables that you want to copy."
    */
   copyRecord: (db: string, table: string, idrec: string,
-    target?: { idwell?: string; parent?: string; childTables?: string[] }) =>
-    entryApi.post<{ idrec: string; copied: number }>(
+    target?: { idwell?: string; parent?: string; childTables?: string[]; mark?: boolean }) =>
+    entryApi.post<{ idrec: string; copied: number; markedColumn?: string | null }>(
       `/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}/copy`, target ?? {}),
+
+  /**
+   * Paste into Current Record (§3.11) — the copied record's field values into
+   * an EXISTING record, which keeps its own IDRec, its place in the tree and
+   * its position in the folder. Subfolder records are not touched.
+   */
+  pasteIntoRecord: (db: string, table: string, idrec: string, source: string) =>
+    entryApi.post<{
+      changed: number; fields: number;
+      skipped: { column: string; label: string; reason: string }[];
+    }>(`/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}/paste-into`, { source }),
 
   /** What a copy of this record would carry, per child table, with counts. */
   copyPreview: (db: string, table: string, idrec: string) =>

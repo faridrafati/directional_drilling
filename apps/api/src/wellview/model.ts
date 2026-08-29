@@ -242,6 +242,42 @@ export function renderRecordDes(
 }
 
 /**
+ * The field that can carry §3.11's "*COPY*" mark, for this table.
+ *
+ * "Each new record has the word *COPY* in its name" — and the model says what a
+ * record's name is: `recordDes`, a template of field tokens like
+ * "BHA #<StringNo>, <Des>". The mark goes on the first field that template
+ * names which can actually hold a word:
+ *
+ *   - free text (`string` or `stringlong`) — a date or a depth cannot hold it,
+ *   - not calculated — the desktop would overwrite it at print time,
+ *   - not a closed list — writing "Packer *COPY*" into a `mdllistwithtables`
+ *     field would leave a value the desktop cannot map back to its table, and
+ *     into a `foreignidrec` a GUID that points nowhere.
+ *
+ * A `library` lookup IS allowed: it suggests values, it does not restrict them.
+ *
+ * 151 of the 229 tables that declare a name have such a field. The other 78 are
+ * named by a date, a depth or a link (`wvNote` is "<DtTm>"), and null is the
+ * honest answer for them — the caller says the copy is unmarked rather than
+ * pretending otherwise.
+ */
+export function markableNameColumn(t: { name: string } | string): string | null {
+  const name = typeof t === "string" ? t : t.name;
+  const mt = modelTable(name);
+  if (!mt?.recordDes) return null;
+  for (const m of mt.recordDes.matchAll(/<([A-Za-z0-9_]+)(\.[A-Za-z]+)?>/g)) {
+    if (m[2]) continue;                       // "<Sz.unit>" names a unit, not a field
+    const f = mt.fields[m[1].toLowerCase()];
+    if (!f || f.calculated) continue;
+    if (f.type !== "string" && f.type !== "stringlong") continue;
+    if (f.lookupTyp && f.lookupTyp !== "library") continue;
+    return m[1];
+  }
+  return null;
+}
+
+/**
  * The order a folder's rows are read in — ONE rule, for every screen.
  *
  * There were two. Edit Data consulted the model; the report path had its own

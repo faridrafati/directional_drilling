@@ -1038,12 +1038,19 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       const res = await wvDbApi.copyRecord(db, c.table, c.idrec, {
         ...(c.paste ? { idwell, ...(parentIdrec ? { parent: parentIdrec } : {}) } : {}),
         childTables,
+        // §3.11 "Each new record has the word *COPY* in its name."
+        mark: true,
       });
       onSaved();
       const kids = res.copied - 1;
       onStatus(`${c.paste ? `Pasted "${c.caption}"` : "Record duplicated"} — `
         + `${res.copied} record${res.copied === 1 ? "" : "s"} copied`
-        + (kids > 0 ? ` (${kids} from subfolders).` : " (the record alone)."));
+        + (kids > 0 ? ` (${kids} from subfolders).` : " (the record alone).")
+        // Marked, or honestly not: 78 of the 229 tables that declare a record
+        // name are named by a date or a depth, which cannot hold a word.
+        + (res.markedColumn
+          ? " The new record is marked *COPY*."
+          : " Its name is not a text field, so it could not be marked *COPY*."));
     } catch (e) {
       onStatus(`${c.verb} failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -1058,6 +1065,52 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       table: clipboard.table, idrec: clipboard.idrec,
       caption: clipboard.caption, verb: "Paste", paste: true,
     });
+  }
+
+  /**
+   * PASTE INTO CURRENT RECORD (§3.11).
+   *
+   * "To paste into an existing record, select the record and choose Paste into
+   * Current Record." The record keeps its IDRec, so everything pointing at it
+   * goes on pointing at it — which is exactly what the workaround this replaces
+   * (paste new, delete old) breaks.
+   *
+   * Confirmed first, because it overwrites a record that already holds data and
+   * there is no undo. The confirmation names the record being overwritten and
+   * the one it is taking its values from; "are you sure?" over two unnamed
+   * records is not a question anybody can answer.
+   */
+  async function pasteIntoRecord(row: Row) {
+    if (!clipboard) return;
+    const idrec = String(row.IDRec ?? "");
+    if (!idrec) return;
+    if (idrec === clipboard.idrec) {
+      onStatus("That is the record on the clipboard — a record cannot be pasted into itself.");
+      return;
+    }
+    const ok = window.confirm(
+      `Replace the field values of "${recordCaption(row)}" with those of "${clipboard.caption}"?\n\n`
+      + "The record keeps its own place in the folder and everything linked to it stays linked. "
+      + "Records in its subfolders are not touched.\n\nThis cannot be undone.");
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const res = await wvDbApi.pasteIntoRecord(db, data.table, idrec, clipboard.idrec);
+      setEdits({});
+      onSaved();
+      onStatus(`Pasted "${clipboard.caption}" into this record — ${res.fields} fields replaced. `
+        + "Its subfolder records are unchanged."
+        + (res.skipped.length
+          // A link GUID means nothing on another well; say which ones stood.
+          ? ` ${res.skipped.length} link${res.skipped.length === 1 ? "" : "s"} kept their own `
+            + `value (${res.skipped.map((x) => x.label).join(", ")}) — they point at records on `
+            + "the well the copy came from."
+          : ""));
+    } catch (e) {
+      onStatus(`Paste into record failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   /**
@@ -1672,6 +1725,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     );
   };
 
+  const canPaste = clipboard && clipboard.db === db
+    && clipboard.table.toLowerCase() === data.table.toLowerCase() && !singleRecord;
+
   const rowActions = (row: Row, index?: number) => {
     const idrec = String(row.IDRec ?? "");
     return (
@@ -1700,15 +1756,20 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           data-testid="wv-row-duplicate"
           onClick={() => void duplicate(row)}
           className="text-gray-400 hover:text-blue-600 text-[11px]">⧉</button>
+        {canPaste && clipboard!.idrec !== idrec && (
+          <button type="button" data-testid="wv-row-paste-into" disabled={busy}
+            title={`Paste into Current Record — replace this record's fields with those of `
+              + `"${clipboard!.caption}", keeping its IDRec, its place in the folder and `
+              + "everything linked to it"}
+            onClick={() => void pasteIntoRecord(row)}
+            className="text-gray-400 hover:text-blue-600 text-[11px]">⇲</button>
+        )}
         <button type="button" title="Delete Record (subfolder records go with it)" disabled={busy}
           onClick={() => void remove(row)}
           className="text-gray-400 hover:text-red-600 text-[11px]">✕</button>
       </div>
     );
   };
-
-  const canPaste = clipboard && clipboard.db === db
-    && clipboard.table.toLowerCase() === data.table.toLowerCase() && !singleRecord;
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -1833,9 +1894,11 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           </button>
           {canPaste && (
             <button type="button" onClick={() => void pasteRecord()} disabled={busy}
-              title={`Paste "${clipboard!.caption}" into this folder (subfolders included)`}
+              title={`Paste as New Record — add "${clipboard!.caption}" to this folder as a new `
+                + "record, choosing which subfolders travel. It is marked *COPY*."}
               className="h-7 px-2 text-[11px] rounded border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-40">
-              Paste Record
+              {/* §3.11 names two paste commands and they do different things. */}
+              Paste as New
             </button>
           )}
           {ordered && (
