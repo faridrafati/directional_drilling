@@ -1117,7 +1117,9 @@
    "label": "Kelvin",
    "factor": 1,
    "exponent": 1,
-   "offset": 273.1499938964844
+   "offset": 273.15,
+   "corrected": "shipped 273.1499938964844 is bit-exactly Math.fround(273.15) — a float32 that was widened into a double column, not a figure anyone chose. Their own °F row is exact, so this is a storage artefact of the same kind as the two above. It is worth 6.1e-6 K, far below any rig measurement; corrected for consistency rather than for consequence, and because a physical check whose tolerance is wide enough to miss it is not checking much",
+   "shippedFactor": 1
   },
   {
    "base": "byte",
