@@ -553,6 +553,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   const { shift: datumShift } = useDatumShift(db, idwell);
   /** §3.9 Paste Data from Clipboard — the mapping dialog is open. */
   const [pasting, setPasting] = useState(false);
+  const [fieldInfo, setFieldInfo] = useState(false);
   const [popover, setPopover] = useState<{ key: string | null; col: string } | null>(null);
   /** What the model says about one column's units, for the conversion helpers. */
   const unitOf = (c: WvRecordColumn) =>
@@ -1478,6 +1479,14 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
+          {/* §3.11 Field Information — the database names and types behind the
+              captions. Enabled even on an empty folder: it describes the FIELDS,
+              which exist whether or not any record does. */}
+          <button type="button" onClick={() => setFieldInfo(true)} data-testid="wv-edit-fieldinfo"
+            title="Field Information — the database name, type and unit of every field in this folder"
+            className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+            Fields
+          </button>
           <button type="button" onClick={copyDataToClipboard} disabled={data.rows.length === 0}
             title="Copy Data to Clipboard — all records with headings, for Excel"
             className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
@@ -1682,6 +1691,18 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         )}
       </div>
 
+      {fieldInfo && (
+        <FieldInfo
+          table={data.table}
+          columns={data.columns}
+          computed={data.computedColumns ?? []}
+          unitSet={unitSet}
+          datumShift={datumShift}
+          onStatus={onStatus}
+          onClose={() => setFieldInfo(false)}
+        />
+      )}
+
       {pasting && (
         <PasteData
           columns={cols}
@@ -1722,6 +1743,165 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
  * Values are fetched when the list is opened, not with the grid: a folder can
  * carry dozens of library-bound columns and almost none get opened.
  */
+/**
+ * Field Information (§3.11) — what every field in this folder actually IS.
+ *
+ * The guide: "The Field Information command allows you to view the database
+ * names and type of data for all the fields in a folder. You can also copy this
+ * information to the Clipboard and paste it into a different application. Note:
+ * This command is usually used by application administrators."
+ *
+ * Every column here already travels with the folder — the /records payload has
+ * carried column, label, type, unit, group, help, calculated, required and the
+ * carry-forward flags since it was written. Nothing is fetched; this is a
+ * rendering of what the grid already holds, which is why it can list the
+ * calculated fields beside the stored ones and say which is which.
+ *
+ * The database NAME is the point of it. Everywhere else in this app a field is
+ * its caption; an administrator writing a query or reading a report definition
+ * needs `wvJobDrillString.BitNo`, and this is the only screen that gives it.
+ */
+function FieldInfo({ table, columns, computed, unitSet, datumShift, onClose, onStatus }: {
+  table: string;
+  columns: WvRecordColumn[];
+  computed: WvRecordColumn[];
+  unitSet: string;
+  datumShift?: DatumShift | null;
+  onClose: () => void;
+  onStatus: (s: string) => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const rows = useMemo(() => {
+    const all = [
+      ...columns.map((c) => ({ c, kind: "stored" as const })),
+      ...computed.map((c) => ({ c, kind: "computed" as const })),
+    ];
+    const q = filter.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter(({ c }) =>
+      c.column.toLowerCase().includes(q)
+      || (c.label ?? "").toLowerCase().includes(q)
+      || (c.group ?? "").toLowerCase().includes(q));
+  }, [columns, computed, filter]);
+
+  /** The flags the desktop colours a cell for, named rather than coloured. */
+  const notesOf = (c: WvRecordColumn, kind: "stored" | "computed") => {
+    const out: string[] = [];
+    /*
+     * The identity columns carry no type, unit or section because the model
+     * does not describe them — they are WellView's own plumbing, not user
+     * fields. Saying so is the difference between "this row has no metadata"
+     * and "we failed to find any": an administrator reading this screen to
+     * write a query needs to know idwell and IDRecParent are exactly what they
+     * look like.
+     */
+    if (c.id) out.push("key");
+    if (c.system) out.push("system");
+    if (c.tk) out.push("link target table");
+    if (kind === "computed" || c.calculated) out.push("calculated");
+    if (c.required) out.push("required");
+    if (c.globalMetric) out.push("global metric");
+    if (c.carryForward) {
+      out.push(c.carryForwardIncrement
+        ? `carried forward +${c.carryForwardIncrement}`
+        : "carried forward");
+    }
+    if (c.library) out.push(`library: ${c.library.table}`);
+    if (c.modelList) out.push("approved list");
+    if (c.link) out.push("record link");
+    if (c.hiddenByDefault) out.push("hidden by default");
+    return out;
+  };
+
+  const HEAD = ["Database name", "Caption", "Type", "Unit", "Section", "Notes"];
+  const asRow = ({ c, kind }: { c: WvRecordColumn; kind: "stored" | "computed" }) => [
+    `${table}.${c.column}`,
+    c.label ?? "",
+    kind === "computed" ? `${c.type ?? "double"} (computed)` : c.type ?? "",
+    c.unit ? displayUnitLabel(c, unitSet, datumShift) : "",
+    c.group ?? "",
+    notesOf(c, kind).join("; "),
+  ];
+
+  const copy = () => {
+    // The guide's own second half: "copy this information to the Clipboard and
+    // paste it into a different application." Tab-separated, headings included,
+    // the same shape Copy Data already uses.
+    const text = [HEAD.join("\t"), ...rows.map((r) => asRow(r).join("\t"))].join("\n");
+    void navigator.clipboard.writeText(text).then(
+      () => onStatus(`Copied ${rows.length} field${rows.length === 1 ? "" : "s"} to the clipboard, headings included.`),
+      () => onStatus("The browser refused clipboard access."),
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/30 grid place-items-center p-4"
+      data-testid="wv-fieldinfo-dialog" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200">
+          <h2 className="text-sm font-semibold text-gray-900">Field Information</h2>
+          <code className="text-[11px] text-gray-500">{table}</code>
+          <input value={filter} onChange={(e) => setFilter(e.target.value)}
+            placeholder="filter…" spellCheck={false} data-testid="wv-fieldinfo-filter"
+            className="ml-auto h-7 w-40 border border-gray-300 rounded px-2 text-[11px]" />
+          <button type="button" onClick={copy} data-testid="wv-fieldinfo-copy"
+            className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+            Copy
+          </button>
+          <button type="button" onClick={onClose} data-testid="wv-fieldinfo-close"
+            className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+            Close
+          </button>
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full text-[11px] border-collapse">
+            <thead className="sticky top-0 bg-gray-100 text-gray-600">
+              <tr>
+                {HEAD.map((h) => (
+                  <th key={h} className="text-left font-medium px-2 py-1 border-b border-gray-200">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ c, kind }, i) => (
+                <tr key={`${kind}-${c.column}`} className={i % 2 ? "bg-gray-50" : ""}
+                  data-testid="wv-fieldinfo-row">
+                  {/* The database name, which is the whole reason this screen
+                      exists — every other screen shows the caption. */}
+                  <td className="px-2 py-0.5 font-mono text-gray-800 whitespace-nowrap">
+                    {table}.{c.column}
+                  </td>
+                  <td className={`px-2 py-0.5 ${kind === "computed" ? "text-green-700" : "text-gray-800"}`}>
+                    {c.label}
+                  </td>
+                  <td className="px-2 py-0.5 text-gray-500 whitespace-nowrap">
+                    {kind === "computed" ? `${c.type ?? "double"} (computed)` : c.type}
+                  </td>
+                  <td className="px-2 py-0.5 text-gray-500 whitespace-nowrap"
+                    title={c.unit ? unitDescription(displayUnitLabel(c, unitSet, datumShift)) ?? undefined : undefined}>
+                    {c.unit ? displayUnitLabel(c, unitSet, datumShift) : ""}
+                  </td>
+                  <td className="px-2 py-0.5 text-gray-500">{c.group ?? ""}</td>
+                  <td className="px-2 py-0.5 text-gray-500">{notesOf(c, kind).join("; ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {rows.length === 0 && (
+            <p className="px-4 py-3 text-[11px] text-gray-400">No field matches that filter.</p>
+          )}
+        </div>
+        <div className="px-4 py-1.5 border-t border-gray-100 text-[10px] text-gray-500">
+          {columns.length} stored field{columns.length === 1 ? "" : "s"}
+          {computed.length > 0 && `, ${computed.length} computed`}
+          {" — the unit shown is the one this folder is currently displaying."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LibraryPopover({ db, table, column, library, seeded, approved, onPick, onClose }: {
   db: string;
   table: string;

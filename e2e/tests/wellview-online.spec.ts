@@ -1482,3 +1482,66 @@ test("designs, saves, renders and edits a report of one's own", async ({ page })
     }
   }
 });
+
+/**
+ * §3.11 Field Information — the database names behind the captions.
+ *
+ * The guide: "The Field Information command allows you to view the database
+ * names and type of data for all the fields in a folder. You can also copy this
+ * information to the Clipboard and paste it into a different application."
+ *
+ * Everywhere else in this app a field is its caption. An administrator writing
+ * a query or reading a report definition needs `wvJobDrillString.BitNo`, and
+ * this is the only screen that gives it — which is why the test checks the
+ * database name and the clipboard, not the layout.
+ */
+test("lists every field's database name, type and unit, and copies them", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => { /* not chromium */ });
+  await page.goto("/wellview");
+  await page.getByRole("heading", { name: "WellView" }).waitFor();
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible().catch(() => false)) {
+    await page.getByLabel("User name").fill(USER);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await signIn.click();
+  }
+  await page.getByTestId("wv-db-wv9.0_Sample").click();
+  await expect(page.getByTestId("wv-well-row").first()).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("wv-well-row").filter({ hasText: "Sample 12" }).first().click();
+  await page.getByRole("button", { name: /^Edit Data$/ }).first().click();
+  await page.getByText("Drill Strings / BHA", { exact: true }).first().click();
+
+  await page.getByTestId("wv-edit-fieldinfo").click();
+  await expect(page.getByTestId("wv-fieldinfo-dialog")).toBeVisible({ timeout: 15_000 });
+  const rows = page.getByTestId("wv-fieldinfo-row");
+  await expect(rows.first()).toBeVisible();
+  const total = await rows.count();
+  expect(total).toBeGreaterThan(20);
+
+  // The database name is the point of the screen.
+  await expect(page.getByTestId("wv-fieldinfo-dialog")).toContainText("wvJobDrillString.BitNo");
+  // The identity columns carry no type or unit; they say "key" rather than
+  // showing three blank cells that read as missing metadata.
+  await expect(rows.filter({ hasText: "wvJobDrillString.IDRec" }).first()).toContainText("key");
+  // Calculated fields are listed beside the stored ones and marked.
+  await expect(rows.filter({ hasText: "bittfacalc" }).first()).toContainText("calculated");
+
+  // The filter narrows without losing the dialog.
+  await page.getByTestId("wv-fieldinfo-filter").fill("wear");
+  await expect(rows).not.toHaveCount(total);
+  expect(await rows.count()).toBeGreaterThan(0);
+  await page.getByTestId("wv-fieldinfo-filter").fill("");
+  await expect(rows).toHaveCount(total);
+
+  // …and the guide's second half: it goes to the clipboard with headings.
+  await page.getByTestId("wv-fieldinfo-copy").click();
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  const lines = clip.split("\n");
+  expect(lines.length).toBe(total + 1);
+  expect(lines[0]).toContain("Database name");
+  expect(lines[0]).toContain("Type");
+  expect(clip).toContain("wvJobDrillString.BitNo");
+
+  await page.getByTestId("wv-fieldinfo-close").click();
+  await expect(page.getByTestId("wv-fieldinfo-dialog")).toHaveCount(0);
+});
