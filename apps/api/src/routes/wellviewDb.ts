@@ -2185,13 +2185,93 @@ export async function registerWellviewDbRoutes(
   );
 
   /**
-   * Deep-copy a record INCLUDING its subfolder records (manual: Copy Record /
-   * Paste Record and Duplicate Record both carry the subfolders). The copy can
-   * land in another well (targetIdwell) or under another parent record.
+   * What a copy of this record WOULD carry, per child table.
+   *
+   * The chooser is only useful with the numbers beside it: "copy this drill
+   * string without its 54 drilling parameters" is a decision, "without its
+   * drilling parameters" is a guess. Counts are for THIS record's subtree, not
+   * the folder's — a casing string with 222 tally rows and one with none are
+   * different propositions.
+   *
+   * Depth-first over the same prefix-child walk the copy itself uses, so what
+   * is listed is exactly what would be copied.
+   */
+  app.get<{ Params: { db: string; table: string; idrec: string } }>(
+    "/entry/wellview/dbs/:db/records/:table/:idrec/copy-preview",
+    { preHandler: WELLVIEW_GUARD },
+    async (req, reply) => {
+      const d = need(reply, req.params.db);
+      if (!d) return;
+      const t = table(d, req.params.table);
+      if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
+      const idCol = t.colSet.get("idrec");
+      if (!idCol) return reply.code(400).send({ error: `${t.name} rows have no IDRec` });
+      const exists = d.ro.prepare(`SELECT 1 FROM "${t.name}" WHERE "${idCol}" = ?`).get(req.params.idrec);
+      if (!exists) return reply.code(404).send({ error: "record not found" });
+
+      const sch = schema(d);
+      const out: { table: string; label: string; count: number; depth: number; parent: string }[] = [];
+
+      const walk = (tt: TableInfo, ids: string[], depth: number) => {
+        if (!ids.length) return;
+        for (const childName of tt.children) {
+          const child = sch.get(childName.toLowerCase());
+          if (!child || !child.colSet.has("idrec") || !child.hasParent) continue;
+          const holes = ids.map(() => "?").join(", ");
+          let kids: { id: string }[] = [];
+          try {
+            kids = d.ro.prepare(
+              `SELECT "${child.colSet.get("idrec")}" AS id FROM "${child.name}"`
+              + ` WHERE "${child.colSet.get("idrecparent")}" IN (${holes})`,
+            ).all(...ids) as { id: string }[];
+          } catch { continue; }
+          out.push({
+            table: child.name,
+            label: folderLabel(child.name, tt.name),
+            count: kids.length,
+            depth,
+            parent: tt.name,
+          });
+          // Descend even when empty: a table with no rows here may still have
+          // descendants that do, and the chooser should show the whole shape.
+          walk(child, kids.map((k) => k.id), depth + 1);
+        }
+      };
+      walk(t, [req.params.idrec], 0);
+
+      return {
+        table: t.name,
+        children: out,
+        /** Everything under it, which is what a copy takes by default. */
+        total: out.reduce((n, c) => n + c.count, 0),
+      };
+    },
+  );
+
+  /**
+   * Deep-copy a record and, by default, everything under it. The copy can land
+   * in another well (`idwell`) or under another parent record (`parent`).
+   *
+   * `childTables` CHOOSES WHAT TRAVELS. Without it every descendant is copied,
+   * which is what this route has always done and what every existing caller
+   * still expects. With it, only the named tables are followed.
+   *
+   * That default was described in this file as "exactly as the manual says",
+   * and it is the manual for the WRONG VERSION. 9.0's own What's New is
+   * explicit that it changed: "In WellView 8.0/8.1, when you copied a record,
+   * all the child records were included in the copy. For example, if you copied
+   * a drill string, you also copied the drill components and drill parameters.
+   * You could not exclude any child records from the copy, such as the drill
+   * parameters. Now when you copy the record, a window allows you to choose the
+   * child tables that you want to copy."
+   *
+   * An unchosen table PRUNES ITS WHOLE SUBTREE, which falls out of not
+   * recursing into it: a grandchild whose parent was not copied has nothing to
+   * hang off, and copying it anyway would strand it.
    */
   app.post<{
     Params: { db: string; table: string; idrec: string };
-    Body: { idwell?: string; parent?: string };
+    Body: { idwell?: string; parent?: string; childTables?: string[] };
   }>(
     "/entry/wellview/dbs/:db/records/:table/:idrec/copy",
     { preHandler: WELLVIEW_GUARD },
@@ -2227,10 +2307,11 @@ export async function registerWellviewDbRoutes(
           `INSERT INTO "${tt.name}" (${cols.map((c) => `"${c}"`).join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
         ).run(...cols.map((c) => values[c] as string | number | null));
         copied++;
-        // subfolder records travel with the record, exactly as the manual says
         for (const childName of tt.children) {
           const child = sch.get(childName.toLowerCase())!;
           if (!child.colSet.has("idrec") || !child.hasParent) continue;
+          // Not chosen: skip it, and with it everything below it.
+          if (chosen && !chosen.has(child.name.toLowerCase())) continue;
           const kids = d.ro.prepare(
             `SELECT * FROM "${child.name}" WHERE "${child.colSet.get("idrecparent")}" = ?`,
           ).all(String(row[tt.colSet.get("idrec")!])) as Record<string, unknown>[];
@@ -2239,6 +2320,10 @@ export async function registerWellviewDbRoutes(
         return newId;
       };
 
+      /** Undefined means "everything", which is what every existing caller means. */
+      const chosen = req.body?.childTables
+        ? new Set(req.body.childTables.map((x) => x.toLowerCase()))
+        : null;
       const targetIdwell = req.body?.idwell ?? (t.hasIdwell ? String(src[t.colSet.get("idwell")!]) : null);
       const targetParent = req.body?.parent ?? (t.hasParent ? (src[t.colSet.get("idrecparent")!] as string | null) : null);
       const idrec = copyRec(t, src, targetIdwell, targetParent);

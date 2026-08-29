@@ -554,6 +554,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   /** §3.9 Paste Data from Clipboard — the mapping dialog is open. */
   const [pasting, setPasting] = useState(false);
   const [fieldInfo, setFieldInfo] = useState(false);
+  /** The record whose copy is being configured, and what to call the action. */
+  const [choosing, setChoosing] = useState<
+    { table: string; idrec: string; caption: string; verb: string; paste: boolean } | null>(null);
   const [popover, setPopover] = useState<{ key: string | null; col: string } | null>(null);
   /** What the model says about one column's units, for the conversion helpers. */
   const unitOf = (c: WvRecordColumn) =>
@@ -964,39 +967,54 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edits, ghost, dirtyCount, data.table, parentIdrec]);
 
-  async function duplicate(row: Row) {
+  /**
+   * Duplicate — but ask what comes with it first.
+   *
+   * §3.11: "a window allows you to choose the child tables that you want to
+   * copy." Duplicating a casing string used to drag 222 tally rows with no way
+   * to say no.
+   */
+  function duplicate(row: Row) {
     if (singleRecord) {
       onStatus("A well has exactly one header record — create a new well from the Well Explorer instead.");
       return;
     }
     const idrec = String(row.IDRec ?? "");
     if (!idrec) return;
+    setChoosing({
+      table: data.table, idrec, caption: recordCaption(row), verb: "Duplicate", paste: false,
+    });
+  }
+
+  async function runCopy(childTables: string[]) {
+    const c = choosing;
+    if (!c) return;
+    setChoosing(null);
     setBusy(true);
     try {
-      const res = await wvDbApi.copyRecord(db, data.table, idrec);
+      const res = await wvDbApi.copyRecord(db, c.table, c.idrec, {
+        ...(c.paste ? { idwell, ...(parentIdrec ? { parent: parentIdrec } : {}) } : {}),
+        childTables,
+      });
       onSaved();
-      onStatus(`Record duplicated — ${res.copied} record${res.copied === 1 ? "" : "s"} copied (subfolders included).`);
+      const kids = res.copied - 1;
+      onStatus(`${c.paste ? `Pasted "${c.caption}"` : "Record duplicated"} — `
+        + `${res.copied} record${res.copied === 1 ? "" : "s"} copied`
+        + (kids > 0 ? ` (${kids} from subfolders).` : " (the record alone)."));
     } catch (e) {
-      onStatus(`Duplicate failed: ${e instanceof Error ? e.message : String(e)}`);
+      onStatus(`${c.verb} failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
     }
   }
 
-  async function pasteRecord() {
+  /** Paste Record — the same choice as Duplicate, since it is the same copy. */
+  function pasteRecord() {
     if (!clipboard) return;
-    setBusy(true);
-    try {
-      const res = await wvDbApi.copyRecord(db, clipboard.table, clipboard.idrec, {
-        idwell, ...(parentIdrec ? { parent: parentIdrec } : {}),
-      });
-      onSaved();
-      onStatus(`Pasted "${clipboard.caption}" — ${res.copied} record${res.copied === 1 ? "" : "s"} copied (subfolders included).`);
-    } catch (e) {
-      onStatus(`Paste failed: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setBusy(false);
-    }
+    setChoosing({
+      table: clipboard.table, idrec: clipboard.idrec,
+      caption: clipboard.caption, verb: "Paste", paste: true,
+    });
   }
 
   /**
@@ -1563,13 +1581,14 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
               className="text-gray-400 hover:text-blue-600 text-[11px] disabled:opacity-25">▼</button>
           </>
         )}
-        <button type="button" title="Copy Record (with subfolders) — paste into this folder on any well" disabled={busy || !idrec}
+        <button type="button" title="Copy Record — paste into this folder on any well, choosing which subfolders travel" disabled={busy || !idrec}
           onClick={() => {
             onClipboard({ db, table: data.table, idrec, caption: recordCaption(row), label: data.label });
             onStatus(`Copied "${recordCaption(row)}" — open the same folder anywhere and Paste Record.`);
           }}
           className="text-gray-400 hover:text-blue-600 text-[11px]">⎘</button>
-        <button type="button" title="Duplicate Record (subfolders included)" disabled={busy}
+        <button type="button" title="Duplicate Record — choose which subfolders come with it" disabled={busy}
+          data-testid="wv-row-duplicate"
           onClick={() => void duplicate(row)}
           className="text-gray-400 hover:text-blue-600 text-[11px]">⧉</button>
         <button type="button" title="Delete Record (subfolder records go with it)" disabled={busy}
@@ -1882,6 +1901,15 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         )}
       </div>
 
+      {choosing && (
+        <CopyChooser
+          db={db} table={choosing.table} idrec={choosing.idrec}
+          caption={choosing.caption} verb={choosing.verb}
+          onCancel={() => setChoosing(null)}
+          onCopy={(childTables) => void runCopy(childTables)}
+        />
+      )}
+
       {fieldInfo && (
         <FieldInfo
           table={data.table}
@@ -2087,6 +2115,127 @@ function FieldInfo({ table, columns, computed, unitSet, datumShift, onClose, onS
           {columns.length} stored field{columns.length === 1 ? "" : "s"}
           {computed.length > 0 && `, ${computed.length} computed`}
           {" — the unit shown is the one this folder is currently displaying."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * §3.11 "a window allows you to choose the child tables that you want to copy".
+ *
+ * 9.0's What's New is explicit that this replaced the older behaviour: "In
+ * WellView 8.0/8.1, when you copied a record, all the child records were
+ * included in the copy… You could not exclude any child records from the copy,
+ * such as the drill parameters."
+ *
+ * The COUNTS are what make it a decision rather than a guess. "Copy this drill
+ * string without its 54 drilling parameters" can be reasoned about; "without
+ * its drilling parameters" cannot. They are this record's counts, not the
+ * folder's — a casing string with 222 tally rows and one with none are
+ * different propositions.
+ *
+ * Unchecking a table disables everything beneath it, because an unchosen table
+ * prunes its whole subtree: a grandchild whose parent was not copied has
+ * nothing to hang off. Showing those still tickable would promise something
+ * the server correctly refuses to do.
+ */
+function CopyChooser({ db, table, idrec, caption, verb, onCancel, onCopy }: {
+  db: string;
+  table: string;
+  idrec: string;
+  caption: string;
+  /** "Duplicate" or "Copy" — the same choice serves both. */
+  verb: string;
+  onCancel: () => void;
+  onCopy: (childTables: string[]) => void;
+}) {
+  const q = useQuery({
+    queryKey: ["wvdb", db, "copy-preview", table, idrec],
+    queryFn: () => wvDbApi.copyPreview(db, table, idrec),
+  });
+  const kids = q.data?.children ?? [];
+  const [chosen, setChosen] = useState<Set<string> | null>(null);
+  // Everything, until the user says otherwise — the default this replaces.
+  const picked = chosen ?? new Set(kids.map((k) => k.table.toLowerCase()));
+
+  /** A row is unavailable when any ancestor of it is unchecked. */
+  const blocked = (t: { table: string; parent: string }): boolean => {
+    let parent = t.parent.toLowerCase();
+    for (let hop = 0; hop < 10; hop++) {
+      if (parent === table.toLowerCase()) return false;
+      if (!picked.has(parent)) return true;
+      const up = kids.find((k) => k.table.toLowerCase() === parent);
+      if (!up) return false;
+      parent = up.parent.toLowerCase();
+    }
+    return false;
+  };
+
+  const toggle = (t: string) => {
+    const next = new Set(picked);
+    const lc = t.toLowerCase();
+    if (next.has(lc)) next.delete(lc); else next.add(lc);
+    setChosen(next);
+  };
+
+  const willCopy = kids
+    .filter((k) => picked.has(k.table.toLowerCase()) && !blocked(k))
+    .reduce((n, k) => n + k.count, 0);
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/30 grid place-items-center p-4"
+      data-testid="wv-copy-chooser" onClick={onCancel}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-2 border-b border-gray-200">
+          <h2 className="text-sm font-semibold text-gray-900">{verb} record</h2>
+          <p className="text-[11px] text-gray-500 truncate">{caption}</p>
+        </div>
+        <div className="px-4 py-2 overflow-auto">
+          {q.isLoading && <p className="text-[11px] text-gray-400">Reading what it would carry…</p>}
+          {!q.isLoading && kids.length === 0 && (
+            <p className="text-[11px] text-gray-500">This record has no subfolders — only the record is copied.</p>
+          )}
+          {kids.map((k) => {
+            const off = blocked(k);
+            return (
+              <label key={k.table}
+                className={`flex items-center gap-2 py-0.5 text-[11px] ${off ? "opacity-40" : ""}`}
+                style={{ paddingLeft: `${k.depth * 14}px` }}
+                data-testid="wv-copy-child">
+                <input type="checkbox" className="h-3.5 w-3.5"
+                  checked={picked.has(k.table.toLowerCase()) && !off}
+                  disabled={off}
+                  onChange={() => toggle(k.table)} />
+                <span className={k.count ? "text-gray-800" : "text-gray-400"}>{k.label}</span>
+                <span className="text-gray-400 tabular-nums">
+                  {k.count === 0 ? "none" : k.count}
+                </span>
+                {off && <span className="text-gray-400 italic">— its parent is not being copied</span>}
+              </label>
+            );
+          })}
+        </div>
+        <div className="px-4 py-2 border-t border-gray-200 flex items-center gap-2">
+          <button type="button" onClick={() => setChosen(new Set(kids.map((k) => k.table.toLowerCase())))}
+            className="text-[11px] text-blue-600 hover:underline">All</button>
+          <button type="button" onClick={() => setChosen(new Set())}
+            className="text-[11px] text-blue-600 hover:underline">None</button>
+          <span className="text-[10px] text-gray-500 ml-2" data-testid="wv-copy-count">
+            {willCopy} subfolder record{willCopy === 1 ? "" : "s"} will be copied
+          </span>
+          <button type="button" onClick={onCancel}
+            className="ml-auto h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+            Cancel
+          </button>
+          <button type="button" data-testid="wv-copy-ok"
+            onClick={() => onCopy(kids
+              .filter((k) => picked.has(k.table.toLowerCase()) && !blocked(k))
+              .map((k) => k.table))}
+            className="h-7 px-3 text-[11px] rounded bg-blue-600 text-white hover:bg-blue-500">
+            {verb}
+          </button>
         </div>
       </div>
     </div>

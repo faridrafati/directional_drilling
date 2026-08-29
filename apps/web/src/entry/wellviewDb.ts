@@ -793,9 +793,25 @@ export const wvDbApi = {
       `/wellview/dbs/${enc(db)}/column-values?table=wvWellHeader&column=${enc(column)}`),
 
   /** Deep-copy a record (subfolder records included) into a well/parent. */
-  copyRecord: (db: string, table: string, idrec: string, target?: { idwell?: string; parent?: string }) =>
+  /**
+   * @param target.childTables which subfolders travel with the record.
+   *
+   * Omitted means all of them — what this route has always done, and what 8.0
+   * and 8.1 did. 9.0 replaced that: "Now when you copy the record, a window
+   * allows you to choose the child tables that you want to copy."
+   */
+  copyRecord: (db: string, table: string, idrec: string,
+    target?: { idwell?: string; parent?: string; childTables?: string[] }) =>
     entryApi.post<{ idrec: string; copied: number }>(
       `/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}/copy`, target ?? {}),
+
+  /** What a copy of this record would carry, per child table, with counts. */
+  copyPreview: (db: string, table: string, idrec: string) =>
+    entryApi.get<{
+      table: string;
+      children: { table: string; label: string; count: number; depth: number; parent: string }[];
+      total: number;
+    }>(`/wellview/dbs/${enc(db)}/records/${enc(table)}/${enc(idrec)}/copy-preview`),
 
   /**
    * Rewrite a sequenced folder's order (§3.9). The whole order is sent, so
