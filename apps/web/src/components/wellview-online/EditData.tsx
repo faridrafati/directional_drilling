@@ -126,11 +126,30 @@ export function EditData({
    *  saved when a different folder is selected or the window is closed". */
   const flushRef = useRef<(() => Promise<boolean>) | null>(null);
 
+  /*
+   * §3.9 SHOW CALCULATED FOLDERS.
+   *
+   * WellView's wv*Calc tables are built when a report prints and stored
+   * nowhere — zero of the model's 101 exist in either converted database. This
+   * app derives 29 of them, and until now they could be reached ONLY through a
+   * report template that binds one, which left four computable here and
+   * openable from nowhere. Off by default, as the desktop hides them.
+   */
+  const [showCalc, setShowCalc] = useState(false);
   const treeQ = useQuery({
-    queryKey: ["wvdb", db, "tree", idwell],
-    queryFn: () => wvDbApi.tree(db, idwell),
+    queryKey: ["wvdb", db, "tree", idwell, showCalc],
+    queryFn: () => wvDbApi.tree(db, idwell, showCalc),
   });
   const tree = useMemo(() => treeQ.data?.tree ?? [], [treeQ.data]);
+  /** The derived folders on offer, so the pane knows which kind it is showing. */
+  const calcTables = useMemo(() => {
+    const out = new Set<string>();
+    const walk = (ns: WvTreeNode[]) => {
+      for (const n of ns) { if (n.derived && n.children.length === 0) out.add(n.table.toLowerCase()); walk(n.children); }
+    };
+    walk(tree);
+    return out;
+  }, [tree]);
 
   /** Chain of tables from the subject area down to the selected folder. */
   const chain = useMemo(() => {
@@ -182,6 +201,18 @@ export function EditData({
             <input type="checkbox" checked={showSystem} onChange={(e) => setShowSystem(e.target.checked)} />
             Show System Fields
           </label>
+          <label className="flex items-center gap-1 text-[11px] text-gray-300"
+            title="Show Calculated Folders — WellView works these out when a report prints and stores none of them. They are read-only here, and every figure is derived from records this database does hold.">
+            <input type="checkbox" checked={showCalc} data-testid="wv-edit-showcalc"
+              onChange={(e) => {
+                setShowCalc(e.target.checked);
+                // Leaving a derived folder by hiding it would strand the pane.
+                if (!e.target.checked && calcTables.has((table ?? "").toLowerCase())) {
+                  setTable("wvWellHeader");
+                }
+              }} />
+            Show Calculated Folders
+          </label>
           <button type="button" onClick={() => setShowInventory(true)}
             data-testid="wv-edit-inventory"
             title="Add-ins > Utilities > Mud Inventory Transfer — carry a previous well's closing mud and supply balances onto a job here"
@@ -232,7 +263,9 @@ export function EditData({
 
           {/* records */}
           <section className="flex-1 min-w-0 flex flex-col min-h-0">
-            {table && treeQ.data ? (
+            {table && calcTables.has(table.toLowerCase()) ? (
+              <CalcFolder key={table} db={db} idwell={idwell} table={table} onStatus={setStatus} />
+            ) : table && treeQ.data ? (
               <FolderRecords
                 key={`${table}-${chain.length}-${showSystem}`}
                 db={db} idwell={idwell} table={table} chain={chain}
@@ -272,18 +305,235 @@ function FolderTree({ nodes, depth, active, onPick }: {
             className={`w-full text-left pr-2 py-0.5 rounded text-[11px] flex items-center gap-1.5 ${
               active?.toLowerCase() === n.table.toLowerCase()
                 ? "bg-blue-100 text-blue-900 font-medium"
-                : n.count > 0 ? "text-gray-800 hover:bg-gray-100" : "text-gray-400 hover:bg-gray-100"}`}
-            title={n.table}
+                : (n.count ?? 0) > 0 || n.needs?.length
+                  ? "text-gray-800 hover:bg-gray-100"
+                  : "text-gray-400 hover:bg-gray-100"}`}
+            title={n.needs?.length
+              ? `${n.table} — summarises one ${n.needs.includes("idreport") ? "daily report" : "job"}; `
+                + "how many rows depends on which one"
+              : n.table}
+            disabled={n.derived === true && n.children.length > 0}
             onClick={() => onPick(n.table)}>
-            <FolderGlyph filled={n.count > 0} />
+            <FolderGlyph filled={(n.count ?? 0) > 0} />
             <span className="truncate">{n.label}</span>
-            {n.count > 0 && <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{n.count}</span>}
+            {/*
+              * A derived folder that summarises one job has no count until a
+              * job is chosen, and "0" would read as an empty folder. It says
+              * what it is waiting for instead.
+              */}
+            {n.count == null && n.needs?.length ? (
+              <span className="ml-auto text-[10px] text-gray-400 italic">
+                per {n.needs.includes("idreport") ? "report" : "job"}
+              </span>
+            ) : (n.count ?? 0) > 0 ? (
+              <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{n.count}</span>
+            ) : null}
           </button>
           {n.children.length > 0 && (
             <FolderTree nodes={n.children} depth={depth + 1} active={active} onPick={onPick} />
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * One derived cell, in the unit set the rest of the window is reading in.
+ *
+ * The same conversion the editable grid uses. A number left in base units under
+ * a heading that says feet is the failure this whole path is careful about.
+ */
+function calcCell(
+  v: unknown,
+  c: WvRecordColumn,
+  unitSet: string,
+  datumShift: DatumShift | null,
+): string {
+  if (v == null || v === "") return "";
+  const n = typeof v === "number" ? v : Number(v);
+  if (c.unit && Number.isFinite(n)) {
+    const d = toDisplay(n, { unit: c.unit, units: c.units, applyDatum: c.applyDatum, datumMode: c.datumMode },
+      unitSet, datumShift);
+    if (d) return formatUnitValue(d.value, d);
+  }
+  return fmtCell(String(v));
+}
+
+/**
+ * A CALCULATED FOLDER (§3.9 Show Calculated Folders).
+ *
+ * WellView builds these tables when a report prints and stores nothing, so
+ * there is no record to edit and no ghost row to add one with. What this shows
+ * is the derivation's output, marked as derived, with the provenance the
+ * derivation itself carries: which stored tables the figures come from, how
+ * they were checked, and which of the model's own fields this app deliberately
+ * does not fill.
+ *
+ * Eighteen of the twenty-nine summarise ONE job or ONE daily report. Until one
+ * is chosen there is nothing to summarise — which is not the same as an empty
+ * folder, so the pane asks for the selection rather than drawing a blank table.
+ */
+function CalcFolder({ db, idwell, table, onStatus }: {
+  db: string;
+  idwell: string;
+  table: string;
+  onStatus: (s: string | null) => void;
+}) {
+  const [job, setJob] = useState("");
+  const [report, setReport] = useState("");
+  useEffect(() => { setJob(""); setReport(""); onStatus(null); }, [table]);
+
+  const q = useQuery({
+    queryKey: ["wvdb", db, "records", table, idwell, job, report],
+    queryFn: () => wvDbApi.records(db, table, {
+      idwell, ...(job ? { job } : {}), ...(report ? { report } : {}),
+    }),
+  });
+  const data = q.data;
+  const needs = data?.needs ?? [];
+  const wantsJob = needs.includes("idjob") || needs.includes("idreport") || !!job;
+  const wantsReport = needs.includes("idreport") || (!!report && !!job);
+
+  const jobsQ = useQuery({
+    queryKey: ["wvdb", db, "records", "wvJob", idwell, false],
+    queryFn: () => wvDbApi.records(db, "wvJob", { idwell }),
+    enabled: wantsJob,
+  });
+  const reportsQ = useQuery({
+    queryKey: ["wvdb", db, "records", "wvJobReport", idwell, job, false],
+    queryFn: () => wvDbApi.records(db, "wvJobReport", { idwell, parent: job }),
+    enabled: wantsReport && !!job,
+  });
+
+  const [unitSet] = useUnitSet();
+  const { shift: datumShift } = useDatumShift(db, idwell);
+  const cols = data?.columns ?? [];
+  const rows = (data?.rows ?? []) as Row[];
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2 shrink-0 flex-wrap">
+        <span className="text-xs font-semibold text-gray-800" title={data?.help}>{data?.label ?? table}</span>
+        <span className="text-[10px] text-gray-400 font-mono">{table}</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200"
+          title="WellView computes this table when a report prints and stores none of it. Every value here was worked out from records this database does hold.">
+          derived — read-only
+        </span>
+        {data?.total != null && (
+          <span className="text-[10px] text-gray-400 tabular-nums" data-testid="wv-calc-count">
+            {data.total} record{data.total === 1 ? "" : "s"}
+          </span>
+        )}
+        {wantsJob && (
+          <label className="flex items-center gap-1 text-[10px] text-gray-500 ml-2">
+            Job
+            <select value={job} data-testid="wv-calc-job"
+              onChange={(e) => { setJob(e.target.value); setReport(""); }}
+              className="h-6 px-1 text-[11px] rounded border border-gray-300 max-w-[16rem]">
+              <option value="">— choose —</option>
+              {(jobsQ.data?.rows ?? []).map((r) => (
+                <option key={String(r.IDRec)} value={String(r.IDRec)}>
+                  {recordCaption(r as Row)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {wantsReport && (
+          <label className="flex items-center gap-1 text-[10px] text-gray-500">
+            Daily report
+            <select value={report} data-testid="wv-calc-report" disabled={!job}
+              onChange={(e) => setReport(e.target.value)}
+              className="h-6 px-1 text-[11px] rounded border border-gray-300 max-w-[16rem] disabled:opacity-40">
+              <option value="">— choose —</option>
+              {(reportsQ.data?.rows ?? []).map((r) => (
+                <option key={String(r.IDRec)} value={String(r.IDRec)}>
+                  {recordCaption(r as Row)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        {q.isLoading && <div className="p-4 text-sm text-gray-400">Working it out…</div>}
+        {!q.isLoading && data?.unavailable && (
+          <div className="m-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800">
+            {data.unavailable}
+          </div>
+        )}
+        {!q.isLoading && !!needs.length && (
+          /* Not an empty folder — a summary with nothing chosen to summarise. */
+          <div className="m-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-[11px] text-blue-900"
+            data-testid="wv-calc-needs">
+            This summary is worked out for one {needs.includes("idreport") ? "daily report" : "job"} at a
+            time. Choose {needs.includes("idreport") ? "a job and then a daily report" : "a job"} above and
+            it will be computed. It is not empty — there is nothing selected to summarise yet.
+          </div>
+        )}
+        {!q.isLoading && !needs.length && !data?.unavailable && rows.length === 0 && (
+          <div className="p-4 text-sm text-gray-400">
+            Nothing to summarise here — the records this is worked out from
+            ({(data?.sources ?? []).join(", ") || "its source tables"}) hold nothing for this selection.
+          </div>
+        )}
+        {rows.length > 0 && (
+          <table className="text-[11px] border-collapse">
+            <thead>
+              <tr>
+                <th className="sticky left-0 bg-gray-100 px-2 py-1 border-b border-gray-200 text-right text-gray-400 font-normal">#</th>
+                {cols.map((c) => (
+                  <th key={c.column} title={c.help}
+                    className="bg-gray-100 px-2 py-1 border-b border-gray-200 text-left font-medium text-emerald-800 whitespace-nowrap">
+                    {c.label}
+                    {c.unit && (
+                      <span className="text-gray-400 font-normal">
+                        {" "}({displayUnitLabel(c, unitSet, datumShift)})
+                      </span>
+                    )}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="odd:bg-white even:bg-gray-50/60">
+                  <td className="sticky left-0 bg-inherit px-2 py-0.5 border-b border-gray-100 text-right text-gray-400 tabular-nums">
+                    {i + 1}
+                  </td>
+                  {cols.map((c) => (
+                    <td key={c.column} className="px-2 py-0.5 border-b border-gray-100 whitespace-nowrap text-gray-700">
+                      {calcCell(r[c.column], c, unitSet, datumShift)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {/* The provenance travels with the numbers, as it does on a report. */}
+        {(data?.verifiedBy || (data?.unsupported?.length ?? 0) > 0) && (
+          <div className="m-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-[10px] text-gray-500 space-y-1">
+            {!!data?.sources?.length && (
+              <p><b>Worked out from:</b> {data.sources.join(", ")}.</p>
+            )}
+            {data?.verifiedBy && <p><b>Checked by:</b> {data.verifiedBy}</p>}
+            {!!data?.unsupported?.length && (
+              <div>
+                <p><b>Fields WellView declares that this does not fill:</b></p>
+                <ul className="list-disc pl-4">
+                  {data.unsupported.map((u) => (
+                    <li key={u.field}><span className="font-mono">{u.field}</span> — {u.reason}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

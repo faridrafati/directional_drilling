@@ -43,6 +43,10 @@ import {
   calcNamedFor, namedChildren, calcOverAggregatesFor, overAggregates,
   calcLookupsFor, linkedValues,
 } from "../wellview/calcFields.js";
+import {
+  computeCalc, calcDerivation, derivableCalcTables, calcMissingScope, type CalcParam,
+} from "../wellview/calc.js";
+import "../wellview/calcDerivations.js";
 import { mudLimits, mudOutOfRange, type OutOfRange } from "../wellview/mudOutOfRange.js";
 import { stackFieldsFor, stackRows, type StackRow } from "../wellview/stringStack.js";
 import { appFrame, WELL_FILE_EXTENSION } from "../wellview/appframe.js";
@@ -488,7 +492,17 @@ const SUBJECT_ORDER = [
 /** Bookkeeping tables that are not subject areas. */
 const HIDDEN_TABLES = /^wv(sys|externaldata|units)/i;
 
-interface TreeNode { table: string; label: string; count: number; children: TreeNode[] }
+interface TreeNode {
+  table: string;
+  label: string;
+  /** Null when the count cannot be known without a selection the tree has not got. */
+  count: number | null;
+  children: TreeNode[];
+  /** A wv*Calc folder: WellView computes it at print time and stores nothing. */
+  derived?: true;
+  /** Scopes the derivation still needs — "idjob", "idreport". */
+  needs?: string[];
+}
 
 /**
  * Folders that hang off a parent NAMED IN THE DATA rather than by the prefix
@@ -599,6 +613,60 @@ function buildTree(d: Db, idwell: string | null): TreeNode[] {
   };
   tops.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   return tops.map(node);
+}
+
+/**
+ * SHOW CALCULATED FOLDERS (§3.9).
+ *
+ * WellView's `wv*Calc` tables are built when a report prints and stored
+ * nowhere: zero of the model's 101 exist in either converted database. This app
+ * derives 29 of them from rows that ARE stored — and until now they could be
+ * reached ONLY by a report template that binds one, which left FOUR of the 29
+ * (`wvJPPIntervalProblemCalc`, and the three others no shipped template names)
+ * computable by this app and reachable by no route in it.
+ *
+ * They are listed as one group rather than scattered through the subject tree.
+ * Only three of the 29 have a prefix parent that exists as a real table
+ * (`wvWellbore`, `wvZone`, `wvProblem`); the rest are named for a subject
+ * — the job time log, the daily report, the phase — that the prefix rule cannot
+ * find, and guessing a home for each would be inventing a hierarchy the vendor
+ * did not state. One honestly-labelled group says exactly what these are.
+ *
+ * A count is only shown where it can be COUNTED. Eleven of the derivations need
+ * nothing but the well; the other eighteen summarise one job or one daily
+ * report, and until one is chosen there is nothing to summarise — which is not
+ * the same as the folder being empty, so it reports null and names the
+ * selection it is waiting for.
+ */
+const CALC_GROUP = "__calc__";
+
+function calcFolders(d: Db, idwell: string | null): TreeNode {
+  const kids: TreeNode[] = [];
+  for (const table of derivableCalcTables()) {
+    const der = calcDerivation(table);
+    const needs = (der?.params ?? []).filter((p) => p !== "idwell");
+    let count: number | null = null;
+    if (idwell && !needs.length) {
+      // Cheap enough to run: eleven derivations over one well.
+      try { count = computeCalc(d.ro, table, { idwell })?.rowCount ?? null; } catch { count = null; }
+    }
+    kids.push({
+      table,
+      label: modelTable(table)?.labelPlural || modelTable(table)?.label || table,
+      count,
+      children: [],
+      derived: true,
+      ...(needs.length ? { needs } : {}),
+    });
+  }
+  kids.sort((a, b) => a.label.localeCompare(b.label));
+  return {
+    table: CALC_GROUP,
+    label: "Calculated Folders",
+    count: kids.length,
+    children: kids,
+    derived: true,
+  };
 }
 
 // ── record helpers ────────────────────────────────────────────────────────────
@@ -1261,26 +1329,99 @@ export async function registerWellviewDbRoutes(
   );
 
   /** The Edit Data subject-area tree, with per-well record counts. */
-  app.get<{ Params: { db: string }; Querystring: { idwell?: string } }>(
+  app.get<{ Params: { db: string }; Querystring: { idwell?: string; calc?: string } }>(
     "/entry/wellview/dbs/:db/tree",
     { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
-      return { tree: buildTree(d, req.query.idwell || null) };
+      const tree = buildTree(d, req.query.idwell || null);
+      // §3.9's "Show Calculated Folders" — off unless asked for, as in the
+      // desktop, where they are hidden until the command is chosen.
+      if (req.query.calc === "1") tree.push(calcFolders(d, req.query.idwell || null));
+      return { tree };
     },
   );
 
   /** Records of one folder, scoped to a well and (for subfolders) a parent record. */
   app.get<{
     Params: { db: string; table: string };
-    Querystring: { idwell?: string; parent?: string; system?: string; find?: string };
+    Querystring: {
+      idwell?: string; parent?: string; system?: string; find?: string;
+      /** Scope for a wv*Calc folder that summarises one job or one daily report. */
+      job?: string; report?: string;
+    };
   }>(
     "/entry/wellview/dbs/:db/records/:table",
     { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
       const d = need(reply, req.params.db);
       if (!d) return;
+
+      /*
+       * A CALCULATED FOLDER (§3.9 Show Calculated Folders).
+       *
+       * These tables do not exist in the database — WellView builds them when a
+       * report prints — so this branch runs before the schema lookup, which
+       * would 404 on every one of them. The rows come from the same registered
+       * derivations the report path uses, so a figure here and the same figure
+       * on a report are the same computation, not two.
+       *
+       * Read-only, and every column is marked computed: the grid must not offer
+       * an edit to a number no database column holds.
+       */
+      const der = calcDerivation(req.params.table);
+      if (der) {
+        const idwell = req.query.idwell ?? "";
+        if (!idwell) return reply.code(400).send({ error: "idwell is required" });
+        const anchor = { idwell, idjob: req.query.job ?? null, idreport: req.query.report ?? null };
+        const missing = calcMissingScope(der.table, anchor);
+        const base = {
+          table: der.table,
+          label: modelTable(der.table)?.labelPlural || modelTable(der.table)?.label || der.table,
+          help: modelTable(der.table)?.help,
+          parentTable: null,
+          derived: true as const,
+          /** What this summary is OF, when it summarises one job or one report. */
+          needs: missing as CalcParam[],
+          /** Fields the model declares that this derivation does not fill. */
+          unsupported: der.unsupported ?? [],
+          verifiedBy: der.verifiedBy,
+          sources: der.sources,
+        };
+        if (missing.length) {
+          // Nothing to summarise yet — which is NOT the same as an empty
+          // folder, and is not reported as one.
+          return { ...base, total: null, truncated: false, columns: [], rows: [], computedColumns: [] };
+        }
+        const out = computeCalc(d.ro, der.table, anchor);
+        if (!out) {
+          return {
+            ...base, total: null, truncated: false, columns: [], rows: [], computedColumns: [],
+            unavailable: `This derivation reads ${der.sources.join(", ")}, and this database `
+              + "does not carry all of them.",
+          };
+        }
+        return {
+          ...base,
+          total: out.rowCount,
+          truncated: false,
+          columns: out.columns.map((c) => ({
+            column: c.column,
+            label: c.label,
+            type: modelField(der.table, c.column)?.type,
+            unit: c.unit,
+            units: c.units,
+            help: modelField(der.table, c.column)?.help,
+            calculated: true,
+            /** Nothing here is stored, so nothing here is editable. */
+            readOnly: true,
+          })),
+          rows: out.rows,
+          computedColumns: [],
+        };
+      }
+
       const t = table(d, req.params.table);
       if (!t) return reply.code(404).send({ error: `no table ${req.params.table}` });
       const showSys = req.query.system === "1";

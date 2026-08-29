@@ -35,8 +35,13 @@ export interface WvWellList {
 export interface WvTreeNode {
   table: string;
   label: string;
-  count: number;
+  /** Null when the count cannot be known without a selection the tree lacks. */
+  count: number | null;
   children: WvTreeNode[];
+  /** A wv*Calc folder: WellView computes it at print time and stores nothing. */
+  derived?: true;
+  /** Scopes the derivation still needs — "idjob", "idreport". */
+  needs?: string[];
 }
 
 /** The physical types WellView's data model declares for a field. */
@@ -117,6 +122,22 @@ export interface WvRecords {
   folderTotal?: number;
   /** The term the server filtered by, echoed back (§3.9 Finding Data). */
   find?: string;
+  /**
+   * A CALCULATED FOLDER (§3.9 Show Calculated Folders): WellView builds these
+   * when a report prints and stores nothing, so every value here was worked out
+   * from stored rows and none of it is editable.
+   */
+  derived?: boolean;
+  /** Scopes the derivation is still waiting for — "idjob", "idreport". */
+  needs?: string[];
+  /** Fields the model declares that this derivation deliberately does not fill. */
+  unsupported?: { field: string; reason: string }[];
+  /** How the figures were checked, carried from the derivation's own record. */
+  verifiedBy?: string;
+  /** The stored tables the figures are drawn from. */
+  sources?: string[];
+  /** Set when this database does not carry the tables the derivation reads. */
+  unavailable?: string;
   /** True when `rows` is the first 500 of `total`. */
   truncated?: boolean;
   /** Folder help from the data model (§3.11 Folder and Field Help). */
@@ -691,9 +712,18 @@ export const wvDbApi = {
     return entryApi.get<WvWellList>(`/wellview/dbs/${enc(db)}/wells${qs ? `?${qs}` : ""}`);
   },
 
-  tree: (db: string, idwell?: string) =>
-    entryApi.get<{ tree: WvTreeNode[] }>(
-      `/wellview/dbs/${enc(db)}/tree${idwell ? `?idwell=${enc(idwell)}` : ""}`),
+  /**
+   * @param calc §3.9 Show Calculated Folders — append the wv*Calc folders this
+   * app can derive. Off by default, as in the desktop.
+   */
+  tree: (db: string, idwell?: string, calc?: boolean) => {
+    const q = new URLSearchParams();
+    if (idwell) q.set("idwell", idwell);
+    if (calc) q.set("calc", "1");
+    const qs = q.toString();
+    return entryApi.get<{ tree: WvTreeNode[] }>(
+      `/wellview/dbs/${enc(db)}/tree${qs ? `?${qs}` : ""}`);
+  },
 
   /**
    * @param opts.find §3.9 Finding Data — narrows the folder to the records
@@ -701,12 +731,18 @@ export const wvDbApi = {
    * merely the first 500 rows a read returns.
    */
   records: (db: string, table: string,
-    opts?: { idwell?: string; parent?: string; system?: boolean; find?: string }) => {
+    opts?: {
+      idwell?: string; parent?: string; system?: boolean; find?: string;
+      /** Scope for a wv*Calc folder that summarises one job or one daily report. */
+      job?: string; report?: string;
+    }) => {
     const q = new URLSearchParams();
     if (opts?.idwell) q.set("idwell", opts.idwell);
     if (opts?.parent) q.set("parent", opts.parent);
     if (opts?.system) q.set("system", "1");
     if (opts?.find) q.set("find", opts.find);
+    if (opts?.job) q.set("job", opts.job);
+    if (opts?.report) q.set("report", opts.report);
     const qs = q.toString();
     return entryApi.get<WvRecords>(`/wellview/dbs/${enc(db)}/records/${enc(table)}${qs ? `?${qs}` : ""}`);
   },
