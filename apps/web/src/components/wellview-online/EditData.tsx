@@ -1282,6 +1282,25 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         <textarea
           rows={1}
           value={val}
+          /*
+           * THE ONLY FIELDS WORTH SPELL-CHECKING.
+           *
+           * The guide describes a field-level, on-demand spell check with
+           * Ignore and Change — which is what a browser already gives, from a
+           * dictionary the user can extend. WellView shipped its own word list
+           * (Peloton.Dictionary.dct) and this app deliberately does not use it:
+           * it is licensed for distribution only with the C1SpellChecker
+           * component, and measured against this database's own free text it
+           * would flag 12.9% of words, almost all of them correct — tbg, rih,
+           * csg, jts, bha, toh, mkb, kPa, Schlumberger, Cardium.
+           *
+           * The browser's dictionary has the same blind spot, and until now the
+           * app never said anything about spellcheck, so it ran on every cell
+           * by default — including the ones holding "S", "6" and
+           * "100/04-14-018-25W4/00". It is switched on HERE, where prose
+           * actually lives, and off everywhere else.
+           */
+          spellCheck
           placeholder={isGhost ? "new…" : undefined}
           onFocus={(e) => { focusHelp(c); e.currentTarget.rows = 6; }}
           onBlur={(e) => { e.currentTarget.rows = 1; }}
@@ -1303,6 +1322,12 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
         <input
           value={approved ? showListValue(c, val) : val}
           list={listId}
+          /*
+           * Not prose: a code, a grade, a serial, a well identifier. 2,031 of
+           * the model's fields are this shape and squiggling them is noise.
+           * See the stringlong branch above for the whole reasoning.
+           */
+          spellCheck={false}
           placeholder={isGhost ? "new…" : undefined}
           onFocus={() => focusHelp(c)}
           onChange={(e) => {
