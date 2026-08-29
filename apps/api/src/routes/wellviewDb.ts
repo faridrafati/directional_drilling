@@ -1272,7 +1272,10 @@ export async function registerWellviewDbRoutes(
   );
 
   /** Records of one folder, scoped to a well and (for subfolders) a parent record. */
-  app.get<{ Params: { db: string; table: string }; Querystring: { idwell?: string; parent?: string; system?: string } }>(
+  app.get<{
+    Params: { db: string; table: string };
+    Querystring: { idwell?: string; parent?: string; system?: string; find?: string };
+  }>(
     "/entry/wellview/dbs/:db/records/:table",
     { preHandler: WELLVIEW_GUARD },
     async (req, reply) => {
@@ -1295,6 +1298,39 @@ export async function registerWellviewDbRoutes(
       const args: string[] = [];
       if (req.query.idwell && t.hasIdwell) { where.push(`"${t.colSet.get("idwell")}" = ?`); args.push(req.query.idwell); }
       if (req.query.parent && t.hasParent) { where.push(`"${t.colSet.get("idrecparent")}" = ?`); args.push(req.query.parent); }
+
+      /*
+       * FIND (§3.9 Finding Data): "Some Edit Data folders contain a large
+       * number of records. You can use the Find command to quickly access
+       * specific data within the folder."
+       *
+       * It runs HERE rather than over the loaded rows because the loaded rows
+       * are not the folder — the cap is 500 and folders of 2,389 exist, so a
+       * client-side find would quietly fail to reach the records most in need
+       * of finding. Filtering in SQL means `total` and `truncated` below go on
+       * describing the set the caller can actually see.
+       *
+       * Searched: every column being displayed, EXCEPT the keys and the record
+       * links. Those hold 32-character hex GUIDs, and a term like "a1" matches
+       * hundreds of them — noise that would bury the one row wanted.
+       *
+       * CAST to TEXT so a number is matched as it reads. Matching is on the
+       * value AS STORED: a depth held in metres does not match a term typed in
+       * feet, and the screen says so rather than leaving the user to guess.
+       */
+      /** The folder's own scope, before any find narrows it. */
+      const scopeWhere = [...where];
+      const scopeArgs = [...args];
+      const findable = cols.filter((c) => !isKeyCol(c) && !isLinkCol(t, c));
+      const find = (req.query.find ?? "").trim();
+      if (find && findable.length) {
+        where.push(`(${findable
+          .map((c) => `CAST("${c}" AS TEXT) LIKE ? ESCAPE '\\'`)
+          .join(" OR ")})`);
+        // LIKE's own wildcards are literal text to someone typing a search term.
+        const term = `%${find.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+        for (let i = 0; i < findable.length; i++) args.push(term);
+      }
       const ord = orderClause(t);
       const ROW_CAP = 500;
       const rows = d.ro.prepare(
@@ -1320,12 +1356,27 @@ export async function registerWellviewDbRoutes(
       const total = rows.length < ROW_CAP ? rows.length : Number((d.ro.prepare(
         `SELECT COUNT(*) c FROM "${t.name}"` + (where.length ? ` WHERE ${where.join(" AND ")}` : ""),
       ).get(...args) as { c: number }).c);
+      /*
+       * With a find running, `total` counts the MATCHES. The folder's own size
+       * is then a different number, and the screen needs both to say "9 of 629
+       * records match" — a bare "9 records" on a filtered folder reads as the
+       * folder having nine records in it.
+       */
+      const folderTotal = find
+        ? Number((d.ro.prepare(
+          `SELECT COUNT(*) c FROM "${t.name}"` + (scopeWhere.length ? ` WHERE ${scopeWhere.join(" AND ")}` : ""),
+        ).get(...scopeArgs) as { c: number }).c)
+        : total;
       const mt = modelTable(t.name);
       return {
         table: t.name,
         label: folderLabel(t.name, t.parent),
-        /** Rows in the folder, not rows in this response. */
+        /** Rows in the folder — or, with a find running, rows that match it. */
         total,
+        /** The folder's own size, unfiltered. Equal to `total` with no find. */
+        folderTotal,
+        /** The term this response was filtered by, echoed so the screen can say so. */
+        find: find || undefined,
         /** True when `rows` is the first `ROW_CAP` of `total`, not all of it. */
         truncated: total > rows.length,
         help: mt?.help,

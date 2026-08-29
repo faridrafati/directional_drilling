@@ -110,6 +110,13 @@ export interface WvRecords {
    * nothing to say the rest were missing.
    */
   total?: number;
+  /**
+   * The folder's own size, unfiltered — equal to `total` unless a find is
+   * running, when `total` counts the MATCHES instead.
+   */
+  folderTotal?: number;
+  /** The term the server filtered by, echoed back (§3.9 Finding Data). */
+  find?: string;
   /** True when `rows` is the first 500 of `total`. */
   truncated?: boolean;
   /** Folder help from the data model (§3.11 Folder and Field Help). */
@@ -688,11 +695,18 @@ export const wvDbApi = {
     entryApi.get<{ tree: WvTreeNode[] }>(
       `/wellview/dbs/${enc(db)}/tree${idwell ? `?idwell=${enc(idwell)}` : ""}`),
 
-  records: (db: string, table: string, opts?: { idwell?: string; parent?: string; system?: boolean }) => {
+  /**
+   * @param opts.find §3.9 Finding Data — narrows the folder to the records
+   * holding this text. Applied in SQL, so it reaches the whole folder and not
+   * merely the first 500 rows a read returns.
+   */
+  records: (db: string, table: string,
+    opts?: { idwell?: string; parent?: string; system?: boolean; find?: string }) => {
     const q = new URLSearchParams();
     if (opts?.idwell) q.set("idwell", opts.idwell);
     if (opts?.parent) q.set("parent", opts.parent);
     if (opts?.system) q.set("system", "1");
+    if (opts?.find) q.set("find", opts.find);
     const qs = q.toString();
     return entryApi.get<WvRecords>(`/wellview/dbs/${enc(db)}/records/${enc(table)}${qs ? `?${qs}` : ""}`);
   },

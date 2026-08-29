@@ -355,10 +355,40 @@ function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentP
     parentIdrec = idrec;
   }
 
+  /*
+   * FIND (§3.9 Finding Data) lives HERE rather than in the grid, because the
+   * filtering is the server's: "Some Edit Data folders contain a large number
+   * of records" is exactly the case a client-side find fails, the read being
+   * capped at 500 and folders of 2,389 existing.
+   */
+  const [find, setFind] = useState("");
+  useEffect(() => { setFind(""); }, [table, parentIdrec]);
+
+  /*
+   * The grid registers its own save-on-leave with the window; this keeps a
+   * second handle on it so a find can save first.
+   *
+   * Narrowing the folder is leaving part of it, and §3.9's rule for leaving is
+   * that pending changes are saved. A row edited and then filtered out would
+   * otherwise sit in state the user can no longer see.
+   */
+  const gridFlush = useRef<(() => Promise<boolean>) | null>(null);
+  const registerBoth = (fn: (() => Promise<boolean>) | null) => {
+    gridFlush.current = fn;
+    registerFlush(fn);
+  };
+  const applyFind = (term: string) => {
+    void (async () => {
+      const ok = (await gridFlush.current?.()) ?? true;
+      if (ok) setFind(term);
+    })();
+  };
+
   const recordsQ = useQuery({
-    queryKey: ["wvdb", db, "records", table, idwell, parentIdrec, showSystem],
+    queryKey: ["wvdb", db, "records", table, idwell, parentIdrec, showSystem, find],
     queryFn: () => wvDbApi.records(db, table, {
       idwell, parent: parentIdrec ?? undefined, system: showSystem,
+      ...(find ? { find } : {}),
     }),
     enabled: true,
   });
@@ -384,7 +414,7 @@ function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentP
    * because data nobody can reach is the thing this whole exercise is about.
    * The original message still stands when the folder really is empty.
    */
-  if (ancestors.length && chainBroken && !(recordsQ.data?.rows.length)) {
+  if (ancestors.length && chainBroken && !(recordsQ.data?.rows.length) && !find) {
     const broken = ancestorQueries.find((a) => !a.idrec);
     return (
       <div className="p-4 text-sm text-gray-500">
@@ -437,7 +467,8 @@ function FolderRecords({ db, idwell, table, chain, vertical, showSystem, parentP
         <RecordsGrid
           db={db} idwell={idwell} data={data} vertical={vertical} showIds={showSystem}
           parentIdrec={parentIdrec} clipboard={clipboard} onClipboard={onClipboard}
-          onSaved={refresh} onStatus={onStatus} registerFlush={registerFlush}
+          onSaved={refresh} onStatus={onStatus} registerFlush={registerBoth}
+          find={find} onFind={applyFind}
           focusRecord={focusRecord} focusColumn={focusColumn}
         />
       ) : null}
@@ -484,7 +515,7 @@ const localInputToIso = (v: string): string | null => (v ? `${v}:00Z` : null);
  * flush the parent registers). The ghost row inserts on save. ID/link keys are
  * server-managed; record-LINK columns edit through the candidates popover.
  */
-function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboard, onClipboard, onSaved, onStatus, registerFlush, focusRecord, focusColumn }: {
+function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboard, onClipboard, onSaved, onStatus, registerFlush, find, onFind, focusRecord, focusColumn }: {
   db: string;
   idwell: string;
   data: WvRecords;
@@ -497,6 +528,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   onSaved: () => void;
   onStatus: (s: string | null) => void;
   registerFlush: (fn: (() => Promise<boolean>) | null) => void;
+  /** The find term in force (§3.9 Finding Data); "" when the whole folder shows. */
+  find: string;
+  onFind: (term: string) => void;
   focusRecord: string | null;
   focusColumn: string | null;
 }) {
@@ -554,6 +588,9 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
   /** §3.9 Paste Data from Clipboard — the mapping dialog is open. */
   const [pasting, setPasting] = useState(false);
   const [fieldInfo, setFieldInfo] = useState(false);
+  /** What is typed in the Find box, which is not yet what is being found. */
+  const [findDraft, setFindDraft] = useState(find);
+  useEffect(() => { setFindDraft(find); }, [find]);
   /** The record whose copy is being configured, and what to call the action. */
   const [choosing, setChoosing] = useState<
     { table: string; idrec: string; caption: string; verb: string; paste: boolean } | null>(null);
@@ -582,6 +619,12 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
      * wrong date and depth into a new record, which is worse than an empty one.
      */
     if (data.truncated) return {} as Row;
+    /*
+     * NEITHER HAS A FILTERED ONE. With a find running the last row on screen is
+     * the last MATCH, not the last record — carrying from it would seed a new
+     * record from whichever row happened to contain the search term.
+     */
+    if (find) return {} as Row;
     const prev = data.rows[data.rows.length - 1];
     if (!prev) return {} as Row;
     const seed: Row = {};
@@ -646,7 +689,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       if (tk != null && tk !== "" && !Array.isArray(tk)) seed[tkCol] = tk;
     }
     return seed;
-  }, [data.rows, data.columns]);
+  }, [data.rows, data.columns, find]);
   /*
    * Counted for the user, so it counts only what the user can see. A TK rides
    * along with its link and is never rendered; including it would report two
@@ -1114,6 +1157,18 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
    * exceed the cap could as easily have been sequenced.
    */
   async function reorder(order: string[], what: string) {
+    /*
+     * A find shows PART of the folder, and part of a folder cannot be
+     * renumbered: the order sent would name the matches only, and the records
+     * filtered out would keep sequence numbers belonging to positions that no
+     * longer exist. The server refuses a partial order for the same reason;
+     * this says so before the call rather than after it.
+     */
+    if (find) {
+      onStatus(`Not reordered — only the ${data.rows.length} records matching "${find}" are shown. `
+        + "Clear the find first: reordering part of a folder would renumber the wrong records.");
+      return;
+    }
     if (data.truncated) {
       onStatus(`Not reordered — this folder holds ${data.total} records and only the `
         + `first ${data.rows.length} are loaded. Reordering part of a folder would renumber `
@@ -1173,10 +1228,16 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
     void navigator.clipboard.writeText(`${head}\n${body}`).then(
       () => onStatus(selected.length
         ? `Copied ${source.length} selected record${source.length === 1 ? "" : "s"} to the clipboard, headings included.`
-        : data.truncated
-          ? `Copied the first ${data.rows.length} of ${data.total} records to the clipboard, `
-            + "headings included — the folder is larger than one read."
-          : `Copied ${data.rows.length} record${data.rows.length === 1 ? "" : "s"} to the clipboard, headings included.`),
+        : find
+          // A find copies the MATCHES, and the message has to say so — the
+          // spreadsheet that comes out is not the folder.
+          ? `Copied ${data.rows.length}${data.truncated ? ` of the ${data.total}` : ""} `
+            + `record${data.rows.length === 1 ? "" : "s"} matching "${find}" to the clipboard, `
+            + `headings included — not the other ${(data.folderTotal ?? 0) - data.rows.length} in this folder.`
+          : data.truncated
+            ? `Copied the first ${data.rows.length} of ${data.total} records to the clipboard, `
+              + "headings included — the folder is larger than one read."
+            : `Copied ${data.rows.length} record${data.rows.length === 1 ? "" : "s"} to the clipboard, headings included.`),
       () => onStatus("The browser refused clipboard access."),
     );
   }
@@ -1573,10 +1634,14 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
       <div className="flex gap-1 px-1">
         {ordered && index !== undefined && (
           <>
-            <button type="button" title="Move up" disabled={busy || index === 0}
+            <button type="button"
+              title={find ? "Clear the find to reorder — only the matching records are shown" : "Move up"}
+              disabled={busy || index === 0 || !!find}
               onClick={() => moveRow(index, -1)}
               className="text-gray-400 hover:text-blue-600 text-[11px] disabled:opacity-25">▲</button>
-            <button type="button" title="Move down" disabled={busy || index === data.rows.length - 1}
+            <button type="button"
+              title={find ? "Clear the find to reorder — only the matching records are shown" : "Move down"}
+              disabled={busy || index === data.rows.length - 1 || !!find}
               onClick={() => moveRow(index, 1)}
               className="text-gray-400 hover:text-blue-600 text-[11px] disabled:opacity-25">▼</button>
           </>
@@ -1611,15 +1676,28 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           * The report path next door has always been honest about this —
           * "first N of M rows" — and a folder is no different.
           */}
+        {/*
+          * The count says what is HERE, and with a find running that is TWO
+          * numbers, not one: the matches, and the folder they were found in.
+          * "9 records" on a filtered 629-row folder is a false statement about
+          * the folder.
+          */}
         <span className={`text-[10px] tabular-nums ${data.truncated ? "text-amber-700" : "text-gray-400"}`}
           data-testid="wv-edit-count"
           title={data.truncated
-            ? `This folder holds ${data.total} records. The first ${data.rows.length} are shown; `
-              + "editing, copying and reordering apply to those."
-            : undefined}>
-          {data.truncated
-            ? `first ${data.rows.length} of ${data.total} records`
-            : `${data.rows.length} record${data.rows.length === 1 ? "" : "s"}`}
+            ? `${find ? `${data.total} records match this find` : `This folder holds ${data.total} records`}. `
+              + `The first ${data.rows.length} are shown; editing, copying and reordering apply to those.`
+            : find
+              ? "Find matches the values as they are STORED. A depth held in metres "
+                + "will not match a number typed in feet."
+              : undefined}>
+          {find
+            ? (data.truncated
+              ? `first ${data.rows.length} of ${data.total} matches, in ${data.folderTotal ?? data.total} records`
+              : `${data.rows.length} of ${data.folderTotal ?? data.rows.length} record${(data.folderTotal ?? 0) === 1 ? "" : "s"} match`)
+            : data.truncated
+              ? `first ${data.rows.length} of ${data.total} records`
+              : `${data.rows.length} record${data.rows.length === 1 ? "" : "s"}`}
         </span>
         {carriedCount > 0 && !singleRecord && (
           // The new row arrives pre-filled; say so, or a carried value reads as
@@ -1629,6 +1707,38 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
+          {/*
+            * §3.9 Finding Data: "To find data, enter the data in the Find box in
+            * the toolbar and click the button."
+            *
+            * Enter does it too — a search box that only answers to a mouse is a
+            * search box nobody uses. The term is applied on submit rather than
+            * per keystroke because applying it saves any pending edit first, and
+            * saving on every letter typed is not a trade worth making.
+            */}
+          {!singleRecord && (
+            <form className="flex items-center gap-1"
+              onSubmit={(e) => { e.preventDefault(); onFind(findDraft.trim()); }}>
+              <input type="search" value={findDraft} spellCheck={false}
+                data-testid="wv-edit-find"
+                onChange={(e) => setFindDraft(e.target.value)}
+                placeholder="Find"
+                title="Find (§3.9) — show only the records in this folder holding this text. Searches every field of every record, not only the ones loaded."
+                className="h-7 w-28 px-2 text-[11px] rounded border border-gray-300 focus:border-blue-400 focus:outline-none" />
+              <button type="submit" disabled={findDraft.trim() === find}
+                className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+                Find
+              </button>
+              {find && (
+                <button type="button" data-testid="wv-edit-find-clear"
+                  onClick={() => { setFindDraft(""); onFind(""); }}
+                  title={`Showing only records matching "${find}" — clear to see the whole folder`}
+                  className="h-7 px-2 text-[11px] rounded border border-blue-300 text-blue-700 hover:bg-blue-50">
+                  Clear
+                </button>
+              )}
+            </form>
+          )}
           {/* §3.11 Field Information — the database names and types behind the
               captions. Enabled even on an empty folder: it describes the FIELDS,
               which exist whether or not any record does. */}
@@ -1648,9 +1758,12 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
               onClick={() => (selected.length
                 ? setSelected([])
                 : setSelected(data.rows.map((r) => String(r.IDRec ?? "")).filter(Boolean)))}
-              title={data.truncated
-                ? `Select the ${data.rows.length} records loaded here — the folder holds ${data.total}`
-                : "Select All Records (Ctrl+A)"}
+              title={find
+                ? `Select the ${data.rows.length} shown — ${data.total} of this folder's `
+                  + `${data.folderTotal ?? data.total} records match "${find}"`
+                : data.truncated
+                  ? `Select the ${data.rows.length} records loaded here — the folder holds ${data.total}`
+                  : "Select All Records (Ctrl+A)"}
               className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
               {selected.length
                 ? `Deselect (${selected.length})`
@@ -1682,7 +1795,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
             </button>
           )}
           {ordered && data.allowInsertTop && (
-            <button type="button" disabled={busy || data.rows.length < 2}
+            <button type="button" disabled={busy || data.rows.length < 2 || !!find}
               onClick={() => void reorder([...ids()].reverse(), "Newest record put at the top")}
               title="Add Records to Top — number the list from the bottom up, so the newest record is first"
               className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
@@ -1690,7 +1803,7 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
             </button>
           )}
           {ordered && data.allowSeqInvert && (
-            <button type="button" disabled={busy || data.rows.length < 2}
+            <button type="button" disabled={busy || data.rows.length < 2 || !!find}
               onClick={() => void reorder([...ids()].reverse(), "Components inverted")}
               title="Invert Components — reverse the string, so an as-run order draws correctly on the schematic"
               className="h-7 px-2 text-[11px] rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
