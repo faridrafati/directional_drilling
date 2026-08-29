@@ -165,7 +165,7 @@ export const UNIT_ROWS: readonly UnitRow[] = [
   {"base":"kPa","unit":"inH2O","label":"Inches of water (4deg C)","factor":0.249082,"exponent":1,"offset":0},
   {"base":"J","unit":"J","label":"Joule","factor":1,"exponent":1,"offset":0},
   {"base":"J/m³","unit":"J/m³","label":"Joule per cubic meter","factor":1,"exponent":1,"offset":0},
-  {"base":"°C","unit":"K","label":"Kelvin","factor":1,"exponent":1,"offset":273.1499938964844},
+  {"base":"°C","unit":"K","label":"Kelvin","factor":1,"exponent":1,"offset":273.15,"corrected":"shipped 273.1499938964844 is bit-exactly Math.fround(273.15) — a float32 that was widened into a double column, not a figure anyone chose. Their own °F row is exact, so this is a storage artefact of the same kind as the two above. It is worth 6.1e-6 K, far below any rig measurement; corrected for consistency rather than for consequence, and because a physical check whose tolerance is wide enough to miss it is not checking much","shippedFactor":1},
   {"base":"byte","unit":"KB","label":"Kilobyte","factor":1000,"exponent":1,"offset":0},
   {"base":"kg","unit":"kg","label":"Kilograms","factor":1,"exponent":1,"offset":0},
   {"base":"kg/m³","unit":"kg/1000m³","label":"Kilograms per thousand cubic meters","factor":0.001,"exponent":1,"offset":0},

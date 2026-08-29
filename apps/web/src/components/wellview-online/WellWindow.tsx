@@ -30,7 +30,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entryApi } from "../../entry/client.js";
 import { useUnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
-import { toDisplay, fromDisplay, formatUnitValue, formatUnitList, displayUnitFor, displayUnitLabel, type DatumShift } from "@dd/shared";
+import { toDisplay, fromDisplay, formatUnitValue, formatUnitList, displayUnitFor, displayUnitLabel, unitDescription, type DatumShift } from "@dd/shared";
 import type { UnitFormat } from "@dd/shared";
 import { Attachments, Thumb } from "./Attachments.js";
 import { PrintReport } from "./PrintReport.js";
@@ -758,7 +758,11 @@ function FilledTemplate({ db, html, idwell, isInput, onEditTable, onEditRecord }
                                 : `${b.table}.${c.column}`}>
                               {c.label}
                               {c.unit && (
-                                <span className="ml-1 font-normal text-gray-400">
+                                /* The vendor's own words for the unit, shipped
+                                   in its table since the first decode and never
+                                   read by anything until now. */
+                                <span className="ml-1 font-normal text-gray-400"
+                                  title={unitDescription(displayUnitLabel(c, unitSet, datumShiftFor)) ?? undefined}>
                                   ({displayUnitLabel(c, unitSet, datumShiftFor)})
                                 </span>
                               )}

@@ -40,7 +40,7 @@ import { wvDbApi, type WvRecordColumn, type WvRecords, type WvTreeNode } from ".
 import { usePicklistCatalog } from "../../entry/picklists.js";
 import { useUnitSet, type UnitSet } from "../../entry/unitSet.js";
 import { useDatumShift } from "../../entry/datum.js";
-import { toDisplay, fromDisplay, displayUnitLabel, formatUnitValue, formatUnitList } from "@dd/shared";
+import { toDisplay, fromDisplay, displayUnitLabel, formatUnitValue, formatUnitList, unitDescription } from "@dd/shared";
 import type { DatumShift } from "@dd/shared";
 import { Attachments } from "./Attachments.js";
 import { InventoryTransfer } from "./InventoryTransfer.js";
@@ -1509,7 +1509,16 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                     title={[`${data.table}.${c.column}`, c.help, c.calculated ? "Calculated by WellView." : null]
                       .filter(Boolean).join(" — ")}>
                     {c.label}
-                    {c.unit && <span className="ml-1 font-normal text-gray-400">({displayUnitLabel(c, unitSet, datumShift)})</span>}
+                    {c.unit && (
+                      /* Peloton's own words for the unit, which ship in the
+                         vendor table and were never shown. "ft³/sack" is
+                         "Cubic feet per 100 pound sack" — the distinction that
+                         once made every cement volume 6.383% wrong. */
+                      <span className="ml-1 font-normal text-gray-400"
+                        title={unitDescription(displayUnitLabel(c, unitSet, datumShift)) ?? undefined}>
+                        ({displayUnitLabel(c, unitSet, datumShift)})
+                      </span>
+                    )}
                   </td>
                   {data.rows.map((r, i) => {
                     const k = keyOf(r);
@@ -1562,7 +1571,16 @@ function RecordsGrid({ db, idwell, data, vertical, showIds, parentIdrec, clipboa
                     {c.globalMetric
                       ? <span className="text-cyan-600" title="Required global metric">&nbsp;◆</span>
                       : c.required ? <span className="text-amber-600" title="Required">&nbsp;*</span> : null}
-                    {c.unit && <span className="ml-1 font-normal text-gray-400">({displayUnitLabel(c, unitSet, datumShift)})</span>}
+                    {c.unit && (
+                      /* Peloton's own words for the unit, which ship in the
+                         vendor table and were never shown. "ft³/sack" is
+                         "Cubic feet per 100 pound sack" — the distinction that
+                         once made every cement volume 6.383% wrong. */
+                      <span className="ml-1 font-normal text-gray-400"
+                        title={unitDescription(displayUnitLabel(c, unitSet, datumShift)) ?? undefined}>
+                        ({displayUnitLabel(c, unitSet, datumShift)})
+                      </span>
+                    )}
                   </th>
                 ))}
               </tr>

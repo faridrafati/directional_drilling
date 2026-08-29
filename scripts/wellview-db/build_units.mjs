@@ -1,10 +1,19 @@
 /**
  * Peloton's OWN unit conversion table → the app's conversion data.
  *
- * `WellView_files/system/Peloton.Common.Units` is an Access (Jet 4) database
- * holding one table, `UnitConversion`, with 277 rows of
- * `BaseUnit, UserUnit, Des, Factor, Exponent, Offset`. It is the authority: it
- * is what the desktop converts with.
+ * `WellView_files/system/Peloton.Common.Units` is an Access (Jet 4) database.
+ * It contains twelve tables, eleven of which are Access's own system catalogue
+ * (MSysObjects and friends, holding nav-pane groups and object ids and no unit
+ * data). The one that matters is `UnitConversion`, 277 rows over SEVEN columns:
+ * `BaseUnit, UserUnit, Des, Factor, Exponent, Offset, Comment`. It is the
+ * authority: it is what the desktop converts with.
+ *
+ * `Comment` is deliberately dropped. Ten rows carry one and every one is
+ * Peloton's own authoring note — "Increased precision", "checked", "assume
+ * previous values were entered in mg/g/L". The vendor's own runtime ignores it
+ * too: Peloton.Common.Units.dll exposes BaseUnit/UserUnit/Factor/Exponent/
+ * Offset and no Comment accessor. Named here so the next reader does not have
+ * to open the MDB to find out what the seventh column was.
  *
  * THE FORMULA, derived from the data and checked against physics rather than
  * assumed:
@@ -33,7 +42,8 @@
  * down. A vendor file is evidence, not scripture.
  *
  *   node scripts/wellview-db/build_units.mjs
- *     → apps/web/public/wellview-templates/units.json
+ *     → packages/shared/src/units/wellview-table.ts   (what the app uses)
+ *     → docs/wellview-units.json                      (readable audit dump)
  */
 import MDBReader from "mdb-reader";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -44,7 +54,18 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..");
 const SRC = process.env.WELLVIEW_UNITS
   ?? join(REPO, "WellView_files", "system", "Peloton.Common.Units");
-const OUT = join(REPO, "apps", "web", "public", "wellview-templates", "units.json");
+/*
+ * NOT under `public/`.
+ *
+ * This JSON is an audit artefact — a readable dump of a vendor binary, so the
+ * decode can be inspected without an Access reader. Nothing in the app loads
+ * it: the live path is the generated TypeScript table below, which is imported
+ * directly. It sat in `public/wellview-templates/` for a while, where it was
+ * shipped to every browser and read by none of them, and where it was a second
+ * copy of the conversion data free to drift from the one actually used.
+ * `units-table.test.ts` now pins the two together.
+ */
+const OUT = join(REPO, "docs", "wellview-units.json");
 
 /**
  * Corrections to the shipped table, each with the evidence for it.
@@ -64,6 +85,15 @@ const OVERRIDES = {
       + "is 0.1 and their cm²/mm² are 0.01²/0.001², so a square decimetre is 0.01 m². "
       + "100 is exactly the factor on their 1/dm² row, which is correct there — copied "
       + "into the wrong row",
+  },
+  "°C|K": {
+    offset: 273.15,
+    why: "shipped 273.1499938964844 is bit-exactly Math.fround(273.15) — a float32 "
+      + "that was widened into a double column, not a figure anyone chose. Their own "
+      + "°F row is exact, so this is a storage artefact of the same kind as the two "
+      + "above. It is worth 6.1e-6 K, far below any rig measurement; corrected for "
+      + "consistency rather than for consequence, and because a physical check whose "
+      + "tolerance is wide enough to miss it is not checking much",
   },
 };
 /** Units whose relationship to a base cannot be a single factor at all. */
@@ -85,9 +115,9 @@ const units = rows.map((r) => {
     base: r.BaseUnit,
     unit: r.UserUnit,
     label: r.Des ?? r.UserUnit,
-    factor: o ? o.factor : r.Factor,
+    factor: o?.factor ?? r.Factor,
     exponent: r.Exponent ?? 1,
-    offset: r.Offset ?? 0,
+    offset: o?.offset ?? r.Offset ?? 0,
     ...(o ? { corrected: o.why, shippedFactor: r.Factor } : {}),
     ...(NOTES[key] ? { note: NOTES[key] } : {}),
   };
@@ -202,7 +232,10 @@ void q;
 
 // A last sanity pass against physics, so a bad regeneration fails loudly.
 const CHECKS = [
-  ["°C", "°F", 212, 100], ["°C", "°F", 32, 0], ["°C", "K", 0, -273.15],
+  ["°C", "°F", 212, 100], ["°C", "°F", 32, 0],
+  // Tight enough to catch the float32 Kelvin offset: at the old 1e-6 relative
+  // tolerance a 6.1e-6 K error passed unnoticed for the life of the table.
+  ["°C", "K", 273.15, 0], ["°C", "K", 0, -273.15],
   ["kg/m³", "°API", 10, 1000], ["m", "ft", 1, 0.3048], ["m", "in", 1, 0.0254],
   ["kPa", "psi", 1, 6.89475729], ["m³", "bbl", 1, 0.158987294928],
   ["m²", "ft²", 1, 0.09290304], ["Proportion", "%", 50, 0.5],

@@ -430,3 +430,49 @@ export function convertUnit(value: number, from: string, to: string): number | n
 
 // Rendering — decimals, grouping and fractional inches — is in
 // `wellview-display.ts`, so this file stays a table of arithmetic.
+
+/*
+ * Units whose description cannot be trusted to describe THEM.
+ *
+ * Two rows under one base sharing a description while differing in factor: the
+ * sentence is true of at most one of them. Computed from the table rather than
+ * listed by hand, so a future regeneration cannot quietly introduce a second
+ * case. Exactly one exists today — Pa•s and mPa•s both read "Pascal seconds"
+ * at factors 1000 apart — and showing that on the milli- row would be worse
+ * than showing nothing.
+ */
+const AMBIGUOUS_LABEL = (() => {
+  const seen = new Map<string, Set<string>>();
+  for (const r of UNIT_ROWS) {
+    const k = `${r.base}|${r.label}`;
+    if (!seen.has(k)) seen.set(k, new Set());
+    seen.get(k)!.add(`${r.factor}/${r.exponent}/${r.offset}`);
+  }
+  const bad = new Set<string>();
+  for (const [k, variants] of seen) if (variants.size > 1) bad.add(k);
+  return bad;
+})();
+
+/**
+ * Peloton's own words for a unit — "Cubic feet per 100 pound sack" for
+ * `ft³/sack`, "Thirty seconds of an inch" for `1/32"`.
+ *
+ * The description ships in the vendor table and was decoded from the first
+ * commit, then went unread: every screen printed the bare symbol. Symbols like
+ * `sg(h2o)`, `E3m³`, `daN•m` and `mL/30min` do not explain themselves, and
+ * `ft³/sack` is the one that matters most — it puts the 100-pound sack on
+ * screen, the distinction that once made every cement volume 6.383% wrong.
+ *
+ * Returns undefined when there is nothing to add: when the description is just
+ * the symbol again, and for the one row whose description is shared with a
+ * different unit under the same base.
+ *
+ * This is an ENHANCEMENT, not desktop parity — the vendor's own runtime never
+ * reads the column.
+ */
+export function unitDescription(unit: string): string | undefined {
+  const r = PELOTON_BY_UNIT.get(unit);
+  if (!r || !r.label || r.label === r.unit) return undefined;
+  if (AMBIGUOUS_LABEL.has(`${r.base}|${r.label}`)) return undefined;
+  return r.label;
+}
